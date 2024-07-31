@@ -8,22 +8,6 @@
 
 </ul>
 
-<p> in dotfile </p>
-
-<p> SYSTEM </p>
-<p> Qtile and Plasma Theme</p>
-<p> lxdm - cursor still black </p>
-<p> Grub and Plymouth Theme </p>
-
-<p> PROGRAMS </p>
-<p> System GTK Theme </p>
-<p> Blender Theme </p>
-<p> Dunst Theme </p>
-<p> Krita Theme </p>
-<p> Qutebrowser Theme </p>
-<p> VsCodium Theme </p>
-<p> Zathura Theme </p>
-
 ```
 # this is all i made in GnuChanGUI
 _0 : Simple Timer             - Yep!
