@@ -24,6 +24,7 @@
 <p> VsCodium Theme </p>
 <p> Zathura Theme </p>
 
+```
 # this is all i made in GnuChanGUI
 _0 : Simple Timer             - Yep!
 _1 : Simple Calculator        - Every programmer does this.
@@ -35,3 +36,4 @@ _6 : Simple Video Player      - A simple VLC-based video player with canvas.
 _7 : Simple LSVR              - GUI for GPU-SCREEN-RECORDER.
 _8 : Simple Wine Manager      - A simple way to manage Wine containers.
 _9 : Simple Video to Sound    - Converts MP4 files to MP3.
+```
