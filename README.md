@@ -10,7 +10,7 @@
 
 <p> in dotfile </p>
 
-<p> SYSTEÖ </p>
+<p> SYSTEM </p>
 <p> Qtile and Plasma Theme</p>
 <p> lxdm - cursor still black </p>
 <p> Grub and Plymouth Theme </p>
@@ -24,12 +24,14 @@
 <p> VsCodium Theme </p>
 <p> Zathura Theme </p>
 
-<p> in Terminal APP </p>
-<p> Vim </p>
-<p> Ranger </p>
-<p> Cmus </p>
-<p> irssi </p>
-
-<p>  </p>
-<br/>
-
+# this is all i made in GnuChanGUI
+_0 : Simple Timer             - Yep!
+_1 : Simple Calculator        - Every programmer does this.
+_2 : Simple Text Editor       - Simpler than a regular Linux text editor.
+_3 : Simple Program Runner    - A simpler alternative to rofi and dmenu -> Discord not working.
+_4 : Simple Image Viewer      - A simple image viewer.
+_5 : Simple Music Player      - A music player with pygame mixer.
+_6 : Simple Video Player      - A simple VLC-based video player with canvas.
+_7 : Simple LSVR              - GUI for GPU-SCREEN-RECORDER.
+_8 : Simple Wine Manager      - A simple way to manage Wine containers.
+_9 : Simple Video to Sound    - Converts MP4 files to MP3.
