@@ -77,7 +77,6 @@ sudo pacman -Sy --noconfirm cmake
 sudo pacman -Sy --noconfirm openssh
 sudo pacman -Sy --noconfirm timidity
 sudo pacman -Sy --noconfirm fail2ban
-sudo pacman -Sy --noconfirm nemo
 sudo pacman -Sy --noconfirm deluge-gtk
 
 # Install Personal Programs
@@ -96,6 +95,8 @@ sudo pacman -Sy --noconfirm nrg2iso
 sudo pacman -Sy --noconfirm yt-dlp
 
 sudo pacman -Sy --nocomfirm joystick evtest
+
+sudo pacman -S noto-fonts-cjk noto-fonts-emoji noto-fonts
 
 # System Optimisation
 sudo pacman -Sy --noconfirm irqbalance
@@ -126,7 +127,7 @@ sudo systemctl start sshd
 
 sudo echo "blacklist nouveau" >> /etc/modprobe.d/blacklist-nouveau.conf
 sudo echo "options nouveau modeset=0" >> /etc/modprobe.d/blacklist-nouveau.conf
-mkinitcpio -p linux
+mkinitcpio -p linux-cachyos
 
 # CPU UCode (Important)
 while true; do

@@ -1,3 +1,0 @@
-#/bin/bash
-
-WINEPREFIX=/home/archkubi/.wine64/ primusrun gamemoderun mangohud --dlsym optirun wine $1

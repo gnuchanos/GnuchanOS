@@ -3,7 +3,7 @@
 xterm*loginShell: true
 xterm*saveLines: 4096
 xterm*background: #150129
-xterm*foreground: #9019ff
+xterm*foreground: #bb78ff
 
 ! Extra Colors
 xterm*color0: #000000

@@ -146,6 +146,7 @@ set backspace=indent,eol,start
 call plug#begin('~/.vim/plugged')
     " Lang Complete
 	Plug 'ycm-core/YouCompleteMe'
+	let g:ycm_global_ycm_extra_conf = '/home/archkubi/.vim/plugged/YouCompleteMe/.ycm_extra_conf.py'
 	" make vim user frendly
     Plug 'tpope/vim-sensible'
     " Dir Tree
