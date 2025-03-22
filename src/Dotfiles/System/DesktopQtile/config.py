@@ -21,13 +21,46 @@ mod = "mod4"
 terminal = guess_terminal("xterm")
 user_home = os.path.expanduser("~")
 keyboardLang = "us"
-
-
 InternetDeviceName = "enp37s0"
+
+
+
+
+# Don't Touch This -> Floating window layout change
+FloatingWindowIndex = 0
+@lazy.function
+def float_cycle(qtile):
+    global FloatingWindowIndex
+
+    floating_windows = []
+    for window in qtile.current_group.windows:
+        if window.floating:
+            floating_windows.append(window)
+    
+    if not floating_windows:
+        return
+    
+    FloatingWindowIndex = min(FloatingWindowIndex, len(floating_windows) -1)
+    FloatingWindowIndex += 1
+    
+    if FloatingWindowIndex >= len(floating_windows):
+        FloatingWindowIndex = 0
+    if FloatingWindowIndex < 0:
+        FloatingWindowIndex = len(floating_windows) - 1
+
+    win = floating_windows[FloatingWindowIndex]
+    win.cmd_bring_to_front()
+    win.cmd_focus()
+# Don't Touch This
+
+
 
 
 # All ShortCut Here
 keys = [
+    # Floating Window Layout Changing
+    Key([mod], "d", float_cycle),
+
     # move focus
     Key([mod], "Up", lazy.layout.up()),
     Key([mod], "Down", lazy.layout.down()),
