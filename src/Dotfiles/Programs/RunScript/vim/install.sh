@@ -7,7 +7,8 @@ vim +PlugInstall +qall
 cp .ycm_extra_conf.py ~/.vim/plugged/YouCompleteMe
 cd ~/.vim/plugged/YouCompleteMe
 pwd
-python3 install.py --clang-completer --system-libclang
+#python3 install.py --clang-completer --system-libclang
+./install.sh --clang-completer
 pwd
 
 # for xterm

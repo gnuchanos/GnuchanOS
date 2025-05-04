@@ -16,14 +16,6 @@ alias c='clear'
 # Şekilli Prompt
 PS1='\[\e[1;34m\][\[\e[1;32m\]\u\[\e[1;36m\]@\[\e[1;35m\]\h\[\e[1;34m\]]=\[\e[1;33m\]|\[\e[1;36m\] (\w)\n\[\e[1;31m\]:> \[\e[0m\]'
 
-# Backspace düzeltilmesi
-stty erase ^H
-
-# Enable fzf history search
-eval "$(fzf --bash)"
-source ble.sh/out/ble.sh 
-[[ -r /usr/share/bash-completion/bash_completion ]] && . /usr/share/bash-completion/bash_completion
-
 # Daha iyi komut geçmişi
 HISTCONTROL=ignoredups:erasedups
 HISTSIZE=10000
@@ -38,3 +30,8 @@ export TERM=xterm-256color
 stty -ixon
 source ~/.bash-preexec/bash-preexec.sh
 neofetch
+fish
+
+
+
+

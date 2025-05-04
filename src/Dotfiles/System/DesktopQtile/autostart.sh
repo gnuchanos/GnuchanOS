@@ -18,3 +18,6 @@ stty erase ^H
 
 pkill dunst &
 dunst &
+
+picom --backend glx --vsync --config ~/.config/qtile/picom.conf
+

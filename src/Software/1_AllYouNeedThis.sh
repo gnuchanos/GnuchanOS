@@ -94,9 +94,11 @@ sudo pacman -Sy --noconfirm npm
 sudo pacman -Sy --noconfirm nrg2iso
 sudo pacman -Sy --noconfirm yt-dlp
 
-sudo pacman -Sy --nocomfirm joystick evtest
-
+sudo pacman -Sy --noconfirm joystick evtest
 sudo pacman -S noto-fonts-cjk noto-fonts-emoji noto-fonts
+sudo pacman -S xdg-desktop-portal xdg-desktop-portal-gtk
+
+
 
 # System Optimisation
 sudo pacman -Sy --noconfirm irqbalance
@@ -125,9 +127,9 @@ sudo pacman -S --noconfirm openssh
 sudo systemctl enable sshd
 sudo systemctl start sshd
 
-sudo echo "blacklist nouveau" >> /etc/modprobe.d/blacklist-nouveau.conf
-sudo echo "options nouveau modeset=0" >> /etc/modprobe.d/blacklist-nouveau.conf
-mkinitcpio -p linux-cachyos
+echo "blacklist nouveau" | sudo tee -a /etc/modprobe.d/blacklist-nouveau.conf
+echo "options nouveau modeset=0" | sudo tee -a /etc/modprobe.d/blacklist-nouveau.conf
+sudo mkinitcpio -p linux-cachyos
 
 # CPU UCode (Important)
 while true; do

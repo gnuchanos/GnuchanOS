@@ -25,27 +25,57 @@ arch-chroot /mnt
 
 # second part ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # network manager
 pacman -Sy networkmanager
 systemctl enable NetworkManager
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 echo myhostname > /etc/hostname
 useradd -m -G wheel -s /bin/bash username
 nano /etc/sudoers
 passwd username
 passwd root
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 vim /etc/locale.conf
 	# LANG=en_US.UTF-8
 vim /etc/locale.gen
 	find en_us and remove #
 locale-gen
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 sudo pacman -S xorg xterm
 # add cachyos repo
 curl https://mirror.cachyos.org/cachyos-repo.tar.xz -o cachyos-repo.tar.xz
 tar xvf cachyos-repo.tar.xz && cd cachyos-repo
 sudo ./cachyos-repo.sh
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+for old computer
+
+# Depo anahtarını içe aktar
+sudo pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com
+# Depo anahtarını imzala
+sudo pacman-key --lsign-key F3B607488DB35A47
+
+sudo pacman -U \
+'https://mirror.cachyos.org/repo/x86_64/cachyos/cachyos-keyring-20240331-1-any.pkg.tar.zst' \
+'https://mirror.cachyos.org/repo/x86_64/cachyos/cachyos-mirrorlist-22-1-any.pkg.tar.zst' \
+'https://mirror.cachyos.org/repo/x86_64/cachyos/cachyos-v3-mirrorlist-22-1-any.pkg.tar.zst' \
+'https://mirror.cachyos.org/repo/x86_64/cachyos/cachyos-v4-mirrorlist-22-1-any.pkg.tar.zst' \
+'https://mirror.cachyos.org/repo/x86_64/cachyos/pacman-7.0.0.r6.gc685ae6-3-x86_64.pkg.tar.zst'
+
+nano /etc/pacman.conf
+[cachyos]
+Include = /etc/pacman.d/cachyos-mirrorlist
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 pacman -Syu linux-cachyos linux-cachyos-headers linux-firmware
@@ -56,7 +86,7 @@ sudo pacman -S xf86-video-amdgpu vulkan-radeon mesa
 # intel
 sudo pacman -S xf86-video-intel mesa
 
-pacman -Sy qtile ly fish git xterm xorg xorg-apps xorg-xinit
+pacman -Sy qtile ly fish git xorg xorg-server xorg-apps xorg-xinit xterm
 systemctl enable ly
 
 grub-install --target=i386-pc /dev/sda

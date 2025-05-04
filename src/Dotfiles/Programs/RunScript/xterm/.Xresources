@@ -72,11 +72,6 @@ xterm*scrollKey: true
 xterm*cutNewline: false
 xterm*cutToBeginningOfLine: false
 
-! Keyboard Support for Delete Key
-xterm*backarrowKey: true
-xterm*deleteIsDEL: true
-
-
 
 
 

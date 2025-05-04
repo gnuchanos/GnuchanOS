@@ -1,5 +1,5 @@
 note: winetricks grabfullscreen=y // this is for mouse capture
-WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym %command% 
+WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym %command% -nojoy -novid -vulkan  -w 1600 -h 900
 WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym wine
 
 WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun mangohud --dlsym wine skse_loader.exe
@@ -8,6 +8,15 @@ wine msiexec /i
 WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym wine EpicGamesLauncher.exe -SkipBuildPatchPrereq
 
 Z:\home\archkubi\SSD\SteamLibrary\steamapps\common\Left 4 Dead 2\left4dead2\addons\workshop\
+
+
+
+linux version problems
+	|- stardew valley -> in game dir
+		execstack -c libGalaxy64.so
+		execstack -c libGalaxyCSharpGlue.so
+
+
 
 # This game works with a pure Wine prefix
 	#:- left 4 dead works fine / left 4 dead 2 - works fine i test ZOZO.GG version
