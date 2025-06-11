@@ -33,7 +33,7 @@ echo "Oyunlar için gerekli paketler yükleniyor..."
 echo "Installing required packages for games..."
 sudo pacman -S --noconfirm kdialog
 
-
+yay -S gamemode
 
 yay -Sy gamemode lib32-gamemode winetricks
 

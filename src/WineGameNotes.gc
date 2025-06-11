@@ -32,7 +32,9 @@ linux version problems
 	#:- Red Alert 2 needs to be installed with winetricks cnc_ddraw
 	#:- Red Alert 3 working fine
 	#:- Ion Fury - Works fine
-	#:- Torchlight / 2 / 3 - works good
+	#:- Torchlight / 
+		2 - only works with virutal window
+		3 - works good
 	#:- Quake/2/3/4
 	#:- Ziggurat / 2
 	#:- Unreal Gold / Unreal 2 / Unreal Tournament 2004: Editor’s Choice Edition
@@ -45,7 +47,8 @@ linux version problems
 		| 2 works fine
 		| 4 works fine
 	#:- warcraft 3 works fine but you need remove video files or just do backup
-	#:- Dead Island Definitive Edition works fine
+	#:- Dead Islands
+		#:- old version dead island 1 -> need winetricks wmp9
 	#:- far cry 1 / 2 free gog version not move / 3  and blood dragon dlc/ 4  works fine
 	#:- rage 1 / 2
 	#:- dead rising 1 / 2 / 3 / 4
@@ -83,4 +86,21 @@ linux version problems
 	#:-
 	#:-
 	#:-
+
+
+
+sudo pacman -S ufw
+sudo systemctl enable ufw
+sudo systemctl start ufw
+
+
+sudo ufw allow 6112/tcp
+sudo ufw allow 6112/udp
+sudo ufw reload
+sudo ufw status verbose
+
+
+
+
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

@@ -26,6 +26,7 @@ InternetDeviceName = "enp37s0"
 
 
 
+
 # Don't Touch This -> Floating window layout change
 FloatingWindowIndex = 0
 @lazy.function
@@ -51,6 +52,9 @@ def float_cycle(qtile):
     win = floating_windows[FloatingWindowIndex]
     win.cmd_bring_to_front()
     win.cmd_focus()
+
+Key(["mod1"], "Tab", float_cycle),
+
 # Don't Touch This
 
 
@@ -59,7 +63,7 @@ def float_cycle(qtile):
 # All ShortCut Here
 keys = [
     # Floating Window Layout Changing
-    Key([mod], "d", float_cycle),
+    Key(["mod1"], "Tab", float_cycle),
 
     # move focus
     Key([mod], "Up", lazy.layout.up()),
@@ -226,7 +230,7 @@ screens = [ Screen(
 mouse = [
     Drag([mod, "shift"], "Button1", lazy.window.set_position_floating(),   start=lazy.window.get_position()),
     Drag([mod, "shift"], "Button3", lazy.window.set_size_floating(),       start=lazy.window.get_size()),
-    Click([mod, "shift"], "Button2", lazy.window.bring_to_front())
+    Click(["mod1"], "Button1", lazy.window.bring_to_front())
 ]
 
 
@@ -234,11 +238,14 @@ mouse = [
 # Start Extra Things Here in AutoStart.sh
 os.popen(f"sh {user_home}/.config/qtile/autostart.sh")
 
+
+
+bring_front_click = "floating_only"
+
 # Don't Touch This if you don't know what it is'
 dgroups_key_binder = None
 dgroups_app_rules = []  # type: List
 follow_mouse_focus = True
-bring_front_click = False
 cursor_warp = False
 
 floating_layout = layout.Floating(
@@ -258,6 +265,9 @@ floating_layout = layout.Floating(
 )
 
 
+
+
+bring_front_click = True
 auto_fullscreen = False # True Default
 focus_on_window_activation = "focus" #smart , focus
 reconfigure_screens = True

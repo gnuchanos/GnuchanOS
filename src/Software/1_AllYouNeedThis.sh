@@ -13,7 +13,7 @@ sudo pacman -Syu --noconfirm archlinux-keyring xorg-xinput
 
 # Install all packages
 sudo pacman -Sy --noconfirm zip
-sudo pacman -Sy --noconfirm unzip
+sudo pacman -Sy --noconfirm unzip unrar
 sudo pacman -Sy --noconfirm p7zip
 sudo pacman -Sy --noconfirm expac
 sudo pacman -Sy --noconfirm jshon
@@ -78,6 +78,8 @@ sudo pacman -Sy --noconfirm openssh
 sudo pacman -Sy --noconfirm timidity
 sudo pacman -Sy --noconfirm fail2ban
 sudo pacman -Sy --noconfirm deluge-gtk
+sudo pacman -Sy --nocomfirm mkinitcpio
+
 
 # Install Personal Programs
 sudo pacman -Sy --noconfirm ranger

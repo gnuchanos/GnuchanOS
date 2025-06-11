@@ -160,6 +160,11 @@ call plug#begin('~/.vim/plugged')
     Plug 'vim-airline/vim-airline-themes'
 call plug#end()
 
+"Plugins Settings :
+    "YCM :
+        let g:ycm_collect_identifiers_from_tags_files = 1
+
+
 " Theme
 colorscheme purpura
 let g:crystalline_theme = 'purpura'
@@ -176,8 +181,6 @@ set omnifunc=syntaxcomplete#Complete
 set completeopt=menuone,noinsert,noselect
 set shortmess+=c
 inoremap <C-Spaced> <C-x><C-o>
-
-
 
 
 

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=\s
+Comment=\s
+Exec= 
+Icon=/home/archkubi/Github/gnuchanos/src/Dotfiles/System/DesktopQtile/img/gnu.png
+Path=
+Terminal=false
+StartupNotify=false

@@ -274,5 +274,14 @@
   "explorer.confirmDragAndDrop": false,
   "editor.minimap.enabled": false,
   "editor.fontSize": 12,
-  "git.openRepositoryInParentFolders": "never"
+  "git.openRepositoryInParentFolders": "never",
+  "C_Cpp.intelliSenseEngine": "disabled",
+  
+  "editor.formatOnSave": false,
+  "editor.formatOnType": false,
+  "[csharp]": {
+    "editor.formatOnType": false,
+    "editor.formatOnEnter": false,
+    "editor.formatOnPaste": false
+  }
 }

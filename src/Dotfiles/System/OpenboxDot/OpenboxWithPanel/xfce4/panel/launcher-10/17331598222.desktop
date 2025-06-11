@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=(-Gnu/Linux's My Life-)
+Comment=
+Exec=btop
+Icon=
+Path=
+Terminal=true
+StartupNotify=false
