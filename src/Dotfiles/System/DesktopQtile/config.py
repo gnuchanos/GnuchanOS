@@ -112,8 +112,7 @@ keys = [
     Key([mod], "m", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/5_SimpleMusicPlayer.py")),
     Key([mod], "v", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/6_SimpleVideoPlayer.py")),
     Key([mod, "shift"], "r", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/7_SimpleSVAR.py")),
-    Key([mod, "shift"], "w", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/8_SimpleWineManager.py")),
-    Key([mod, "shift"], "d", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/9_DMV.py")),
+    Key([mod, "shift"], "d", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/8_DMV.py")),
     
     # this is not ready
     #Key([mod, "shift"], "Return", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/")),
@@ -125,7 +124,7 @@ keys = [
 
 # Top Bar Group Settings Max Group and Switch Window to Diffret Work group
 # groups = [Group(i) for i in "1234"] this is old
-groups = [Group(f"{i+1}", label="⬤") for i in range(5)]
+groups = [Group(f"{i}", label="⬤") for i in range(6)]
 for i in groups:
     keys.extend([
         Key(

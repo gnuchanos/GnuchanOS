@@ -4,9 +4,9 @@ fun it's a serious goal of the project. if we're not having fun while making stu
 """
 
 # Don't do like this from lib import * for gnchangui
-from GnuChanGUI import GnuChanGUI, os, Thread
+from GnuChanGUI import GnuChanGUI, os, Thread, GMessage
 from GnuChanGUI import GnuChanOSColor, GColors, Themecolors
-from GnuChanGUI import GKeyboard
+
 
 # Extra Lib
 
@@ -60,7 +60,7 @@ class SimpleTextEditor:
             ],
             [
                 self.GC.GText(SetText="Background Color 'Enter Color name': ", BColor=self.C.purple7),
-                self.GC.GInput(SetValue="BColor", xStretch=True, Size=(30, None), BColor=self.C.purple6),
+                self.GC.GInput(SetValue="bcolor", xStretch=True, Size=(30, None), BColor=self.C.purple6),
             ],
             [ 
                 self.GC.GPush(self.C.purple7),
@@ -127,7 +127,8 @@ class SimpleTextEditor:
         ]
 
         self.GC.GWindow(SetMainWindowLayout_List=self.Layout)
-        self.KYB = GKeyboard(window=self.GC)
+
+
         # Call Function Here
 
 
@@ -188,14 +189,15 @@ class SimpleTextEditor:
 
         ######### Settings #########
         if self.GC.GetEvent == "Save Settings":
-            try:
-                self.GC.FontSize_Change(windowValue=_defaultTextValue, fontSize=int(self.GC.GetValues["fontSize"]))
-                if len(str(self.GC.GetValues["tcolor"]).strip(" ")) > 0:
-                    self.GC.TextColor_Change(windowValue=_defaultTextValue, color=str(self.GC.GetValues["tcolor"]).strip(" "))
-                if len(str(self.GC.GetValues["bcolor"]).strip(" ")) > 0:
-                    self.GC.BackgroundColor_Change(windowValue=_defaultTextValue, color=str(self.GC.GetValues["bcolor"]).strip(" "))
-            except Exception as ERR:
-                self.GC.GMessage(wmTitle="Danger!", message=f"This is ERR{ERR}")
+            self.GC.FontSize_Change(WindowValue=_defaultTextValue, FontSize=int(self.GC.GetValues["fontSize"]))
+            if len(str(self.GC.GetValues["tcolor"]).strip(" ")) > 0:
+                self.GC.TextColor_Change(WindowValue=_defaultTextValue, Color=str(self.GC.GetValues["tcolor"]).strip(" "))
+            if len(str(self.GC.GetValues["bcolor"]).strip(" ")) > 0:
+                self.GC.BackgroundColor_Change(WindowValue=_defaultTextValue, Color=str(self.GC.GetValues["bcolor"]).strip(" "))
+            self.GC.GMessage(wmTitle="Danger!", Text=f"This is ERR")
+            print(self.GC.GetValues["tcolor"])
+            print(self.GC.GetValues["bcolor"])
+            print(_defaultTextValue)
 
         # Press Button For This
         elif self.GC.GetEvent == "Show Settings":
@@ -206,10 +208,10 @@ class SimpleTextEditor:
             self.GC.GetWindow["settings"].hide_row()
         
         # Press Key For This
-        elif self.GC.GetEvent == "F1:67":
+        elif self.GC.f1 in self.GC.CurrentKey:
             self.GC.GetWindow["settings"].update(visible=True)
             self.GC.GetWindow["settings"].unhide_row()
-        elif self.GC.GetEvent == "F2:68":
+        elif self.GC.f2 in self.GC.CurrentKey:
             self.GC.GetWindow["settings"].update(visible=False)
             self.GC.GetWindow["settings"].hide_row()
         
@@ -219,11 +221,11 @@ class SimpleTextEditor:
     f1 = hide settings
     f2 = show settings
             """
-            self.GC.GMessage(wmTitle="Help!", message=help)
+            GMessage(WindowText="Help!", Text=help)
         ######### Settings ######### 
 
     def BeforeExit(self):
         print("Exit")
 
 if __name__ == "__main__":
-    SimpleTextEditor()
+    gc = SimpleTextEditor()

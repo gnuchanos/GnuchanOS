@@ -6,7 +6,10 @@ fun it's a serious goal of the project. if we're not having fun while making stu
 # Don't do like this from lib import * for gnchangui
 from GnuChanGUI import GnuChanGUI, os, Thread
 from GnuChanGUI import GnuChanOSColor, GColors, Themecolors
-from GnuChanGUI import GKeyboard
+
+
+
+
 
 # Extra Lib
 import vlc
@@ -31,10 +34,6 @@ class SimpleVideoPlayer:
 
         self.left = [
             [self.GC.GListBox(SetValue="videos", LFont="Sans, 12", yStretch=True, xStretch=True, BColor=self.CGC.FColors2, noScroolBar=True)],
-            [self.GC.GHSep(Color=self.CGC.FColors3)],
-            [self.GC.GText(SetText="Volume Slider", xStretch=True, TPosition="center")],
-            [self.GC.GSlider(SetValue="volume", xStretch=True, MaxRange=(0, 100), DefaultValue=80, BColor=self.CGC.FColors4, Size=(20, None))],
-            [self.GC.GHSep(Color=self.CGC.FColors3)],
         ]
 
 
@@ -49,6 +48,8 @@ class SimpleVideoPlayer:
                 self.GC.GButton(Text=">"),
                 self.GC.GPush(BColor=self.CGC.BGColor),
             ],
+            [self.GC.GText(SetText="Volume Slider", xStretch=True, TPosition="center")],
+            [self.GC.GSlider(SetValue="volume", xStretch=True, MaxRange=(0, 100), DefaultValue=80, BColor=self.CGC.FColors4)],
             [
                 self.GC.GColumn(winColumnLayout_List=self.vid,  xStretch=True, yStretch=True, BColor=self.CGC.FColors8),
                 self.GC.GColumn(winColumnLayout_List=self.left, xStretch=True, yStretch=True, BColor=self.CGC.FColors6, SetValue="filePath"),
@@ -56,7 +57,10 @@ class SimpleVideoPlayer:
         ]
 
         self.GC.GWindow(SetMainWindowLayout_List=self.Layout)
-        self.KYB = GKeyboard(window=self.GC)
+
+
+
+
         # Call Function Here
 
         self.GC.GListBoxBorderSize(WindowValue="videos", Border=0)
@@ -82,7 +86,7 @@ class SimpleVideoPlayer:
         #self.GC.GetWindow["text"].update("this text") -> update window objects
 
         try:
-            if self.GC.GetEvent == self.KYB.Return:
+            if self.GC.enter == self.GC.CurrentKey:
                 try:
                     self.video = self.vlc_instance.media_new(f"{self._folderPath}/{self.videos[self.videos.index(str(self.GC.GetValues["videos"]).strip("[]'"))]}")
                     self.player.set_media(self.video)
@@ -159,7 +163,8 @@ class SimpleVideoPlayer:
                             self.player.set_media(self.video)
                             self.player.play()
 
-            if self.GC.GetEvent == self.KYB.h:
+            if self.GC.KeyPressed(Key=self.GC.h):
+                print("hello")
                 if not self.hideTree:
                     self.GC.GetWindow["filePath"].update(visible=False)
                     self.hideTree = True
@@ -176,4 +181,4 @@ class SimpleVideoPlayer:
         print("Exit")
 
 if __name__ == "__main__":
-    SimpleVideoPlayer()
+    gc = SimpleVideoPlayer()

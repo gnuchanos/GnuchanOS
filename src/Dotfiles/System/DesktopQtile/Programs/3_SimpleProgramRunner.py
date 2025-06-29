@@ -6,7 +6,6 @@ fun it's a serious goal of the project. if we're not having fun while making stu
 # Don't do like this from lib import * for gnchangui
 from GnuChanGUI import GnuChanGUI, os, Thread
 from GnuChanGUI import GnuChanOSColor, GColors, Themecolors
-from GnuChanGUI import GKeyboard
 
 
 # Extra Lib
@@ -27,8 +26,8 @@ class SimpleProgramRunner:
             "blender", "obs", "simplescreenrecorder",
             
             # Web Browser
-            "qutebrowser", "brave",
-            
+            "qutebrowser",  "chromium", 
+
             # Office Software
             "libreoffice",
             
@@ -36,28 +35,22 @@ class SimpleProgramRunner:
             "gimp", "krita", "inkscape", "darktable", "mypaint", "pinta",
             
             # Video and Audio Players
-            "vlc", "mpv", "rhythmbox", "smplayer", "audacious", "banshee", "clementine",
+            "vlc", "mpv",
             
             # System tools
-            "gnome-system-monitor", "kde-system-monitor", "bleachbit", "gparted", "timeshift",
-
-            # Chat APP
-            "discord", "vesktop",
-            
-            # Clouth APP
-            "dropbox", "nextcloud", "megasync", "insync",
-            
-            # EMail APP
-            "thunderbird", "geary", "evolution", "kmail",
+            "gparted", "timeshift",
             
             # Games
-            "steam", "lutris", "heroic", "mgba-qt", "PPSSPPSDL", "duckstation-qt", "pcsx2", "melonDS", "snes9x", "nestopia",
+            "steam", "mgba-qt", "PPSSPPSDL", "duckstation-qt", "pcsx2", "melonDS", "snes9x", "nestopia",
             
             # Sanal Makineler ve Emülatörler
-            "virtualbox", "gnome-boxes",
+            "gnome-boxes",
 
             # Extra List
-            "code", "deluge"
+            "code", "deluge", "fdm",
+            "nemo",
+
+
         ]
 
 
@@ -83,7 +76,8 @@ class SimpleProgramRunner:
         ]
 
         self.GC.GWindow(SetMainWindowLayout_List=self.Layout)
-        self.KYB = GKeyboard(window=self.GC)
+
+
         # Call Function Here
         self.GC.GListBoxBorderSize(WindowValue="software", Border=0)
 
@@ -112,8 +106,10 @@ class SimpleProgramRunner:
         #self.GC.GetWindow["text"].update("this text") -> update window objects
         
         # Run Program In Line
-        if self.GC.GetEvent == "Return:36":
+        if self.GC.enter == self.GC.CurrentKey:
             _commandInput = str(self.GC.GetValues["input"])
+            _Select = str(self.GC.GetValues["software"]).strip("[]''")
+
             if len(_commandInput) > 0:
                 if "brave" == _commandInput:
                     os.popen("brave --password-store=basic")
@@ -121,10 +117,7 @@ class SimpleProgramRunner:
                     Thread(target=self.RunThis, args=[_commandInput]).start()
                 self.GC.closeWindow = True
 
-        # Run Program In List
-        elif self.GC.GetEvent == "Run Program":
-            _Select = str(self.GC.GetValues["software"]).strip("[]''")
-            if _Select != "":
+            elif _Select != "":
                 Thread(target=self.RunThis, args=[_Select]).start()
                 self.GC.closeWindow = True
 
@@ -132,4 +125,4 @@ class SimpleProgramRunner:
         print("Exit")
 
 if __name__ == "__main__":
-    SimpleProgramRunner()
+    gc = SimpleProgramRunner()
