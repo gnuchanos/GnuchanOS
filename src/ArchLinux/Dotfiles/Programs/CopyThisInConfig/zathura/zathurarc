@@ -1,0 +1,70 @@
+
+" Colors
+set default-bg              "#240046"
+set default-fg              "#9d4edd"
+
+set statusbar-bg            "#5a189a"
+set statusbar-fg            "#9d4edd"
+
+set inputbar-bg             "#c77dff"
+set inputbar-fg             "#9d4edd"
+
+set notification-error-bg   "#3c096c"
+set notification-error-fg   "#9d4edd"
+
+set notification-warning-bg "#3c096c"
+set notification-warning-fg "#9d4edd"
+
+set highlight-color         "#3c096c"
+set highlight-active-color  "#9d4edd"
+
+set completion-highlight-fg "#3c096c"
+set completion-highlight-bg "#9d4edd"
+
+set completion-bg           "#3c096c"
+set completion-fg           "#9d4edd"
+
+set notification-bg         "#3c096c"
+set notification-fg         "#9d4edd"
+
+set recolor                 "true"
+set recolor-lightcolor      "#240046"
+set recolor-darkcolor       "#9d4edd"
+set recolor-reverse-video   "true"
+set recolor-keephue         "false"
+
+" Clipboard
+set selection-clipboard clipboard
+
+" Search
+set incremental-search true
+set search-hadjust true
+
+" Autoadjust
+set adjust-open width
+
+" Typography
+set font "Terminus 12"
+
+" -----------------------------------------------------------------------------
+" Zathura mappings
+" -----------------------------------------------------------------------------
+
+" Zoom in/out
+map z zoom in
+map Z zoom out
+
+" Toggle mode
+map D toggle_page_mode
+
+" Scroll
+map u scroll half-up
+map d scroll half-down
+
+" Fullscreen
+map [normal]     <F11> toggle_fullscreen
+map [fullscreen] <F11> toggle_fullscreen
+
+" Reload
+map [normal]     <C-r> reload
+map [fullscreen] <C-r> reload

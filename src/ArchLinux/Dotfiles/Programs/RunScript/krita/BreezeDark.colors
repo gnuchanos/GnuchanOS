@@ -1,0 +1,102 @@
+[ColorEffects:Disabled]
+Color=56,56,56
+ColorAmount=0.0
+ColorEffect=0
+ContrastAmount=0.65
+ContrastEffect=2
+IntensityAmount=0.10
+IntensityEffect=2
+
+[ColorEffects:Inactive]
+ChangeSelectionColor=true
+Color=48.0.111
+ColorAmount=-0.9
+ColorEffect=1
+ContrastAmount=0.25
+ContrastEffect=2
+Enable=true
+IntensityAmount=0
+IntensityEffect=0
+
+[Colors:Button]
+BackgroundAlternate=42,0,97
+BackgroundNormal=48,0,111
+DecorationFocus=78,5,97
+DecorationHover=80,7,137
+ForegroundActive=146,76,157
+ForegroundInactive=176, 111, 237
+ForegroundLink=171,0,255
+ForegroundNegative=89, 0, 255
+ForegroundNeutral=214,89,233
+ForegroundNormal=158,84,255
+ForegroundPositive=124, 77, 179
+ForegroundVisited=100,74,155
+
+[Colors:Selection]
+BackgroundAlternate=42,0,97
+BackgroundNormal=64,0,148
+DecorationFocus=78,5,97
+DecorationHover=80,7,137
+ForegroundActive=146,76,157
+ForegroundInactive=176, 111, 237
+ForegroundLink=171,0,255
+ForegroundNegative=89, 0, 255
+ForegroundNeutral=214,89,233
+ForegroundNormal=158,84,255
+ForegroundPositive=124, 77, 179
+ForegroundVisited=100,74,155
+
+[Colors:Tooltip]
+BackgroundAlternate=42,0,97
+BackgroundNormal=79,0,181
+DecorationFocus=78,5,97
+DecorationHover=80,7,137
+ForegroundActive=146,76,157
+ForegroundInactive=176, 111, 237
+ForegroundLink=171,0,255
+ForegroundNegative=89, 0, 255
+ForegroundNeutral=214,89,233
+ForegroundNormal=158,84,255
+ForegroundPositive=124, 77, 179
+ForegroundVisited=100,74,155
+
+[Colors:View]
+BackgroundAlternate=42,0,97
+BackgroundNormal=42,0,97
+DecorationFocus=78,5,97
+DecorationHover=80,7,137
+ForegroundActive=146,76,157
+ForegroundInactive=176, 111, 237
+ForegroundLink=171,0,255
+ForegroundNegative=89, 0, 255
+ForegroundNeutral=214,89,233
+ForegroundNormal=158,84,255
+ForegroundPositive=124, 77, 179
+ForegroundVisited=100,74,155
+
+[Colors:Window]
+BackgroundAlternate=42,0,97
+BackgroundNormal=31,0,71
+DecorationFocus=78,5,97
+DecorationHover=80,7,137
+ForegroundActive=146,76,157
+ForegroundInactive=176, 111, 237
+ForegroundLink=171,0,255
+ForegroundNegative=89, 0, 255
+ForegroundNeutral=214,89,233
+ForegroundNormal=158,84,255
+ForegroundPositive=124, 77, 179
+ForegroundVisited=100,74,155
+
+[General]
+ColorScheme=GnuChanOS_theme
+Name=GnuChanOS_theme
+
+[KDE]
+contrast=7
+
+[WM]
+activeBackground=51,13,101
+activeForeground=255,255,255
+inactiveBackground=93,10,202
+inactiveForeground=97, 51, 171
