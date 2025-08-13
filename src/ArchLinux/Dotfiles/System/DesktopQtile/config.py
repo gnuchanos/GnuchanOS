@@ -108,9 +108,7 @@ keys = [
     Key([mod], "c", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/1_SimpleCalculator.py")),
     Key([mod, "shift"], "t", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/2_SimpleTextEditor.py")),
     Key([mod], "r", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/3_SimpleProgramRunner.py")),
-    Key([mod], "i", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/4_SimpleImageViever.py")),
     Key([mod], "m", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/5_SimpleMusicPlayer.py")),
-    Key([mod], "v", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/6_SimpleVideoPlayer.py")),
     Key([mod, "shift"], "r", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/7_SimpleSVAR.py")),
     Key([mod, "shift"], "d", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/8_DMV.py")),
     

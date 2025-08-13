@@ -16,7 +16,9 @@ linux version problems
 		execstack -c libGalaxy64.so
 		execstack -c libGalaxyCSharpGlue.so
 
-
+gameforce client
+export WINEDLLOVERRIDES="libglesv2.dll=d"
+WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun wine gfclient.exe
 
 # This game works with a pure Wine prefix
 	#:- left 4 dead works fine / left 4 dead 2 - works fine i test ZOZO.GG version
