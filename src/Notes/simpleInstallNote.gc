@@ -50,44 +50,33 @@ locale-gen
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
-sudo pacman -S xorg xterm
 # add cachyos repo
 curl https://mirror.cachyos.org/cachyos-repo.tar.xz -o cachyos-repo.tar.xz
 tar xvf cachyos-repo.tar.xz && cd cachyos-repo
 sudo ./cachyos-repo.sh
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------
-for old computer
-
-# Depo anahtarını içe aktar
-sudo pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com
-# Depo anahtarını imzala
-sudo pacman-key --lsign-key F3B607488DB35A47
-
-sudo pacman -U \
-'https://mirror.cachyos.org/repo/x86_64/cachyos/cachyos-keyring-20240331-1-any.pkg.tar.zst' \
-'https://mirror.cachyos.org/repo/x86_64/cachyos/cachyos-mirrorlist-22-1-any.pkg.tar.zst' \
-'https://mirror.cachyos.org/repo/x86_64/cachyos/cachyos-v3-mirrorlist-22-1-any.pkg.tar.zst' \
-'https://mirror.cachyos.org/repo/x86_64/cachyos/cachyos-v4-mirrorlist-22-1-any.pkg.tar.zst' \
-'https://mirror.cachyos.org/repo/x86_64/cachyos/pacman-7.0.0.r6.gc685ae6-3-x86_64.pkg.tar.zst'
-
-nano /etc/pacman.conf
-[cachyos]
-Include = /etc/pacman.d/cachyos-mirrorlist
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-
+# cachyos repo
 pacman -Syu linux-cachyos linux-cachyos-headers linux-firmware
 # nvidia 
 sudo pacman -S linux-cachyos-nvidia vulkan-icd-loader 
-# amd
+
+# amd new
 sudo pacman -S xf86-video-amdgpu vulkan-radeon mesa
+
+# amd old
+sudo pacman -S xf86-video-ati mesa
+
 # intel
-sudo pacman -S xf86-video-intel mesa
+sudo pacman -S xf86-video-intel mesa lib32-mesa
 
 pacman -Sy qtile ly fish git xorg xorg-server xorg-apps xorg-xinit xterm
 systemctl enable ly
+
+
+# broadcom wifi
+pacman -S dkms broadcom-wl-dkms
+
 
 grub-install --target=i386-pc /dev/sda
 grub-mkconfig -o /boot/grub/grub.cfg
@@ -104,7 +93,7 @@ systemctl --user enable --now pipewire.service  wireplumber.service
 sudo timedatectl set-timezone Europe/Istanbul
 
 # ekstra notes
-pacman -Syu reflector
+pacman -Syu reflector rsync
 reflector --latest 5 --sort rate --save /etc/pacman.d/mirrorlist
 
 
