@@ -58,17 +58,22 @@ sudo ./cachyos-repo.sh
 
 # cachyos repo
 pacman -Syu linux-cachyos linux-cachyos-headers linux-firmware
+
+# default 
+pacman -Syu linux linux-headers linux-firmware
+
 # nvidia 
-sudo pacman -S linux-cachyos-nvidia vulkan-icd-loader 
+pacman -S linux-cachyos-nvidia vulkan-icd-loader lib32-nvidia-utils lib32-opencl-nvidia 
 
 # amd new
-sudo pacman -S xf86-video-amdgpu vulkan-radeon mesa
+pacman -S xf86-video-amdgpu mesa vulkan-radeon lib32-mesa lib32-vulkan-radeon
 
 # amd old
-sudo pacman -S xf86-video-ati mesa
+pacman -S xf86-video-ati mesa
 
 # intel
-sudo pacman -S xf86-video-intel mesa lib32-mesa
+pacman -S xf86-video-intel mesa lib32-mesa lib32-vulkan-intel
+
 
 pacman -Sy qtile ly fish git xorg xorg-server xorg-apps xorg-xinit xterm
 systemctl enable ly

@@ -68,7 +68,6 @@ sudo pacman -Sy --noconfirm arandr
 sudo pacman -Sy --noconfirm btop
 sudo pacman -Sy --noconfirm jdk-openjdk
 sudo pacman -Sy --noconfirm bchunk
-sudo pacman -Sy --noconfirm qbittorrent
 sudo pacman -Sy --noconfirm dmenu
 sudo pacman -Sy --noconfirm rofi
 sudo pacman -Sy --noconfirm fastfetch
@@ -95,6 +94,7 @@ sudo pacman -Sy --noconfirm scrot
 sudo pacman -Sy --noconfirm npm
 sudo pacman -Sy --noconfirm nrg2iso
 sudo pacman -Sy --noconfirm yt-dlp
+sudo pacman -Sy --nocomfirm ncdu
 
 sudo pacman -Sy --noconfirm joystick evtest
 sudo pacman -S noto-fonts-cjk noto-fonts-emoji noto-fonts

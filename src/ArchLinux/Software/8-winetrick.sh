@@ -9,7 +9,6 @@ echo "Installing: DirectX and Graphics Components..."
 winetricks -q d3dx9
 winetricks -q directx9
 winetricks -q d3dx10
-winetricks -q d3dx11
 winetricks -q dxvk
 winetricks -q vkd3d
 winetricks -q cnc_ddraw

@@ -1,15 +1,13 @@
 note: winetricks grabfullscreen=y // this is for mouse capture
 WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym %command% -nojoy -novid -vulkan  -w 1600 -h 900
-WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym wine
-
-WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun mangohud --dlsym wine skse_loader.exe
-
-wine msiexec /i  
-WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym wine EpicGamesLauncher.exe -SkipBuildPatchPrereq
 
 Z:\home\archkubi\SSD\SteamLibrary\steamapps\common\Left 4 Dead 2\left4dead2\addons\workshop\
 
+WINEPREFIX=/SSD/Game WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun mangohud --dlsym wine
+WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun mangohud --dlsym %command% 
 
+wine msiexec /i  
+WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym wine EpicGamesLauncher.exe -SkipBuildPatchPrereq
 
 linux version problems
 	|- stardew valley -> in game dir
@@ -44,8 +42,14 @@ WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun wine gfclien
 	#:- Fallout 3, 4 and new vegas and  works fine
 	#:- Mafia  I / II / III - Definitive Edition works fine 
 	#:- call of duty 
-		| 1 works but only steam proton-: older version: 5.13-6
-		you need this: WINEDLLOVERRIDES="RInput.dll=n,b" PROTON_OLD_GL_STRING=1 EXTENSION_MAX_YEAR=2008 __GL_ExtensionStringVersion=17700 gamemoderun mangohud %command%
+		| 1 works 
+			steam proton 5.13-6 WINEDLLOVERRIDES="RInput.dll=n,b" PROTON_OLD_GL_STRING=1 EXTENSION_MAX_YEAR=2008 __GL_ExtensionStringVersion=17700 gamemoderun mangohud %command%
+			WINEDLLOVERRIDES="RInput.dll=n,b" PROTON_OLD_GL_STRING=1 EXTENSION_MAX_YEAR=2008 __GL_ExtensionStringVersion=17700 gamemoderun mangohud wine Call\ Of\ Duty\ Singleplayer.exe
+			main/config.cfg
+				seta r_customwidth "1910"
+				seta r_customheight "1000"
+				seta r_mode "-1"
+				seta cg_fov "95"
 		| 2 works fine
 		| 4 works fine
 	#:- warcraft 3 works fine but you need remove video files or just do backup
@@ -73,11 +77,12 @@ WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun wine gfclien
 		| d3d -> CreateDevice failed 20XX will now exit -> winetricks d3dcompiler_43 d3dcompiler_47 d3dx9 vcrun2013 xact
 	#:- Saints Row 2		
 		| xact -> fix audio problem
-	#:-
-	#:-
-	#:-
-	#:-
-	#:-
+	#:- Saints Row 3 / 4 works fine
+	#:- Doom 2016
+		need install  https://www.microsoft.com/en-us/download/details.aspx?id=48145 # winetricks vcrun2015 this is not installing
+	#:- Needfor speed \ Underground - 2 \ Most wanted \  Carbon
+	#:- Serious sam \ First encounter \ Second encounter \ Random encounter \ 2 \ 3
+	#:- Battlefield vetnam / 1942
 	#:-
 	#:-
 	#:-

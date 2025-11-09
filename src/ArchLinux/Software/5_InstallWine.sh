@@ -21,7 +21,11 @@ sdl2 lib32-sdl2
 # Proton ve CachyOS Gaming Uygulamaları
 echo "Proton ve gaming uygulamaları yükleniyor..."
 echo "Installing Proton and CachyOS gaming applications..."
-sudo pacman -Sy cachyos-gaming-applications
+sudo pacman -Sy steam heroic-games-launcher-bin 
+sudo pacman -Sy glfw lib32-libjpeg-turbo 
+sudo pacman -Sy lib32-mpg123 lib32-opencl-icd-loader lib32-openal libjpeg-turbo libxslt mpg123 opencl-icd-loader openal  
+sudo pacman -Sy proton-cachyos proton-cachyos-slr protontricks ttf-liberation wine-cachyos-opt winetricks vulkan-tools
+
 
 # GStreamer Plugin Paketleri
 echo "GStreamer plugin'leri yükleniyor..."
@@ -32,9 +36,6 @@ yay -Sy gst-plugins-{base,good,bad,ugly}
 echo "Oyunlar için gerekli paketler yükleniyor..."
 echo "Installing required packages for games..."
 sudo pacman -S --noconfirm kdialog
-
-yay -S gamemode
-
 yay -Sy gamemode lib32-gamemode winetricks
 
 echo "Tüm gerekli paketler yüklendi!"
