@@ -1,5 +1,3 @@
-sudo apt install -y git build-essential ncurses-dev lua5.1 liblua5.1-dev ruby-dev python3-dev libperl-dev
-
 cp .vimrc ~/
 mkdir ~/tmp
 git clone https://github.com/vim/vim.git
@@ -18,9 +16,7 @@ vim +PlugInstall +qall
 
 cd ~/.vim/plugged/YouCompleteMe
 
-sudo npm install -g typescript typescript-language-server
-
-python3 install.py --ts-completer
+python3 install.py --clangd-completer
 
 # for xterm
 echo "stty erase ^H" >> ~/.bashrc

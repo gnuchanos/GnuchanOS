@@ -28,62 +28,22 @@ WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun wine gfclien
 		-: sudo mount -o loop cd1.iso ~/iso -> if CD1 finishes, sudo umount -l ~/iso # you must add -l or umount will say busy
 		-: sudo mount -o loop cd2.iso ~/iso -> finish installing the game
 		-: I don't know why, but if you can't see the CD ISO, you must download a no-CD crack!
-	#:- Warcraft 3 works, but you must remove or backup the movie files as Wine can't play these videos
-	#:- Red Alert 2 needs to be installed with winetricks cnc_ddraw
-	#:- Red Alert 3 working fine
-	#:- Ion Fury - Works fine
-	#:- Torchlight / 
-		2 - only works with virutal window
-		3 - works good
-	#:- Quake/2/3/4
-	#:- Ziggurat / 2
-	#:- Unreal Gold / Unreal 2 / Unreal Tournament 2004: Editor’s Choice Edition
-	#:- Forager - working good
-	#:- Fallout 3, 4 and new vegas and  works fine
-	#:- Mafia  I / II / III - Definitive Edition works fine 
+	#:- GTA 3 works fine
 	#:- call of duty 
 		| 1 works 
 			steam proton 5.13-6 WINEDLLOVERRIDES="RInput.dll=n,b" PROTON_OLD_GL_STRING=1 EXTENSION_MAX_YEAR=2008 __GL_ExtensionStringVersion=17700 gamemoderun mangohud %command%
 			WINEDLLOVERRIDES="RInput.dll=n,b" PROTON_OLD_GL_STRING=1 EXTENSION_MAX_YEAR=2008 __GL_ExtensionStringVersion=17700 gamemoderun mangohud wine Call\ Of\ Duty\ Singleplayer.exe
 			main/config.cfg
-				seta r_customwidth "1910"
-				seta r_customheight "1000"
-				seta r_mode "-1"
-				seta cg_fov "95"
+				r_customwidth "1910"
+				r_customheight "1000"
+				r_mode "-1"
+				cg_fov "95"
+				r_ignorehwgamma  "1"
+			change controller settings to default
 		| 2 works fine
 		| 4 works fine
-	#:- warcraft 3 works fine but you need remove video files or just do backup
-	#:- Dead Islands
-		#:- old version dead island 1 -> need winetricks wmp9
-	#:- far cry 1 / 2 free gog version not move / 3  and blood dragon dlc/ 4  works fine
-	#:- rage 1 / 2
-	#:- dead rising 1 / 2 / 3 / 4
-	#:- American McGee's Alice /  Alice Madness Returns / Alice Asylum
-	#:- resident evil 4 / 5 / 6 / 7
-	#:- State of Decay
-	#:- Borderlands 1 / 2 / 3 / The Pre-Sequel works fine
-		1:- Save Fo;e Path WinFart :> 		SteamLibrary/steamapps/compatdata/729040/pfx/drive_c/users/steamuser/Documents/My Games/Borderlands Game of the Year/Binaries/SaveData
-		2:-  Save File Path Native:>      .local/share/aspyr-media/borderlands 2/willowgame/savedata/76561198419634726
-	#:- The Prototype 
-	#:- South Park stick of truth / South Park  the fractured but whole / South Park  snow day
-	#:- THE DARKNESS
-	#:- Prison Break: The Conspiracy
-	#:- f.e.a.r
-	#:- The Smurfs - Mission Vileaf - works fine / The Smurfs 2 - The Prisoner of the Green Stone - only works in steam proton
-	#:- left 4 dead 2 - cl_viewmodelfovsurvivor 90
-	#:- left 4 dead 1 - https://www.gamemaps.com/details/18483/ fov mod -> viewmodel_fov_override - open virtual desktop else it's black screen
-	#:- goat of duty works fine
-	#:- 20XX
-		| d3d -> CreateDevice failed 20XX will now exit -> winetricks d3dcompiler_43 d3dcompiler_47 d3dx9 vcrun2013 xact
-	#:- Saints Row 2		
-		| xact -> fix audio problem
-	#:- Saints Row 3 / 4 works fine
-	#:- Doom 2016
-		need install  https://www.microsoft.com/en-us/download/details.aspx?id=48145 # winetricks vcrun2015 this is not installing
-	#:- Needfor speed \ Underground - 2 \ Most wanted \  Carbon
-	#:- Serious sam \ First encounter \ Second encounter \ Random encounter \ 2 \ 3
-	#:- Battlefield vetnam / 1942
-	#:-
+	#:- Warcraft 3 works, but you must remove or backup the movie files as Wine can't play these videos
+	#:- Red Alert 2 needs to be installed with winetricks cnc_ddraw
 	#:-
 	#:-
 	#:-
@@ -100,15 +60,7 @@ WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun wine gfclien
 
 
 
-sudo pacman -S ufw
-sudo systemctl enable ufw
-sudo systemctl start ufw
 
-
-sudo ufw allow 6112/tcp
-sudo ufw allow 6112/udp
-sudo ufw reload
-sudo ufw status verbose
 
 
 
