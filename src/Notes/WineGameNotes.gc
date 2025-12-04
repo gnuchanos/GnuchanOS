@@ -53,7 +53,8 @@ WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun wine gfclien
 			zVidResFullscreenX=1920
 			zVidResFullscreenY=1000
 
-	#:-
+	#:- Miami Vice
+		winetricks lavfilters
 	#:-
 	#:-
 	#:-
