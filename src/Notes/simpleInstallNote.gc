@@ -1,0 +1,107 @@
+# first part ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+parted /dev/sda mklabel msdos
+cfdisk /dev/sda
+
+# sda 1    - Swap
+# sda 2    - Boot
+# sda 3    - ALL Disk
+
+# disk part
+mkswap /dev/sda1
+swapon /dev/sda1
+mkfs.ext4 /dev/sda2
+mkfs.ext4 /dev/sda3
+
+# mount disk part
+mount /dev/sda3 /mnt         # Mount root
+mkdir /mnt/boot              # Create /boot directory
+mount /dev/sda2 /mnt/boot    # Mount /boot
+
+# last need
+pacstrap /mnt base base base-devel grub
+genfstab -U /mnt >> /mnt/etc/fstab
+arch-chroot /mnt
+
+# second part ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# network manager
+pacman -Sy networkmanager
+systemctl enable NetworkManager
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+echo "ThisIsMyKingdomCOME" > /etc/hostname
+useradd -m -G wheel -s /bin/bash archkubi
+nano /etc/sudoers
+passwd archkubi
+passwd root
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+nano /etc/locale.conf
+	# LANG=en_US.UTF-8
+nano /etc/locale.gen
+	find en_us and remove #
+locale-gen
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# add cachyos repo
+curl https://mirror.cachyos.org/cachyos-repo.tar.xz -o cachyos-repo.tar.xz
+tar xvf cachyos-repo.tar.xz && cd cachyos-repo
+sudo ./cachyos-repo.sh
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# cachyos repo
+pacman -Syu linux-cachyos linux-cachyos-headers linux-firmware
+
+# default 
+pacman -Syu linux linux-headers linux-firmware
+
+# nvidia 
+pacman -S linux-cachyos-nvidia vulkan-icd-loader lib32-nvidia-utils lib32-opencl-nvidia 
+
+# amd new
+pacman -S xf86-video-amdgpu mesa vulkan-radeon lib32-mesa lib32-vulkan-radeon
+
+# amd old
+pacman -S xf86-video-ati mesa
+
+# intel
+pacman -S xf86-video-intel mesa lib32-mesa lib32-vulkan-intel
+
+
+pacman -Sy qtile ly fish git xorg xorg-server xorg-apps xorg-xinit xterm
+systemctl enable ly
+
+
+# broadcom wifi
+pacman -S dkms broadcom-wl-dkms
+
+
+grub-install --target=i386-pc /dev/sda
+grub-mkconfig -o /boot/grub/grub.cfg
+
+reboot
+
+# third part ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# sound
+sudo pacman -S pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber
+systemctl --user enable --now pipewire.service  wireplumber.service
+
+# clock
+sudo timedatectl set-timezone Europe/Istanbul
+
+# ekstra notes
+pacman -Syu reflector rsync
+reflector --latest 5 --sort rate --save /etc/pacman.d/mirrorlist
+
+
+
+
+# rsync -ah --info=progress2  input_files   target_dir

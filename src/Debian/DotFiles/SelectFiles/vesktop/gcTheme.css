@@ -1,0 +1,258 @@
+#bfredux::before {
+    background-color: var(--background-tertiary);
+    border-radius: 4;
+}
+
+.sidebar-2K8pFh .containerDefault--pIXnN .unread-2lAfLh {
+    border-radius: 0;
+    height: 25px;
+    top: 8px;
+    width: 3px;
+}
+
+.chat-2ZfjoI .search-39IXmY .searchFilter-2UfsDk,
+.chat-2ZfjoI .search-39IXmY .searchAnswer-23w-CH {
+    background-color: transparent !important;
+}
+
+.chat-2ZfjoI .repliedMessage-3Z6XBG::before {
+    border-color: var(--text-muted);
+}
+
+.chat-2ZfjoI .repliedMessage-3Z6XBG .repliedTextPreview-1bvxun .markup-eYLPri {
+    color: var(--text-muted);
+}
+
+.chat-2ZfjoI .autocomplete-1vrmpx {
+    background-color: var(--background-tertiary);
+}
+
+.chat-2ZfjoI .autocomplete-1vrmpx .autocompleteRow-2OthDa .selected-1Tbx07 {
+    background-color: var(--background-primary);
+}
+
+.chat-2ZfjoI .newMessagesBar-265mhP {
+    background-color: var(--interactive-active);
+    color: var(--interactive-normal);
+}
+
+.theme-dark .da-checkbox {
+    border-color: var(--interactive-normal);
+}
+
+.theme-dark .da-checkbox.da-checked {
+    border-color: var(--interactive-active) !important;
+    background-color: var(--interactive-active);
+}
+
+.theme-dark .da-checkbox.da-checked polyline {
+    stroke: var(--background-primary);
+}
+
+.focusLock-Ns3yie .footer-2gL1pp {
+    background-color: var(--background-primary);
+}
+
+.guilds-2JjMmN .tutorialContainer-1pL9QS svg {
+    border-radius: 50%;
+    overflow: hidden;
+    box-shadow: var(--elevation-stroke), var(--elevation-high);
+}
+
+.guilds-2JjMmN .tutorialContainer-1pL9QS svg .wrapper-3kah-n::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("https://i.imgur.com/NUuHWLk.png");
+    background-size: cover;
+    background-color: #30243d;
+}
+
+.guilds-2JjMmN .tutorialContainer-1pL9QS svg .wrapper-3kah-n::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 125%;
+    width: 35%;
+    height: 100%;
+    z-index: 999;
+    background: rgba(255, 255, 255, .3);
+    transform: skew(30deg);
+    transition: all 0s ease;
+}
+
+.guilds-2JjMmN .tutorialContainer-1pL9QS svg .wrapper-3kah-n:hover::after {
+    left: -50%;
+    transition: all .5s ease;
+}
+
+.guilds-2JjMmN #bd-pub-button {
+    background-color: var(--background-accent);
+    font-size: 12px;
+    line-height: 18px;
+}
+
+.guilds-2JjMmN .pill-2RsI5Q .item-2LIpTv {
+    background-color: var(--interactive-active);
+}
+
+.guilds-2JjMmN .bd-unread svg {
+    filter: drop-shadow(0 0 4px var(--interactive-active));
+}
+
+.theme-dark .container-1D34oG {
+    background: none;
+}
+
+.menu-3sdvDG .item-1tOPte.focused-3afm-j {
+    background-color: var(--background-primary);
+}
+
+.theme-dark .root-1gCeng {
+    background-color: var(--background-tertiary);
+}
+
+.theme-dark .root-1gCeng .da-footer {
+    background-color: var(--background-primary);
+}
+
+.nowPlayingColumn-1eCBCN .itemCard-3Etziu .inset-SbsSFp {
+    background-color: var(--background-primary);
+}
+
+.nowPlayingColumn-1eCBCN .itemCard-3Etziu.outer-2JOHae.interactive-2zD88a:hover,
+.nowPlayingColumn-1eCBCN .itemCard-3Etziu.outer-2JOHae.interactive-2zD88a.active-1W_Gl9 {
+    background-color: var(--background-tertiary);
+}
+
+.peopleColumn-1wMU14 {
+    background-color: var(--background-tertiary);
+}
+
+.peopleColumn-1wMU14 .peopleListItem-u6dGxF .active-rhSpJJ,
+.peopleColumn-1wMU14 .peopleListItem-u6dGxF:hover {
+    background-color: var(--background-primary);
+}
+
+.theme-dark .container-2McqkF {
+    background-color: var(--background-primary);
+}
+
+.theme-dark .queryContainer-ZunrLZ {
+    background-color: var(--background-secondary);
+}
+
+.theme-dark .queryContainer-ZunrLZ .dim-2Uxgxb span {
+    background-color: var(--background-accent);
+    color: var(--text-normal);
+}
+
+.theme-dark .option-ayUoaq::after {
+    background: none;
+}
+
+.theme-dark .option-ayUoaq.da-selected {
+    background-color: var(--background-tertiary);
+}
+
+.theme-dark .option-ayUoaq.da-selected::after {
+    background: none;
+}
+
+.theme-dark .option-ayUoaq .answer-14OVbQ,
+.theme-dark .option-ayUoaq .displayUsername-UTerwm {
+    color: var(--text-muted) !important;
+}
+
+.theme-dark .option-ayUoaq .filter-2QaH9y,
+.theme-dark .option-ayUoaq .searchResultChannelCategory-19ujDo,
+.theme-dark .option-ayUoaq .searchResultChannelIcon-C-3P9x {
+    color: var(--text-normal);
+}
+
+.theme-dark .da-datePicker .da-calendarPicker .react-datepicker {
+    background-color: var(--background-primary);
+}
+
+.theme-dark .da-datePicker .da-calendarPicker .react-datepicker__header {
+    background-color: var(--background-primary);
+}
+
+.theme-dark .da-datePicker .da-calendarPicker .react-datepicker__day:hover {
+    background-color: var(--interactive-hover);
+}
+
+.theme-dark .da-datePicker .da-calendarPicker .react-datepicker__day--outside-month,
+.theme-dark .da-datePicker .da-calendarPicker .react-datepicker__day--disabled {
+    background-color: var(--background-tertiary) !important;
+}
+
+.theme-dark .da-datePicker .da-calendarPicker .react-datepicker__day--selected::after {
+    background-color: var(--interactive-hover);
+}
+
+.theme-dark .da-datePicker .da-datePickerHint .da-hintValue {
+    background-color: var(--interactive-normal);
+}
+
+.theme-dark .da-datePicker .da-datePickerHint .da-hintValue:hover {
+    background-color: var(--interactive-hover);
+}
+
+.scroller-2LSbBU::-webkit-scrollbar-thumb:hover,
+.scrollerBase-289Jih::-webkit-scrollbar-thumb:hover,
+.contentRegionScroller-26nc1e::-webkit-scrollbar-thumb:hover {
+    background-color: var(--interactive-hover) !important;
+}
+
+.da-shaker .da-root {
+    background-color: var(--background-tertiary);
+}
+
+.da-shaker form .da-footer {
+    background-color: var(--background-primary);
+}
+
+.slider-1PF9SW .mark-1xjQqt .markValue-2DwdXI {
+    color: var(--text-normal);
+}
+
+.slider-1PF9SW .mark-1xjQqt .markDash-3hAolZ {
+    color: var(--interactive-active);
+}
+
+.slider-1PF9SW .bar-2Qqk5Z {
+    background-color: var(--interactive-normal);
+}
+
+.slider-1PF9SW .bar-2Qqk5Z .barFill-23-gu- {
+    background: var(--interactive-active);
+}
+
+.theme-dark {
+    --header-primary: #b3a5c0;
+    --header-secondary: #b3a5c0;
+    --text-normal: #b3a5c0;
+    --text-muted: #8767a8;
+    --text-link: #00b0f4;
+    --channels-default: #b3a5c0;
+    --interactive-normal: #b3a5c0;
+    --interactive-hover: #bf8ef1;
+    --interactive-active: #bf8ef1;
+    --interactive-muted: #8767a8;
+    --background-primary: #3d2e4d;
+    --background-secondary: #2b2136;
+    --background-secondary-alt: #30243d;
+    --background-tertiary: #30243d;
+    --background-accent: #3d2e4d;
+    --background-floating: #2b2136;
+    --background-mobile-primary: #36393f;
+    --background-mobile-secondary: #2f3136;
+    --background-mobile-header: #2f3136;
+    --background-modifier-hover: #30243d;
+    --background-modifier-active: #3d2e4d;
+    --background-modifier-selected: #3d2e4d;
+    --background-modifier-accent:

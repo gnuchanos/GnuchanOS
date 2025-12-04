@@ -1,0 +1,30 @@
+USB kablosuz klavye ve fare kullanımı için Linux'ta daha iyi performans ve düşük gecikme sağlamak için aşağıdaki optimizasyonları deneyebilirsin:
+
+1. Güç Yönetimini Devre Dışı Bırak
+Linux, güç tasarrufu için USB cihazlarını düşük güç moduna alabilir. Bu, özellikle kablosuz klavye ve farelerde gecikmelere neden olabilir. Bunu devre dışı bırakmak için:
+
+echo 'on' | sudo tee /sys/bus/usb/devices/*/power/control
+Bunu kalıcı hale getirmek için:
+
+echo 'ACTION=="add", SUBSYSTEM=="usb", ATTR{power/control}="on"' | sudo tee /etc/udev/rules.d/99-usb-power.rules
+Ardından, udev kurallarını yeniden yükleyin:
+
+sudo udevadm control --reload-rules && sudo udevadm trigger
+2. USB Polling Oranını Artır
+USB cihazlarının yanıt süresini artırmak için usbhid modülünü optimize edebilirsin:
+
+echo 'options usbhid mousepoll=2' | sudo tee /etc/modprobe.d/usbhid.conf
+Ardından değişiklikleri uygulamak için:
+
+sudo update-initramfs -u  # (Debian/Ubuntu)
+sudo mkinitcpio -P        # (Arch Linux)
+
+3. Kablosuz Cihaz İçin Daha İyi Gecikme Ayarları
+Eğer cihazın Bluetooth kullanıyorsa, btusb modülüne özel optimizasyonlar yapabilirsin:
+
+echo 'options btusb disable_scofix=1' | sudo tee /etc/modprobe.d/btusb.conf
+Ardından:
+
+sudo update-initramfs -u  # Debian/Ubuntu
+sudo mkinitcpio -P        # Arch Linux
+Sistemi yeniden başlat.

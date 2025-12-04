@@ -1,0 +1,75 @@
+note: winetricks grabfullscreen=y // this is for mouse capture
+WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym %command% -nojoy -novid -vulkan  -w 1600 -h 900
+
+Z:\home\archkubi\SSD\SteamLibrary\steamapps\common\Left 4 Dead 2\left4dead2\addons\workshop\
+
+WINEPREFIX=/SSD/Game WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun mangohud --dlsym wine
+WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun %command% 
+
+wine msiexec /i  
+WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym wine EpicGamesLauncher.exe -SkipBuildPatchPrereq
+
+linux version problems
+	|- stardew valley -> in game dir
+		execstack -c libGalaxy64.so
+		execstack -c libGalaxyCSharpGlue.so
+
+gameforce client
+export WINEDLLOVERRIDES="libglesv2.dll=d"
+WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun wine gfclient.exe
+
+# This game works with a pure Wine prefix
+	#:- left 4 dead works fine / left 4 dead 2 - works fine i test ZOZO.GG version
+	#:- skyrim > only voice problem but fix is > winetricks --force xact
+	#:- American McGees Alice - works fine
+	#:- GTA SA - this is internet archive version only have base game cd
+		:- original cd version need no-CD crack
+	#:- GTA Vice City CD1 and CD2 like this
+		-: sudo mount -o loop cd1.iso ~/iso -> if CD1 finishes, sudo umount -l ~/iso # you must add -l or umount will say busy
+		-: sudo mount -o loop cd2.iso ~/iso -> finish installing the game
+		-: I don't know why, but if you can't see the CD ISO, you must download a no-CD crack!
+	#:- GTA 3 works fine
+	#:- call of duty 
+		| 1 works 
+			steam proton 5.13-6 WINEDLLOVERRIDES="RInput.dll=n,b" PROTON_OLD_GL_STRING=1 EXTENSION_MAX_YEAR=2008 __GL_ExtensionStringVersion=17700 gamemoderun mangohud %command%
+			WINEDLLOVERRIDES="RInput.dll=n,b" PROTON_OLD_GL_STRING=1 EXTENSION_MAX_YEAR=2008 __GL_ExtensionStringVersion=17700 gamemoderun mangohud wine Call\ Of\ Duty\ Singleplayer.exe
+			main/config.cfg
+				r_customwidth "1910"
+				r_customheight "1000"
+				r_mode "-1"
+				cg_fov "95"
+				r_ignorehwgamma  "1"
+			change controller settings to default
+		| 2 works fine
+		| 4 works fine
+		| 5 works fine
+	#:- Warcraft 3 works, but you must remove or backup the movie files as Wine can't play these videos
+	#:- Red Alert 2 needs to be installed with winetricks cnc_ddraw
+	#:- TitanFall 2 works fine
+	#:- DOOM 3 BFG Edition works sometimes "long loading or model + texture bug" #fov is drive_c/users/archkubi/Saved Games/id Software/DOOM 3 BFG/basedrive/D3BFGConfig.cfg in here
+	#:- Gothic
+		winetricks directmusic dmusic directx9
+		vim system/GOTHIC.INI
+			zVidResFullscreenX=1920
+			zVidResFullscreenY=1000
+
+	#:-
+	#:-
+	#:-
+	#:-
+	#:-
+	#:-
+	#:-
+	#:-
+	#:-
+	#:-
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

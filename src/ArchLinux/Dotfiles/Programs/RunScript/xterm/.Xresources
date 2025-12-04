@@ -1,0 +1,80 @@
+! refrest xterm -> xrdb -merge ~/.Xresources
+
+xterm*loginShell: true
+xterm*saveLines: 4096
+xterm*background: #150129
+xterm*foreground: #bb78ff
+
+! Extra Colors
+xterm*color0: #000000
+xterm*color1: #ff5555
+xterm*color2: #50fa7b
+xterm*color3: #f1fa8c
+xterm*color4: #bd93f9
+xterm*color5: #ff79c6
+xterm*color6: #8be9fd
+xterm*color7: #bbbbbb
+xterm*color8: #44475a
+xterm*color9: #ff5555
+xterm*color10: #50fa7b
+xterm*color11: #f1fa8c
+xterm*color12: #bd93f9
+xterm*color13: #ff79c6
+xterm*color14: #8be9fd
+xterm*color15: #ffffff
+
+! Font settings
+xterm*faceName: Monospace:antialias=true:pixelsize=14
+
+! Scroll settings
+xterm*ScrollBar: true
+xterm*rightScrollBar: true
+XTerm*cursorThickness: 1
+
+! Select Text Color
+xterm*highlightColor: #5a189a
+
+! UTF-8 Support
+xterm*locale: true
+xterm*utf8: 2
+
+! Copy/Paste
+xterm*vt100.translations: #override \
+    Shift Ctrl <Key>C: copy-selection(CLIPBOARD) \n\
+    Shift Ctrl <Key>V: insert-selection(CLIPBOARD)
+
+xterm*VT100*translations:       #override \
+    Ctrl <Key> BackSpace: string(0x1b) string(0x8)
+
+! Mouse Scrollback
+xterm*VT100.scrollTtyOutput: false
+xterm*VT100.scrollTtyKeypress: true
+
+! Blinking Cursor
+xterm*cursorBlink: true
+
+! Cursor Color
+xterm*cursorColor: #ff79c6
+
+! Scrollbar Thumb Color
+xterm*scrollColor: #5a189a
+xterm*troughColor: #44475a
+
+! Bold Text Color
+xterm*colorBD: #ff79c6
+
+! Text Rewrap on Resize
+xterm*autoWrap: true
+xterm*scrollTtyOutput: false
+xterm*scrollKey: true
+
+! Miscellaneous Performance Tweaks
+xterm*cutNewline: false
+xterm*cutToBeginningOfLine: false
+
+
+
+
+Xcursor.theme: GnuchanCursors
+
+

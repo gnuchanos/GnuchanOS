@@ -1,0 +1,134 @@
+sudo apt install fish xterm nemo wget git
+sudo apt install pkg-config libcairo2-dev cmake meson
+sudo apt install build-essential checkinstall zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libbz2-dev
+sudo apt install meson ninja-build python3-mako libdrm-dev libx11-dev libxext-dev libxdamage-dev libxfixes-dev libxrandr-dev libxcb-glx0-dev libxcb-dri2-0-dev xutils-dev libxshmfence-dev libxxf86vm-dev
+
+
+
+mkdir ~/tmp
+cd ~/tmp
+
+wget https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tgz
+tar -xvzf Python-3.13.0.tgz
+cd Python-3.13.0
+./configure --enable-optimizations --with-pydebug
+make -j$(nproc)
+sudo make altinstall
+
+sudo apt install python3-pip
+
+python3.13 -m pip install --upgrade pip
+
+sudo apt install libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev xorg-dev
+
+sudo apt install libiw-dev
+sudo apt install libxkbcommon-dev
+
+sudo apt update && sudo apt upgrade -y
+
+sudo apt install -y zip
+sudo apt install -y unzip
+sudo apt install -y unrar
+sudo apt install -y p7zip-full
+sudo apt install -y jq
+sudo apt install -y gvfs-backends
+sudo apt install -y mtpfs
+sudo apt install -y jmtpfs
+sudo apt install -y exfat-fuse
+sudo apt install -y exfatprogs
+sudo apt install -y a52dec
+sudo apt install -y faad
+sudo apt install -y jasper
+sudo apt install -y lame
+sudo apt install -y libdv4
+sudo apt install -y gstreamer1.0-libav
+sudo apt install -y gstreamer1.0-plugins-ugly
+sudo apt install -y libmad0
+sudo apt install libx264-dev
+sudo apt install -y libtheora0
+sudo apt install -y libmpeg2-4
+sudo apt install -y wavpack
+sudo apt install -y x264
+sudo apt install -y libdvdread4
+sudo apt install -y libdvdnav4
+sudo apt install -y dvd+rw-tools
+sudo apt install -y lib32-alsa-lib
+sudo apt install -y lib32-alsa-plugins
+sudo apt install -y lib32-libpulse
+sudo apt install -y lib32-alsa-oss
+sudo apt install -y lib32-pcre2
+sudo apt install -y lib32-util-linux
+sudo apt install -y lib32-xz
+sudo apt install -y util-linux
+sudo apt install -y xz
+sudo apt install -y net-tools
+sudo apt install -y xsel
+sudo apt install -y pcre
+sudo apt install -y pcre2
+sudo apt install -y gparted
+sudo apt install -y vlc
+sudo apt install -y conky
+sudo apt install -y leafpad
+sudo apt install -y arandr
+sudo apt install -y btop
+sudo apt install -y openjdk-17-jdk
+sudo apt install -y bchunk
+sudo apt install -y qbittorrent
+sudo apt install -y dmenu
+sudo apt install -y rofi
+sudo apt install -y make
+sudo apt install -y cmake
+sudo apt install -y openssh-server
+sudo apt install -y timidity
+sudo apt install -y fail2ban
+sudo apt install -y deluge-gtk
+sudo apt install -y ranger
+sudo apt install -y cmus
+sudo apt install -y dunst
+sudo apt install -y nitrogen
+sudo apt install -y zathura
+sudo apt install -y zathura-pdf-poppler
+sudo apt install -y ristretto
+sudo apt install -y lxappearance
+sudo apt install -y lxappearance-obconf
+sudo apt install -y scrot
+sudo apt install -y npm
+sudo apt install -y nrg2iso
+sudo apt install -y yt-dlp
+sudo apt install -y joystick
+sudo apt install -y evtest
+sudo apt install -y noto-fonts-cjk
+sudo apt install -y noto-fonts-emoji
+sudo apt install -y noto-fonts
+sudo apt install -y xdg-desktop-portal
+sudo apt install -y xdg-desktop-portal-gtk
+sudo apt install -y irqbalance
+sudo apt install -y tlp
+sudo apt install -y linux-cpupower
+
+sudo apt install python3-psutil python3-magic python3-cairocffi python3-cffi python3-xcffib tk
+
+
+# Sistemi Optimizasyonu
+sudo systemctl enable --now irqbalance
+sudo systemctl enable --now tlp
+# sudo systemctl enable --now cpupower what the fock
+sudo cpupower frequency-set -g ondemand
+
+# SSD için TRIM
+sudo systemctl enable --now fstrim.timer
+sudo fstrim -v /
+
+# SSH Yapılandırması
+sudo systemctl enable --now fail2ban
+sudo systemctl start fail2ban
+
+sudo systemctl enable ssh
+sudo systemctl start ssh
+
+# CPU Mikro Kod Yükleme (Intel veya AMD)
+sudo apt install -y amd64-microcode
+echo "sudo apt install -y intel-microcode"
+
+
+echo "Setup completed."w
