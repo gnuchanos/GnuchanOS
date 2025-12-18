@@ -24,7 +24,7 @@ echo "Installing Proton and CachyOS gaming applications..."
 sudo pacman -Sy steam heroic-games-launcher-bin 
 sudo pacman -Sy glfw lib32-libjpeg-turbo 
 sudo pacman -Sy lib32-mpg123 lib32-opencl-icd-loader lib32-openal libjpeg-turbo libxslt mpg123 opencl-icd-loader openal  
-sudo pacman -Sy proton-cachyos proton-cachyos-slr protontricks ttf-liberation wine-cachyos-opt winetricks vulkan-tools
+sudo pacman -Sy protontricks ttf-liberation wine-cachyos-opt winetricks vulkan-tools
 
 
 # GStreamer Plugin Paketleri

@@ -4,10 +4,14 @@ WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym %command% -nojoy -novid -vulk
 Z:\home\archkubi\SSD\SteamLibrary\steamapps\common\Left 4 Dead 2\left4dead2\addons\workshop\
 
 WINEPREFIX=/SSD/Game WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun mangohud --dlsym wine
-WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun %command% 
+WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" PROTON_USE_NTSYNC=1 gamemoderun %command% 
 
 wine msiexec /i  
 WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym wine EpicGamesLauncher.exe -SkipBuildPatchPrereq
+
+mkdir -p ~/.steam/root/compatibilitytools.d
+https://github.com/GloriousEggroll/proton-ge-custom?tab=readme-ov-file#installation
+
 
 linux version problems
 	|- stardew valley -> in game dir
@@ -47,16 +51,22 @@ WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun wine gfclien
 	#:- Red Alert 2 needs to be installed with winetricks cnc_ddraw
 	#:- TitanFall 2 works fine
 	#:- DOOM 3 BFG Edition works sometimes "long loading or model + texture bug" #fov is drive_c/users/archkubi/Saved Games/id Software/DOOM 3 BFG/basedrive/D3BFGConfig.cfg in here
-	#:- Gothic
+	#:- Gothic works with wine but -> use open source port -> https://github.com/Try/OpenGothic#opengothic
 		winetricks directmusic dmusic directx9
 		vim system/GOTHIC.INI
 			zVidResFullscreenX=1920
 			zVidResFullscreenY=1000
 
+		exec "$DIR/Gothic2Notr" "$@"
+		./Gothic2Notr.sh -g .
+	#:- Gothic 2 - only works with open source port -> https://github.com/Try/OpenGothic#opengothic
+		exec "$DIR/Gothic2Notr" "$@"
+		./Gothic2Notr.sh -g .
 	#:- Miami Vice
 		winetricks lavfilters
-	#:-
-	#:-
+	#:- GTA SA -> SAMP
+	#:- Kabul 22
+		WINEARCH=win32 WINEPREFIX=/SSD/Game32 winetricks -q icodecs 
 	#:-
 	#:-
 	#:-
