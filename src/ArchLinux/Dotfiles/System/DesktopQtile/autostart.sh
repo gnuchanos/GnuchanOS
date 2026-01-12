@@ -4,8 +4,14 @@
 xset -dpms
 xset s off
 
-# display size with vga and main display for laptop
-sh ~/.config/qtile/display.sh  &
+
+# auto refresh
+for m in $(xrandr --query | grep " connected" | cut -d" " -f1); do xrandr --output "$m" --auto; done
+
+
+
+
+
 
 # default app
 xdg-settings set default-web-browser org.qutebrowser.qutebrowser.desktop

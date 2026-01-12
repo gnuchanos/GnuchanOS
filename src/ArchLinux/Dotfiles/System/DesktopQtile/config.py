@@ -16,6 +16,10 @@ from libqtile.utils import guess_terminal
 from libqtile import hook
 from libqtile import qtile
 
+# wayland test
+from libqtile.backend.wayland import InputConfig
+
+
 # Default Settings
 mod = "mod4"
 terminal = guess_terminal("xterm")
@@ -181,7 +185,6 @@ screens = [ Screen(
 
         # Right
         widget.TextBox( background=colors[5], foreground=colors[5], text=" " ),
-        widget.KeyboardLayout( configured_keyboards=keyboardLang, foreground = colors[2], background = colors[4] ),
         widget.TextBox( background=colors[5], foreground=colors[5], text=" " ),
         widget.Clock( foreground = colors[2], background = colors[4], format = "%A, %B %d - %H:%M " ),
         widget.TextBox( background=colors[5], foreground=colors[5], text=" "),
@@ -269,5 +272,15 @@ auto_fullscreen = False # True Default
 focus_on_window_activation = "focus" #smart , focus
 reconfigure_screens = True
 auto_minimize = True
-wl_input_rules = None # wayland
+
+# wayland test
+wl_input_rules = {
+    "type:keyboard": InputConfig(
+        kb_repeat_rate=50,
+        kb_repeat_delay=300,
+    ),
+    "type:touchpad": InputConfig(drag=True, tap=True, natural_scroll=True),
+}
+
+
 wmname = "LG3D"  #

@@ -63,7 +63,7 @@ pacman -Syu linux-cachyos linux-cachyos-headers linux-firmware
 pacman -Syu linux linux-headers linux-firmware
 
 # nvidia 
-pacman -S linux-cachyos-nvidia vulkan-icd-loader lib32-nvidia-utils lib32-opencl-nvidia  nvidia-utils opencl-nvidia nvidia-settings
+pacman -S linux-cachyos-nvidia nvidia-utils opencl-nvidia vulkan-icd-loader lib32-nvidia-utils lib32-opencl-nvidia  nvidia-settings
 
 pacman -S linux-cachyos-nvidia-open nvidia-utils opencl-nvidia lib32-nvidia-utils lib32-opencl-nvidia nvidia-settings
 

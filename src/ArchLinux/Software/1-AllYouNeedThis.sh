@@ -81,8 +81,6 @@ sudo pacman -Sy --nocomfirm mkinitcpio
 
 
 # Install Personal Programs
-sudo pacman -Sy --noconfirm ranger
-sudo pacman -Sy --noconfirm cmus
 sudo pacman -Sy --noconfirm dunst
 sudo pacman -Sy --noconfirm nitrogen
 sudo pacman -Sy --noconfirm zathura
