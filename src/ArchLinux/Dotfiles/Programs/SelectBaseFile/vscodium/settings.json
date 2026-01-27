@@ -1,19 +1,23 @@
 {
 
   "telemetry.telemetryLevel": "off",
-  
-  "editor.hover.enabled": false,
+  "editor.hover.enabled": "off",
   "workbench.startupEditor": "none",
 
   "[python]": {
-    "editor.formatOnType": true
-},
+    "editor.formatOnType": true,
+    "editor.minimap.enabled": false,
+    "editor.fontSize": 12,
+    "editor.formatOnSave": false,
+  },
 
-  "rust-analyzer.server.extraEnv": { "RUSTUP_TOOLCHAIN": "stable" },
+  "explorer.confirmDelete": false,
+  "explorer.confirmDragAndDrop": false,
+  "git.openRepositoryInParentFolders": "never",
+  "C_Cpp.intelliSenseEngine": "disabled",
 
 
   "workbench.colorCustomizations": {
-
 
       "foreground": "#9d4edd",
       "focusBorder": "#5a189a",
@@ -270,18 +274,6 @@
 
 
   },
-  "explorer.confirmDelete": false,
-  "explorer.confirmDragAndDrop": false,
-  "editor.minimap.enabled": false,
-  "editor.fontSize": 12,
-  "git.openRepositoryInParentFolders": "never",
-  "C_Cpp.intelliSenseEngine": "disabled",
-  
-  "editor.formatOnSave": false,
-  "editor.formatOnType": false,
-  "[csharp]": {
-    "editor.formatOnType": false,
-    "editor.formatOnEnter": false,
-    "editor.formatOnPaste": false
-  }
+
+
 }
