@@ -3,12 +3,12 @@
   "telemetry.telemetryLevel": "off",
   "editor.hover.enabled": "off",
   "workbench.startupEditor": "none",
+  "editor.minimap.enabled": false,
 
   "[python]": {
     "editor.formatOnType": true,
-    "editor.minimap.enabled": false,
     "editor.fontSize": 12,
-    "editor.formatOnSave": false,
+    "editor.formatOnSave": false
   },
 
   "explorer.confirmDelete": false,
@@ -274,6 +274,8 @@
 
 
   },
+  "python.createEnvironment.trigger": "off",
+  "workbench.secondarySideBar.defaultVisibility": "hidden"
 
 
 }
