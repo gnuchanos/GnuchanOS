@@ -23,16 +23,35 @@ pacstrap /mnt base base base-devel grub
 genfstab -U /mnt >> /mnt/etc/fstab
 arch-chroot /mnt
 
+
+# stupid artix iso
+basestrap /mnt base base base-devel grub nano
+fstabgen -U /mnt >> /mnt/etc/fstab
+artix-chroot /mnt
+
+pacman -Sy openrc elogind-openrc grub linux linux-firmware
+
 # second part ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # network manager
 pacman -Sy networkmanager
 systemctl enable NetworkManager
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# stupid artix iso
+pacman -S networkmanager networkmanager-openrc
+rc-update add NetworkManager default
+rc-service NetworkManager start
 
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+vpnbook + openvpn
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
+hwclock --systohc
+
 echo "ThisIsMyKingdomCOME" > /etc/hostname
 useradd -m -G wheel -s /bin/bash archkubi
 nano /etc/sudoers
@@ -50,6 +69,12 @@ locale-gen
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+sudo pacman -Syu nvidia nvidia-utils lib32-nvidia-utils opencl-nvidia lib32-opencl-nvidia vulkan-icd-loader nvidia-settings
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # add cachyos repo
 curl https://mirror.cachyos.org/cachyos-repo.tar.xz -o cachyos-repo.tar.xz
 tar xvf cachyos-repo.tar.xz && cd cachyos-repo
@@ -64,9 +89,10 @@ pacman -Syu linux linux-headers linux-firmware
 
 # nvidia 
 pacman -S linux-cachyos-nvidia nvidia-utils opencl-nvidia vulkan-icd-loader lib32-nvidia-utils lib32-opencl-nvidia  nvidia-settings
-
 pacman -S linux-cachyos-nvidia-open nvidia-utils opencl-nvidia lib32-nvidia-utils lib32-opencl-nvidia nvidia-settings
 
+# stupid artix iso
+pacman -S nvidia nvidia-utils lib32-nvidia-utils opencl-nvidia vulkan-icd-loader nvidia-settings
 
 # amd new
 pacman -S xf86-video-amdgpu mesa vulkan-radeon lib32-mesa lib32-vulkan-radeon
@@ -78,8 +104,12 @@ pacman -S xf86-video-ati mesa
 pacman -S xf86-video-intel mesa lib32-mesa lib32-vulkan-intel
 
 
-pacman -Sy qtile ly fish git xorg xorg-server xorg-apps xorg-xinit xterm
+# extra
+pacman -Sy qtile ly git xorg xorg-server xorg-apps xorg-xinit xterm xorg-xrdb xorg-xset
 systemctl enable ly
+
+# stupid artix iso
+rc-update add ly default
 
 
 # broadcom wifi
@@ -97,8 +127,8 @@ reboot
 sudo pacman -S pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber
 systemctl --user enable --now pipewire.service  wireplumber.service
 
-# clock
-sudo timedatectl set-timezone Europe/Istanbul
+# stupid artix iso
+sudo pacman -S pavucontrol pulseaudio alsa-utils
 
 # ekstra notes
 pacman -Syu reflector rsync

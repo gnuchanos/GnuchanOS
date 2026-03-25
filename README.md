@@ -10,6 +10,8 @@
 
 <p> in dotfile </p>
 
+<p> btw i switch to artix fuck systemd and wayland </p>
+
 <p> XTerm/Vim -> theme Finish Xterm Theme By This Guy-> yassinebridi/Vim-Purapura</>
 <p> Grub and Plymouth Theme Finish </p>
 <p> Qtile  - Theme Finish</p>
