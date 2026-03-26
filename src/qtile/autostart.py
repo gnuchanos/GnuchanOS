@@ -20,5 +20,3 @@ os.system("stty erase ^H")
 os.system("pkill dunst")
 os.system("dunst")
 
-# Start picom with specified configuration (for window compositing)
-os.system("picom --animations -b --vsync --config ~/.config/qtile/picom.conf")

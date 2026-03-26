@@ -10,7 +10,7 @@ class gcNeed:
             "expac", # pacman database
             "jshon", # json parse
             "gvfs-mtp", # android mtp
-            # mtpfs missing
+            "mtpfs",
             "exfat-utils", # old tools
             "a52dec", # sound
             "faac", # AAC encode
@@ -36,7 +36,7 @@ class gcNeed:
             "lib32-alsa-lib",
             "lib32-alsa-plugins",
             # lib32-alsa-libpulse missing
-            # lib32-alsa-oss missing
+            "lib32-alsa-oss",
             "net-tools",
             "xsel",
             "pcre", "pcre2", "lib32-pcre", "lib32-pcre2",
@@ -55,12 +55,12 @@ class gcNeed:
             "arandr",
             "btop",
             "jdk-openjdk",
-            # bchunk missing
+            "bchunk",
             "dmenu",
             "make", "cmake",
-            "openssh-openrc",
-            # timidity missing
-            "fail2ban-openrc",
+            "openssh",
+            "imidity++",
+            "fail2ban",
             "deluge-gtk",
             "mkinitcpio",
             "feh",
@@ -70,14 +70,14 @@ class gcNeed:
             "lxapperance", "lxapperance-obconf",
             "scrot",
             "npm",
-            # nrg2iso missing
+            "nrg2iso",
             "yt-dlp",
             "ncdu",
-            # irqbalance only for systemd
-            "tlp-openrc", "cpupower-openrc",
+            "irqbalance", "tlp", "cpupower",
         )
 
         self.rcUpdate = (
+	        "irqbalance",
             "tlp",
             "cpupower",
             "fail2ban",
@@ -95,24 +95,21 @@ class gcNeed:
     def Install(self):
         for i in self.ProgramList:
             os.system(f"sudo pacman -Sy --noconfirm {i}")
-    
-    def InstallDev(self):
-        for i in self.devTools:
-            os.system(f"sudo pacman -Sy --noconfirm {i}")
-
-    def LastSettings(self):
-        for i in self.rcUpdate:
-            os.system(f"sudo rc-update add {i} default")
-            print(f"sudo rc-update add {i} default")
             time.sleep(1)
 
-            os.system(f"sudo rc-service {i} start")
-            print(f"sudo rc-service {i} start")
+        for i in self.rcUpdate:
+            os.system(f"sudo systemctl enable {i}.service")
+            print(f"sudo systemctl enable {i}.service")
             time.sleep(1)
 
         os.system("sudo cpupower frequency-set -g ondemand")
         print("sudo cpupower frequency-set -g ondemand > performance")
         time.sleep(1)
+
+
+    def InstallDev(self):
+        for i in self.devTools:
+            os.system(f"sudo pacman -Sy --noconfirm {i}")
 
     def uCode(self):
         while True:
@@ -134,7 +131,7 @@ class gcNeed:
         tmpPath = os.path.expanduser("~/tmp")
         
         if not os.path.exists(tmpPath):        
-            os.mkdir("~/tmp")
+            os.mkdir(tmpPath)
         else:
             os.chdir(tmpPath)
             _nowPath = os.path.join(tmpPath, "yay")
@@ -150,7 +147,7 @@ class gcNeed:
             os.system("yay -S rar irssi")
             os.system("yay -Sy python-pip")
 
-            os.system("pip install psutil cairocffi cffi xcffib iwlib")
+            os.system("sudo pacman -Sy --noconfirm python-psutil python-cairocffi python-cffi python-xcffib python-iwlib")
             os.system("git clone https://github.com/qtile/qtile.git")
             _tempQtilePath = os.path.join(tmpPath, "qtile")
             os.chdir(_tempQtilePath)
@@ -159,7 +156,55 @@ class gcNeed:
             os.chdir(self.pathRecord)
 
             os.system("sudo cp qtile.desktop /usr/share/xsessions")
-            os.system("sudo pacman -Sy tk python-adblock")
+            os.system("sudo pacman -Sy --noconfirm tk python-adblock")
+
+    def InstallGrubAndPlyMouth(self):
+        os.chdir(self.pathRecord)
+        tmpPath = os.path.expanduser("~/tmp")
+
+        if os.path.exists(tmpPath):
+            os.system("yay -S update-grub plymouth")
+            os.system("sudo cp -r minimal/ /boot/grub/themes")
+            os.system("sudo update-grub")
+            os.system("sudo cp -r gnuchanBoot  /usr/share/plymouth/themes/")
+            os.system("sudo cp mkinitcpio.conf /etc/")
+            os.system("sudo cp grub /etc/default/")
+            os.system("sudo mkinitcpio -P linux")
+            os.system("sudo grub-mkconfig -o /boot/grub/grub.cfg")
+            os.system("sudo cp plymouthd.conf /etc/plymouth/")
+            os.system("sudo plymouth-set-default-theme -R gnuchanBoot")
+
+    def InstallVimThemeXterm(self):
+        os.chdir(self.pathRecord)
+        tmpPath = os.path.expanduser("~/tmp")
+
+        if os.path.exists(tmpPath):
+
+            os.system("cp .Xresources ~/")
+            os.system("cp .bashrc ~/")
+            os.system("cp .zshrc ~/")
+            os.system("sudo pacman -Sy --noconfirm zsh-autosuggestions zsh-syntax-highlighting")
+
+            os.system("cp .vimrc ~/")
+            os.chdir(tmpPath)
+            os.system("git clone https://github.com/vim/vim.git")
+            _temp = os.path.join(tmpPath, "vim")
+            print(f"----------------> {_temp}")
+            if os.path.exists(_temp):
+                os.chdir(_temp)
+                os.system("./configure --prefix=/usr/local --enable-python3interp --enable-rubyinterp --enable-luainterp --enable-perlinterp --with-features=huge")
+                os.system("make")
+                os.system("sudo make install")
+
+                time.sleep(1)
+                os.system("curl -fLo ~/.vim/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim")
+                os.system("vim +PlugInstall +qall")
+
+                time.sleep(1)
+                _temp = os.path.expanduser("~/.vim/plugged/YouCompleteMe")
+                os.chdir(_temp)
+                os.system("python3 install.py --clangd-completer")
+
 
 if __name__ == "__main__":
     os.system("sudo sed -i 's/^#Color/Color/g' /etc/pacman.conf")
@@ -184,9 +229,12 @@ if __name__ == "__main__":
     while True:
         print("-: install all Programs and library :> all")
         print("-: install qtile -> qtile")
+        print("-: Change Lxdm Thene -> .lxdm")
         print("-: install dev tools")
         print("-: install ucode -> ucode")
-        print("-: apply settings -> settings")
+        print("-: install grub and plymouth theme -> gptheme")
+        print("-: install vim and xterm theme -> vim")
+        print("-: exit")
 
         uInput = input(":> ")
         if "exit" == uInput:
@@ -197,13 +245,17 @@ if __name__ == "__main__":
                 time.sleep(1)
                 os.chdir(gc.pathRecord)
                 os.system("cp -r dunst qutebrowser zathura MangoHud ~/.config")
-            elif "settings" in uInput.lower():
-                gc.LastSettings()
             elif "qtile" in uInput.lower():
                 gc.InstallQtile()
+            elif "lxdm" in uInput.lower():
+                os.system("sudo cp -r Industrial /usr/share/lxdm/themes")
             elif "dev" in uInput.lower():
                 gc.InstallDev()
             elif "ucode" in uInput.lower():
                 gc.uCode()
+            elif "gptheme" in uInput.lower():
+                gc.InstallGrubAndPlyMouth()
+            elif "vim" in uInput.lower():
+                gc.InstallVimThemeXterm()
         else:
             print("?????")

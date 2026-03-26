@@ -19,17 +19,9 @@ mkdir /mnt/boot              # Create /boot directory
 mount /dev/sda2 /mnt/boot    # Mount /boot
 
 # last need
-pacstrap /mnt base base base-devel grub
+pacstrap /mnt base base base-devel grub nano
 genfstab -U /mnt >> /mnt/etc/fstab
 arch-chroot /mnt
-
-
-# stupid artix iso
-basestrap /mnt base base base-devel grub nano
-fstabgen -U /mnt >> /mnt/etc/fstab
-artix-chroot /mnt
-
-pacman -Sy openrc elogind-openrc grub linux linux-firmware
 
 # second part ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -65,13 +57,9 @@ nano /etc/locale.conf
 	# LANG=en_US.UTF-8
 nano /etc/locale.gen
 	find en_us and remove #
+sudo nano /etc/vconsole.conf
+	KEYMAP=us
 locale-gen
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-sudo pacman -Syu nvidia nvidia-utils lib32-nvidia-utils opencl-nvidia lib32-opencl-nvidia vulkan-icd-loader nvidia-settings
-
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -82,17 +70,14 @@ sudo ./cachyos-repo.sh
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # cachyos repo
-pacman -Syu linux-cachyos linux-cachyos-headers linux-firmware
+pacman -Syu linux-cachyos linux-cachyos-headers linux-firmware # use it if you get new gpu newer then 1050 ti
 
-# default 
-pacman -Syu linux linux-headers linux-firmware
+# open source version
+pacman -S nvidia nvidia-utils nvidia-utils opencl-nvidia lib32-nvidia-utils lib32-opencl-nvidia nvidia-settings
 
-# nvidia 
-pacman -S linux-cachyos-nvidia nvidia-utils opencl-nvidia vulkan-icd-loader lib32-nvidia-utils lib32-opencl-nvidia  nvidia-settings
-pacman -S linux-cachyos-nvidia-open nvidia-utils opencl-nvidia lib32-nvidia-utils lib32-opencl-nvidia nvidia-settings
-
-# stupid artix iso
-pacman -S nvidia nvidia-utils lib32-nvidia-utils opencl-nvidia vulkan-icd-loader nvidia-settings
+#default nvidia
+nvidia-580xx-open-dkms # 1050 ti
+sudo pacman -S linux linux-headers linux-firmware nvidia nvidia-utils
 
 # amd new
 pacman -S xf86-video-amdgpu mesa vulkan-radeon lib32-mesa lib32-vulkan-radeon
@@ -103,18 +88,22 @@ pacman -S xf86-video-ati mesa
 # intel
 pacman -S xf86-video-intel mesa lib32-mesa lib32-vulkan-intel
 
-
 # extra
 pacman -Sy qtile ly git xorg xorg-server xorg-apps xorg-xinit xterm xorg-xrdb xorg-xset
 systemctl enable ly
 
-# stupid artix iso
-rc-update add ly default
-
-
 # broadcom wifi
 pacman -S dkms broadcom-wl-dkms
 
+# sound
+sudo pacman -S pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber
+
+# if not working
+systemctl --user enable --now pipewire.service  wireplumber.service
+
+# ekstra notes
+pacman -Syu reflector rsync
+reflector --latest 5 --sort rate --save /etc/pacman.d/mirrorlist
 
 grub-install --target=i386-pc /dev/sda
 grub-mkconfig -o /boot/grub/grub.cfg
@@ -123,18 +112,57 @@ reboot
 
 # third part ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# sound
-sudo pacman -S pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber
-systemctl --user enable --now pipewire.service  wireplumber.service
+# for flatpak apps
+sudo ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 
-# stupid artix iso
-sudo pacman -S pavucontrol pulseaudio alsa-utils
-
-# ekstra notes
-pacman -Syu reflector rsync
-reflector --latest 5 --sort rate --save /etc/pacman.d/mirrorlist
+sudo resolvectl flush-caches
+sudo systemctl restart systemd-resolved
+resolvectl status
 
 
+# ============================
+# 1️⃣ systemd-resolved için Cloudflare ayarı
+# ============================
+sudo mkdir -p /etc/systemd/resolved.conf.d
+sudo tee /etc/systemd/resolved.conf.d/cloudflare.conf > /dev/null <<EOF
+[Resolve]
+DNS=1.1.1.1 1.0.0.1
+FallbackDNS=8.8.8.8 8.8.4.4
+DNSOverTLS=yes
+EOF
+
+# ============================
+# 2️⃣ systemd-resolved servisini yeniden başlat ve aktif et
+# ============================
+sudo systemctl restart systemd-resolved
+sudo systemctl enable systemd-resolved
+
+# ============================
+# 3️⃣ /etc/resolv.conf'u systemd stub'a bağla
+# ============================
+sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+
+# ============================
+# 4️⃣ NetworkManager bağlantı adını öğren (DHCP DNS override önlemek için)
+# ============================
+nmcli con show
+# Çıktıda NAME sütununu not al. Örn: "Wired connection 1"
+
+# ============================
+# 5️⃣ Bağlantı için Cloudflare DNS ayarla
+# ============================
+# Kendi bağlantı adını aşağıya yaz
+# Örn: "Wired connection 1"
+nmcli con mod "Wired connection 1" ipv4.ignore-auto-dns yes
+nmcli con mod "Wired connection 1" ipv4.dns "1.1.1.1 1.0.0.1"
+nmcli con up "Wired connection 1"
+
+# ============================
+# 6️⃣ Test et
+# ============================
+resolvectl status       # DNS durumunu kontrol et
+dig @1.1.1.1 example.com # Cloudflare ile çözümleme testi
+ping 1.1.1.1            # Cloudflare ulaşılabilirlik testi
 
 
 # rsync -ah --info=progress2  input_files   target_dir
