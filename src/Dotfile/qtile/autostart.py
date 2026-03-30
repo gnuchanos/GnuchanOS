@@ -20,3 +20,5 @@ os.system("stty erase ^H")
 os.system("pkill dunst")
 os.system("dunst")
 
+# Start picom with specified configuration (for window compositing)
+os.system("fastcompmgr -r 12 -o 0.50 -c -C -e 0.1")

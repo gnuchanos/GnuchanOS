@@ -10,27 +10,25 @@
 
 <p> in dotfile </p>
 
-<p> btw i switch to artix fuck systemd and wayland </p>
+<p> (sad face)</p>
 
-<p> XTerm/Vim -> theme Finish Xterm Theme By This Guy-> yassinebridi/Vim-Purapura</>
-<p> Grub and Plymouth Theme Finish </p>
-<p> Qtile  - Theme Finish</p>
-<p> ly     - color problem // I need Better ly like dm for better color support! </p>
+```
+XTerm/Vim -> theme Finish Xterm Theme By This Guy-> yassinebridi/Vim-Purapura
+Grub and Plymouth Theme Finish
+Qtile  - Theme Finish
+lxdm   - it's fine but i want to make my own dm 
 
-<p> Oomax GTK Theme Creator </p>
-<p> Blender       - Theme Finish By This Guy-> kame404/Blender-Themes</p>
-<p> Dunst         - Theme Finish  </p>
-<p> Krita         - Theme Finish  </p>
-<p> Qutebrowser   - Theme Finish  </p>
-<p> VsCodium      - Theme Finish -> BTW I SWITCH VIM </p>
-<p> Zathura Theme - Theme Finish  </p>
+Oomax GTK Theme Creator
+Blender       - Theme Finish By This Guy-> kame404/Blender-Themes
+Dunst         - Theme Finish
+Krita         - Theme Finish
+Qutebrowser   - Theme Finish
+VsCodium      - Theme Finish -> BTW I SWITCH VIM
+Zathura Theme - Theme Finish
 
-<p> in Terminal APP </p>
-<p> Vim    -> Text Editor </p>
-<p> Ranger -> File Manager</p>
-<p> Cmus   -> Music Player </p>
-<p> irssi  -> IRC</p>
-
-<p>  </p>
-<br/>
-
+in Terminal APP
+Vim    -> Text Editor
+Ranger -> File Manager
+Cmus   -> Music Player
+irssi  -> IRC
+```

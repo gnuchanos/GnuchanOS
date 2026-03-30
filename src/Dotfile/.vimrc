@@ -139,8 +139,11 @@ set wildignore+=*.gem
 set wildignore+=log/**
 set wildignore+=tmp/**
 set wildignore+=*.png,*.jpg,*.gif
-
 set backspace=indent,eol,start
+set list
+set listchars=tab:>-,trail:·,space:·
+
+
 
 " Plug Settings
 call plug#begin('~/.vim/plugged')

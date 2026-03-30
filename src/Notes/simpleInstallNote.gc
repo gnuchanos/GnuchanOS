@@ -1,4 +1,4 @@
-# first part ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 parted /dev/sda mklabel msdos
 cfdisk /dev/sda
@@ -6,6 +6,19 @@ cfdisk /dev/sda
 # sda 1    - Swap
 # sda 2    - Boot
 # sda 3    - ALL Disk
+
+# Diskin tamamını sil ve MS-DOS tablosu oluştur
+parted $DISK --script mklabel msdos
+# Swap bölümü 8GB (0 – 8 GB)
+parted $DISK --script mkpart primary linux-swap 0GB 8GB
+# Boot bölümü 1GB (8 – 9 GB)
+parted $DISK --script mkpart primary ext4 8GB 9GB
+parted $DISK --script set 2 boot on
+# Root / All disk bölümü (9 GB – disk sonu)
+parted $DISK --script mkpart primary ext4 9GB 100%
+
+# Bölümleri kontrol
+parted $DISK print
 
 # disk part
 mkswap /dev/sda1
@@ -23,22 +36,16 @@ pacstrap /mnt base base base-devel grub nano
 genfstab -U /mnt >> /mnt/etc/fstab
 arch-chroot /mnt
 
-# second part ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+vpnbook + openvpn
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # network manager
 pacman -Sy networkmanager
 systemctl enable NetworkManager
-
-# stupid artix iso
-pacman -S networkmanager networkmanager-openrc
-rc-update add NetworkManager default
-rc-service NetworkManager start
-
-
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-vpnbook + openvpn
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
@@ -62,22 +69,14 @@ sudo nano /etc/vconsole.conf
 locale-gen
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------
-# add cachyos repo
-curl https://mirror.cachyos.org/cachyos-repo.tar.xz -o cachyos-repo.tar.xz
-tar xvf cachyos-repo.tar.xz && cd cachyos-repo
-sudo ./cachyos-repo.sh
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# cachyos repo
-pacman -Syu linux-cachyos linux-cachyos-headers linux-firmware # use it if you get new gpu newer then 1050 ti
-
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # open source version
-pacman -S nvidia nvidia-utils nvidia-utils opencl-nvidia lib32-nvidia-utils lib32-opencl-nvidia nvidia-settings
+pacman -S   nvidia-open nvidia-open-dkms lib32-nvidia-utils lib32-opencl-nvidia nvidia-settings
 
 #default nvidia
 nvidia-580xx-open-dkms # 1050 ti
-sudo pacman -S linux linux-headers linux-firmware nvidia nvidia-utils
+sudo pacman -S nvidia nvidia-utils
 
 # amd new
 pacman -S xf86-video-amdgpu mesa vulkan-radeon lib32-mesa lib32-vulkan-radeon
@@ -87,82 +86,17 @@ pacman -S xf86-video-ati mesa
 
 # intel
 pacman -S xf86-video-intel mesa lib32-mesa lib32-vulkan-intel
-
-# extra
-pacman -Sy qtile ly git xorg xorg-server xorg-apps xorg-xinit xterm xorg-xrdb xorg-xset
-systemctl enable ly
-
-# broadcom wifi
-pacman -S dkms broadcom-wl-dkms
-
-# sound
-sudo pacman -S pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber
-
-# if not working
-systemctl --user enable --now pipewire.service  wireplumber.service
-
-# ekstra notes
-pacman -Syu reflector rsync
-reflector --latest 5 --sort rate --save /etc/pacman.d/mirrorlist
-
+#----------------------------
 grub-install --target=i386-pc /dev/sda
 grub-mkconfig -o /boot/grub/grub.cfg
 
 reboot
-
-# third part ---------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-# for flatpak apps
-sudo ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-
-sudo resolvectl flush-caches
-sudo systemctl restart systemd-resolved
-resolvectl status
-
-
-# ============================
-# 1️⃣ systemd-resolved için Cloudflare ayarı
-# ============================
-sudo mkdir -p /etc/systemd/resolved.conf.d
-sudo tee /etc/systemd/resolved.conf.d/cloudflare.conf > /dev/null <<EOF
-[Resolve]
-DNS=1.1.1.1 1.0.0.1
-FallbackDNS=8.8.8.8 8.8.4.4
-DNSOverTLS=yes
-EOF
-
-# ============================
-# 2️⃣ systemd-resolved servisini yeniden başlat ve aktif et
-# ============================
-sudo systemctl restart systemd-resolved
-sudo systemctl enable systemd-resolved
-
-# ============================
-# 3️⃣ /etc/resolv.conf'u systemd stub'a bağla
-# ============================
-sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-
-# ============================
-# 4️⃣ NetworkManager bağlantı adını öğren (DHCP DNS override önlemek için)
-# ============================
-nmcli con show
-# Çıktıda NAME sütununu not al. Örn: "Wired connection 1"
-
-# ============================
-# 5️⃣ Bağlantı için Cloudflare DNS ayarla
-# ============================
-# Kendi bağlantı adını aşağıya yaz
-# Örn: "Wired connection 1"
-nmcli con mod "Wired connection 1" ipv4.ignore-auto-dns yes
-nmcli con mod "Wired connection 1" ipv4.dns "1.1.1.1 1.0.0.1"
-nmcli con up "Wired connection 1"
-
-# ============================
-# 6️⃣ Test et
-# ============================
-resolvectl status       # DNS durumunu kontrol et
-dig @1.1.1.1 example.com # Cloudflare ile çözümleme testi
-ping 1.1.1.1            # Cloudflare ulaşılabilirlik testi
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 # rsync -ah --info=progress2  input_files   target_dir
+
+
+
+
+
