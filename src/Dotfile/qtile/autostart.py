@@ -1,4 +1,4 @@
-import os
+import os, time
 
 # Automatically configure connected displays
 os.system('for m in $(xrandr --query | grep " connected" | cut -d" " -f1); do xrandr --output "$m" --auto; done')
@@ -17,8 +17,10 @@ os.system("feh --bg-scale ~/.config/qtile/bg.png")
 os.system("stty erase ^H")
 
 # Restart the notification daemon (dunst)
-os.system("pkill dunst")
-os.system("dunst")
+os.system("pkill dunst &")
+os.system("dunst &")
 
 # Start picom with specified configuration (for window compositing)
-os.system("fastcompmgr -r 12 -o 0.50 -c -C -e 0.1")
+os.system("killall picom &")
+time.sleep(5)
+os.system("picom --config ~/.config/qtile/picom.conf &")

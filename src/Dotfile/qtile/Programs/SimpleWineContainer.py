@@ -47,14 +47,13 @@ class WineContainer:
 # #Thread(target=DownloadVideo, args=[]).start()
 
 
-class SimeWineAndLegandaryContainer(GnuChanGUI):
+class SimeWineContainer(GnuChanGUI):
     def __init__(self, Title = "Simple Wine Container", Size = (1600, 900), resizable = False, finalize = True, winPosX = 1920 / 2, winPosY = 1080 / 2):
         super().__init__(Title, Size, resizable, finalize, winPosX, winPosY)
 
         Themecolors().GnuChanOS        # you can change theme color
         self.C = GColors()             # all color in here
         self.CGC = GnuChanOSColor()    # gnuchanos colors
-
 
         # Extra Value
         self.PlaceHolderPrefixPath: str = ""
@@ -65,7 +64,6 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
 
         self.CachyOSProton = ""
         self.DefaultWine   = ""
-
 
 
         self.HomePath = os.path.expanduser("~")
@@ -169,60 +167,6 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
             [self.GText(SetText="   ")],
         ]
 
-        # Epic Games Install Process
-        """
-                legendary auth -> open new terminal and enter command wait login
-                legendary list-games
-                legendary install GameName --install-dir /mnt/games/fortnite ve legendary uninstall
-                legendary list-installed
-                legendary launch <oyun_adı> --wrapper "/path/to/proton" --no-wine
-                legendary uninstall
-
-
-
-                WINEPREFIX="{/SSD/www}" 
-                legendary launch 
-                '4656facc740742a39e265b026e13d075' 
-                --wrapper 
-                "/usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/wine" or /usr/bin/wine
-                --no-wine
-
-
-        """
-
-
-        self.LegendaryRunButton = [
-            [
-                self.GPush(BColor=self.C.purple8),
-                self.GButton(Text="Login Epic Games Account", SetValue="login"),
-                self.GButton(Text="Play Game", SetValue="pgame"),
-                self.GButton(Text="Remove Game", SetValue="rgame"),
-                self.GButton(Text="Refresh Game List", SetValue="refgame"),
-                self.GCheackBox(CText="Gamemode", SetValue="lgamemode", BColor=self.C.purple8, Checked=True),
-                self.GCheackBox(CText="MangoHUD", SetValue="lmangohud", BColor=self.C.purple8, Checked=True),
-                self.GPush(BColor=self.C.purple8)
-            ],
-        ]
-
-        self.LEInstallButtons = [
-            [
-                self.GPush(BColor=self.C.purple8),
-                self.GButton(Text="Select Dir", SetValue="ldpath"),
-                self.GButton(Text="Install Game", SetValue="linstall"),
-                self.GPush(BColor=self.C.purple8),
-            ]
-        ]
-
-        self.LegendaryRun = [
-            [self.GFrame(InsideWindowLayout=self.LegendaryRunButton, xStretch=True, Border=0, BColor=self.C.purple8, EmptySpace=(0, 0))],
-            [self.GText(SetText="Installed All Epic Games", xStretch=True, BColor=self.C.purple7)],
-            [self.GListBox(SetValue="InstalledGames", xStretch=True, yStretch=True)],
-            [self.GText(SetText="All Epic Games", xStretch=True, BColor=self.C.purple7)],
-            [self.GListBox(SetValue="AllGames", xStretch=True, yStretch=True)],
-            [self.GFrame(InsideWindowLayout=self.LEInstallButtons, xStretch=True, Border=0, BColor=self.C.purple8, EmptySpace=(0, 0))],
-        ]
-
-
         # help
 
         self.HelpLine = [
@@ -236,7 +180,6 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
             [self.GTabGroup(TabGroupLayout=[
                 [self.GTab(Text="Create WinePrefix HERE!", TabLayout=self.CreateWine, SetValue="cWineTab")],
                 [self.GTab(Text="Run Games HERE!", TabLayout=self.RunWineGames, SetValue="rWineTab")],
-                [self.GTab(Text="Legendary/Epic Games", TabLayout=self.LegendaryRun, SetValue="lgames")],
                 [self.GTab(Text="Help!", TabLayout=self.HelpLine, SetValue="help")],
             ], SetValue="tabG")]
         ]
@@ -249,7 +192,7 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
         self.ALLGListbox = ( "wlist0", "wlist1", "winetricks", "winetricksInstalled" )
 
         for i in self.ALLGListbox:
-            self.GListBoxBorderSize(WindowValue=i, Border=0)
+            self.GBorder(WindowValue=i, Border=0, Color="black")
 
         # load json
         self.GetWindow["wlist0"].update(self.ThisWinePrefixContainers.WinePrefixPathList)
@@ -264,18 +207,6 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
             "corefonts", "cjkfonts", "physx", "dxdiag", "dxdiagn"
         )
         self.GetWindow["winetricks"].update(self.allWineTrickPackages)
-
-        # Legendary Games
-        
-
-        self.LegendaryGamesInstalled = []
-        self.LegendaryAllGames = []
-
-        Thread(target=self.updateLEGListbox_Installed, args=[]).start()
-        Thread(target=self.UpdateLEGlistbox_AllGames, args=[]).start()
-
-        self.GListBoxBorderSize(WindowValue="InstalledGames", Border=0)
-        self.GListBoxBorderSize(WindowValue="AllGames", Border=0)
 
         # Call Function Here
 
@@ -294,28 +225,6 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
 
 
         self.SetUpdate(Update=self.Update, exitBEFORE=self.BeforeExit)
-
-    def UpdateLEGlistbox_AllGames(self):
-        output = subprocess.check_output(["legendary", "list-games", "--json"], text=True)
-        all_games = json.loads(output)
-
-        for game in all_games:
-            self.LegendaryAllGames.append(f"{game['app_title']}  -  {game['app_name']}")
-
-        self.GetWindow["AllGames"].update(self.LegendaryAllGames)
-
-    def updateLEGListbox_Installed(self):
-        self.LegendaryGamesInstalled = []
-        output = subprocess.check_output(["legendary", "list-installed", "--json"], text=True)
-        print(output, "\n\n")
-        installed_games = json.loads(output)
-
-        for game in installed_games:
-            _game = f"{game['install_path']}  -  {game['app_name']}"
-            if _game not in self.LegendaryGamesInstalled:
-                self.LegendaryGamesInstalled.append(_game)
-
-        self.GetWindow["InstalledGames"].update(self.LegendaryGamesInstalled)
 
     def CreateWinePrefix(self, _prefixPath: str):
         os.popen(f"WINEPREFIX={_prefixPath} winecfg")
@@ -340,11 +249,7 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
         os.system(cmd)
         self.GetWindow["InstalledGames"].update(self.LegendaryGamesInstalled)
         print(cmd)
-    
-    def LEInstallGames(self, cmd: str):
-        os.system(cmd)
-        self.updateLEGListbox_Installed()
-    
+
     def LERemoveGames(self, cmd: str):
         os.system(cmd)
         self.updateLEGListbox_Installed()
@@ -356,7 +261,6 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
         #if self.KYB.Return == self.GetEvent -> Press key
         #self.GetEvent == "event" -> window event
         #self.GetWindow["text"].update("this text") -> update window objects
-
 
         if "sdpWine" == self.GetEvent:
             try:
@@ -432,9 +336,6 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
             except Exception as ERR:
                 GMessage(WindowTitle="Path Err", WindowText=ERR)
 
-        elif "login" == self.GetEvent:
-            subprocess.Popen( ['xterm', '-e', 'bash', '-c', 'legendary auth; exec bash'] )
-
         elif "pgame" == self.GetEvent:
             getstr = str(self.GetValues["InstalledGames"]).strip("['']")
 
@@ -451,9 +352,7 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
                     GMessage(WindowTitle="Warning", WindowText="What Game???")
                 
                 self.CurrentWine = ""
-                if os.path.exists("/usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/wine"):
-                    self.CurrentWine = "/usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/wine"
-                elif os.path.exists("/usr/bin/wine"):
+                if os.path.exists("/usr/bin/wine"):
                     self.CurrentWine = "/usr/bin/wine"
 
                 _GameMode = ""
@@ -472,51 +371,8 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
                 else:
                     GMessage(WindowTitle="Warning", WindowText="Path Is Not Real Dir Path")
 
-            """
-                WINEPREFIX="{/SSD/www}" 
-                legendary launch 
-                '4656facc740742a39e265b026e13d075' -> Game ID
-                --wrapper 
-                "/usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/wine" or /usr/bin/wine
-                --no-wine
-            """
-
         elif "ldpath" == self.GetEvent:
             self.LEPath = self.GetFolderPath()
-
-        elif "linstall" == self.GetEvent:
-            if len(self.GetValues["AllGames"]) > 0:
-                _IDPath = str(self.GetValues["AllGames"]).strip("['']")
-                id      = _IDPath.split("  -  ")
-                leGAMES = ""
-
-                if len(self.LEPath) > 0:
-                    if os.path.exists(self.LEPath):
-                        leGAMES = f"legendary install '{id[1]}' --base-path '{self.LEPath}' -y".strip('\"')
-                        Thread(target=self.LEInstallGames, args=[leGAMES]).start()
-                        os.system(f"WINEPREFIX='{self.LEPath}' ")
-                        print(leGAMES, "\n\n")
-                    else:
-                        GMessage(WindowTitle="Warning", WindowText="Install Dir '404'")
-                else:
-                    GMessage(WindowTitle="Warning", WindowText="First Select Install Dir")
-
-            """
-            legendary install {GameName} --install-dir {/mnt/games/fortnite}
-            """
-        elif "rgame" == self.GetEvent:
-            getstr = str(self.GetValues["InstalledGames"]).strip("['']")
-
-            if len(self.GetValues["InstalledGames"]) > 0:
-                id = getstr.split("  -  ")
-                RemoveLEGame = f"legendary uninstall '{id[1]}' -y"
-                os.system(f"rm -r {id[0]}")
-                
-                Thread(target=self.LERemoveGames, args=[RemoveLEGame]).start()
-
-        elif "refgame" == self.GetEvent:
-            self.updateLEGListbox_Installed()
-
 
     def BeforeExit(self):
         with open(f"{self.HomePath}/.config/gnuchanGL/settings.gc", "w") as file:
@@ -525,7 +381,7 @@ class SimeWineAndLegandaryContainer(GnuChanGUI):
         print("Exit")
 
 if __name__ == "__main__":
-    gc = SimeWineAndLegandaryContainer()
+    gc = SimeWineContainer()
 
 
 

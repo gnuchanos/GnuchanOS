@@ -33,7 +33,6 @@ class SimpleVideoAndMusicDownload(GnuChanGUI):
 
         Themecolors().GnuChanOS
         self.C = GnuChanOSColor()
-        
         self.yt = "yt-dlp"
 
         # Video Quality Note: This Place must update
@@ -49,25 +48,19 @@ class SimpleVideoAndMusicDownload(GnuChanGUI):
         self.s360 = "bestvideo[ext=mp4][width=360][height=640]+bestaudio[ext=m4a]/best[ext=mp4][width=360][height=640]"
         self.s240 = "bestvideo[ext=mp4][width=240][height=426]+bestaudio[ext=m4a]/best[ext=mp4][width=240][height=426]"
 
-
-
-
-
-
         self.Quality = ""
         self.Path    = ""
         self.Link    = ""
         self.Shorts = False
-        
+
+
         self.VideoSettingsLayout = [
             [self.GText(SetText="Video Quality Settings", xStretch=True, TPosition="center", BColor=self.C.FColors1)],
             [self.GText(SetText="Warning If Video Don't Have 1080 You can't Download Please Open In Terminal For Control Error Log!", xStretch=True, TFont="Sans, 15")],
             [
-
                 self.GPush(),
                 self.GButton(Text="Enable Short Only", SetValue="shorts"),
                 self.GPush()
-
             ],
             [
                 self.GPush(),
@@ -252,14 +245,19 @@ class SimpleVideoAndMusicDownload(GnuChanGUI):
             _dwn = self.GetValues["vlink_music"]
             if len(_dwn) > 0:
                 _flags = "--extract-audio --audio-format mp3 -o"
-                _Path        = f"{self.Path}/%(title)s.%(ext)s.mp3"
+                _Path        = f"{self.Path}/%(title)s.%(ext)s"
                 _link        = _dwn
-                _DownloadNow = f"{self.yt} {_flags} '{_Path}' '{_link}'"
+                _DownloadNow = ""
+
+                if "link" not in _link:
+                    _DownloadNow = f"{self.yt} {_flags} '{_Path}' '{_link}'"
+                else:
+                    _DownloadNow = f"{self.yt} -j --flat-playlist '{_Path}' '{_link}'"
+
                 Thread(target=self.DownloadMusic, args=[_DownloadNow]).start()
                 os.popen("notify-send -t 7000 -u low \"Music Download Starting..! Maybe Check Terminal\"")
                 print(_DownloadNow)
 
-        
         elif self.GetEvent == "rmusic":
             if len(self.Path) > 0:
                 _list = os.listdir(self.Path)

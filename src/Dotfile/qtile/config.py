@@ -22,52 +22,24 @@ from libqtile.backend.wayland import InputConfig
 
 # Default Settings
 mod = "mod4"
+mod1 = "mod1"
 terminal = guess_terminal("xterm")
 user_home = os.path.expanduser("~")
 keyboardLang = "us"
 InternetDeviceName = "enp37s0"
 
-
-
-
-
-# Don't Touch This -> Floating window layout change
-FloatingWindowIndex = 0
 @lazy.function
-def float_cycle(qtile):
-    global FloatingWindowIndex
+def SwichWindow(qtile):
+    qtile.current_group.next_window()
 
-    floating_windows = []
-    for window in qtile.current_group.windows:
-        if window.floating:
-            floating_windows.append(window)
-    
-    if not floating_windows:
-        return
-    
-    FloatingWindowIndex = min(FloatingWindowIndex, len(floating_windows) -1)
-    FloatingWindowIndex += 1
-    
-    if FloatingWindowIndex >= len(floating_windows):
-        FloatingWindowIndex = 0
-    if FloatingWindowIndex < 0:
-        FloatingWindowIndex = len(floating_windows) - 1
-
-    win = floating_windows[FloatingWindowIndex]
-    win.cmd_bring_to_front()
-    win.cmd_focus()
-
-Key(["mod1"], "Tab", float_cycle),
-
-# Don't Touch This
-
-
+    if qtile.current_window and qtile.current_window.floating:
+        qtile.current_window.bring_to_front()
 
 
 # All ShortCut Here
 keys = [
     # Floating Window Layout Changing
-    Key(["mod1"], "Tab", float_cycle),
+    Key([mod1], "Tab", SwichWindow),
 
     # move focus
     Key([mod], "Up", lazy.layout.up()),
@@ -115,10 +87,7 @@ keys = [
     Key([mod], "m", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/SimpleMusicPlayer.py")),
     Key([mod, "shift"], "r", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/SimpleSVAR.py")),
     Key([mod, "shift"], "d", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/DMV.py")),
-    
-    # this is not ready
-    #Key([mod, "shift"], "Return", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/")),
-
+    Key(["control", "shift"], "w", lazy.spawn(f"python3 {user_home}/.config/qtile/Programs/SimpleWineContainer.py")),
 
     # you can use this program runners
     Key( [mod], "f", lazy.spawn("dmenu_run -i -b -p 'GnuChanOS'  -fn 'Sans Mono:bold:pixelsize=12' -nb '#240046' -nf '#9d4edd' -sf '#9d4edd' -sb '#5a189a' ") ),

@@ -42,6 +42,7 @@ class gcNeed:
         )
 
         self.rcUpdate = ("irqbalance", "tlp", "cpupower", "fail2ban", "sshd")
+
         self.devTools = ("gimp", "audacity", "krita", "inkscape", "libreoffice-fresh")
 
         self.ForGame = (
@@ -93,13 +94,15 @@ class gcNeed:
 
     def InstallGame(self) -> None:
         _tmpDir = os.path.expanduser("~/.steam/steam/compatibilitytools.d")
+        UInput = ""
 
         if not os.path.exists(_tmpDir):
             os.mkdir(_tmpDir)
 
         os.chdir(_tmpDir)
-        uInput = input("ProtonGE Link :> ")
-        os.system(f"wget {uInput}")
+        UInput = input("ProtonGE Link :> ")
+        if len(UInput)  0:
+        os.system(f"wget {UInput}")
 
         if os.path.exists(_tmpDir):
             os.chdir(_tmpDir)
@@ -122,15 +125,16 @@ class gcNeed:
             os.system(f"sudo pacman -Sy --noconfirm {i}")
 
     def uCode(self) -> None:
+        UInput = ""
         while True:
-            uInput = input("Intel or Amd: ")
-            if "exit" == uInput:
+            UInput = input("Intel or Amd: ")
+            if "exit" == UInput:
                 break
             elif len(uInput) > 0:
-                if "intel" in uInput.lower():
+                if "intel" in UInput.lower():
                     os.system("sudo pacman -Sy --noconfirm intel-ucode")
                     break
-                elif "amd" in uInput.lower():
+                elif "amd" in UInput.lower():
                     os.system("sudo pacman -Sy --noconfirm amd-ucode")
                     break
                 else:
@@ -139,31 +143,33 @@ class gcNeed:
     def InstallQtile(self) -> None:
         self.pathRecord = os.getcwd()
         tmpPath = os.path.expanduser("~/tmp")
-        
-        if not os.path.exists(tmpPath):        
-            os.mkdir(tmpPath)
-        else:
-            os.chdir(tmpPath)
-            _nowPath = os.path.join(tmpPath, "yay")
+        UInput = ""
 
-            if not os.path.exists(_nowPath):
-                os.system("git clone https://aur.archlinux.org/yay.git")
+        UInput = input("do you have yay - | YES | NO | :> ")
+        if "no" in UInput.lower():
+            if not os.path.exists(tmpPath):        
+                os.mkdir(tmpPath)
+            else:
+                os.chdir(tmpPath)
+                _nowPath = os.path.join(tmpPath, "yay")
 
-            if os.path.exists(_nowPath):
-                os.chdir(_nowPath)
-                os.system("makepkg -si")
- 
+                if not os.path.exists(_nowPath):
+                    os.system("git clone https://aur.archlinux.org/yay.git")
+
+                if os.path.exists(_nowPath):
+                    os.chdir(_nowPath)
+                    os.system("makepkg -si")
+        elif "yes" in UInput.lower():
             os.chdir(tmpPath)
             os.system("yay -S rar irssi")
             os.system("yay -Sy python-pip")
 
             os.system("sudo pacman -Sy --noconfirm python-psutil python-cairocffi python-cffi python-xcffib python-iwlib")
-            
             _tempQtilePath = os.path.join(tmpPath, "qtile")
 
             if not os.path.exists(_tempQtilePath):
                 os.system("git clone https://github.com/qtile/qtile.git")
-            
+
             if os.path.exists(_tempQtilePath):
                 os.chdir(_tempQtilePath)
                 os.system("pip install ./")
@@ -175,8 +181,9 @@ class gcNeed:
                 os.system("sudo cp qtile.desktop /usr/share/xsessions")
             else:
                 print("missing qtile.desktop")
-            
             os.system("sudo pacman -Sy --noconfirm tk python-adblock")
+        else:
+            print(f"{UInput} ??")
 
     def InstallGrubAndPlyMouth(self) -> None:
         os.chdir(self.pathRecord)
@@ -187,7 +194,7 @@ class gcNeed:
         _TMPMkinitcpio = os.path.join(self.pathRecord, "mkinitcpio.conf")
         _TMPGrun = os.path.join(self.pathRecord, "grub")
         _TMPPlymouthd = os.path.join(self.pathRecord, "plymouthd.conf")
-        
+
 
         if os.path.exists(tmpPath):
             os.system("yay -S update-grub plymouth")
@@ -217,7 +224,7 @@ class gcNeed:
                 os.system("sudo cp plymouthd.conf /etc/plymouth/")
                 os.system("sudo plymouth-set-default-theme -R gnuchanBoot")
             else:
-                print("Missing plymouthd.conf")
+                print("Missing plymouthd.conf", flush=True)
 
     def InstallVimThemeXterm(self) -> None:
         os.chdir(self.pathRecord)
@@ -316,6 +323,7 @@ class gcNeed:
 
 
 if __name__ == "__main__":
+    UInput = ""
     os.system("sudo sed -i 's/^#Color/Color/g' /etc/pacman.conf")
     os.system("sudo sed -i '/VerbosePkgLists/a ILoveCandy' /etc/pacman.conf")
 
@@ -348,33 +356,33 @@ if __name__ == "__main__":
         print("-: install Wine -> w")
         print("-: exit")
 
-        uInput = input(":> ")
-        if "exit" == uInput:
+        UInput = input(":> ")
+        if "exit" == UInput:
             break
         elif len(uInput) > 0:
-            if "all" in uInput.lower():
+            if "all" in UInput.lower():
                 gc.Install()
                 time.sleep(1)
                 os.chdir(gc.pathRecord)
                 os.system("cp -r dunst qutebrowser zathura MangoHud ~/.config")
-            elif "qtile" in uInput.lower():
+            elif "qtile" in UInput.lower():
                 gc.InstallQtile()
-            elif "lxdm" in uInput.lower():
+            elif "lxdm" in UInput.lower():
                 os.system("sudo cp -r Industrial /usr/share/lxdm/themes")
                 print("sudo cp -r Industrial /usr/share/lxdm/themes")
-            elif "dev" in uInput.lower():
+            elif "dev" in UInput.lower():
                 gc.InstallDev()
-            elif "ucode" in uInput.lower():
+            elif "ucode" in UInput.lower():
                 gc.uCode()
-            elif "gptheme" in uInput.lower():
+            elif "gptheme" in UInput.lower():
                 gc.InstallGrubAndPlyMouth()
-            elif "vim" in uInput.lower():
+            elif "vim" in UInput.lower():
                 gc.InstallVimThemeXterm()
-            elif "zr" in uInput.lower():
+            elif "zr" in UInput.lower():
                 gc.InstallZram()
-            elif "sg" in uInput.lower():
+            elif "sg" in UInput.lower():
                 self.InstallGame()
-            elif 'w' in uInput.lower():
+            elif 'w' in UInput.lower():
                 self.InstallWine()
         else:
             print("?????")
