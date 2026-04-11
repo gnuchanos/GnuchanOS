@@ -100,13 +100,13 @@ class Installer:
             print("Linux -> lx", flush=True)
             print("Linux-lts -> lts", flush=True)
 
-            _Extra = "base base-devel grub nano"
+            _Extra = "base base-devel grub nano make cmake git wget"
 
             UInput = input(":> ")
             if "lx" in UInput.lower():
                 os.system(f"{_Extra} linux linux-firmware linux-headers")
             elif "lts" in UInput.lower():
-                os.system(f"{_Extra} linux-lts linux-firmware linux-lts-headers make cmake git wget")
+                os.system(f"{_Extra} linux-lts linux-firmware linux-lts-headers")
 
             os.system("genfstab -U /mnt >> /mnt/etc/fstab")
             os.system("cp installerPart2.py /mnt")

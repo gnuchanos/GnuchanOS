@@ -6,10 +6,15 @@ Z:\home\archkubi\SSD\SteamLibrary\steamapps\common\Left 4 Dead 2\left4dead2\addo
 WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="dinput8=n,b" PROTON_USE_NTSYNC=1 ENABLE_LSFG=1 LSFG_PROCESS=gc gamemoderun mangohud --dlsym wine
 WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="dinput8=n,b" PROTON_USE_NTSYNC=1 ENABLE_LSFG=1 LSFG_PROCESS=gc gamemoderun %command% 
 
-WINEPREFIX=/Disk1/Games WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="dinput8=n,b" PROTON_USE_NTSYNC=1 ENABLE_LSFG=1 LSFG_PROCESS=gc gamemoderun mangohud --dlsym wine
+WINEPREFIX=/Disk1/Games WINEDEBUG=-fixme,-err WINEDLLOVERRIDES="dinput8=n,b" WINEESYNC=1 ENABLE_LSFG=1 LSFG_PROCESS=gc gamemoderun mangohud --dlsym WINE_FULLSCREEN_FSR=1 wine
 
 mkdir -p ~/.steam/root/compatibilitytools.d
 https://github.com/GloriousEggroll/proton-ge-custom?tab=readme-ov-file#installation
+
+Left 4 Dead 2
+STEAM_COMPAT_RUNTIME_SDL3=1 %command% -vulkan
+
+
 
 
 linux version problems
@@ -50,19 +55,6 @@ WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun wine gfclien
 	#:- Red Alert 2 needs to be installed with winetricks cnc_ddraw
 	#:- TitanFall 2 works fine
 	#:- DOOM 3 BFG Edition works sometimes "long loading or model + texture bug" #fov is drive_c/users/archkubi/Saved Games/id Software/DOOM 3 BFG/basedrive/D3BFGConfig.cfg in here
-	#:- Gothic works with wine but -> use open source port -> https://github.com/Try/OpenGothic#opengothic
-		winetricks directmusic dmusic directx9
-		vim system/GOTHIC.INI
-			zVidResFullscreenX=1920
-			zVidResFullscreenY=1000
-
-		exec "$DIR/Gothic2Notr" "$@"
-		./Gothic2Notr.sh -g .
-	#:- Gothic 2 - only works with open source port -> https://github.com/Try/OpenGothic#opengothic
-		exec "$DIR/Gothic2Notr" "$@"
-		./Gothic2Notr.sh -g .
-	#:- Miami Vice
-		winetricks lavfilters
 	#:- GTA SA -> SAMP
 	#:- Kabul 22
 		WINEARCH=win32 WINEPREFIX=/SSD/Game32 winetricks -q icodecs 

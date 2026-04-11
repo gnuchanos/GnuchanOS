@@ -255,7 +255,7 @@ class gcNeed:
                 time.sleep(1)
                 _temp = os.path.expanduser("~/.vim/plugged/YouCompleteMe")
                 os.chdir(_temp)
-                os.system("python3 install.py --clangd-completer")
+                os.system("python3 install.py --clangd-completer --ts-completer --java-completer")
 
     def ThemesAndIcons(self) -> None:
         # Remove First Shits
@@ -320,6 +320,36 @@ class gcNeed:
         os.system("sudo systemctl daemon-reload")
         os.system("sudo systekctl start /dev/zram0")
         os.system("zramctli")
+
+    def RayLibFromGithub(self) -> None:
+        # important Librarys
+        os.system("sudo pacman -Syu cmake ninja git libx11 libxcursor libxinerama libxrandr")
+
+        # TMP DIR
+        _TMP = os.path.expanduser("~/tmp")
+        if not os.path.exists(_TMP):
+            os.mkdir(_TMP)
+
+        # RAylib Clone
+        os.chdir(_TMP)
+        _TMPRAYLIBDIR = os.path.join(_TMP, "raylib")
+        if not os.path.exists(_TMPRAYLIBDIR):
+            os.system("git clone https://github.com/raysan5/raylib")
+
+        # Create Build Dir
+        os.chdir(_TMPRAYLIBDIR)
+        _TMPBUILD = os.path.expanduser(f"{_TMPRAYLIBDIR}/build")
+        if not os.path.exists(_TMPBUILD):
+            os.mkdir(_TMPBUILD)
+
+        # Build And Copy
+        os.chdir(_TMPBUILD)
+        os.system("make PLATFORM=PLATFORM_DESKTOP")
+        os.system("sudo cp raylib/libraylib.so* /usr/lib/")
+        os.system("sudo cp raylib/include/raylib.h /usr/include/")
+
+        # Return Back
+        os.chdir(self.pathRecord)
 
 
 if __name__ == "__main__":

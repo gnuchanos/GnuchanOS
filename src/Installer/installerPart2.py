@@ -28,6 +28,9 @@ class Installer:
                     os.system(_TempCommand)
                     os.system("hwclock --systohc")
                     break
+                else:
+                    print("OK", flush=True)
+                    break
             else:
                 os.system("ln -sf /usr/share/zoneinfo/Europe/Istanbul")
 
@@ -109,22 +112,34 @@ class Installer:
             else:
                 print(f"{GpuName} this is not GPU")
 
-    def InstallWifiDriver(self, DriverName: str) -> None:
-        print("Install Brodcom Wifi Driver -> bc")
-        if len(DriverName) > 0:
-            if "brodcom" in DriverName.lower():
-                os.system("pacman -Sy --nocomfirm dkms broadcom-wl-dkms")
+    def InstallBrodcomDriver(self) -> None:
+        os.system("pacman -Sy --nocomfirm dkms broadcom-wl-dkms")
 
-    def InstallBrowser(self, BraName: str) -> None:
-        if len(BraName) > 0:
-            if "qutebrowser" in BraName.lower():
-                os.system("pacman -Sy --noconfirm qutebrowser")
-            elif "chromium" in BraName.lower():
-                os.system("pacman -Sy --noconfirm chromium")
-            elif "firefox" in BraName.lower():
-                os.system("pacman -Sy --noconfirm firefox")
-            elif "vivaldi" in BraName.lower():
-                os.system("pacman -Sy --noconfirm vivaldi vivaldi-ffmpeg-codecs")
+    def InstallBrowser(self) -> None:
+       while True:
+            print("Install Qutebrowser -> qb")
+            print("Install Chromium -> cm")
+            print("Install Firefox  -> ff")
+            print("Install Vivaldi  -> v")
+            print("exit")
+            print('-'*30)
+
+            UInput = input()
+            if len(UInput) > 0:
+                if "qutebrowser" in UInput.lower():
+                    os.system("pacman -Sy --noconfirm qutebrowser")
+                    break
+                elif "chromium" in UInput.lower():
+                    os.system("pacman -Sy --noconfirm chromium")
+                    break
+                elif "firefox" in UInput.lower():
+                    os.system("pacman -Sy --noconfirm firefox")
+                    break
+                elif "vivaldi" in UInput.lower():
+                    os.system("pacman -Sy --noconfirm vivaldi vivaldi-ffmpeg-codecs")
+                    break
+                elif "exit" in UInput.lower():
+                    break
 
     def InstallDE(self) -> None:
         while True:
@@ -135,6 +150,7 @@ class Installer:
             print("INSTALL CINNAMON -> CN")
             print("INSTALL OPENBOX -> OX")
             print("exit")
+            print('-'*30)
 
             UInput = input(":> ")
             if "xe" in UInput.lower():
@@ -162,6 +178,7 @@ class Installer:
             print("Install SDDM -> SM")
             print("Install XDM -> XM")
             print("exit")
+            print('-'*30)
 
             UInput = input(":> ")
             if "lm" in UInput.lower():
@@ -202,7 +219,6 @@ class Installer:
             print('-'*30)
 
             UInput = input(":> ")
-
             if "default" in UInput:
                 self.SetTimeZone(Default=True)
                 self.HostName(Default=True)
@@ -284,19 +300,21 @@ if __name__ == "__main__":
         print("Install Network Manager -> net", flush=True)
         print("Install Pipewire -> ipipe", flush=True)
         print("Install GPU driver -> igd", flush=True)
-        print("Install Wifi Driver -> iwd", flush=True)
+        print("Install Brodcom Wifi Driver -> bwd", flush=True)
         print("Install Browser -> ib", flush=True)
         print("Install DE -> ide", flush=True)
         print("Install DM -> idm", flush=True)
         print("Install YAY -> iyay", flush=True)
         print("Install Programs -> ip", flush=True)
-        print("Finish Installer -> finish")
+        print("Finish Installer -> finish", flush=True)
 
         UInput = input(":> ")
         if "is" in UInput.lower():
             gc.Settings()
         elif "net" in UInput.lower():
             gc.InstallNetworkManager()
+        elif "bwd" in UInput.lower():
+            gc.InstallBrodcomDriver()
         elif "pipe" in UInput.lower():
             gc.InstallPipeWire()
         elif "de" in UInput.lower():
