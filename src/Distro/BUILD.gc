@@ -1,0 +1,29 @@
+Gnuchanos live ISO (src/Distro)
+
+TEK KOMUT (Arch / WSL2 Arch, root)
+  cd .../GnuchanOS/src/Distro/scripts
+  sudo ./build-iso.sh
+  # temiz work:     sudo ./build-iso.sh --clean
+  # pacman atla:    sudo ./build-iso.sh --skip-deps
+  # ozel yollar:    sudo WORK_DIR=/var/tmp/gcw OUT_DIR=~/iso ./build-iso.sh
+
+build-iso.sh icinde pacman -Sy --needed --noconfirm ile host paketleri kurulur:
+  archiso arch-install-scripts squashfs-tools dosfstools libisoburn nodejs rsync xz gnupg
+
+/etc/pacman.conf -> [multilib] acik olmali (steam / lib32); betik sadece uyarir.
+
+build-iso.sh sirasi:
+  - host: pacman -Sy --needed ... (--skip-deps ile atlanir)
+  - [1/3] sync-dotfiles-into-profile.sh
+  - [2/3] node emit-packages-x86_64.mjs
+  - [3/3] mkarchiso
+
+Cikti: OUT_DIR altinda .iso (varsayilan /tmp/gnuchanos-iso-out)
+
+WINDOWS: ISO uretimi yok; dosya duzenleme + Git OK. Derleme Linux’ta.
+
+Branding: syslinux / systemd-boot Gnuchanos; arka plan gnuchanos-bg.png (bg.png veya logo.png).
+
+Kaynak paket listesi: src/Dotfile/gnu_pkg_lists.py
+
+Alternatif: VM, GitHub Actions (linux runner).

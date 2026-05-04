@@ -7,7 +7,7 @@ git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
 cd ~/emsdk
 ./emsdk install latest
 ./emsdk activate latest
-source /home/archkubi/tmp/emsdk/emsdk_env.fish
+source /home/gnuchanos/tmp/emsdk/emsdk_env.fish
 
 git clone https://github.com/raysan5/raylib.git ~/tmp/raylib
 cd ~/tmp/raylib
@@ -18,12 +18,12 @@ emcmake cmake .. -DPLATFORM=Web
 cmake --build .
 
 
-source /home/archkubi/tmp/emsdk/emsdk_env.fish
+source /home/gnuchanos/tmp/emsdk/emsdk_env.fish
 # compile game
 emcc *.c -o out/index.html \
-                                     -I/home/archkubi/tmp/raylib/src \
-                                     -I/home/archkubi/tmp/raylib/src/external \
-                                     /home/archkubi/tmp/raylib/build/raylib/libraylib.a \
+                                     -I/home/gnuchanos/tmp/raylib/src \
+                                     -I/home/gnuchanos/tmp/raylib/src/external \
+                                     /home/gnuchanos/tmp/raylib/build/raylib/libraylib.a \
                                      -s USE_GLFW=3 \
                                      -s ASYNCIFY \
                                      -s TOTAL_STACK=64MB \

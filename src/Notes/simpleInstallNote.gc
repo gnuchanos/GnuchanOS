@@ -42,9 +42,9 @@ ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
 hwclock --systohc
 
 echo "ThisIsMyKingdomCOME" > /etc/hostname
-useradd -m -G wheel -s /bin/bash archkubi
+useradd -m -G wheel -s /bin/bash gnuchanos
 nano /etc/sudoers
-passwd archkubi
+passwd gnuchanos
 passwd root
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------
 

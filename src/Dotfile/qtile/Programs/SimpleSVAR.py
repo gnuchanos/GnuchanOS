@@ -15,7 +15,7 @@ from datetime import datetime
 
 
 
-#gpu-screen-recorder -w DVI-D-0 -k h264 -ac aac -c flv -a "default_input|$(pactl get-default-sink).monitor" -f 30 -q medium -ab 256 -o /home/archkubi/Videos/test-2024-12-22_9-15-38.mkv
+#gpu-screen-recorder -w DVI-D-0 -k h264 -ac aac -c flv -a "default_input|$(pactl get-default-sink).monitor" -f 30 -q medium -ab 256 -o /home/gnuchanos/Videos/test-2024-12-22_9-15-38.mkv
 
 
 

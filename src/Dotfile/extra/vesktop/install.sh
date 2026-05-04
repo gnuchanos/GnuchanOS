@@ -1,2 +1,2 @@
 yay -Sy vesktop-bin
-cp gcTheme.css /home/archkubi/.config/vesktop/themes
+cp gcTheme.css ~/.config/vesktop/themes

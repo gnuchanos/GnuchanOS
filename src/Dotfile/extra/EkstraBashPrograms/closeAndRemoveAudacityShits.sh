@@ -1,2 +1,2 @@
 killall audacity
-sudo rm -r /var/tmp/audacity-archkubi/
+sudo rm -r /var/tmp/audacity-gnuchanos/

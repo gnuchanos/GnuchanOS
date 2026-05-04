@@ -17,7 +17,7 @@ echo 'options usbhid mousepoll=2' | sudo tee /etc/modprobe.d/usbhid.conf
 Ardından değişiklikleri uygulamak için:
 
 sudo update-initramfs -u  # (Debian/Ubuntu)
-sudo mkinitcpio -P        # (Arch Linux)
+sudo mkinitcpio -P        # (Gnuchanos / rolling)
 
 3. Kablosuz Cihaz İçin Daha İyi Gecikme Ayarları
 Eğer cihazın Bluetooth kullanıyorsa, btusb modülüne özel optimizasyonlar yapabilirsin:
@@ -26,5 +26,5 @@ echo 'options btusb disable_scofix=1' | sudo tee /etc/modprobe.d/btusb.conf
 Ardından:
 
 sudo update-initramfs -u  # Debian/Ubuntu
-sudo mkinitcpio -P        # Arch Linux
+sudo mkinitcpio -P        # Gnuchanos
 Sistemi yeniden başlat.

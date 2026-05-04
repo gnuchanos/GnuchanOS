@@ -1,6 +1,6 @@
 [Plymouth Theme]
-Name=gnuchanBoot Plymouth
-Description=Sleek boot up progress bar
+Name=gnuchanos
+Description=Gnuchanos boot splash
 ModuleName=script
 
 [script]

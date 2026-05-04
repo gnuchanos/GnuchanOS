@@ -1,0 +1,8 @@
+# Populated by scripts/sync-dotfiles-into-profile.sh before mkarchiso (optional; avoids huge tracked dupes).
+profile/airootfs/usr/share/gnuchanos/dotfiles/*
+!profile/airootfs/usr/share/gnuchanos/dotfiles/.gitkeep
+
+profile/airootfs/usr/share/gnuchanos/branding/*
+!profile/airootfs/usr/share/gnuchanos/branding/.gitkeep
+
+profile/syslinux/gnuchanos-bg.png

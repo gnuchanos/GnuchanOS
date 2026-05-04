@@ -1,16 +1,14 @@
-<img src="https://raw.githubusercontent.com/gnuchanos/GnuchanOS/main/bg.png" align="center" style="width: 100%" />
+<div align="center">
+  <img src="./logo.png" alt="Gnuchanos" width="120" />
 </div>
 
-<div align="center">This is Dream Gnu/Linux Distro.. Maybe One Day Become Real</div> 
-<div align="center"> GnuChanGUI It's old pysimplegui base lib <a href="https://www.github.com/gnuchanos/gnuchangui" target="_blank">Click To Github Page!</a></div>
+<div align="center"><strong>Gnuchanos</strong> — kişisel GNU/Linux denemesi (rolling).</div>
+
+<div align="center">GnuChanGUI eski PySimpleGUI tabanlı lib → <a href="https://www.github.com/gnuchanos/gnuchangui" target="_blank">GitHub</a></div>
+
 <hr>
-<ul>
 
-</ul>
-
-<p> in dotfile </p>
-
-<p> (sad face)</p>
+Wallpaper için depo köküne `bg.png` ekleyebilirsin (yoksa `logo.png` kullanılır). Canlı ISO ve plymouth senkronu: `src/Distro/scripts/sync-branding-assets.sh`.
 
 ```
 XTerm/Vim -> theme Finish Xterm Theme By This Guy-> yassinebridi/Vim-Purapura

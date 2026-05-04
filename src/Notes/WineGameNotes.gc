@@ -1,7 +1,7 @@
 note: winetricks grabfullscreen=y // this is for mouse capture
 WINE_FULLSCREEN_FSR=1 gamemoderun mangohud --dlsym %command% -nojoy -novid -vulkan  -w 1600 -h 900
 
-Z:\home\archkubi\SSD\SteamLibrary\steamapps\common\Left 4 Dead 2\left4dead2\addons\workshop\
+Z:\home\gnuchanos\SSD\SteamLibrary\steamapps\common\Left 4 Dead 2\left4dead2\addons\workshop\
 
 WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="dinput8=n,b" PROTON_USE_NTSYNC=1 ENABLE_LSFG=1 LSFG_PROCESS=gc gamemoderun mangohud --dlsym wine
 WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="dinput8=n,b" PROTON_USE_NTSYNC=1 ENABLE_LSFG=1 LSFG_PROCESS=gc gamemoderun %command% 
@@ -54,7 +54,7 @@ WINE_FULLSCREEN_FSR=1 WINEDLLOVERRIDES="RInput.dll=n,b" gamemoderun wine gfclien
 	#:- Warcraft 3 works, but you must remove or backup the movie files as Wine can't play these videos
 	#:- Red Alert 2 needs to be installed with winetricks cnc_ddraw
 	#:- TitanFall 2 works fine
-	#:- DOOM 3 BFG Edition works sometimes "long loading or model + texture bug" #fov is drive_c/users/archkubi/Saved Games/id Software/DOOM 3 BFG/basedrive/D3BFGConfig.cfg in here
+	#:- DOOM 3 BFG Edition works sometimes "long loading or model + texture bug" #fov is drive_c/users/gnuchanos/Saved Games/id Software/DOOM 3 BFG/basedrive/D3BFGConfig.cfg in here
 	#:- GTA SA -> SAMP
 	#:- Kabul 22
 		WINEARCH=win32 WINEPREFIX=/SSD/Game32 winetricks -q icodecs 
