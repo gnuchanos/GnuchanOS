@@ -27,3 +27,15 @@ Branding: syslinux / systemd-boot Gnuchanos; arka plan gnuchanos-bg.png (bg.png 
 Kaynak paket listesi: src/Dotfile/gnu_pkg_lists.py
 
 Alternatif: VM, GitHub Actions (linux runner).
+
+# 1. Geçici büyük tmp dizini oluştur
+mkdir -p $HOME/work/tmp_root
+
+# 2. /tmp'yi bind mount ile $HOME/work/tmp_root olarak değiştir
+sudo mount --bind $HOME/work/tmp_root /tmp
+
+# 3. ISO'yu root olarak çalıştır
+sudo WORK_DIR=$HOME/work/gnuchanos-iso-work OUT_DIR=$HOME/work/gnuchanos-iso-out ./build-iso.sh --clean
+
+# 4. İşlem bittiğinde mount'u kaldır
+sudo umount /tmp

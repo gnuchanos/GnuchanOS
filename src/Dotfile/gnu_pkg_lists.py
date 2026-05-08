@@ -100,18 +100,20 @@ RC_SERVICES = (
     "tlp",
     "cpupower",
     "fail2ban",
-    "sshd",
 )
 
 DEV_TOOLS = ("gimp", "audacity", "krita", "inkscape", "libreoffice-fresh")
+
+# "gst-plugins-base-libs not found
+# "lib32-gst-plugins-base-libs" not found
+# "lib32-gst-plugins-base-libs"
 
 FOR_GAME = (
     "steam",
     "gamemode lib32-gamemode",
     "protontricks",
     "gstreamer",
-    "gst-plugins-base-libs lib32-gst-plugins-base-libs",
-    "gst-libav gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-plugins-base-libs lib32-gst-plugins-base-libs",
+    "gst-libav gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-plugins-base-libs",
     "libpulse lib32-libpulse",
     "alsa-plugins lib32-alsa-plugins",
     "alsa-lib lib32-alsa-lib",
