@@ -49,7 +49,7 @@ else
     done
   }
 
-  place_dotfiles_in_home /root
+  place_dotfiles_in_home /etc/skel
   install -d /etc/skel
   place_dotfiles_in_home /etc/skel
 

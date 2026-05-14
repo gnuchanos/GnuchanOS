@@ -12,30 +12,18 @@ build-iso.sh icinde pacman -Sy --needed --noconfirm ile host paketleri kurulur:
 
 /etc/pacman.conf -> [multilib] acik olmali (steam / lib32); betik sadece uyarir.
 
-build-iso.sh sirasi:
+build-iso.sh sirasi:wswsw
   - host: pacman -Sy --needed ... (--skip-deps ile atlanir)
   - [1/3] sync-dotfiles-into-profile.sh
   - [2/3] node emit-packages-x86_64.mjs
   - [3/3] mkarchiso
 
 Cikti: OUT_DIR altinda .iso (varsayilan /tmp/gnuchanos-iso-out)
-
 WINDOWS: ISO uretimi yok; dosya duzenleme + Git OK. Derleme Linux’ta.
-
 Branding: syslinux / systemd-boot Gnuchanos; arka plan gnuchanos-bg.png (bg.png veya logo.png).
-
 Kaynak paket listesi: src/Dotfile/gnu_pkg_lists.py
-
 Alternatif: VM, GitHub Actions (linux runner).
 
-# 1. Geçici büyük tmp dizini oluştur
-mkdir -p $HOME/work/tmp_root
 
-# 2. /tmp'yi bind mount ile $HOME/work/tmp_root olarak değiştir
-sudo mount --bind $HOME/work/tmp_root /tmp
-
-# 3. ISO'yu root olarak çalıştır
-sudo WORK_DIR=$HOME/work/gnuchanos-iso-work OUT_DIR=$HOME/work/gnuchanos-iso-out ./build-iso.sh --clean
-
-# 4. İşlem bittiğinde mount'u kaldır
-sudo umount /tmp
+WARNING: no configuration file found
+boot: _
