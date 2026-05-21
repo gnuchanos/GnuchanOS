@@ -1,0 +1,30 @@
+name: Build Gnuchanos ISO
+
+on:
+  push:
+    paths:
+      - 'src/Distro/**'
+      - 'src/Dotfile/**'
+  workflow_dispatch:
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build ISO in privileged Arch container
+        run: |
+          docker run --rm --privileged \
+            -v "$GITHUB_WORKSPACE":/workspace \
+            -w /workspace \
+            archlinux:latest \
+            bash src/Distro/scripts/build-iso.sh
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gnuchanos-iso
+          path: src/Distro/out/*.iso

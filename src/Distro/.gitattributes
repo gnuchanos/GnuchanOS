@@ -1,3 +1,0 @@
-# Shell hooks must stay LF for Linux ISO builds (avoid CRLF on Windows checkouts).
-*.sh text eol=lf
-profiledef.sh text eol=lf
