@@ -1,0 +1,1 @@
+quiet splash radeon.modeset=1 processor.max_cstate=1 zswap.enabled=1 zswap.max_pool_percent=40 vm.swappiness=10 mitigations=off nopti no_stf init=/lib/systemd/systemd

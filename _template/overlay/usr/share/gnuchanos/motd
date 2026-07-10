@@ -1,0 +1,17 @@
+ ██████╗ ███╗   ██╗██╗   ██╗ ██████╗██╗  ██╗ █████╗ ███╗   ██╗ ██████╗ ███████╗
+ ██╔════╝ ████╗  ██║██║   ██║██╔════╝██║  ██║██╔══██╗████╗  ██║██╔═══██╗██╔════╝
+ ██║  ███╗██╔██╗ ██║██║   ██║██║     ███████║███████║██╔██╗ ██║██║   ██║███████╗
+ ██║   ██║██║╚██╗██║██║   ██║██║     ██╔══██║██╔══██║██║╚██╗██║██║   ██║╚════██║
+ ╚██████╔╝██║ ╚████║╚██████╔╝╚██████╗██║  ██║██║  ██║██║ ╚████║╚██████╔╝███████║
+  ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝
+
+  GnuchanOS 1.0 - Minimal Debian-Based Distribution
+  https://github.com/gnuchanos/GnuchanOS
+
+  * Core Philosophy: Minimal, Free, Self-Sufficient
+  * Window Manager: QTile (python)
+  * XServer: X11Libre
+  * Init: Liberated systemd
+
+  Hardware: AMD E1 (Kabini/Mullins) + Radeon HD 8210
+  RAM target: < 256 MB idle

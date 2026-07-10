@@ -1,0 +1,28 @@
+# GPU
+radeon
+ttm
+drm_kms_helper
+drm
+
+# Storage
+ahci
+libata
+sd_mod
+usb_storage
+
+# Filesystem
+ext4
+vfat
+
+# Input
+evdev
+psmouse
+i2c_hid
+hid_multitouch
+hid_generic
+usbhid
+
+# Touchpad
+elan_i2c
+synaptics_i2c
+alps

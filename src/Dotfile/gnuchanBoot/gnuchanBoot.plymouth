@@ -1,8 +1,0 @@
-[Plymouth Theme]
-Name=gnuchanos
-Description=Gnuchanos boot splash
-ModuleName=script
-
-[script]
-ImageDir=/usr/share/plymouth/themes/gnuchanBoot/assets
-ScriptFile=/usr/share/plymouth/themes/gnuchanBoot/assets/aregression.script

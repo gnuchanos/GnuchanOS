@@ -1,0 +1,4 @@
+bluetooth bluez cups* exim4* firefox-esr* gnome* kde* lxde* xfce4*
+libreoffice* snapd flatpak thunderbird avahi-* mlocate
+pulseaudio-module-bluetooth
+rsync (opt.)

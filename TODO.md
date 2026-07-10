@@ -1,27 +1,37 @@
-# GnuchanOS TODO
+# GnuchanOS Build Fixes — Completed
 
-## 1. Distro ISO Build ve Boot Düzeltmeleri
-- `src/Distro/scripts/build-iso.sh` içinde `--clean` desteğini doğrula ve otomatik temizlenen çalışma dizinini düzelt.
-- `src/Distro/profile/customize_airootfs.sh` dosyasını root hesabı, `/etc/shadow`, `/etc/passwd` ve `/etc/group` oluşturma için güvenli hale getir.
-- `src/Distro/profile/airootfs/etc/fstab` ekle veya güncelle; canlı ISO için gerekli tmpfs/proc/sys/udev girişlerini sağla.
-- `src/Distro/profile/profiledef.sh` ve `src/Distro/profile/packages.x86_64` içeriğini gözden geçir; paket listesi ve boot modları uyumluluğunu kontrol et.
-- `src/Distro/profile/syslinux/` yapılandırmalarını test et ve BIOS/UEFI geçişini doğrula.
+## Root Cause Found & Fixed
 
-## 2. Canlı Ortam ve Branding
-- `src/Distro/scripts/sync-branding-assets.sh` çalışmasını doğrula ve `bg.png` / `logo.png` branding senkronizasyonunu sorunsuz hale getir.
-- `src/Dotfile/gnuchanBoot`, `plymouthd.conf`, `qtile/config.py` ve masaüstü ayarlarını canlı ISO ile uyumlu hâle getir.
-- LXDm tema, Qtile arka planı ve diğer dotfile bileşenlerini ISO içine yerleştir.
+**Problem:** `E: Tried to extract package, but tar failed` on `libpam-runtime`
+**Root cause:** `debootstrap` was running on Windows NTFS via DrvFs (`/mnt/d/`), which doesn't support Linux special file permissions (setuid, device nodes, etc.). PAM packages require these permissions.
 
-## 3. Belgeler ve CI
-- `README.md` içinde ISO derleme adımlarını güncelle; Docker komutu `--clean` ve gerekli `--privileged` kullanımını açıkla.
-- `.github/workflows/build-distro.yml` dosyasını `--clean` ekleyerek ve çıktıyı `src/Distro/out/*.iso` olarak güncelle.
-- Bu `TODO.md` belgesini güncel tut; yeni yapılacakları kısa ve açık tut.
+## Changes Made
 
-## 4. İlgili Araçlar ve Yardımcı Scriptler
-- `src/install_zapret.sh` ve `src/uninstall_zpret.sh` betiklerinin debug/installation flow'unu gözden geçir.
-- `src/Dotfile/gnu_pkg_lists.py` ile `src/Distro/profile/packages.x86_64` arasındaki paket listesi senkronizasyonunu doğrula.
+1. **`_template/scripts/build-all.sh`**
+   - Moved ROOTFS, CACHE, ISO_DIR to `/tmp/gnuchan-build/` (WSL native ext4)
+   - Added DrvFs detection warning
+   - `run_script()` now passes env vars explicitly (works through sudo)
+   - Removed `export TMPDIR` (leaked into chroot, breaking ca-certificates)
+   - Post-build: copies ISO back to `_template/iso/` on D:\
 
-## 5. İleri Düzey İyileştirmeler
-- Canlı ISO açılışında `Switch Root` hatalarını azaltmak için initramfs ve systemd servis yapılandırmasını kontrol et.
-- Canlı ortamda recovery/emergency mod kullanımı için root erişimi ve `sulogin` düzenlemelerini güvenli hale getir.
-- Arşivleme/ISO çıktısı sonrası sonuç dosyalarını otomatik temizleyen bir script ekle.
+2. **All 12 scripts** (01-12): Paths now use `${ROOTFS:-$PROJECT_DIR/rootfs}` pattern so they work both from build-all.sh (ext4) and standalone (old D:\ fallback)
+
+3. **`_template/scripts/02-chroot-configure.sh`**
+   - Fixed: `locale.gen` not found in minbase → install `locales` first
+   - Fixed: chroot apt commands leak TMPDIR → wrap with `bash -c "unset TMPDIR; apt ..."`
+
+4. **`_template/config/packages-required.txt`**
+   - Fixed: `libxfont2-dev` → `libxfont-dev` (renamed in Debian)
+   - Fixed: `libinput` → `libinput10` (package name)
+   - Removed: `wine32` (not available on amd64, replaced by `libwine`)
+
+## Verified
+
+- ✅ debootstrap completes successfully on native ext4 at `/tmp/gnuchan-build/`
+- ✅ Steps 01-07 run clean (tested with `--skip-kernel --skip-liberated --skip-xlibre --skip-qtile`)
+- ✅ Package installation fix confirmed
+
+## Next Steps
+
+- [ ] Run full `build.bat build` to produce ISO
+- [ ] Test ISO in VirtualBox
