@@ -1,8 +1,0 @@
-[Plymouth Theme]
-Name=GnuchanOS
-Description=GnuchanOS Boot Splash
-ModuleName=script
-
-[script]
-ImageDir=/usr/share/plymouth/themes/gnuchanos
-ScriptFile=/usr/share/plymouth/themes/gnuchanos/gnuchanos.script

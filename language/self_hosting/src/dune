@@ -1,0 +1,8 @@
+(ocamllex lexer)
+(menhir (modules parser) (infer true) (flags --unused-tokens --unused-precedence-levels))
+
+(executable
+ (name main)
+ (libraries unix)
+ (flags (:standard -w -26-27-30-33-40-41-42))
+)

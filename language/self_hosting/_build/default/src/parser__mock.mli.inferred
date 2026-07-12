@@ -1,0 +1,173 @@
+type token =
+    YIELD
+  | WITH
+  | WHILE
+  | WALRUS
+  | TRY
+  | TRUE
+  | SUPER
+  | SUB_ASSIGN
+  | STRUCT
+  | STRING of string
+  | STAR
+  | SLASH
+  | SEMI
+  | SELF
+  | RSHIFT_ASSIGN
+  | RSHIFT
+  | RPAREN
+  | RETURN
+  | RBRACK
+  | RBRACE
+  | RAISE
+  | POW_ASSIGN
+  | POW
+  | PLUS
+  | PERCENT
+  | PASS
+  | OR
+  | NULL
+  | NOT
+  | NONLOCAL
+  | NONE
+  | NEQ
+  | MUL_ASSIGN
+  | MOD_ASSIGN
+  | MINUS
+  | MATCH
+  | LT
+  | LSHIFT_ASSIGN
+  | LSHIFT
+  | LPAREN
+  | LE
+  | LBRACK
+  | LBRACE
+  | LAMBDA
+  | IS
+  | INT of int
+  | INC
+  | IN
+  | IMPORT
+  | IF
+  | IDENT of string
+  | GT
+  | GLOBAL
+  | GE
+  | FROM
+  | FOR
+  | FLOORDIV_ASSIGN
+  | FLOORDIV
+  | FLOAT of float
+  | FINALLY
+  | FALSE
+  | EXCEPT
+  | EQEQ
+  | EOF
+  | ENUM
+  | ELSE
+  | ELIF
+  | DOT
+  | DIV_ASSIGN
+  | DEL
+  | DEF
+  | DEC
+  | DARROW
+  | CONTINUE
+  | COMMA
+  | COLON
+  | CLASS
+  | CASE
+  | BREAK
+  | BITXOR_ASSIGN
+  | BITXOR
+  | BITOR_ASSIGN
+  | BITOR
+  | BITNOT
+  | BITAND_ASSIGN
+  | BITAND
+  | ASSIGN
+  | ASSERT
+  | AS
+  | ARROW
+  | AND
+  | ADD_ASSIGN
+val mk_pos : Lexing.position -> Ast.pos
+val mk_expr : Ast.expr_node -> Lexing.position -> Ast.expr
+val mk_stmt : Ast.stmt_node -> Lexing.position -> Ast.stmt
+val mk_stmt_from_pos : Ast.stmt_node -> Ast.pos -> Ast.stmt
+val mk_decl : Ast.decl_node -> Lexing.position -> Ast.decl
+val menhir_begin_marker : int
+val xv_with_item : Ast.expr * string option
+val xv_walrus_expr : Ast.expr
+val xv_unary_expr : Ast.expr
+val xv_top_decl : Ast.decl
+val xv_struct_decl : Ast.decl
+val xv_stmt : Ast.stmt
+val xv_shift_expr : Ast.expr
+val xv_separated_nonempty_list_COMMA_with_item_ :
+  (Ast.expr * string option) list
+val xv_separated_nonempty_list_COMMA_param_ : Ast.param list
+val xv_separated_nonempty_list_COMMA_import_item_ :
+  (string * string option) list
+val xv_separated_nonempty_list_COMMA_expr_ : Ast.expr list
+val xv_separated_nonempty_list_COMMA_enum_item_ :
+  (string * Ast.expr option) list
+val xv_separated_nonempty_list_COMMA_dict_item_ : (Ast.expr * Ast.expr) list
+val xv_separated_nonempty_list_COMMA_IDENT_ : string list
+val xv_separated_list_COMMA_param_ : Ast.param list
+val xv_separated_list_COMMA_expr_ : Ast.expr list
+val xv_separated_list_COMMA_enum_item_ : (string * Ast.expr option) list
+val xv_separated_list_COMMA_dict_item_ : (Ast.expr * Ast.expr) list
+val xv_program : Ast.program
+val xv_primary_expr : Ast.expr
+val xv_preceded_ASSIGN_expr_ : Ast.expr
+val xv_preceded_AS_IDENT_ : string
+val xv_pow_expr : Ast.expr
+val xv_postfix_expr : Ast.expr
+val xv_param : Ast.param
+val xv_or_expr : Ast.expr
+val xv_option_preceded_ASSIGN_expr__ : Ast.expr option
+val xv_option_preceded_AS_IDENT__ : string option
+val xv_option_finally_clause_ : Ast.stmt option
+val xv_option_expr_ : Ast.expr option
+val xv_not_expr : Ast.expr
+val xv_mul_expr : Ast.expr
+val xv_member_decl : Ast.decl
+val xv_loption_separated_nonempty_list_COMMA_param__ : Ast.param list
+val xv_loption_separated_nonempty_list_COMMA_expr__ : Ast.expr list
+val xv_loption_separated_nonempty_list_COMMA_enum_item__ :
+  (string * Ast.expr option) list
+val xv_loption_separated_nonempty_list_COMMA_dict_item__ :
+  (Ast.expr * Ast.expr) list
+val xv_list_top_decl_ : Ast.decl list
+val xv_list_stmt_ : Ast.stmt list
+val xv_list_member_decl_ : Ast.decl list
+val xv_list_except_clause_ :
+  (Ast.expr option * string option * Ast.stmt) list
+val xv_lambda_expr : Ast.expr
+val xv_is_expr : Ast.expr
+val xv_in_expr : Ast.expr
+val xv_import_item : string * string option
+val xv_import_decl : Ast.decl
+val xv_if_expr : Ast.expr
+val xv_func_decl : Ast.decl
+val xv_finally_clause : Ast.stmt
+val xv_expr_option : Ast.expr option
+val xv_expr : Ast.expr
+val xv_except_clause : Ast.expr option * string option * Ast.stmt
+val xv_eq_expr : Ast.expr
+val xv_enum_item : string * Ast.expr option
+val xv_enum_decl : Ast.decl
+val xv_elif_else : Ast.stmt option
+val xv_dict_item : Ast.expr * Ast.expr
+val xv_decl_stmt : Ast.decl
+val xv_cmp_expr : Ast.expr
+val xv_class_decl : Ast.decl
+val xv_block : Ast.stmt
+val xv_bit_xor_expr : Ast.expr
+val xv_bit_or_expr : Ast.expr
+val xv_bit_and_expr : Ast.expr
+val xv_assign_expr : Ast.expr
+val xv_and_expr : Ast.expr
+val xv_add_expr : Ast.expr
+val menhir_end_marker : int

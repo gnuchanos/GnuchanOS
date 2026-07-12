@@ -1,1 +1,0 @@
-# Optional packages - empty by default, users can add packages here

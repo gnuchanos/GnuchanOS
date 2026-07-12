@@ -1,9 +1,0 @@
-GRUB_DEFAULT=0
-GRUB_TIMEOUT=5
-GRUB_GFXMODE=1024x768x32
-GRUB_GFXPAYLOAD_LINUX=keep
-GRUB_CMDLINE_LINUX_DEFAULT="quiet splash radeon.modeset=1 processor.max_cstate=1 zswap.enabled=1 vm.swappiness=10 mitigations=off nopti no_stf"
-GRUB_CMDLINE_LINUX=""
-GRUB_BACKGROUND="/boot/grub/themes/gnuchanos/background.png"
-GRUB_THEME="/boot/grub/themes/gnuchanos/theme.txt"
-GRUB_DISTRIBUTOR="GnuchanOS"
