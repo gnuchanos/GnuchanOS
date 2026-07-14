@@ -19,6 +19,7 @@ void flag_lexer_init(void) {
     Flag f = {
         .name = "lexer",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Run lexer on file and output tokens",
         .handler = handler,
         .needs_value = true

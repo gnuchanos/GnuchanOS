@@ -15,6 +15,7 @@ void flag_linclude_init(void) {
     Flag f = {
         .name = "linclude",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Add include search path (like gcc -I)",
         .handler = handler,
         .needs_value = true

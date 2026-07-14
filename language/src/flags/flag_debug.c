@@ -27,6 +27,7 @@ void flag_debug_init(void) {
     Flag f = {
         .name = "debug",
         .alias = "d",
+        .category = "Compiler Pipeline",
         .description = "Debug mode (run, tokens, ast)",
         .handler = handler,
         .needs_value = true

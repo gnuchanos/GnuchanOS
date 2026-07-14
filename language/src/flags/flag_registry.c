@@ -18,9 +18,8 @@ void flag_register(const Flag f) {
 
 FlagResult flag_process(int argc, char* argv[]) {
     if (argc < 2) {
-        /* no flags — print help and exit */
-        flag_print_help();
-        return FLAG_EXIT;
+        /* no flags — launch interactive shell */
+        return FLAG_OK;
     }
 
     for (int i = 1; i < argc; i++) {
@@ -62,16 +61,53 @@ const Flag* flag_find(const char* name) {
 void flag_print_help(void) {
     printf("gcLang Compiler / Runner\n");
     printf("usage: gcl [flags] [file]\n\n");
-    printf("flags:\n");
+
+    /* Collect unique categories in order of first appearance */
+    const char *cats[16];
+    int ncats = 0;
     for (int i = 0; i < g_flag_count; i++) {
-        const Flag* f = &g_flags[i];
-        printf("  ");
-        if (f->alias) {
-            printf("-%s, ", f->alias);
-        } else {
-            printf("    ");
+        const char *c = g_flags[i].category;
+        if (!c) continue;
+        int found = 0;
+        for (int j = 0; j < ncats; j++) {
+            if (strcmp(cats[j], c) == 0) { found = 1; break; }
         }
-        printf("--%-14s  %s\n", f->name, f->description);
+        if (!found && ncats < 16) cats[ncats++] = c;
     }
-    printf("\n");
+
+    /* Flags without a category (always shown first) */
+    int any_uncat = 0;
+    for (int i = 0; i < g_flag_count; i++) {
+        if (!g_flags[i].category) { any_uncat = 1; break; }
+    }
+    if (any_uncat) {
+        printf("flags:\n");
+        for (int i = 0; i < g_flag_count; i++) {
+            const Flag* f = &g_flags[i];
+            if (f->category) continue;
+            printf("  ");
+            if (f->alias)
+                printf("-%s, ", f->alias);
+            else
+                printf("    ");
+            printf("--%-14s  %s\n", f->name, f->description);
+        }
+        printf("\n");
+    }
+
+    /* Flags grouped by category */
+    for (int ci = 0; ci < ncats; ci++) {
+        printf("%s:\n", cats[ci]);
+        for (int i = 0; i < g_flag_count; i++) {
+            const Flag* f = &g_flags[i];
+            if (!f->category || strcmp(f->category, cats[ci]) != 0) continue;
+            printf("    ");
+            if (f->alias)
+                printf("-%s, ", f->alias);
+            else
+                printf("    ");
+            printf("--%-14s  %s\n", f->name, f->description);
+        }
+        printf("\n");
+    }
 }

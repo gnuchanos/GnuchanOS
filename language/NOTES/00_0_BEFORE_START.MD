@@ -59,7 +59,7 @@ gcl -debug run
 gcl -version
 gcl -help
 
-# extra future
+# luarun
 gcl -luarun -> lua55.dll, lua55.so
     gcl -luarun file.lua -dll, -so path/lua55.dll or -so path/lua55.so
         -dll -> missing path or file

@@ -12,6 +12,7 @@ void flag_version_init(void) {
     Flag f = {
         .name = "version",
         .alias = "v",
+        .category = "General",
         .description = "Show version information",
         .handler = handler,
         .needs_value = false

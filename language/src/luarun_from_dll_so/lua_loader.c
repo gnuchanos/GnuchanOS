@@ -54,7 +54,7 @@ int resolve_lua_api(LIB_HANDLE lib, LuaAPI *api) {
     do { \
         api->name = (name##_t)LIB_SYM(lib, #name); \
         if (!api->name) { \
-            fprintf(stderr, "Error: " LUA_LIB_NAME " missing symbol '%s'\n", #name); \
+            fprintf(stderr, "Error: missing symbol '%s'\n", #name); \
             return -1; \
         } \
     } while(0)
@@ -76,7 +76,7 @@ int resolve_lua_api(LIB_HANDLE lib, LuaAPI *api) {
     do { \
         api->name = (lua_CFunction)LIB_SYM(lib, #name); \
         if (!api->name) { \
-            fprintf(stderr, "Error: " LUA_LIB_NAME " missing symbol '%s'\n", #name); \
+            fprintf(stderr, "Error: missing symbol '%s'\n", #name); \
             return -1; \
         } \
     } while(0)

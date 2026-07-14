@@ -15,6 +15,7 @@ void flag_ast_init(void) {
     Flag f = {
         .name = "ast",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Lex+parse file and output AST tree",
         .handler = handler,
         .needs_value = true

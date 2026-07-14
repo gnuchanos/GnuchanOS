@@ -15,6 +15,7 @@ void flag_codegen_init(void) {
     Flag f = {
         .name = "codegen",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Lex+parse+codegen and output C code",
         .handler = handler,
         .needs_value = true

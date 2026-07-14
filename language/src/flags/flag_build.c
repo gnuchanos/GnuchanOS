@@ -29,6 +29,7 @@ void flag_build_init(void) {
     Flag f = {
         .name = "build",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Build project (--wasm, --native)",
         .handler = handler,
         .needs_value = false

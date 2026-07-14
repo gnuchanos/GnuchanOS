@@ -1,13 +1,17 @@
 /*
- * flag_luarun.c — -luarun, -dll, -so flags
+ * flag_luarun.c — -luarun flag for running Lua scripts
  *
- * -luarun <file.lua>   run a Lua script
- * -dll   <path.dll>    specify Lua DLL path
- * -so    <path.so>     specify Lua SO path (alias for -dll)
+ * -luarun <file.lua>          run a Lua script
+ * -ldll   <path.dll>          specify Lua DLL path (overrides shared -dll)
+ * -lso    <path.so>           specify Lua SO path (alias for -ldll)
  *
  * These are separate flags so they can appear in any order.
  * The actual Lua execution is deferred to flag_luarun_execute(),
  * called from main.c after all flags are processed.
+ *
+ * NOTE: The generic -dll / -so flags are registered in flag_dll.c
+ * and shared between -luarun and -pyrun. Use -ldll / -lso for
+ * Lua-specific overrides.
  */
 
 #include "flags.h"
@@ -15,33 +19,36 @@
 #include <stdio.h>
 #include <string.h>
 
-/* ---- state shared between the three flag handlers ---- */
-static const char *g_lua_script = NULL;   /* set by -luarun */
-static const char *g_lua_dll    = "dll/lua55.dll";  /* -dll / -so override; default */
+/* ---- state shared between the flag handlers ---- */
+static const char *g_lua_script = NULL;       /* set by -luarun          */
+static const char *g_lua_dll    = NULL;        /* -ldll / -lso override  */
+static int         g_lua_dll_explicit = 0;    /* 1 if user passed -ldll */
 
 /* ------------------------------------------------------- */
-/* -dll handler                                           */
+/* -ldll handler                                           */
 /* ------------------------------------------------------- */
-static FlagResult handler_dll(int argc, char *argv[], int *i) {
+static FlagResult handler_ldll(int argc, char *argv[], int *i) {
     if (*i + 1 >= argc) {
-        fprintf(stderr, "error: -dll requires a path argument\n");
+        fprintf(stderr, "error: -ldll requires a path argument\n");
         return FLAG_ERROR;
     }
     (*i)++;
     g_lua_dll = argv[*i];
+    g_lua_dll_explicit = 1;
     return FLAG_OK;
 }
 
 /* ------------------------------------------------------- */
-/* -so handler (alias for -dll)                            */
+/* -lso handler (alias for -ldll)                          */
 /* ------------------------------------------------------- */
-static FlagResult handler_so(int argc, char *argv[], int *i) {
+static FlagResult handler_lso(int argc, char *argv[], int *i) {
     if (*i + 1 >= argc) {
-        fprintf(stderr, "error: -so requires a path argument\n");
+        fprintf(stderr, "error: -lso requires a path argument\n");
         return FLAG_ERROR;
     }
     (*i)++;
     g_lua_dll = argv[*i];
+    g_lua_dll_explicit = 1;
     return FLAG_OK;
 }
 
@@ -55,7 +62,7 @@ static FlagResult handler_luarun(int argc, char *argv[], int *i) {
     }
     (*i)++;
     g_lua_script = argv[*i];
-    return FLAG_OK;     /* don't exit yet — let other flags (-dll/-so) be processed */
+    return FLAG_OK;     /* don't exit yet — let other flags be processed */
 }
 
 /* ------------------------------------------------------- */
@@ -66,13 +73,22 @@ FlagResult flag_luarun_execute(void) {
     if (!g_lua_script)
         return FLAG_OK;     /* nothing to do */
 
-    int status = run_lua(g_lua_script, g_lua_dll);
+    /* Determine DLL path: explicit -ldll > shared -dll > default */
+    const char *dll_path = g_lua_dll;
+    if (!dll_path || !g_lua_dll_explicit)
+        dll_path = flag_dll_get();
+    if (!dll_path) {
+        fprintf(stderr, "error: -luarun requires -ldll or -dll flag\n");
+        return FLAG_ERROR;
+    }
+
+    int status = run_lua(g_lua_script, dll_path);
     g_lua_script = NULL;    /* prevent double-execution */
     return (status == 0) ? FLAG_EXIT : FLAG_ERROR;
 }
 
 /* ------------------------------------------------------- */
-/* flag_luarun_init — register all three flags             */
+/* flag_luarun_init — register flags                       */
 /* ------------------------------------------------------- */
 void flag_luarun_init(void) {
     Flag f;
@@ -80,6 +96,7 @@ void flag_luarun_init(void) {
     f = (Flag){
         .name        = "luarun",
         .alias       = NULL,
+        .category    = "Run (Embedded)",
         .description = "Run Lua script via lua55.dll/so",
         .handler     = handler_luarun,
         .needs_value = true
@@ -87,19 +104,21 @@ void flag_luarun_init(void) {
     flag_register(f);
 
     f = (Flag){
-        .name        = "dll",
+        .name        = "ldll",
         .alias       = NULL,
-        .description = "Path to Lua DLL (for -luarun)",
-        .handler     = handler_dll,
+        .category    = "Run (Embedded)",
+        .description = "Path to Lua DLL (overrides shared -dll)",
+        .handler     = handler_ldll,
         .needs_value = true
     };
     flag_register(f);
 
     f = (Flag){
-        .name        = "so",
+        .name        = "lso",
         .alias       = NULL,
-        .description = "Path to Lua SO (alias for -dll)",
-        .handler     = handler_so,
+        .category    = "Run (Embedded)",
+        .description = "Path to Lua SO (alias for -ldll)",
+        .handler     = handler_lso,
         .needs_value = true
     };
     flag_register(f);

@@ -15,6 +15,7 @@ void flag_llib_init(void) {
     Flag f = {
         .name = "llib",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Add library search path (like gcc -L)",
         .handler = handler,
         .needs_value = true

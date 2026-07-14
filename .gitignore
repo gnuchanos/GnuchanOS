@@ -1,0 +1,35 @@
+# ── Build outputs ──────────────────────────────────────────
+*.exe
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+
+# ── Python embeddable (downloaded, not source) ─────────────
+*.pyd
+*.zip
+*.cat
+*.pth
+
+# ── Output directory (build artifacts) ─────────────────────
+language/_output_test/
+
+# ── Lua raylib binding build ──────────────────────────────
+fun_things/lua_raylib_binding/_build/
+
+# ── OS / IDE garbage ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vs/
+.vscode/
+.idea/
+
+# ── Python cache ──────────────────────────────────────────
+__pycache__/
+*.pyc
+nul

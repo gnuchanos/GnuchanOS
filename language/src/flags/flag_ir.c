@@ -15,6 +15,7 @@ void flag_ir_init(void) {
     Flag f = {
         .name = "ir",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Lex+parse+lower IR and output IR instructions",
         .handler = handler,
         .needs_value = true

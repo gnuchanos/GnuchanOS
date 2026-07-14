@@ -25,6 +25,7 @@ void flag_all_flags_init(void) {
     Flag f = {
         .name = "all_flags",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Full pipeline: file.gcsf -o path/output",
         .handler = handler,
         .needs_value = true

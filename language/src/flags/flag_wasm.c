@@ -27,6 +27,7 @@ void flag_wasm_init(void) {
     Flag f = {
         .name = "wasm",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "WASM mode (raylib, binding, export)",
         .handler = handler,
         .needs_value = true

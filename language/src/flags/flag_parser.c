@@ -19,6 +19,7 @@ void flag_parser_init(void) {
     Flag f = {
         .name = "parser",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Run parser on file and output AST",
         .handler = handler,
         .needs_value = true

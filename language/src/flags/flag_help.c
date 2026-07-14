@@ -11,6 +11,7 @@ void flag_help_init(void) {
     Flag f = {
         .name = "help",
         .alias = "h",
+        .category = "General",
         .description = "Show this help message",
         .handler = handler,
         .needs_value = false

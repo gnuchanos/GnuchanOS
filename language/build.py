@@ -53,7 +53,9 @@ FLAG_SRCS = [
     "src/flags/flag_lextend.c",
     "src/flags/flag_wasm.c",
     "src/flags/flag_debug.c",
+    "src/flags/flag_dll.c",
     "src/flags/flag_luarun.c",
+    "src/flags/flag_pyrun.c",
 ]
 
 LUAEMBED_SRCS = [
@@ -63,7 +65,14 @@ LUAEMBED_SRCS = [
     "src/luarun_from_dll_so/run_lua.c",
 ]
 
-GCL_SRCS = FLAG_SRCS + LUAEMBED_SRCS
+PYEMBED_SRCS = [
+    "src/pyrun_from_dll_so/py_embed.c",
+    "src/pyrun_from_dll_so/py_loader.c",
+    "src/pyrun_from_dll_so/py_runner.c",
+    "src/pyrun_from_dll_so/run_py.c",
+]
+
+GCL_SRCS = FLAG_SRCS + LUAEMBED_SRCS + PYEMBED_SRCS
 
 # ── Targets ──────────────────────────────────────────────────────
 def build_gcl():

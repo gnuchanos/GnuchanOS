@@ -19,6 +19,7 @@ typedef FlagResult (*FlagHandler)(int argc, char* argv[], int* i);
 typedef struct {
     const char* name;         /* long name  e.g. "version"           */
     const char* alias;        /* single-char alias e.g. "v" (or NULL)*/
+    const char* category;     /* group name in help output, or NULL */
     const char* description;  /* help text line                      */
     FlagHandler handler;
     bool needs_value;         /* true if a following arg is expected */
@@ -46,8 +47,12 @@ void flag_llib_init(void);
 void flag_lextend_init(void);
 void flag_wasm_init(void);
 void flag_debug_init(void);
+void flag_dll_init(void);
+const char* flag_dll_get(void);
 void flag_luarun_init(void);
 FlagResult flag_luarun_execute(void);
+void flag_pyrun_init(void);
+FlagResult flag_pyrun_execute(void);
 
 /* ── Convenience: register all built-in flags ─────────────────── */
 static inline void flags_init(void) {
@@ -66,7 +71,9 @@ static inline void flags_init(void) {
     flag_lextend_init();
     flag_wasm_init();
     flag_debug_init();
+    flag_dll_init();
     flag_luarun_init();
+    flag_pyrun_init();
 }
 
 #endif /* FLAGS_H */

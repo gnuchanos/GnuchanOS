@@ -32,6 +32,7 @@ void flag_run_init(void) {
     Flag f = {
         .name = "run",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Run with IR Executor (run.gcdata)",
         .handler = handler,
         .needs_value = false

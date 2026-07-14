@@ -15,6 +15,7 @@ void flag_lextend_init(void) {
     Flag f = {
         .name = "lextend",
         .alias = NULL,
+        .category = "Compiler Pipeline",
         .description = "Add extension search path",
         .handler = handler,
         .needs_value = true
