@@ -1,6 +1,6 @@
-# .gcpy is python like language in gcl
-
 ###### import ######################################################
+# .gcsf, .gclib
+
 import file, file, file --> single file link
 #   file.things --> how to call
 
