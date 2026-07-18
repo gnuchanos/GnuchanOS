@@ -1,50 +1,83 @@
 <div align="center">
-  <img src="./logo.png" alt="Gnuchanos" width="120" />
+  <img src="./assets/logo.png" alt="Gnuchanos" width="120" />
 </div>
 
-<div align="center"><strong>Gnuchanos</strong> — kişisel GNU/Linux denemesi (rolling).</div>
+<div align="center"><strong>Gnuchanos</strong> — kişisel GNU/Linux tabanlı işletim sistemi denemesi (rolling release).</div>
 
-<div align="center">GnuChanGUI eski PySimpleGUI tabanlı lib → <a href="https://www.github.com/gnuchanos/gnuchangui" target="_blank">GitHub</a></div>
+<div align="center">Bu dil, Guix dağıtımında yazılım geliştirmek için kullanılacak.</div>
 
 <hr>
 
-maybe one day but not today
+## 📁 Proje Yapısı
 
-<h1>Language</h1>
-<h2>: Finish</h2>
---: gcl -version, -v
---: gcl -luarun path/file.lua -dll path/lua55.dll or -so path/liblua55.so
-    binding and embed:--> gcl_raygui.dll / .so
-    binding and embed:--> gcl_raylib.dll / .so
-    binding and embed:--> lua55.dll / .so
---: gcl pyrun path/file.py -dll path/python314.dll or path/python314.so
-    fetch_python_embeddable.py path # this is download moduler python gcl need
+```
+GnuchanOS/
+├── assets/                  # Görseller (logo, icon, bg)
+├── dotfile/                 # Dotfile'lar
+├── fun_things/              # Denemeler, Lua binding vs.
+├── language/                # GCL (Gnuchan C-Like) Dil Derleyicisi
+│   ├── src/                 # Kaynak kod
+│   │   ├── lexer/           # Lexer (tokenizer)
+│   │   ├── parser/          # Parser → AST
+│   │   ├── type/            # Type system
+│   │   ├── semantic/        # Semantic analysis
+│   │   ├── ir/              # Intermediate Representation
+│   │   ├── codegen/         # Code generation (IR → C)
+│   │   └── runtime/         # Runtime (debug, crash analyzer)
+│   ├── NOTES/               # Geliştirme notları
+│   ├── _output_test/        # Build çıktıları (git ignore)
+│   └── build.py             # Build script
+├── os/                      # OS ile ilgili dosyalar
+├── .gitignore
+├── README.md
+└── road_map_todo.md
+```
 
+## 🚀 GCL — Gnuchan C-Like Language Compiler
 
-<h2>: NOT Finish</h2>
---: gcl -> interactive shell
+**Pipeline:**
+```
+Source → Lexer → Parser → AST → Semantic → IR → Codegen → C → GCC → Executable
+```
 
-# path link extra options
---: gcl -linclude path/folder
---: gcl -llib path/folder
---: gcl -lextend path/folder
+### Kullanım
 
-# debug
---: gcl -lexer file.gcsf
---: gcl -parser file.gcsf
---: gcl -ast file.gcsf
---: gcl -ir file.gcsf
---: gcl -codegen file.gcsf
+```bash
+# Derle ve çalıştır (language/ içinde)
+cd language
+python build.py
+.\_output_test\gcl.exe test.gcsf -run
 
-# export or run
---: gcl -run path/file.gcsf
---: gcl -all_flags file.gcsf -o path/output
+# Sadece IR dökümü
+.\_output_test\gcl.exe test.gcsf -emit-ir
 
-# extra export
---: gcl -wasm raylib
---: gcl -wasm binding
---: gcl -wasm export
+# Debug mod (runtime monitoring)
+.\_output_test\gcl.exe test.gcsf -debug -run
+```
 
---: gcl -debug run
---: gcl -version
---: gcl -help
+### Seçenekler
+
+| Seçenek         | Açıklama                                |
+|-----------------|-----------------------------------------|
+| `-o <file>`     | Çıktı dosyası (varsayılan: a.out)       |
+| `-run`          | Derle ve çalıştır                       |
+| `-debug`        | Debug mod (runtime monitor + crash analyzer) |
+| `-emit-c`       | Sadece C kodu üret (derleme yapma)      |
+| `-emit-ir`      | IR dökümünü göster                       |
+| `-help`         | Yardım                                  |
+
+## 🛠 Build
+
+```bash
+cd language
+python build.py
+# Çıktı: language/_output_test/gcl.exe
+```
+
+## 📜 Lisans
+
+GNU Affero General Public License v3.0 — bkz. [LICENSE](./LICENSE)
+
+---
+
+<div align="center"><i>maybe one day but not today</i></div>

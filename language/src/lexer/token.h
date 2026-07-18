@@ -1,0 +1,85 @@
+#ifndef TOKEN_H
+#define TOKEN_H
+
+#include <stddef.h>
+
+typedef enum {
+    TOKEN_EOF,
+    TOKEN_IDENTIFIER,
+    TOKEN_NUMBER_INT,
+    TOKEN_NUMBER_FLOAT,
+    TOKEN_STRING,
+    TOKEN_CHAR_LIT,
+
+    /* 9 type keywords */
+    TOKEN_KW_CHAR,
+    TOKEN_KW_SHORT,
+    TOKEN_KW_INT,
+    TOKEN_KW_LONG,
+    TOKEN_KW_FLOAT,
+    TOKEN_KW_DOUBLE,
+    TOKEN_KW_VOID,
+
+    /* Preprocessor directives */
+    TOKEN_PREPROC_INCLUDE,
+    TOKEN_PREPROC_LIB,
+    TOKEN_PREPROC_EXTERN,
+    TOKEN_KW_FOR,
+
+    /* control flow (minimal) */
+    TOKEN_KW_IF,
+    TOKEN_KW_ELSE,
+    TOKEN_KW_WHILE,
+    TOKEN_KW_RETURN,
+
+    /* operators & punctuation */
+    TOKEN_PLUS, TOKEN_MINUS, TOKEN_STAR, TOKEN_SLASH, TOKEN_PERCENT,
+    TOKEN_EQ, TOKEN_EQEQ,
+    TOKEN_BANG, TOKEN_BANGEQ,
+    TOKEN_LT, TOKEN_GT, TOKEN_LE, TOKEN_GE,
+    TOKEN_AND, TOKEN_ANDAND,
+    TOKEN_OR, TOKEN_OROR,
+    TOKEN_PIPE, TOKEN_CARET, TOKEN_TILDE,
+    TOKEN_LSHIFT, TOKEN_RSHIFT,
+    TOKEN_PLUSPLUS, TOKEN_MINUSMINUS,
+    TOKEN_PLUSEQ, TOKEN_MINUSEQ, TOKEN_STAREQ, TOKEN_SLASHEQ, TOKEN_PERCENTEQ,
+    TOKEN_ANDEQ, TOKEN_PIPEEQ, TOKEN_CARETEQ, TOKEN_LSHIFTEQ, TOKEN_RSHIFTEQ,
+    TOKEN_ARROW, TOKEN_DOT, TOKEN_COMMA, TOKEN_SEMI, TOKEN_COLON, TOKEN_QUESTION,
+    TOKEN_LPAREN, TOKEN_RPAREN,
+    TOKEN_LBRACKET, TOKEN_RBRACKET,
+    TOKEN_LBRACE, TOKEN_RBRACE,
+    TOKEN_AMPERSAND,
+    TOKEN_AT,
+    /* new type keywords */
+    TOKEN_KW_INT8,
+    TOKEN_KW_INT16,
+    TOKEN_KW_INT32,
+    TOKEN_KW_INT64,
+    TOKEN_KW_INT128,
+    TOKEN_KW_UNSIGNED,
+    TOKEN_KW_UINT8,
+    TOKEN_KW_UINT16,
+    TOKEN_KW_UINT32,
+    TOKEN_KW_UINT64,
+    TOKEN_KW_BOOL,
+    TOKEN_KW_SIZE_T,
+    TOKEN_KW_SSIZE_T,
+    TOKEN_KW_INTPTR_T,
+    TOKEN_KW_UINTPTR_T,
+    TOKEN_KW_TRUE,
+    TOKEN_KW_FALSE,
+    TOKEN_COUNT
+} TokenType;
+
+typedef struct {
+    TokenType   type;
+    const char *start;
+    size_t      len;
+    int         line;
+    int         col;
+} Token;
+
+TokenType token_keyword(const char *start, size_t len);
+const char *token_name(TokenType t);
+
+#endif

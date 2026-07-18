@@ -6,15 +6,16 @@
 *.lib
 *.so
 *.dylib
+*.out
+
+# ── GCL build output ──────────────────────────────────────
+language/_output_test/
 
 # ── Python embeddable (downloaded, not source) ─────────────
 *.pyd
 *.zip
 *.cat
 *.pth
-
-# ── Output directory (build artifacts) ─────────────────────
-language/_output_test/
 
 # ── Lua raylib binding build ──────────────────────────────
 fun_things/lua_raylib_binding/_build/
