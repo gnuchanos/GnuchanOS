@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 1: Python Introduction & Getting Started</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>🐍 Lesson 1: Python Introduction & Getting Started</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2>What is Python?</h2>
+<p>Python is a programming language created in <strong>1991</strong> by <strong>Guido van Rossum</strong>. It is known for being:</p>
+<ul>
+  <li>✅ <strong>Easy to read</strong> — clean, simple syntax that looks like plain English</li>
+  <li>✅ <strong>Interpreted</strong> — you run code directly, no compilation step needed</li>
+  <li>✅ <strong>Versatile</strong> — web development, data science, AI, automation, games, and more</li>
+  <li>✅ <strong>Huge community</strong> — thousands of free libraries and frameworks</li>
+  <li>✅ <strong>Cross-platform</strong> — works on Windows, macOS, Linux, even Raspberry Pi</li>
+</ul>
+
+<div class="note">
+  💡 Python is named after the comedy group <strong>Monty Python</strong>, not the snake! The logo shows two snakes because of this.
+</div>
+
+<h2>Why Learn Python?</h2>
+<ul>
+  <li>🚀 #1 language for beginners — easiest to learn</li>
+  <li>📊 Used in <strong>data science</strong> & <strong>machine learning</strong> (NumPy, Pandas, TensorFlow)</li>
+  <li>🌐 Powers websites like <strong>YouTube</strong>, <strong>Instagram</strong>, and <strong>Spotify</strong></li>
+  <li>🤖 Great for <strong>automation</strong> & <strong>scripting</strong></li>
+  <li>💼 <strong>High demand</strong> in the job market with great salaries</li>
+  <li>🎮 Game development with PyGame</li>
+</ul>
+
+<h2>Python 2 vs Python 3</h2>
+<p>There are two major versions of Python. <strong>Use Python 3!</strong></p>
+<table>
+  <tr><th>Feature</th><th>Python 2 (OLD)</th><th>Python 3 (RECOMMENDED)</th></tr>
+  <tr><td>Release year</td><td>2000</td><td>2008</td></tr>
+  <tr><td>print statement</td><td><code>print "Hello"</code></td><td><code>print("Hello")</code></td></tr>
+  <tr><td>Division</td><td><code>5 / 2 = 2</code> (integer)</td><td><code>5 / 2 = 2.5</code> (float)</td></tr>
+  <tr><td>Unicode</td><td>Separate <code>u""</code> strings</td><td>All strings are Unicode by default</td></tr>
+  <tr><td>Status</td><td>❌ Dead since 2020</td><td>✅ Active development</td></tr>
+</table>
+
+<div class="warn">
+  ⚠️ Always install <strong>Python 3</strong>! Python 2 is no longer supported. If you see old tutorials using Python 2 syntax, ignore them.
+</div>
+
+<h2>Installation Guide</h2>
+<p>Choose your operating system below:</p>
+
+<table>
+  <tr><th>System</th><th>Installation Steps</th></tr>
+  <tr><td><strong>Windows</strong></td>
+    <td>
+      1. Go to <a href="https://python.org" style="color:#a855f7;">python.org</a><br>
+      2. Download the latest Python 3 installer<br>
+      3. ✅ <strong>Check "Add Python to PATH"</strong> (very important!)<br>
+      4. Click Install, then open Command Prompt and type <code>python --version</code>
+    </td>
+  </tr>
+  <tr><td><strong>macOS</strong></td>
+    <td>
+      Option A: <code>brew install python3</code> (if you have Homebrew)<br>
+      Option B: Download from python.org and install<br>
+      Open Terminal and type <code>python3 --version</code>
+    </td>
+  </tr>
+  <tr><td><strong>Linux</strong></td>
+    <td>
+      Ubuntu/Debian: <code>sudo apt update && sudo apt install python3</code><br>
+      Fedora: <code>sudo dnf install python3</code><br>
+      Check with: <code>python3 --version</code>
+    </td>
+  </tr>
+</table>
+
+<div class="tip">
+  💡 On Windows, if you forget to check "Add to PATH", you can re-run the installer and choose Modify to fix it. Or type the full path: <code>C:\Python3\python.exe</code>
+</div>
+
+<h2>Your First Python Program</h2>
+<p>Let's write your very first Python program! Create a file called <code>hello.py</code> and write this inside:</p>
+
+<div class="code">
+<span class="fn">print</span>(<span class="str">"Hello, World!"</span>)
+</div>
+
+<h3>How to Run It</h3>
+<p>Open a terminal / command prompt in the same folder and type:</p>
+
+<div class="code">
+<span class="cmt"># On macOS / Linux:</span>
+python3 hello.py
+
+<span class="cmt"># On Windows:</span>
+python hello.py
+</div>
+
+<h3>Output:</h3>
+<div class="output">
+Hello, World!
+</div>
+
+<div class="note">
+  💡 <strong>print()</strong> is Python's built-in function that displays output. The text inside quotes is a <strong>string</strong>. The parentheses <code>()</code> are required in Python 3.
+</div>
+
+<h2>Python REPL (Interactive Shell)</h2>
+<p>You can also run Python interactively without creating a file. Just type <code>python</code> (or <code>python3</code>) in your terminal:</p>
+
+<div class="code">
+<span class="pre">>>></span> <span class="fn">print</span>(<span class="str">"Hello, World!"</span>)
+Hello, World!
+<span class="pre">>>></span> <span class="num">5</span> + <span class="num">3</span>
+<span class="num">8</span>
+<span class="pre">>>></span> <span class="fn">exit</span>()
+</div>
+
+<p>The <code>>>></code> prompt means Python is waiting for your command. Type <code>exit()</code> or press <strong>Ctrl+Z (Windows)</strong> or <strong>Ctrl+D (Mac/Linux)</strong> to leave.</p>
+
+<div class="output">
+Python 3.x.x (default, ...)
+Type "help", "copyright", "credits" or "license" for more information.
+>>> print("Hello, World!")
+Hello, World!
+>>> 5 + 3
+8
+>>> exit()
+</div>
+
+<div class="tip">
+  💡 The REPL is great for testing small pieces of code quickly. You don't need to create a file — just type and see results immediately!
+</div>
+
+<h2>Code Editors</h2>
+<p>To write Python programs comfortably, you need a code editor. Here are popular choices:</p>
+
+<table>
+  <tr><th>Editor</th><th>Best For</th><th>Notes</th></tr>
+  <tr><td><strong>VS Code</strong></td><td>Everyone</td><td>Free, lightweight, Python extension available</td></tr>
+  <tr><td><strong>PyCharm</strong></td><td>Professionals</td><td>Feature-rich, free Community edition available</td></tr>
+  <tr><td><strong>IDLE</strong></td><td>Beginners</td><td>Comes with Python, simple and works out of the box</td></tr>
+  <tr><td><strong>Sublime Text</strong></td><td>Quick editing</td><td>Fast, but needs setup for Python</td></tr>
+</table>
+
+<h2>Case Sensitivity</h2>
+<p>Python is <strong>case-sensitive</strong>. This means uppercase and lowercase letters are different:</p>
+
+<div class="code">
+<span class="fn">print</span>(<span class="str">"Hello"</span>)  <span class="cmt"># ✅ Works — lowercase 'print'</span>
+<span class="fn">Print</span>(<span class="str">"Hello"</span>)  <span class="cmt"># ❌ Error! Python doesn't know 'Print'</span>
+</div>
+
+<div class="output">
+Hello
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+NameError: name 'Print' is not defined
+</div>
+
+<div class="warn">
+  ⚠️ Always use the correct case for Python keywords, functions, and variable names. <code>print</code> works, <code>Print</code> does not!
+</div>
+
+<h2>Python File Extensions</h2>
+<p>Python files end with <strong>.py</strong> extension. You run them from the terminal:</p>
+
+<div class="code">
+<span class="cmt"># Create a file named hello.py</span>
+<span class="cmt"># Write Python code inside</span>
+<span class="cmt"># Then run it:</span>
+python hello.py
+</div>
+
+<div class="note">
+  💡 You can also create <code>.pyw</code> files on Windows — they run without opening a terminal window. Useful for GUI programs.
+</div>
+
+<h2>Multi-line Strings with Triple Quotes</h2>
+<p>You can create strings that span multiple lines using triple quotes (<code>"""</code> or <code>'''</code>):</p>
+
+<div class="code">
+poem = <span class="str">"""Roses are red,
+Violets are blue,
+Python is fun,
+And so are you!"""</span>
+
+<span class="fn">print</span>(poem)
+</div>
+
+<div class="output">
+Roses are red,
+Violets are blue,
+Python is fun,
+And so are you!
+</div>
+
+<div class="code">
+<span class="cmt"># Triple single quotes work too:</span>
+text = <span class="str">'''This is
+a multi-line
+string.'''</span>
+
+<span class="fn">print</span>(text)
+</div>
+
+<div class="output">
+This is
+a multi-line
+string.
+</div>
+
+<h2>Comments</h2>
+<p>Comments are notes you add to your code that Python ignores. They help you (and others) understand the code later.</p>
+
+<h3>Single-line comments with <code>#</code></h3>
+<div class="code">
+<span class="cmt"># This is a comment — Python ignores everything after #</span>
+<span class="fn">print</span>(<span class="str">"Hello"</span>)  <span class="cmt"># Comments can be at the end of a line too</span>
+<span class="cmt"># print("This won't run")  # You can "comment out" code temporarily</span>
+</div>
+
+<div class="output">
+Hello
+</div>
+
+<h3>Multi-line comments (docstrings)</h3>
+<p>Triple quotes can also be used as <strong>docstrings</strong> — multi-line comments that document your code:</p>
+
+<div class="code">
+<span class="str">"""</span>
+<span class="str">This is a docstring.</span>
+<span class="str">It can span multiple lines.</span>
+<span class="str">Python uses this as documentation.</span>
+<span class="str">"""</span>
+
+<span class="cmt"># This also works with single quotes:</span>
+<span class="str">'''Another way to write</span>
+<span class="str">a multi-line comment.'''</span>
+
+<span class="fn">print</span>(<span class="str">"Comments above are ignored"</span>)
+</div>
+
+<div class="output">
+Comments above are ignored
+</div>
+
+<div class="tip">
+  💡 Use comments to explain <strong>why</strong> you wrote code a certain way, not <strong>what</strong> the code does (the code itself should be clear enough). Good comments save hours of confusion later!
+</div>
+
+<h2>Summary</h2>
+<table>
+  <tr><th>Concept</th><th>Key Point</th></tr>
+  <tr><td>Python 3</td><td>Always use Python 3, not Python 2</td></tr>
+  <tr><td>Installation</td><td>python.org, brew, or apt — remember "Add to PATH" on Windows</td></tr>
+  <tr><td>First code</td><td><code>print("Hello, World!")</code></td></tr>
+  <tr><td>REPL</td><td>Type <code>python</code> in terminal for interactive mode</td></tr>
+  <tr><td>Comments</td><td><code>#</code> for single-line, <code>"""</code> for multi-line docstrings</td></tr>
+  <tr><td>Case sensitivity</td><td><code>print</code> ✅ not <code>Print</code> ❌</td></tr>
+  <tr><td>File extension</td><td>Always <code>.py</code></td></tr>
+  <tr><td>Triple quotes</td><td>Use <code>"""</code> for multi-line strings</td></tr>
+</table>
+
+<a href="02_syntax_output.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">Lesson 2: Syntax & Output →</a>
+</div>
+</body>
+</html>

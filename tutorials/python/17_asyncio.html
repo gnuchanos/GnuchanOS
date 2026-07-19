@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AsyncIO Kütüphane Referansı — asyncio</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container h4 { color: #e9d5ff; margin: 10px 0 4px; font-size: 1em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .ref { background: #1a1a30; border-left: 4px solid #38bdf8; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 0.9em; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container td code { font-size: 0.88em; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+  .toc { background: #150825; border: 2px solid #2d1554; border-radius: 10px; padding: 16px 20px; margin: 14px 0; }
+  .toc a { display: block; color: #c4b5fd; text-decoration: none; padding: 3px 0; font-size: 0.88em; }
+  .toc a:hover { color: #a855f7; }
+  .toc a.toc-h2 { padding-left: 0; font-weight: 600; color: #c084fc; }
+  .toc a.toc-h3 { padding-left: 20px; }
+  .func-sig { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 6px 12px; border-radius: 6px; border: 1px solid #a855f7; margin: 6px 0 10px; display: inline-block; font-size: 0.85em; }
+  @media (max-width: 768px) { .container { padding: 14px 16px; } }</style>
+</head>
+<body>
+<div class="container">
+
+<h1>⚡ AsyncIO Kütüphane Referansı — asyncio</h1>
+<p><strong>asyncio</strong> — Python'da tek thread'li, eşzamanlı I/O için olay döngüsü tabanlı kütüphane. Web sunucuları, API istemcileri, ağ uygulamaları için idealdir.</p>
+
+<div class="note">
+  💡 <strong>İçe aktarma:</strong> <code>import asyncio</code>
+  <br>async/await sözdizimi Python 3.5+, <code>asyncio.run()</code> Python 3.7+, <code>TaskGroup</code> Python 3.11+
+  <br>🚀 Tek thread ile 100.000+ eşzamanlı bağlantı!
+</div>
+
+<div class="toc">
+<h3 style="color:#a855f7;margin-bottom:6px;">İçindekiler</h3>
+<a href="#s1" class="toc-h2">1. Temel Kavramlar</a>
+<a href="#s2" class="toc-h2">2. Coroutine Oluşturma ve Çalıştırma</a>
+<a href="#s3" class="toc-h2">3. await ve asyncio.sleep()</a>
+<a href="#s4" class="toc-h2">4. gather() — Toplu Çalıştırma</a>
+<a href="#s5" class="toc-h2">5. create_task() — Arka Plan Görevleri</a>
+<a href="#s6" class="toc-h2">6. as_completed() — Sırasız Sonuç</a>
+<a href="#s7" class="toc-h2">7. TaskGroup — Yapısal Eşzamanlılık</a>
+<a href="#s8" class="toc-h2">8. wait_for() — Zaman Aşımı</a>
+<a href="#s9" class="toc-h2">9. wait() — Koşullu Bekleme</a>
+<a href="#s10" class="toc-h2">10. Async Context Manager</a>
+<a href="#s11" class="toc-h2">11. Async Iterator & Generator</a>
+<a href="#s12" class="toc-h2">12. asyncio.Queue</a>
+<a href="#s13" class="toc-h2">13. asyncio.Lock & Senkronizasyon</a>
+<a href="#s14" class="toc-h2">14. asyncio.Event & Condition</a>
+<a href="#s15" class="toc-h2">15. asyncio.Semaphore</a>
+<a href="#s16" class="toc-h2">16. Async Subprocess</a>
+<a href="#s17" class="toc-h2">17. Async Dosya I/O (aiofiles)</a>
+<a href="#s18" class="toc-h2">18. Async HTTP (aiohttp)</a>
+<a href="#s19" class="toc-h2">19. asyncio.run() ve Event Loop</a>
+<a href="#s20" class="toc-h2">20. Future & Task Detayları</a>
+<a href="#s21" class="toc-h2">21. Timeout & Cancellation</a>
+<a href="#s22" class="toc-h2">22. Retry & Rate Limiter Pattern</a>
+<a href="#s23" class="toc-h2">23. Debugging Async</a>
+<a href="#s24" class="toc-h2">24. Threading vs Async vs Multiprocessing</a>
+<a href="#s25" class="toc-h2">25. Best Practices</a>
+<a href="#s26" class="toc-h2">26. Tam Fonksiyon Tablosu</a>
+</div>
+
+<h2 id="s1">1. Temel Kavramlar</h2>
+
+<table>
+  <tr><th>Kavram</th><th>Açıklama</th></tr>
+  <tr><td><strong>Coroutine</strong></td><td><code>async def</code> ile tanımlanan fonksiyon. <code>await</code> ile duraklatılabilir.</td></tr>
+  <tr><td><strong>Awaitable</strong></td><td><code>await</code> ile beklenebilen nesne (coroutine, Future, Task)</td></tr>
+  <tr><td><strong>Task</strong></td><td>Event loop tarafından yönetilen coroutine. <code>create_task()</code> ile oluşturulur.</td></tr>
+  <tr><td><strong>Event Loop</strong></td><td>Coroutine'leri çalıştıran, I/O olaylarını yöneten ana döngü.</td></tr>
+  <tr><td><strong>Future</strong></td><td>Gelecekteki bir değeri temsil eden düşük seviye nesne.</td></tr>
+</table>
+
+<h2 id="s2">2. Coroutine Oluşturma ve Çalıştırma</h2>
+<div class="code">
+<span class="pre">import</span> asyncio
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">hello</span>():
+    <span class="fn">print</span>(<span class="str">"Merhaba"</span>)
+    <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">1</span>)
+    <span class="fn">print</span>(<span class="str">"Dünya!"</span>)
+
+<span class="cmt"># Coroutine çağrısı: bir coroutine objesi döner</span>
+c = <span class="fn">hello</span>()
+<span class="fn">print</span>(c)  <span class="cmt"># <coroutine object hello at 0x...></span>
+
+<span class="cmt"># Çalıştırmak için: asyncio.run()</span>
+asyncio.<span class="fn">run</span>(<span class="fn">hello</span>())
+
+<span class="cmt"># veya event loop ile düşük seviye</span>
+loop = asyncio.<span class="fn">new_event_loop</span>()
+loop.<span class="fn">run_until_complete</span>(<span class="fn">hello</span>())
+loop.<span class="fn">close</span>()
+</div>
+
+<h2 id="s3">3. await ve asyncio.sleep()</h2>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">fetch_data</span>(name, delay):
+    <span class="fn">print</span>(<span class="str">f"{name}: başladı"</span>)
+    <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(delay)  <span class="cmt"># non-blocking bekleme</span>
+    <span class="fn">print</span>(<span class="str">f"{name}: bitti"</span>)
+    <span class="kw">return</span> <span class="str">f"veri-{name}"</span>
+
+<span class="cmt"># asyncio.sleep() vs time.sleep():</span>
+<span class="cmt"># - asyncio.sleep(): event loop diğer görevlere geçer ✅</span>
+<span class="cmt"># - time.sleep(): tüm thread'i bloke eder ❌</span>
+</div>
+
+<h2 id="s4">4. gather() — Toplu Çalıştırma</h2>
+<div class="func-sig">asyncio.gather(*coros, return_exceptions=False) → list</div>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    <span class="cmt"># 3 task'ı aynı anda çalıştır</span>
+    results = <span class="kw">await</span> asyncio.<span class="fn">gather</span>(
+        <span class="fn">fetch_data</span>(<span class="str">"A"</span>, <span class="num">3</span>),
+        <span class="fn">fetch_data</span>(<span class="str">"B"</span>, <span class="num">1</span>),
+        <span class="fn">fetch_data</span>(<span class="str">"C"</span>, <span class="num">2</span>),
+    )
+    <span class="fn">print</span>(results)  <span class="cmt"># ['veri-A', 'veri-B', 'veri-C']</span>
+
+<span class="cmt"># return_exceptions=True — hata fırlatmak yerine exception objesi döndür</span>
+results = <span class="kw">await</span> asyncio.<span class="fn">gather</span>(task1, task2, return_exceptions=<span class="kw">True</span>)
+</div>
+
+<h2 id="s5">5. create_task() — Arka Plan Görevleri</h2>
+<div class="func-sig">asyncio.create_task(coro, *, name=None) → Task</div>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    <span class="cmt"># Arka plan görevi oluştur</span>
+    task1 = asyncio.<span class="fn">create_task</span>(<span class="fn">fetch_data</span>(<span class="str">"BG-1"</span>, <span class="num">3</span>), name=<span class="str">"background1"</span>)
+    task2 = asyncio.<span class="fn">create_task</span>(<span class="fn">fetch_data</span>(<span class="str">"BG-2"</span>, <span class="num">2</span>))
+
+    <span class="cmt"># Başka iş yap</span>
+    <span class="fn">print</span>(<span class="str">"Ana iş yapılıyor..."</span>)
+    <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">1</span>)
+    <span class="fn">print</span>(<span class="str">"Ana iş bitti"</span>)
+
+    <span class="cmt"># Task sonuçlarını bekle</span>
+    r1 = <span class="kw">await</span> task1
+    r2 = <span class="kw">await</span> task2
+    <span class="fn">print</span>(r1, r2)
+
+    <span class="cmt"># Task bilgileri</span>
+    <span class="fn">print</span>(<span class="str">"Task adı:"</span>, task1.<span class="fn">get_name</span>())
+    <span class="fn">print</span>(<span class="str">"Bitti mi:"</span>, task1.<span class="fn">done</span>())
+    <span class="fn">print</span>(<span class="str">"İptal edildi mi:"</span>, task1.<span class="fn">cancelled</span>())
+
+    <span class="cmt"># Task'a yeni isim ver</span>
+    task1.<span class="fn">set_name</span>(<span class="str">"yeniad"</span>)
+
+<span class="cmt"># Not: create_task() bir event loop içinde çağrılmalıdır</span>
+</div>
+
+<h2 id="s6">6. as_completed() — Sırasız Sonuç</h2>
+<div class="func-sig">asyncio.as_completed(coros, *, timeout=None)</div>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    tasks = [<span class="fn">fetch_data</span>(<span class="str">f"Task {i}"</span>, delay) <span class="kw">for</span> i, delay <span class="kw">in</span> <span class="fn">enumerate</span>([<span class="num">3</span>, <span class="num">1</span>, <span class="num">2</span>])]
+
+    <span class="cmt"># Sonuçlar bittiği sırayla gelir (sıra garantisi yok)</span>
+    <span class="kw">for</span> coro <span class="kw">in</span> asyncio.<span class="fn">as_completed</span>(tasks):
+        result = <span class="kw">await</span> coro
+        <span class="fn">print</span>(<span class="str">"Tamamlanan:"</span>, result)
+</div>
+
+<h2 id="s7">7. TaskGroup — Yapısal Eşzamanlılık (Python 3.11+)</h2>
+<div class="func-sig">asyncio.TaskGroup()  # async with ile kullanılır</div>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    <span class="kw">async</span> <span class="kw">with</span> asyncio.<span class="type">TaskGroup</span>() <span class="kw">as</span> tg:
+        t1 = tg.<span class="fn">create_task</span>(<span class="fn">fetch_data</span>(<span class="str">"A"</span>, <span class="num">2</span>))
+        t2 = tg.<span class="fn">create_task</span>(<span class="fn">fetch_data</span>(<span class="str">"B"</span>, <span class="num">1</span>))
+        t3 = tg.<span class="fn">create_task</span>(<span class="fn">fetch_data</span>(<span class="str">"C"</span>, <span class="num">3</span>))
+    <span class="cmt"># TaskGroup çıkışında tüm task'lar tamamlanmış olur</span>
+    <span class="fn">print</span>(<span class="str">f"A: {t1.result()}, B: {t2.result()}, C: {t3.result()}"</span>)
+    <span class="cmt"># Herhangi biri hata fırlatırsa, diğerleri otomatik iptal edilir</span>
+</div>
+
+<h2 id="s8">8. wait_for() — Zaman Aşımı</h2>
+<div class="func-sig">asyncio.wait_for(coro, timeout) → result</div>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">slow</span>():
+    <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">10</span>)
+    <span class="kw">return</span> <span class="str">"geç"</span>
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    <span class="kw">try</span>:
+        result = <span class="kw">await</span> asyncio.<span class="fn">wait_for</span>(<span class="fn">slow</span>(), timeout=<span class="num">2</span>)
+    <span class="kw">except</span> asyncio.<span class="type">TimeoutError</span>:
+        <span class="fn">print</span>(<span class="str">"Zaman aşımı!"</span>)
+</div>
+
+<h2 id="s9">9. wait() — Koşullu Bekleme</h2>
+<div class="func-sig">asyncio.wait(coros, *, timeout=None, return_when=FIRST_COMPLETED) → (done, pending)</div>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    tasks = {<span class="fn">fetch_data</span>(<span class="str">"A"</span>, <span class="num">5</span>), <span class="fn">fetch_data</span>(<span class="str">"B"</span>, <span class="num">2</span>), <span class="fn">fetch_data</span>(<span class="str">"C"</span>, <span class="num">3</span>)}
+
+    <span class="cmt"># İlk tamamlananı bekle</span>
+    done, pending = <span class="kw">await</span> asyncio.<span class="fn">wait</span>(tasks, return_when=asyncio.<span class="type">FIRST_COMPLETED</span>)
+
+    <span class="fn">print</span>(<span class="str">"Tamamlananlar:"</span>, <span class="fn">len</span>(done))
+    <span class="fn">print</span>(<span class="str">"Bekleyenler:"</span>, <span class="fn">len</span>(pending))
+
+    <span class="cmt"># Bekleyenleri iptal et</span>
+    <span class="kw">for</span> t <span class="kw">in</span> pending:
+        t.<span class="fn">cancel</span>()
+
+    <span class="cmt"># return_when seçenekleri:</span>
+    <span class="cmt"># asyncio.FIRST_COMPLETED — ilk tamamlanan</span>
+    <span class="cmt"># asyncio.FIRST_EXCEPTION — ilk hata</span>
+    <span class="cmt"># asyncio.ALL_COMPLETED — tümü (default)</span>
+</div>
+
+<h2 id="s10">10. Async Context Manager</h2>
+<div class="code">
+<span class="kw">class</span> <span class="type">AsyncDB</span>:
+    <span class="kw">async</span> <span class="kw">def</span> <span class="fn">__aenter__</span>(<span class="kw">self</span>):
+        <span class="fn">print</span>(<span class="str">"Bağlanılıyor..."</span>)
+        <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">0.5</span>)
+        <span class="kw">return</span> <span class="kw">self</span>
+
+    <span class="kw">async</span> <span class="kw">def</span> <span class="fn">__aexit__</span>(<span class="kw">self</span>, exc_type, exc_val, exc_tb):
+        <span class="fn">print</span>(<span class="str">"Bağlantı kapatılıyor..."</span>)
+        <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">0.3</span>)
+
+    <span class="kw">async</span> <span class="kw">def</span> <span class="fn">query</span>(<span class="kw">self</span>, sql):
+        <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">0.1</span>)
+        <span class="kw">return</span> <span class="str">f"sonuç: {sql}"</span>
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    <span class="kw">async</span> <span class="kw">with</span> <span class="type">AsyncDB</span>() <span class="kw">as</span> db:
+        result = <span class="kw">await</span> db.<span class="fn">query</span>(<span class="str">"SELECT 1"</span>)
+        <span class="fn">print</span>(result)
+</div>
+
+<h2 id="s11">11. Async Iterator & Generator</h2>
+<h3>Async Iterator</h3>
+<div class="code">
+<span class="kw">class</span> <span class="type">AsyncRange</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(<span class="kw">self</span>, n):
+        <span class="kw">self</span>.n = n; <span class="kw">self</span>.i = <span class="num">0</span>
+    <span class="kw">def</span> <span class="fn">__aiter__</span>(<span class="kw">self</span>): <span class="kw">return</span> <span class="kw">self</span>
+    <span class="kw">async</span> <span class="kw">def</span> <span class="fn">__anext__</span>(<span class="kw">self</span>):
+        <span class="kw">if</span> <span class="kw">self</span>.i >= <span class="kw">self</span>.n: <span class="kw">raise</span> <span class="type">StopAsyncIteration</span>
+        <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">0.3</span>)
+        <span class="kw">self</span>.i += <span class="num">1</span>
+        <span class="kw">return</span> <span class="kw">self</span>.i
+</div>
+
+<h3>Async Generator (daha kolay)</h3>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">async_range</span>(n, delay=<span class="num">0.3</span>):
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(n):
+        <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(delay)
+        <span class="kw">yield</span> i
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    <span class="kw">async</span> <span class="kw">for</span> num <span class="kw">in</span> <span class="fn">async_range</span>(<span class="num">5</span>):
+        <span class="fn">print</span>(num)
+</div>
+
+<h2 id="s12">12. asyncio.Queue</h2>
+<div class="func-sig">asyncio.Queue(maxsize=0)  # .put() .get() .join() .task_done() .qsize() .empty() .full()</div>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">producer</span>(q, n):
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(n):
+        <span class="kw">await</span> q.<span class="fn">put</span>(i)
+        <span class="fn">print</span>(<span class="str">f"Üretildi: {i}"</span>)
+        <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">0.2</span>)
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">consumer</span>(q, name):
+    <span class="kw">while</span> <span class="kw">True</span>:
+        item = <span class="kw">await</span> q.<span class="fn">get</span>()
+        <span class="kw">if</span> item <span class="kw">is</span> <span class="kw">None</span>: <span class="kw">break</span>
+        <span class="fn">print</span>(<span class="str">f"  {name} tüketti: {item}"</span>)
+        q.<span class="fn">task_done</span>()
+        <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">0.5</span>)
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    q = asyncio.<span class="type">Queue</span>(maxsize=<span class="num">5</span>)
+    <span class="kw">await</span> asyncio.<span class="fn">gather</span>(
+        <span class="fn">producer</span>(q, <span class="num">8</span>),
+        <span class="fn">consumer</span>(q, <span class="str">"C1"</span>),
+        <span class="fn">consumer</span>(q, <span class="str">"C2"</span>),
+    )
+</div>
+
+<h2 id="s13">13. asyncio.Lock & Senkronizasyon</h2>
+<div class="func-sig">asyncio.Lock()  # async with lock:  veya  await lock.acquire() / lock.release()</div>
+<div class="code">
+lock = asyncio.<span class="type">Lock</span>()
+counter = <span class="num">0</span>
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">increment</span>(n):
+    <span class="kw">global</span> counter
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(n):
+        <span class="kw">async</span> <span class="kw">with</span> lock:
+            counter += <span class="num">1</span>
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    <span class="kw">await</span> asyncio.<span class="fn">gather</span>(*[increment(<span class="num">10000</span>) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">4</span>)])
+    <span class="fn">print</span>(counter)  <span class="cmt"># 40000</span>
+</div>
+
+<h3>Async Senkronizasyon Araçları</h3>
+<table>
+  <tr><th>Araç</th><th>Açıklama</th></tr>
+  <tr><td><code>asyncio.Lock()</code></td><td>Mutex — async with ile kullan</td></tr>
+  <tr><td><code>asyncio.RLock()</code></td><td>Reentrant lock (3.11+)</td></tr>
+  <tr><td><code>asyncio.Semaphore(n)</code></td><td>N adet eşzamanlı erişim sınırı</td></tr>
+  <tr><td><code>asyncio.BoundedSemaphore(n)</code></td><td>Sınırlı semafor</td></tr>
+  <tr><td><code>asyncio.Event()</code></td><td>Coroutine sinyali</td></tr>
+  <tr><td><code>asyncio.Condition()</code></td><td>Wait/notify pattern</td></tr>
+  <tr><td><code>asyncio.Barrier(n)</code></td><td>N coroutine bariyeri (3.11+)</td></tr>
+</table>
+
+<h2 id="s14">14. asyncio.Event & Condition</h2>
+<h3>Event</h3>
+<div class="code">
+event = asyncio.<span class="type">Event</span>()
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">waiter</span>(name):
+    <span class="fn">print</span>(<span class="str">f"{name}: bekliyor..."</span>)
+    <span class="kw">await</span> event.<span class="fn">wait</span>()
+    <span class="fn">print</span>(<span class="str">f"{name}: gitti!"</span>)
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">signaller</span>():
+    <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">1</span>)
+    event.<span class="fn">set</span>()
+</div>
+
+<h3>Condition</h3>
+<div class="code">
+cv = asyncio.<span class="type">Condition</span>()
+items = []
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">producer</span>():
+    <span class="kw">async</span> <span class="kw">with</span> cv:
+        <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">5</span>):
+            items.<span class="fn">append</span>(i)
+            cv.<span class="fn">notify</span>(<span class="num">1</span>)
+            <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">0.3</span>)
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">consumer</span>():
+    <span class="kw">async</span> <span class="kw">with</span> cv:
+        <span class="kw">while</span> <span class="kw">True</span>:
+            <span class="kw">while</span> <span class="kw">not</span> items:
+                <span class="kw">await</span> cv.<span class="fn">wait</span>()
+            item = items.<span class="fn">pop</span>(<span class="num">0</span>)
+            <span class="fn">print</span>(<span class="str">"Tüketildi:"</span>, item)
+            <span class="kw">if</span> item == <span class="num">4</span>: <span class="kw">break</span>
+</div>
+
+<h2 id="s15">15. asyncio.Semaphore</h2>
+<div class="code">
+sem = asyncio.<span class="type">Semaphore</span>(<span class="num">3</span>)  <span class="cmt"># max 3 eşzamanlı</span>
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">api_call</span>(n):
+    <span class="kw">async</span> <span class="kw">with</span> sem:
+        <span class="fn">print</span>(<span class="str">f"Çağrı {n}: başladı"</span>)
+        <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(<span class="num">1</span>)
+        <span class="fn">print</span>(<span class="str">f"Çağrı {n}: bitti"</span>)
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    <span class="kw">await</span> asyncio.<span class="fn">gather</span>(*[<span class="fn">api_call</span>(i) <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">6</span>)])
+</div>
+
+<h2 id="s16">16. Async Subprocess</h2>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">run_cmd</span>(cmd):
+    proc = <span class="kw">await</span> asyncio.<span class="fn">create_subprocess_shell</span>(
+        cmd,
+        stdout=asyncio.<span class="type">PIPE</span>,
+        stderr=asyncio.<span class="type">PIPE</span>,
+    )
+    stdout, stderr = <span class="kw">await</span> proc.<span class="fn">communicate</span>()
+    <span class="kw">return</span> stdout.<span class="fn">decode</span>(), stderr.<span class="fn">decode</span>(), proc.<span class="fn">returncode</span>
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    out, err, code = <span class="kw">await</span> <span class="fn">run_cmd</span>(<span class="str">"echo Hello async"</span>)
+    <span class="fn">print</span>(<span class="str">f"Çıktı: {out.strip()}, Kod: {code}"</span>)
+
+<span class="cmt"># asyncio.create_subprocess_exec('python3', 'script.py') — shell yok, daha güvenli</span>
+</div>
+
+<h2 id="s17">17. Async Dosya I/O (aiofiles)</h2>
+<div class="warn">⚙️ <code>pip install aiofiles</code></div>
+<div class="code">
+<span class="pre">import</span> aiofiles
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">read_file</span>(path):
+    <span class="kw">async</span> <span class="kw">with</span> aiofiles.<span class="fn">open</span>(path, <span class="str">"r"</span>) <span class="kw">as</span> f:
+        content = <span class="kw">await</span> f.<span class="fn">read</span>()
+        <span class="kw">return</span> content
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">write_file</span>(path, data):
+    <span class="kw">async</span> <span class="kw">with</span> aiofiles.<span class="fn">open</span>(path, <span class="str">"w"</span>) <span class="kw">as</span> f:
+        <span class="kw">await</span> f.<span class="fn">write</span>(data)
+</div>
+
+<h2 id="s18">18. Async HTTP (aiohttp)</h2>
+<div class="warn">⚙️ <code>pip install aiohttp</code></div>
+<div class="code">
+<span class="pre">import</span> aiohttp
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">fetch_url</span>(session, url):
+    <span class="kw">async</span> <span class="kw">with</span> session.<span class="fn">get</span>(url) <span class="kw">as</span> resp:
+        <span class="kw">return</span> <span class="kw">await</span> resp.<span class="fn">text</span>()
+
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    urls = [<span class="str">"http://example.com"</span>, <span class="str">"http://httpbin.org/get"</span>]
+    <span class="kw">async</span> <span class="kw">with</span> aiohttp.<span class="type">ClientSession</span>() <span class="kw">as</span> session:
+        tasks = [<span class="fn">fetch_url</span>(session, url) <span class="kw">for</span> url <span class="kw">in</span> urls]
+        pages = <span class="kw">await</span> asyncio.<span class="fn">gather</span>(*tasks)
+        <span class="kw">for</span> url, page <span class="kw">in</span> <span class="fn">zip</span>(urls, pages):
+            <span class="fn">print</span>(<span class="str">f"{url}: {len(page)} bayt"</span>)
+</div>
+
+<h2 id="s19">19. asyncio.run() ve Event Loop</h2>
+<div class="func-sig">asyncio.run(coro, *, debug=False)</div>
+<div class="code">
+<span class="cmt"># Yüksek seviye API — her şey tek satır</span>
+asyncio.<span class="fn">run</span>(<span class="fn">main</span>())
+
+<span class="cmt"># Düşük seviye event loop işlemleri:</span>
+loop = asyncio.<span class="fn">new_event_loop</span>()
+loop.<span class="fn">run_until_complete</span>(<span class="fn">main</span>())
+loop.<span class="fn">run_forever</span>()  <span class="cmt"># sürekli çalıştır</span>
+loop.<span class="fn">stop</span>()
+loop.<span class="fn">close</span>()
+
+<span class="cmt"># Şu anki loop'u al</span>
+loop = asyncio.<span class="fn">get_event_loop</span>()
+<span class="fn">print</span>(loop.<span class="fn">is_running</span>())
+<span class="fn">print</span>(loop.<span class="fn">is_closed</span>())
+<span class="fn">print</span>(loop.<span class="fn">get_debug</span>())
+
+<span class="cmt"># asyncio.run() yapar:</span>
+<span class="cmt"># 1. Yeni event loop oluştur</span>
+<span class="cmt"># 2. main() coroutine'ini çalıştır</span>
+<span class="cmt"># 3. Tüm task'ları bekle</span>
+<span class="cmt"># 4. Loop'u kapat</span>
+</div>
+
+<h2 id="s20">20. Future & Task Detayları</h2>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    <span class="cmt"># Task oluştur</span>
+    task = asyncio.<span class="fn">create_task</span>(<span class="fn">fetch_data</span>(<span class="str">"test"</span>, <span class="num">2</span>))
+
+    <span class="cmt"># Task durumu</span>
+    <span class="fn">print</span>(<span class="str">"Done:"</span>, task.<span class="fn">done</span>())
+    <span class="fn">print</span>(<span class="str">"Cancelled:"</span>, task.<span class="fn">cancelled</span>())
+    <span class="fn">print</span>(<span class="str">"Running:"</span>, task.<span class="fn">running</span>())
+    <span class="fn">print</span>(<span class="str">"Exception:"</span>, task.<span class="fn">exception</span>())
+
+    <span class="cmt"># Sonuç al (bekler)</span>
+    result = <span class="kw">await</span> task
+
+    <span class="cmt"># Future'dan Task'a</span>
+    loop = asyncio.<span class="fn">get_event_loop</span>()
+    future = loop.<span class="fn">create_future</span>()
+    future.<span class="fn">set_result</span>(<span class="str">"doğrudan"</span>)
+    <span class="fn">print</span>(<span class="kw">await</span> future)  <span class="cmt"># "doğrudan"</span>
+
+    <span class="cmt"># ensure_future — coroutine veya awaitable'dan Task oluştur</span>
+    task2 = asyncio.<span class="fn">ensure_future</span>(<span class="fn">fetch_data</span>(<span class="str">"x"</span>, <span class="num">1</span>))
+</div>
+
+<h2 id="s21">21. Timeout & Cancellation</h2>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">main</span>():
+    task = asyncio.<span class="fn">create_task</span>(<span class="fn">slow</span>())
+
+    <span class="cmt"># İptal et</span>
+    task.<span class="fn">cancel</span>()
+
+    <span class="kw">try</span>:
+        result = <span class="kw">await</span> task
+    <span class="kw">except</span> asyncio.<span class="type">CancelledError</span>:
+        <span class="fn">print</span>(<span class="str">"Task iptal edildi"</span>)
+
+    <span class="cmt"># asyncio.timeout() — Python 3.11+</span>
+    <span class="kw">try</span>:
+        <span class="kw">async</span> <span class="kw">with</span> asyncio.<span class="fn">timeout</span>(<span class="num">2</span>):
+            result = <span class="kw">await</span> <span class="fn">slow</span>()
+    <span class="kw">except</span> asyncio.<span class="type">TimeoutError</span>:
+        <span class="fn">print</span>(<span class="str">"Zaman aşımı!"</span>)
+
+    <span class="cmt"># current_task() — şu anki task'ı al</span>
+    <span class="kw">async</span> <span class="kw">def</span> <span class="fn">get_self</span>():
+        t = asyncio.<span class="fn">current_task</span>()
+        <span class="fn">print</span>(<span class="str">"Ben:"</span>, t.<span class="fn">get_name</span>())
+</div>
+
+<h2 id="s22">22. Retry & Rate Limiter Pattern</h2>
+<h3>Retry (Exponential Backoff)</h3>
+<div class="code">
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">retry</span>(coro_factory, max_retries=<span class="num">3</span>, delay=<span class="num">1</span>):
+    <span class="kw">for</span> attempt <span class="kw">in</span> <span class="fn">range</span>(max_retries):
+        <span class="kw">try</span>:
+            <span class="kw">return</span> <span class="kw">await</span> <span class="fn">coro_factory</span>()
+        <span class="kw">except</span> <span class="type">Exception</span> <span class="kw">as</span> e:
+            <span class="kw">if</span> attempt == max_retries - <span class="num">1</span>: <span class="kw">raise</span>
+            wait = delay * (<span class="num">2</span> ** attempt)  <span class="cmt"># 1, 2, 4 saniye...</span>
+            <span class="fn">print</span>(<span class="str">f"Deneme {attempt+1} başarısız, {wait}s bekleniyor..."</span>)
+            <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(wait)
+</div>
+
+<h3>Rate Limiter (Token Bucket)</h3>
+<div class="code">
+<span class="kw">class</span> <span class="type">RateLimiter</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(<span class="kw">self</span>, rate):
+        <span class="kw">self</span>.rate = rate  <span class="cmt"># saniyede izin verilen işlem</span>
+        <span class="kw">self</span>.tokens = <span class="num">0</span>
+        <span class="kw">self</span>.last = time.<span class="fn">time</span>()
+
+    <span class="kw">async</span> <span class="kw">def</span> <span class="fn">acquire</span>(<span class="kw">self</span>):
+        now = time.<span class="fn">time</span>()
+        <span class="kw">self</span>.tokens = <span class="fn">min</span>(<span class="kw">self</span>.rate, <span class="kw">self</span>.tokens + (now - <span class="kw">self</span>.last) * <span class="kw">self</span>.rate)
+        <span class="kw">self</span>.last = now
+        <span class="kw">if</span> <span class="kw">self</span>.tokens < <span class="num">1</span>:
+            wait = (<span class="num">1</span> - <span class="kw">self</span>.tokens) / <span class="kw">self</span>.rate
+            <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(wait)
+            <span class="kw">self</span>.tokens = <span class="num">0</span>
+        <span class="kw">else</span>:
+            <span class="kw">self</span>.tokens -= <span class="num">1</span>
+
+<span class="cmt"># Kullanım:</span>
+<span class="cmt"># limiter = RateLimiter(rate=5)  # saniyede 5 istek</span>
+<span class="cmt"># async with limiter:</span>
+<span class="cmt">#     await api_call()</span>
+</div>
+
+<h2 id="s23">23. Debugging Async</h2>
+<div class="code">
+<span class="cmt"># 1. Debug mod ile çalıştır</span>
+asyncio.<span class="fn">run</span>(<span class="fn">main</span>(), debug=<span class="kw">True</span>)
+
+<span class="cmt"># 2. Çevre değişkeni ile</span>
+<span class="cmt"># PYTHONASYNCIODEBUG=1 python script.py</span>
+
+<span class="cmt"># 3. Slow callback uyarısı</span>
+loop = asyncio.<span class="fn">get_event_loop</span>()
+loop.<span class="fn">slow_callback_duration</span> = <span class="num">0.05</span>  <span class="cmt"># 50ms üzeri callback'leri raporla</span>
+
+<span class="cmt"># 4. Task takibi</span>
+pending = asyncio.<span class="fn">all_tasks</span>(loop)
+<span class="kw">for</span> t <span class="kw">in</span> pending:
+    <span class="fn">print</span>(<span class="str">"Bekleyen task:"</span>, t.<span class="fn">get_name</span>(), t.<span class="fn">get_coro</span>())
+
+<span class="cmt"># 5. Uyarı: "coroutine was never awaited" → await unutulmuş</span>
+</div>
+
+<h2 id="s24">24. Threading vs Async vs Multiprocessing</h2>
+<table>
+  <tr><th>Özellik</th><th>Threading</th><th>Async (asyncio)</th><th>Multiprocessing</th></tr>
+  <tr><td>Model</td><td>OS thread'leri</td><td>Event loop + coroutine</td><td>OS process'leri</td></tr>
+  <tr><td>GIL</td><td>Etkilenir</td><td>Tek thread → GIL sorunu yok</td><td>Etkilenmez</td></tr>
+  <tr><td>Eşzamanlılık</td><td>~1000</td><td>100.000+</td><td>~CPU sayısı</td></tr>
+  <tr><td>Bellek/task</td><td>~8KB</td><td>~1KB</td><td>~8MB+</td></tr>
+  <tr><td>Race condition</td><td>Evet (Lock gerek)</td><td>Daha az (context switch sadece await'te)</td><td>Evet (Lock gerek)</td></tr>
+  <tr><td>I/O-bound</td><td>✅ İyi</td><td>✅ En iyisi</td><td>❌ Kötü</td></tr>
+  <tr><td>CPU-bound</td><td>❌ Kötü</td><td>❌ Kötü</td><td>✅ En iyisi</td></tr>
+  <tr><td>Blocking çağrı</td><td>Diğer thread'leri etkilemez</td><td>Tüm event loop'u bloke eder</td><td>Diğer process'leri etkilemez</td></tr>
+  <tr><td>Sözdizimi</td><td>Bilinen threading API</td><td>async/await</td><td>Bilinen multiprocessing API</td></tr>
+</table>
+
+<h2 id="s25">25. Best Practices</h2>
+
+<div class="tip">
+<strong>✅ Do:</strong>
+<ul>
+  <li><code>asyncio.run()</code> kullan — asla manuel event loop yönetimi yapma</li>
+  <li><code>asyncio.gather()</code> veya <code>TaskGroup</code> kullan — concurrent işlemler için</li>
+  <li>Blocking kütüphaneler (<code>requests</code>, <code>time.sleep</code>) kullanma — aiohttp, asyncio.sleep kullan</li>
+  <li>Zaman aşımı ekle — <code>asyncio.wait_for()</code> veya <code>asyncio.timeout()</code></li>
+  <li>Semaphore kullan — aşırı yüklenmeyi önlemek için</li>
+  <li>Hataları yakala — task içinde exception'ları ele al</li>
+  <li>Async context manager kullan — kaynak yönetimi için</li>
+</ul>
+</div>
+
+<div class="warn">
+<strong>❌ Don't:</strong>
+<ul>
+  <li>Blocking <code>time.sleep()</code> kullanma — <code>asyncio.sleep()</code> kullan</li>
+  <li>Coroutine'i await etmeden çağırma — "coroutine was never awaited" hatası</li>
+  <li><code>asyncio.run()</code>'ı başka bir event loop içinde çağırma</li>
+  <li>Uzun süren CPU işlerini event loop'ta çalıştırma — ProcessPoolExecutor'a yönlendir</li>
+  <li>Çok fazla task'ı aynı anda oluşturma — Semaphore kullan</li>
+  <li>Task iptalini yakalamamazlık etme — CancelledError her zaman yakalanmalı</li>
+  <li>Senkron lock (<code>threading.Lock</code>) kullanma — <code>asyncio.Lock</code> kullan</li>
+</ul>
+</div>
+
+<h2 id="s26">26. Tam Fonksiyon Tablosu</h2>
+
+<table>
+  <tr><th>Kategori</th><th>Fonksiyon/Sınıf</th><th>Python Sürümü</th></tr>
+  <tr><td>Entry point</td><td><code>asyncio.run(coro, debug)</code></td><td>3.7+</td></tr>
+  <tr><td>Eşzamanlı çalıştırma</td><td><code>asyncio.gather(*coros, return_exceptions)</code></td><td>3.6+</td></tr>
+  <tr><td>Task oluşturma</td><td><code>asyncio.create_task(coro, name)</code></td><td>3.7+</td></tr>
+  <tr><td>Task grubu</td><td><code>asyncio.TaskGroup()</code></td><td>3.11+</td></tr>
+  <tr><td>Sırasız sonuç</td><td><code>asyncio.as_completed(coros, timeout)</code></td><td>3.4+</td></tr>
+  <tr><td>Koşullu bekleme</td><td><code>asyncio.wait(coros, timeout, return_when)</code></td><td>3.4+</td></tr>
+  <tr><td>Zaman aşımı</td><td><code>asyncio.wait_for(coro, timeout)</code></td><td>3.4+</td></tr>
+  <tr><td>Zaman aşımı (context)</td><td><code>asyncio.timeout(delay)</code></td><td>3.11+</td></tr>
+  <tr><td>Zaman aşımı (context)</td><td><code>asyncio.timeout_at(when)</code></td><td>3.11+</td></tr>
+  <tr><td>Uyuma</td><td><code>asyncio.sleep(delay, result)</code></td><td>3.4+</td></tr>
+  <tr><td>Task/Future'dan</td><td><code>asyncio.ensure_future(coro, loop)</code></td><td>3.4+</td></tr>
+  <tr><td>Task listesi</td><td><code>asyncio.all_tasks(loop)</code></td><td>3.7+</td></tr>
+  <tr><td>Mevcut task</td><td><code>asyncio.current_task(loop)</code></td><td>3.7+</td></tr>
+  <tr><td>Kuyruk</td><td><code>asyncio.Queue(maxsize)</code></td><td>3.5+</td></tr>
+  <tr><td>Öncelik kuyruğu</td><td><code>asyncio.PriorityQueue(maxsize)</code></td><td>3.5+</td></tr>
+  <tr><td>LIFO kuyruk</td><td><code>asyncio.LifoQueue(maxsize)</code></td><td>3.5+</td></tr>
+  <tr><td>Lock</td><td><code>asyncio.Lock()</code></td><td>3.5+</td></tr>
+  <tr><td>RLock</td><td><code>asyncio.RLock()</code></td><td>3.11+</td></tr>
+  <tr><td>Semaphore</td><td><code>asyncio.Semaphore(value)</code></td><td>3.5+</td></tr>
+  <tr><td>BoundedSemaphore</td><td><code>asyncio.BoundedSemaphore(value)</code></td><td>3.5+</td></tr>
+  <tr><td>Event</td><td><code>asyncio.Event()</code></td><td>3.5+</td></tr>
+  <tr><td>Condition</td><td><code>asyncio.Condition(lock)</code></td><td>3.5+</td></tr>
+  <tr><td>Barrier</td><td><code>asyncio.Barrier(n)</code></td><td>3.11+</td></tr>
+  <tr><td>Subprocess</td><td><code>asyncio.create_subprocess_exec()</code></td><td>3.5+</td></tr>
+  <tr><td>Subprocess (shell)</td><td><code>asyncio.create_subprocess_shell()</code></td><td>3.5+</td></tr>
+  <tr><td>Event loop</td><td><code>asyncio.get_event_loop()</code></td><td>3.4+</td></tr>
+  <tr><td>Yeni event loop</td><td><code>asyncio.new_event_loop()</code></td><td>3.4+</td></tr>
+  <tr><td>Event loop set</td><td><code>asyncio.set_event_loop(loop)</code></td><td>3.4+</td></tr>
+  <tr><td>Async iterable</td><td><code>asyncio.async_generator</code></td><td>3.6+</td></tr>
+</table>
+
+<br>
+<p style="text-align:center; color:#c084fc;">🔗 <strong>async/await</strong> ile yüksek performanslı I/O! Threading'in basitliği, proseslerin gücü, event loop'un hızı.</p>
+
+</div>
+</body>
+</html>

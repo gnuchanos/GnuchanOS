@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 13: Error Handling</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+  }
+  .container {
+    max-width: 960px; margin: 0 auto;
+    background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2.2em; margin-bottom: 6px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825; color: #50fa7b; font-family: 'Courier New', monospace;
+    padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554;
+    margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; } .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; } .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; } .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; } .container .code .op { color: #ff79c6; }
+  .container .output {
+    background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace;
+    padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7;
+    margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word;
+    font-size: 1.05em; line-height: 1.5;
+  }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 1em; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+  .container a.next { float: right; margin-top: 16px; color: #a855f7; text-decoration: none; font-size: 1em; }
+  .container a.next:hover { color: #c084fc; }
+  .sidebar-link:hover { background: #2d1554; color: #eee; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>💜 Lesson 13: Error Handling</h1>
+<p><strong>Lua Tutorial</strong> — GnuchanOS</p>
+
+<h2>Why Error Handling?</h2>
+<p>Programlar çalışırken hatalar oluşabilir: dosya bulunamaz, geçersiz input, network hatası. Lua bu hataları yakalamak ve yönetmek için araçlar sunar.</p>
+
+<h2>error() — Hata Fırlatma</h2>
+<p><code>error()</code> fonksiyonu programı durdurur ve hata mesajı gösterir.</p>
+<div class="code"><span class="kw">local</span> function divide(a, b)
+    <span class="kw">if</span> b == <span class="num">0</span> <span class="kw">then</span>
+        <span class="fn">error</span>(<span class="str">"Division by zero!"</span>)
+    <span class="kw">end</span>
+    <span class="kw">return</span> a / b
+<span class="kw">end</span>
+
+<span class="fn">print</span>(<span class="fn">divide</span>(<span class="num">10</span>, <span class="num">2</span>))  <span class="cmt">-- 5</span>
+<span class="fn">print</span>(<span class="fn">divide</span>(<span class="num">10</span>, <span class="num">0</span>))  <span class="cmt">-- error: Division by zero!</span></div>
+
+<h2>assert() — Kısa Kontrol</h2>
+<p><code>assert()</code> bir koşul false ise hata fırlatır.</p>
+<div class="code"><span class="kw">local</span> function sqrt(x)
+    <span class="fn">assert</span>(x >= <span class="num">0</span>, <span class="str">"Cannot sqrt negative number"</span>)
+    <span class="kw">return</span> x ^ <span class="num">0.5</span>
+<span class="kw">end</span>
+
+<span class="fn">print</span>(<span class="fn">sqrt</span>(<span class="num">9</span>))    <span class="cmt">-- 3.0</span>
+<span class="fn">print</span>(<span class="fn">sqrt</span>(-<span class="num">1</span>))   <span class="cmt">-- error: Cannot sqrt negative number</span></div>
+
+<h2>pcall() — Hatayı Yakalama (Protected Call)</h2>
+<p><code>pcall()</code> bir fonksiyonu güvenli şekilde çalıştırır. Hata olursa program çökmez.</p>
+<div class="code"><span class="kw">local</span> function risky(a, b)
+    <span class="kw">if</span> b == <span class="num">0</span> <span class="kw">then</span> <span class="fn">error</span>(<span class="str">"zero!"</span>) <span class="kw">end</span>
+    <span class="kw">return</span> a / b
+<span class="kw">end</span>
+
+<span class="kw">local</span> ok, result = <span class="fn">pcall</span>(risky, <span class="num">10</span>, <span class="num">2</span>)
+<span class="fn">print</span>(ok, result)  <span class="cmt">-- true    5</span>
+
+ok, result = <span class="fn">pcall</span>(risky, <span class="num">10</span>, <span class="num">0</span>)
+<span class="fn">print</span>(ok, result)  <span class="cmt">-- false   tutorials/lua/13_error_handling.html:2: zero!</span>
+
+<span class="kw">if</span> <span class="kw">not</span> ok <span class="kw">then</span>
+    <span class="fn">print</span>(<span class="str">"Hata yakalandi: "</span> .. result)
+<span class="kw">end</span></div>
+<div class="note">💡 <code>pcall</code> iki değer döndürür: (1) başarılı mı (boolean), (2) dönüş değeri veya hata mesajı</div>
+
+<h2>xpcall() — Gelişmiş Hata Yönetimi</h2>
+<p><code>xpcall()</code> ile hata yakalayıcı (error handler) fonksiyon belirtebilirsiniz.</p>
+<div class="code"><span class="kw">local</span> function handler(err)
+    <span class="fn">print</span>(<span class="str">"Hata olustu:"</span>)
+    <span class="fn">print</span>(<span class="fn">debug.traceback</span>(err))
+<span class="kw">end</span>
+
+<span class="kw">local</span> ok, result = <span class="fn">xpcall</span>(risky, handler, <span class="num">10</span>, <span class="num">0</span>)
+<span class="cmt">-- Hata olustu:</span>
+<span class="cmt">-- stack traceback:</span>
+<span class="cmt">--     ... (call stack)</span></div>
+
+<h2>Practical Example: Safe File Read</h2>
+<div class="code"><span class="kw">local</span> function safe_read(filename)
+    <span class="kw">local</span> f, err = <span class="fn">io.open</span>(filename, <span class="str">"r"</span>)
+    <span class="kw">if</span> <span class="kw">not</span> f <span class="kw">then</span>
+        <span class="kw">return</span> <span class="kw">nil</span>, err
+    <span class="kw">end</span>
+    <span class="kw">local</span> content = f:<span class="fn">read</span>(<span class="str">"*a"</span>)
+    f:<span class="fn">close</span>()
+    <span class="kw">return</span> content
+<span class="kw">end</span>
+
+<span class="kw">local</span> data, err = <span class="fn">safe_read</span>(<span class="str">"notexist.txt"</span>)
+<span class="kw">if</span> <span class="kw">not</span> data <span class="kw">then</span>
+    <span class="fn">print</span>(<span class="str">"Dosya okunamadi: "</span> .. err)
+<span class="kw">end</span></div>
+
+<h2>Try-Catch Pattern (Lua)</h2>
+<p>Lua'da native try-catch yoktur ama <code>pcall</code> ile aynı desen uygulanabilir:</p>
+<div class="code"><span class="kw">local</span> function try(try_block, catch_block)
+    <span class="kw">local</span> ok, err = <span class="fn">pcall</span>(try_block)
+    <span class="kw">if</span> <span class="kw">not</span> ok <span class="kw">and</span> catch_block <span class="kw">then</span>
+        catch_block(err)
+    <span class="kw">end</span>
+<span class="kw">end</span>
+
+<span class="fn">try</span>(
+    <span class="kw">function</span>()
+        <span class="fn">error</span>(<span class="str">"bir hata!"</span>)
+    <span class="kw">end</span>,
+    <span class="kw">function</span>(err)
+        <span class="fn">print</span>(<span class="str">"Yakalandi: "</span> .. err)
+    <span class="kw">end</span>
+)</div>
+<a href="12_modules.html" class="back">← 12 modules</a>
+</div>
+</body>
+</html>

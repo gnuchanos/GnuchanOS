@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 2: Python Syntax & Output</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #1f0d3a;
+    border: 3px solid #2d1554;
+    border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825; color: #50fa7b; font-family: 'Courier New', monospace;
+    padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554;
+    margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output {
+    background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace;
+    padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7;
+    margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word;
+    font-size: 1.05em; line-height: 1.5;
+  }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>Lesson 2: Python Syntax & Output</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2>Python Syntax Rules</h2>
+<ul>
+  <li>No semicolons needed — just write the statement</li>
+  <li><strong>Indentation matters</strong> — spaces/tabs define code blocks</li>
+  <li>Comments start with <code>#</code></li>
+</ul>
+
+<h3>Basic print()</h3>
+<div class="code">
+<span class="fn">print</span>(<span class="str">"Hello, World!"</span>)
+<span class="fn">print</span>(<span class="num">42</span>)
+<span class="fn">print</span>(<span class="num">3.14</span>)
+<span class="fn">print</span>(<span class="str">"Hello"</span>, <span class="str">"World"</span>)  <span class="cmt"># Comma adds a space</span>
+</div>
+
+<div class="output">
+Hello, World!
+42
+3.14
+Hello World
+</div>
+
+<h2>Comments</h2>
+<div class="code">
+<span class="cmt"># This is a single-line comment</span>
+<span class="str">"""</span>
+<span class="str">This is a multi-line</span>
+<span class="str">comment (docstring)</span>
+<span class="str">"""</span>
+</div>
+
+<h2>Escape Sequences</h2>
+<table>
+  <tr><th>Sequence</th><th>Meaning</th></tr>
+  <tr><td><code>\n</code></td><td>New line</td></tr>
+  <tr><td><code>\t</code></td><td>Tab</td></tr>
+  <tr><td><code>\\</code></td><td>Backslash</td></tr>
+  <tr><td><code>\"</code></td><td>Double quote</td></tr>
+  <tr><td><code>\'</code></td><td>Single quote</td></tr>
+</table>
+
+<div class="code">
+<span class="fn">print</span>(<span class="str">"Line 1\nLine 2"</span>)
+<span class="fn">print</span>(<span class="str">"Name:\tAge"</span>)
+<span class="fn">print</span>(<span class="str">"He said: \"Hi!\""</span>)
+</div>
+
+<div class="output">
+Line 1
+Line 2
+Name:	Age
+He said: "Hi!"
+</div>
+
+<h2>The sep and end Parameters</h2>
+<div class="code">
+<span class="fn">print</span>(<span class="str">"a"</span>, <span class="str">"b"</span>, <span class="str">"c"</span>, sep=<span class="str">"-"</span>)
+<span class="fn">print</span>(<span class="str">"Hello"</span>, end=<span class="str">" "</span>)
+<span class="fn">print</span>(<span class="str">"World"</span>)
+</div>
+
+<div class="output">
+a-b-c
+Hello World
+</div>
+
+<div class="note">
+  💡 <strong>Indentation</strong> is how Python knows which code belongs together. Use 4 spaces for each level.
+</div>
+<a href="01_intro_getstarted.html" class="back">← Intro & Setup</a>
+<a href="03_variables_datatypes.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">Variables & Types →</a>
+</div>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 11: C File I/O & Memory — Detaylı</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #150825; color: #eee; padding: 20px; }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; }  .container h2 { color: #c084fc; font-size: 1.4em; margin: 22px 0 8px; border-bottom: 2px solid #2d1554; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.6; color: #ddd; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; white-space: pre-wrap; font-size: 1.05em; }
+  .container .code .cmt { color: #6272a4; } .container .code .kw { color: #ff79c6; } .container .code .fn { color: #50fa7b; } .container .code .str { color: #f1fa8c; } .container .code .num { color: #bd93f9; } .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #d8b4fe; }
+  .container a.back:hover { color: #a855f7; }
+  .func-sig { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 6px 12px; border-radius: 6px; border: 1px solid #a855f7; margin: 6px 0 10px; display: inline-block; font-size: 0.85em; }
+  @media (max-width: 768px) { .container { padding: 14px 16px; } }</style>
+</head>
+<body>
+<div class="container">
+<h1>Lesson 11: C File I/O & Memory — Detaylı Referans</h1>
+
+<h2>1. Dosya İşlemleri — fopen() Modları</h2>
+<table>
+  <tr><th>Mod</th><th>Anlamı</th><th>Dosya yoksa</th><th>İmleç</th></tr>
+  <tr><td><code>"r"</code></td><td>Okuma</td><td>NULL döner</td><td>Baş</td></tr>
+  <tr><td><code>"w"</code></td><td>Yazma (üzerine yazar)</td><td>Oluşturur</td><td>Baş</td></tr>
+  <tr><td><code>"a"</code></td><td>Append (sonuna ekle)</td><td>Oluşturur</td><td>Son</td></tr>
+  <tr><td><code>"r+"</code></td><td>Oku + yaz</td><td>NULL döner</td><td>Baş</td></tr>
+  <tr><td><code>"w+"</code></td><td>Oku + yaz (üzerine yazar)</td><td>Oluşturur</td><td>Baş</td></tr>
+  <tr><td><code>"a+"</code></td><td>Oku + append</td><td>Oluşturur</td><td>Son</td></tr>
+  <tr><td><code>"rb"</code></td><td>Binary okuma</td><td>NULL döner</td><td>Baş</td></tr>
+  <tr><td><code>"wb"</code></td><td>Binary yazma</td><td>Oluşturur</td><td>Baş</td></tr>
+</table>
+
+<h2>2. fseek, ftell, rewind — Dosya Konumu</h2>
+<div class="func-sig">int fseek(FILE* stream, long offset, int origin);</div>
+<div class="func-sig">long ftell(FILE* stream);  // mevcut pozisyon</div>
+<div class="func-sig">void rewind(FILE* stream); // pozisyonu başa al</div>
+<table>
+  <tr><th>origin</th><th>Sabit</th><th>Anlamı</th></tr>
+  <tr><td><code>SEEK_SET</code></td><td>0</td><td>Dosya başından itibaren</td></tr>
+  <tr><td><code>SEEK_CUR</code></td><td>1</td><td>Mevcut konumdan itibaren</td></tr>
+  <tr><td><code>SEEK_END</code></td><td>2</td><td>Dosya sonundan itibaren</td></tr>
+</table>
+<div class="code">
+FILE* f = <span class="fn">fopen</span>(<span class="str">"data.bin"</span>, <span class="str">"rb"</span>);
+
+<span class="fn">fseek</span>(f, <span class="num">0</span>, SEEK_END);           <span class="cmt">// sona git</span>
+<span class="type">long</span> size = <span class="fn">ftell</span>(f);             <span class="cmt">// dosya boyutu</span>
+<span class="fn">rewind</span>(f);                        <span class="cmt">// başa dön</span>
+
+<span class="fn">fseek</span>(f, <span class="num">100</span>, SEEK_SET);          <span class="cmt">// 100. byte'a git</span>
+<span class="fn">fseek</span>(f, <span class="num">-10</span>, SEEK_CUR);          <span class="cmt">// 10 byte geri</span>
+<span class="fn">fclose</span>(f);
+</div>
+
+<h2>3. Binary Dosya I/O — fread / fwrite</h2>
+<div class="func-sig">size_t fread(void* ptr, size_t size, size_t count, FILE* stream);</div>
+<div class="func-sig">size_t fwrite(const void* ptr, size_t size, size_t count, FILE* stream);</div>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="kw">typedef</span> <span class="kw">struct</span> { <span class="type">int</span> id; <span class="type">char</span> name[<span class="num">50</span>]; <span class="type">float</span> salary; } Employee;
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    Employee emp = {<span class="num">101</span>, <span class="str">"Ali"</span>, <span class="num">55000.50</span>};
+
+    <span class="cmt">// Binary yaz</span>
+    FILE* f = <span class="fn">fopen</span>(<span class="str">"employee.bin"</span>, <span class="str">"wb"</span>);
+    <span class="fn">fwrite</span>(&emp, <span class="kw">sizeof</span>(Employee), <span class="num">1</span>, f);
+    <span class="fn">fclose</span>(f);
+
+    <span class="cmt">// Binary oku</span>
+    Employee read_emp;
+    f = <span class="fn">fopen</span>(<span class="str">"employee.bin"</span>, <span class="str">"rb"</span>);
+    <span class="fn">fread</span>(&read_emp, <span class="kw">sizeof</span>(Employee), <span class="num">1</span>, f);
+    <span class="fn">fclose</span>(f);
+
+    <span class="fn">printf</span>(<span class="str">"%d %s %.2f\n"</span>, read_emp.id, read_emp.name, read_emp.salary);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<h2>4. Dinamik Bellek — Tam Kılavuz</h2>
+<table>
+  <tr><th>Fonksiyon</th><th>İmza</th><th>Açıklama</th></tr>
+  <tr><td><code>malloc</code></td><td><code>void* malloc(size_t size)</code></td><td>size byte ayır, içerik tanımsız</td></tr>
+  <tr><td><code>calloc</code></td><td><code>void* calloc(size_t n, size_t size)</code></td><td>n * size byte ayır, TÜMÜNÜ sıfırla</td></tr>
+  <tr><td><code>realloc</code></td><td><code>void* realloc(void* ptr, size_t new_size)</code></td><td>Belleği yeniden boyutlandır</td></tr>
+  <tr><td><code>free</code></td><td><code>void free(void* ptr)</code></td><td>Belleği serbest bırak</td></tr>
+</table>
+
+<h3>4.1 calloc — Sıfırlanmış Bellek</h3>
+<div class="code">
+<span class="type">int</span>* arr = (<span class="type">int</span>*)<span class="fn">calloc</span>(<span class="num">10</span>, <span class="kw">sizeof</span>(<span class="type">int</span>));
+<span class="cmt">// arr[0]..arr[9] = 0 (calloc sıfırlar)</span>
+<span class="cmt">// malloc(10 * sizeof(int)) ile farkı: malloc sıfırlamaz</span>
+</div>
+
+<h3>4.2 realloc — Yeniden Boyutlandırma</h3>
+<div class="code">
+<span class="type">int</span>* arr = <span class="fn">malloc</span>(<span class="num">5</span> * <span class="kw">sizeof</span>(<span class="type">int</span>));
+<span class="cmt">// kullan...</span>
+
+<span class="cmt">// 10 elemana genişlet (eski veri korunur)</span>
+<span class="type">int</span>* temp = <span class="fn">realloc</span>(arr, <span class="num">10</span> * <span class="kw">sizeof</span>(<span class="type">int</span>));
+<span class="kw">if</span> (temp == NULL) {
+    <span class="cmt">// realloc başarısız! arr hala geçerli, free'le</span>
+    <span class="fn">free</span>(arr);
+    <span class="kw">return</span> <span class="num">1</span>;
+}
+arr = temp;  <span class="cmt">// yeni pointer</span>
+
+<span class="cmt">// Küçültme: fazla kısım kaybolur</span>
+arr = <span class="fn">realloc</span>(arr, <span class="num">3</span> * <span class="kw">sizeof</span>(<span class="type">int</span>));
+</div>
+<div class="warn">⚠️ <strong>realloc önemli:</strong> Her zaman geçici pointer kullan! <code>arr = realloc(arr, ...)</code> başarısız olursa orijinal pointer kaybolur (memory leak).</div>
+
+<h3>4.3 Sık Yapılan Bellek Hataları</h3>
+<div class="warn">
+<ul>
+  <li>❌ <strong>Memory leak:</strong> malloc/calloc/realloc ile alınan bellek free edilmezse program kapanana kadar tutulur</li>
+  <li>❌ <strong>Double free:</strong> free(ptr); free(ptr); → heap corruption</li>
+  <li>❌ <strong>Use-after-free:</strong> free(ptr); *ptr = 5; → undefined behavior</li>
+  <li>❌ <strong>Buffer overflow:</strong> malloc(10) ile 20 eleman yazmak → heap corruption</li>
+  <li>❌ <strong>Uninitialized read:</strong> malloc ile alınmış belleği okumak (calloc kullan)</li>
+  <li>❌ <strong>realloc NULL kontrolü yapmamak:</strong> veri kaybı</li>
+</ul>
+</div>
+
+<h2>5. Bellek Haritası (Memory Layout)</h2>
+<div class="code">
+<span class="cmt">// Bir C programının bellek haritası (adres yukarıdan aşağı):</span>
+<span class="cmt">// ┌─────────────────────┐  yüksek adres</span>
+<span class="cmt">// │       Stack         │  local değişkenler, fonksiyon çağrıları</span>
+<span class="cmt">// │         ↓           │</span>
+<span class="cmt">// │         ↑           │</span>
+<span class="cmt">// │       Heap          │  malloc/calloc/realloc ile alınan bellek</span>
+<span class="cmt">// ├─────────────────────┤</span>
+<span class="cmt">// │    BSS (Block)      │  başlatılmamış global/static değişkenler (0)</span>
+<span class="cmt">// │    Data Segment     │  başlatılmış global/static değişkenler</span>
+<span class="cmt">// │    Text (Code)      │  program kodu (read-only)</span>
+<span class="cmt">// └─────────────────────┘  düşük adres</span>
+
+<span class="type">int</span> global_init = <span class="num">5</span>;     <span class="cmt">// Data Segment</span>
+<span class="kw">static</span> <span class="type">int</span> global_uninit;  <span class="cmt">// BSS (0)</span>
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> local = <span class="num">10</span>;         <span class="cmt">// Stack</span>
+    <span class="type">int</span>* heap = <span class="fn">malloc</span>(<span class="num">100</span>);  <span class="cmt">// Heap</span>
+    <span class="fn">free</span>(heap);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+<div class="note">💡 <strong>Stack overflow:</strong> çok derin recursion veya çok büyük local dizi → stack taşar. <code>malloc</code> kullan.</div>
+
+<h2>6. remove() ve rename()</h2>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="kw">if</span> (<span class="fn">remove</span>(<span class="str">"eski.txt"</span>) == <span class="num">0</span>)
+    <span class="fn">printf</span>(<span class="str">"Silindi\n"</span>);
+<span class="kw">else</span>
+    <span class="fn">perror</span>(<span class="str">"Silme hatası"</span>);
+
+<span class="kw">if</span> (<span class="fn">rename</span>(<span class="str">"eski.txt"</span>, <span class="str">"yeni.txt"</span>) == <span class="num">0</span>)
+    <span class="fn">printf</span>(<span class="str">"Taşındı\n"</span>);
+</div>
+
+<h2>7. tmpfile() — Geçici Dosya</h2>
+<div class="code">
+FILE* tmp = <span class="fn">tmpfile</span>();  <span class="cmt">// otomatik silinir</span>
+<span class="fn">fprintf</span>(tmp, <span class="str">"Geçici veri\n"</span>);
+<span class="fn">rewind</span>(tmp);
+<span class="fn">fclose</span>(tmp);  <span class="cmt">// dosya otomatik silinir</span>
+</div>
+
+<a href="index.html" class="back">← Back</a>
+<a href="12_advanced_topics.html" style="float:right; margin-top:20px; color:#5dade2;">Next: Advanced →</a>
+</div>
+</body>
+</html>

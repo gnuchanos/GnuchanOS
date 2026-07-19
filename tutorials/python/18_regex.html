@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 18: Regular Expressions (re module)</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>Lesson 18: Regular Expressions (re module)</h1>
+<p><strong>Simple English</strong> &mdash; Pattern matching for text</p>
+
+<div class="note">
+  💡 Regular expressions are a powerful way to <strong>search, match, and manipulate text</strong> using patterns. They're essential for data cleaning, validation, and parsing.
+</div>
+
+<h2>1. Regex Metacharacters</h2>
+<table>
+  <tr><th>Pattern</th><th>Meaning</th><th>Example</th><th>Matches</th></tr>
+  <tr><td><code>.</code></td><td>Any character except newline</td><td><code>h.t</code></td><td>hat, hit, hot</td></tr>
+  <tr><td><code>^</code></td><td>Start of string</td><td><code>^Hello</code></td><td>Hello world</td></tr>
+  <tr><td><code>$</code></td><td>End of string</td><td><code>world$</code></td><td>Hello world</td></tr>
+  <tr><td><code>*</code></td><td>0 or more repetitions</td><td><code>ab*c</code></td><td>ac, abc, abbbc</td></tr>
+  <tr><td><code>+</code></td><td>1 or more repetitions</td><td><code>ab+c</code></td><td>abc, abbbc (not ac)</td></tr>
+  <tr><td><code>?</code></td><td>0 or 1 repetition</td><td><code>ab?c</code></td><td>ac, abc</td></tr>
+  <tr><td><code>{n}</code></td><td>Exactly n times</td><td><code>a{3}</code></td><td>aaa</td></tr>
+  <tr><td><code>{n,}</code></td><td>n or more times</td><td><code>a{2,}</code></td><td>aa, aaa, aaaa</td></tr>
+  <tr><td><code>{n,m}</code></td><td>Between n and m times</td><td><code>a{2,4}</code></td><td>aa, aaa, aaaa</td></tr>
+  <tr><td><code>[]</code></td><td>Set of characters</td><td><code>[aeiou]</code></td><td>Any vowel</td></tr>
+  <tr><td><code>[^]</code></td><td>Negated set</td><td><code>[^0-9]</code></td><td>Any non-digit</td></tr>
+  <tr><td><code>|</code></td><td>OR operator</td><td><code>cat|dog</code></td><td>cat or dog</td></tr>
+  <tr><td><code>()</code></td><td>Grouping / capture</td><td><code>(ab)+</code></td><td>ab, abab, ababab</td></tr>
+  <tr><td><code>\d</code></td><td>Digit [0-9]</td><td><code>\d{3}</code></td><td>123, 456</td></tr>
+  <tr><td><code>\w</code></td><td>Word char [a-zA-Z0-9_]</td><td><code>\w+</code></td><td>hello, test_123</td></tr>
+  <tr><td><code>\s</code></td><td>Whitespace [ \t\n\r\f]</td><td><code>\s+</code></td><td>Space, tab, newline</td></tr>
+  <tr><td><code>\b</code></td><td>Word boundary</td><td><code>\bcat\b</code></td><td>cat (not category)</td></tr>
+  <tr><td><code>\A</code></td><td>Start of string</td><td><code>\AHello</code></td><td>Similar to ^ but not multiline</td></tr>
+  <tr><td><code>\Z</code></td><td>End of string</td><td><code>world\Z</code></td><td>Similar to $ but not multiline</td></tr>
+</table>
+
+<h2>2. The re Module — Basic Functions</h2>
+
+<table>
+  <tr><th>Function</th><th>Description</th><th>Returns</th></tr>
+  <tr><td><code>re.search(pattern, str)</code></td><td>Search anywhere in string</td><td>Match object or None</td></tr>
+  <tr><td><code>re.match(pattern, str)</code></td><td>Match at start of string</td><td>Match object or None</td></tr>
+  <tr><td><code>re.fullmatch(pattern, str)</code></td><td>Match entire string</td><td>Match object or None</td></tr>
+  <tr><td><code>re.findall(pattern, str)</code></td><td>Find all matches</td><td>List of strings</td></tr>
+  <tr><td><code>re.finditer(pattern, str)</code></td><td>Iterate over matches</td><td>Iterator of Match objects</td></tr>
+  <tr><td><code>re.sub(pattern, repl, str)</code></td><td>Replace matches</td><td>Modified string</td></tr>
+  <tr><td><code>re.split(pattern, str)</code></td><td>Split by pattern</td><td>List of strings</td></tr>
+  <tr><td><code>re.compile(pattern)</code></td><td>Compile for reuse</td><td>Pattern object</td></tr>
+</table>
+
+<h2>3. re.search() — Find Anywhere</h2>
+<div class="code">
+<span class="pre">import</span> re
+
+text = <span class="str">"Hello, my email is user@example.com and my phone is 555-1234"</span>
+
+<span class="cmt"># Search for email pattern</span>
+match = re.<span class="fn">search</span>(<span class="str">r"\w+@\w+\.\w+"</span>, text)
+<span class="kw">if</span> match:
+    <span class="fn">print</span>(<span class="str">"Found:"</span>, match.<span class="fn">group</span>())
+    <span class="fn">print</span>(<span class="str">"Start:"</span>, match.<span class="fn">start</span>())
+    <span class="fn">print</span>(<span class="str">"End:"</span>, match.<span class="fn">end</span>())
+</div>
+<div class="output">
+Found: user@example.com
+Start: 18
+End: 34
+</div>
+
+<h2>4. re.match() — Match at Start</h2>
+<div class="code">
+text1 = <span class="str">"Python is great"</span>
+text2 = <span class="str">"I love Python"</span>
+
+<span class="fn">print</span>(re.<span class="fn">match</span>(<span class="str">r"Python"</span>, text1))  <span class="cmt"># Match at start</span>
+<span class="fn">print</span>(re.<span class="fn">match</span>(<span class="str">r"Python"</span>, text2))  <span class="cmt"># None (not at start)</span>
+
+<span class="cmt"># re.search finds anywhere</span>
+<span class="fn">print</span>(re.<span class="fn">search</span>(<span class="str">r"Python"</span>, text2))   <span class="cmt"># Finds it</span>
+</div>
+<div class="output">
+<re.Match object; span=(0, 6), match='Python'>
+None
+<re.Match object; span=(7, 13), match='Python'>
+</div>
+
+<h2>5. re.findall() — Get All Matches</h2>
+<div class="code">
+text = <span class="str">"Contacts: alice@a.com, bob@b.org, charlie@c.net"</span>
+emails = re.<span class="fn">findall</span>(<span class="str">r"\w+@\w+\.\w+"</span>, text)
+<span class="fn">print</span>(emails)
+
+<span class="cmt"># Find all digits</span>
+numbers = re.<span class="fn">findall</span>(<span class="str">r"\d+"</span>, <span class="str">"I have 3 cats, 2 dogs, and 5 fish"</span>)
+<span class="fn">print</span>(numbers)
+</div>
+<div class="output">
+['alice@a.com', 'bob@b.org', 'charlie@c.net']
+['3', '2', '5']
+</div>
+
+<h2>6. re.finditer() — Match Objects</h2>
+<div class="code">
+text = <span class="str">"apple: $1.50, banana: $0.75, cherry: $2.00"</span>
+<span class="kw">for</span> match <span class="kw">in</span> re.<span class="fn">finditer</span>(<span class="str">r"\$(\d+\.\d{2})"</span>, text):
+    <span class="fn">print</span>(<span class="str">f"Price: {match.group(1)} at position {match.start()}"</span>)
+</div>
+<div class="output">
+Price: 1.50 at position 7
+Price: 0.75 at position 23
+Price: 2.00 at position 39
+</div>
+
+<h2>7. Capture Groups</h2>
+<p>Parentheses <code>()</code> create <strong>capture groups</strong>. You can access them by index or name.</p>
+
+<div class="code">
+text = <span class="str">"John: 30, Jane: 25, Bob: 35"</span>
+
+<span class="cmt"># Unnamed groups</span>
+pattern = <span class="str">r"(\w+): (\d+)"</span>
+matches = re.<span class="fn">findall</span>(pattern, text)
+<span class="kw">for</span> name, age <span class="kw">in</span> matches:
+    <span class="fn">print</span>(<span class="str">f"{name} is {age} years old"</span>)
+</div>
+<div class="output">
+John is 30 years old
+Jane is 25 years old
+Bob is 35 years old
+</div>
+
+<h3>Named Groups</h3>
+<div class="code">
+text = <span class="str">"2025-01-15"</span>
+pattern = <span class="str">r"(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})"</span>
+match = re.<span class="fn">search</span>(pattern, text)
+<span class="kw">if</span> match:
+    <span class="fn">print</span>(<span class="str">"Year:"</span>, match.<span class="fn">group</span>(<span class="str">"year"</span>))
+    <span class="fn">print</span>(<span class="str">"Month:"</span>, match.<span class="fn">group</span>(<span class="str">"month"</span>))
+    <span class="fn">print</span>(<span class="str">"Day:"</span>, match.<span class="fn">group</span>(<span class="str">"day"</span>))
+</div>
+<div class="output">
+Year: 2025
+Month: 01
+Day: 15
+</div>
+
+<h2>8. re.sub() — Search and Replace</h2>
+<div class="code">
+text = <span class="str">"My phone is 555-123-4567 and backup is 555-987-6543"</span>
+
+<span class="cmt"># Replace phone numbers with [REDACTED]</span>
+result = re.<span class="fn">sub</span>(<span class="str">r"\d{3}-\d{3}-\d{4}"</span>, <span class="str">"[REDACTED]"</span>, text)
+<span class="fn">print</span>(result)
+
+<span class="cmt"># Using groups in replacement (\1, \2, etc.)</span>
+text2 = <span class="str">"2025-01-15"</span>
+result2 = re.<span class="fn">sub</span>(<span class="str">r"(\d{4})-(\d{2})-(\d{2})"</span>, <span class="str">r"\2/\3/\1"</span>, text2)
+<span class="fn">print</span>(result2)
+</div>
+<div class="output">
+My phone is [REDACTED] and backup is [REDACTED]
+01/15/2025
+</div>
+
+<h3>re.sub() with a Function</h3>
+<div class="code">
+text = <span class="str">"Hello World, hello python, HELLO regex"</span>
+
+<span class="kw">def</span> <span class="fn">uppercase</span>(match):
+    <span class="kw">return</span> match.<span class="fn">group</span>(<span class="num">0</span>).<span class="fn">upper</span>()
+
+result = re.<span class="fn">sub</span>(<span class="str">r"hello"</span>, uppercase, text, flags=re.<span class="type">IGNORECASE</span>)
+<span class="fn">print</span>(result)
+</div>
+<div class="output">
+HELLO World, HELLO python, HELLO regex
+</div>
+
+<h2>9. re.split() — Split by Pattern</h2>
+<div class="code">
+text = <span class="str">"apple,banana;cherry|date:fig"</span>
+result = re.<span class="fn">split</span>(<span class="str">r"[,;|:]"</span>, text)
+<span class="fn">print</span>(result)
+
+<span class="cmt"># Split with maxsplit</span>
+result2 = re.<span class="fn">split</span>(<span class="str">r"\s+"</span>, <span class="str">"one two three four five"</span>, maxsplit=<span class="num">2</span>)
+<span class="fn">print</span>(result2)
+</div>
+<div class="output">
+['apple', 'banana', 'cherry', 'date', 'fig']
+['one', 'two', 'three four five']
+</div>
+
+<h2>10. re.compile() — Reusable Patterns</h2>
+<div class="code">
+<span class="cmt"># Compile a pattern for reuse (more efficient)</span>
+email_pattern = re.<span class="fn">compile</span>(<span class="str">r"\b\w+@\w+\.\w+\b"</span>)
+
+text = <span class="str">"Email alice@test.com or bob@test.org for support"</span>
+emails = email_pattern.<span class="fn">findall</span>(text)
+<span class="fn">print</span>(emails)
+
+<span class="cmt"># Use pattern object multiple times</span>
+text2 = <span class="str">"Contact charlie@test.net"</span>
+<span class="fn">print</span>(email_pattern.<span class="fn">search</span>(text2).<span class="fn">group</span>())
+</div>
+<div class="output">
+['alice@test.com', 'bob@test.org']
+charlie@test.net
+</div>
+
+<h2>11. Regex Flags</h2>
+<table>
+  <tr><th>Flag</th><th>Short</th><th>Meaning</th></tr>
+  <tr><td><code>re.IGNORECASE</code></td><td><code>re.I</code></td><td>Case-insensitive matching</td></tr>
+  <tr><td><code>re.MULTILINE</code></td><td><code>re.M</code></td><td>^ and $ match start/end of each line</td></tr>
+  <tr><td><code>re.DOTALL</code></td><td><code>re.S</code></td><td>Dot matches newlines too</td></tr>
+  <tr><td><code>re.VERBOSE</code></td><td><code>re.X</code></td><td>Allow whitespace and comments in pattern</td></tr>
+  <tr><td><code>re.ASCII</code></td><td><code>re.A</code></td><td>\w, \d, \s match ASCII only</td></tr>
+</table>
+
+<div class="code">
+text = <span class="str">"Python\npython\nPYTHON\npYtHoN"</span>
+
+<span class="cmt"># Case-insensitive</span>
+matches = re.<span class="fn">findall</span>(<span class="str">r"python"</span>, text, flags=re.<span class="type">IGNORECASE</span>)
+<span class="fn">print</span>(<span class="str">"Case-insensitive matches:"</span>, matches)
+
+<span class="cmt"># Multiline: ^ matches line start</span>
+text2 = <span class="str">"Line1\nLine2\nLine3"</span>
+matches2 = re.<span class="fn">findall</span>(<span class="str">r"^Line\d"</span>, text2, flags=re.<span class="type">MULTILINE</span>)
+<span class="fn">print</span>(<span class="str">"Multiline matches:"</span>, matches2)
+</div>
+<div class="output">
+Case-insensitive matches: ['Python', 'python', 'PYTHON', 'pYtHoN']
+Multiline matches: ['Line1', 'Line2', 'Line3']
+</div>
+
+<h2>12. VERBOSE — Complex Patterns</h2>
+<div class="code">
+<span class="cmt"># Without VERBOSE — hard to read</span>
+pattern1 = <span class="str">r"^(?P<area>\d{3})-(?P<exchange>\d{3})-(?P<number>\d{4})$"</span>
+
+<span class="cmt"># With VERBOSE — readable!</span>
+pattern2 = re.<span class="fn">compile</span>(<span class="str">r"""
+    ^
+    (?P<area>    \d{3}  )  # Area code: 3 digits
+    -
+    (?P<exchange> \d{3}  )  # Exchange: 3 digits
+    -
+    (?P<number>   \d{4}  )  # Number: 4 digits
+    $
+"""</span>, flags=re.<span class="type">VERBOSE</span>)
+
+phone = <span class="str">"555-123-4567"</span>
+match = pattern2.<span class="fn">match</span>(phone)
+<span class="kw">if</span> match:
+    <span class="fn">print</span>(<span class="str">"Area:"</span>, match.<span class="fn">group</span>(<span class="str">"area"</span>))
+    <span class="fn">print</span>(<span class="str">"Exchange:"</span>, match.<span class="fn">group</span>(<span class="str">"exchange"</span>))
+    <span class="fn">print</span>(<span class="str">"Number:"</span>, match.<span class="fn">group</span>(<span class="str">"number"</span>))
+</div>
+<div class="output">
+Area: 555
+Exchange: 123
+Number: 4567
+</div>
+
+<h2>13. Greedy vs Non-Greedy</h2>
+<p>By default, quantifiers are <strong>greedy</strong> (match as much as possible). Add <code>?</code> to make them <strong>non-greedy</strong>.</p>
+
+<div class="code">
+html = <span class="str">"<p>First</p><p>Second</p>"</span>
+
+<span class="cmt"># Greedy — matches everything from <p> to last </p></span>
+greedy = re.<span class="fn">findall</span>(<span class="str">r"<p>.*</p>"</span>, html)
+<span class="fn">print</span>(<span class="str">"Greedy:"</span>, greedy)
+
+<span class="cmt"># Non-greedy — matches each pair separately</span>
+non_greedy = re.<span class="fn">findall</span>(<span class="str">r"<p>.*?</p>"</span>, html)
+<span class="fn">print</span>(<span class="str">"Non-greedy:"</span>, non_greedy)
+</div>
+<div class="output">
+Greedy: ['<p>First</p><p>Second</p>']
+Non-greedy: ['<p>First</p>', '<p>Second</p>']
+</div>
+
+<h2>14. Lookahead and Lookbehind</h2>
+<p><strong>Lookaround</strong> checks for a pattern without including it in the match.</p>
+
+<table>
+  <tr><th>Assertion</th><th>Pattern</th><th>Meaning</th></tr>
+  <tr><td>Positive lookahead</td><td><code>(?=...)</code></td><td>Followed by</td></tr>
+  <tr><td>Negative lookahead</td><td><code>(?!...)</code></td><td>Not followed by</td></tr>
+  <tr><td>Positive lookbehind</td><td><code>(?<=...)</code></td><td>Preceded by</td></tr>
+  <tr><td>Negative lookbehind</td><td><code>(?<!...)</code></td><td>Not preceded by</td></tr>
+</table>
+
+<div class="code">
+text = <span class="str">"€100 $200 €300 $400"</span>
+
+<span class="cmt"># Positive lookbehind: match digits after €</span>
+euro_prices = re.<span class="fn">findall</span>(<span class="str">r"(?<=€)\d+"</span>, text)
+<span class="fn">print</span>(<span class="str">"€ prices:"</span>, euro_prices)
+
+<span class="cmt"># Positive lookahead: match digits followed by $</span>
+dollar_prices = re.<span class="fn">findall</span>(<span class="str">r"\d+(?=\$)"</span>, text)
+<span class="fn">print</span>(<span class="str">"$ prices:"</span>, dollar_prices)
+
+<span class="cmt"># Negative lookahead: match digits NOT followed by $</span>
+non_dollar = re.<span class="fn">findall</span>(<span class="str">r"\d+(?!\$)"</span>, text)
+<span class="fn">print</span>(<span class="str">"Non-$ numbers:"</span>, non_dollar)
+</div>
+<div class="output">
+€ prices: ['100', '300']
+$ prices: ['200', '400']
+Non-$ numbers: ['100', '300']
+</div>
+
+<h2>15. Practical Examples</h2>
+
+<h3>Email Validation</h3>
+<div class="code">
+<span class="kw">def</span> <span class="fn">is_valid_email</span>(email):
+    pattern = <span class="str">r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"</span>
+    <span class="kw">return</span> bool(re.<span class="fn">match</span>(pattern, email))
+
+emails = [<span class="str">"user@example.com"</span>, <span class="str">"invalid@"</span>, <span class="str">"user@.com"</span>, <span class="str">"user@test.co.uk"</span>]
+<span class="kw">for</span> e <span class="kw">in</span> emails:
+    <span class="fn">print</span>(<span class="str">f"{e}: {is_valid_email(e)}"</span>)
+</div>
+<div class="output">
+user@example.com: True
+invalid@: False
+user@.com: False
+user@test.co.uk: True
+</div>
+
+<h3>Password Strength</h3>
+<div class="code">
+<span class="kw">def</span> <span class="fn">password_strength</span>(pwd):
+    score = <span class="num">0</span>
+    <span class="kw">if</span> <span class="fn">len</span>(pwd) >= <span class="num">8</span>: score += <span class="num">1</span>
+    <span class="kw">if</span> re.<span class="fn">search</span>(<span class="str">r"[a-z]"</span>, pwd): score += <span class="num">1</span>
+    <span class="kw">if</span> re.<span class="fn">search</span>(<span class="str">r"[A-Z]"</span>, pwd): score += <span class="num">1</span>
+    <span class="kw">if</span> re.<span class="fn">search</span>(<span class="str">r"\d"</span>, pwd): score += <span class="num">1</span>
+    <span class="kw">if</span> re.<span class="fn">search</span>(<span class="str">r"[!@#$%^&*(),.?\":{}|<>]"</span>, pwd): score += <span class="num">1</span>
+
+    <span class="kw">if</span> score <= <span class="num">2</span>: <span class="kw">return</span> <span class="str">"Weak"</span>
+    <span class="kw">elif</span> score <= <span class="num">3</span>: <span class="kw">return</span> <span class="str">"Medium"</span>
+    <span class="kw">elif</span> score <= <span class="num">4</span>: <span class="kw">return</span> <span class="str">"Strong"</span>
+    <span class="kw">else</span>: <span class="kw">return</span> <span class="str">"Very Strong"</span>
+
+passwords = [<span class="str">"abc"</span>, <span class="str">"Abc12345"</span>, <span class="str">"P@ssw0rd!"</span>]
+<span class="kw">for</span> p <span class="kw">in</span> passwords:
+    <span class="fn">print</span>(<span class="str">f"{p}: {password_strength(p)}"</span>)
+</div>
+<div class="output">
+abc: Weak
+Abc12345: Strong
+P@ssw0rd!: Very Strong
+</div>
+
+<h3>Extracting URLs from Text</h3>
+<div class="code">
+text = <span class="str">"Visit https://example.com or http://test.org/path?q=1 for more."</span>
+urls = re.<span class="fn">findall</span>(<span class="str">r"https?://[^\s,]+"</span>, text)
+<span class="fn">print</span>(urls)
+</div>
+<div class="output">
+['https://example.com', 'http://test.org/path?q=1']
+</div>
+
+<h3>HTML Tag Stripping</h3>
+<div class="code">
+html = <span class="str">"<h1>Title</h1><p>Some <b>bold</b> text.</p>"</span>
+clean = re.<span class="fn">sub</span>(<span class="str">r"<[^>]+>"</span>, <span class="str">""</span>, html)
+<span class="fn">print</span>(clean)
+</div>
+<div class="output">
+TitleSome bold text.
+</div>
+
+<h2>Complete Reference</h2>
+<table>
+  <tr><th>Function</th><th>Description</th></tr>
+  <tr><td><code>re.search(pattern, str, flags)</code></td><td>Search for pattern anywhere</td></tr>
+  <tr><td><code>re.match(pattern, str, flags)</code></td><td>Match at beginning of string</td></tr>
+  <tr><td><code>re.fullmatch(pattern, str, flags)</code></td><td>Match entire string</td></tr>
+  <tr><td><code>re.findall(pattern, str, flags)</code></td><td>Find all non-overlapping matches</td></tr>
+  <tr><td><code>re.finditer(pattern, str, flags)</code></td><td>Iterate over match objects</td></tr>
+  <tr><td><code>re.sub(pattern, repl, str, count, flags)</code></td><td>Replace matches</td></tr>
+  <tr><td><code>re.subn(pattern, repl, str, count, flags)</code></td><td>Replace with count returned</td></tr>
+  <tr><td><code>re.split(pattern, str, maxsplit, flags)</code></td><td>Split by pattern</td></tr>
+  <tr><td><code>re.compile(pattern, flags)</code></td><td>Compile pattern for reuse</td></tr>
+  <tr><td><code>re.escape(str)</code></td><td>Escape all metacharacters</td></tr>
+  <tr><td><code>re.purge()</code></td><td>Clear compiled pattern cache</td></tr>
+</table>
+
+<div class="tip">
+  💡 <strong>Best Practice:</strong> Always use <strong>raw strings</strong> for regex patterns (<code>r"pattern"</code>) to avoid issues with backslashes. Compile patterns with <code>re.compile()</code> when used repeatedly.
+</div>
+
+<p>Regular expressions are a superpower for text processing. Practice them until they become second nature!</p>
+
+<a href="17_asyncio.html" class="back">← Async / Await</a>
+<a href="index.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">🏠 Back to Home →</a>
+</div>
+</body>
+</html>

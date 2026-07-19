@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 9: C Pointers — Detaylı Referans</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #150825; color: #eee; padding: 20px; }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; } .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; } .container .code .kw { color: #ff79c6; } .container .code .fn { color: #50fa7b; } .container .code .str { color: #f1fa8c; } .container .code .num { color: #bd93f9; } .container .code .pre { color: #8be9fd; } .container .code .type { color: #66d9ef; } .container .code .op { color: #ff79c6; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #8b5cf6; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #d8b4fe; text-decoration: none; }
+  .container a.back:hover { color: #a855f7; }
+  .func-sig { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 6px 12px; border-radius: 6px; border: 1px solid #a855f7; margin: 6px 0 10px; display: inline-block; font-size: 0.85em; }
+  @media (max-width: 768px) { .container { padding: 14px 16px; } }</style>
+</head>
+<body>
+<div class="container">
+<h1>Lesson 9: C Pointers — Detaylı Referans</h1>
+
+<h2>1. Pointer Temelleri (Tekrar)</h2>
+<div class="func-sig">type* ptr = &variable;   // pointer tanımlama</div>
+<div class="func-sig">*ptr  // dereference — pointer'ın gösterdiği değere eriş</div>
+<div class="code">
+<span class="type">int</span> x = <span class="num">42</span>;
+<span class="type">int</span>* p = &x;     <span class="cmt">// p = x'in adresi</span>
+<span class="fn">printf</span>(<span class="str">"%d\n"</span>, *p);   <span class="cmt">// 42</span>
+*p = <span class="num">99</span>;              <span class="cmt">// x = 99</span>
+</div>
+
+<h2>2. void* — Generic Pointer</h2>
+<p><code>void*</code> herhangi bir türün adresini tutabilir. Tüm dinamik bellek fonksiyonları void* döndürür. Dereference edilemez — önce cast gerekir.</p>
+<div class="code">
+<span class="type">int</span> a = <span class="num">42</span>;
+<span class="type">float</span> b = <span class="num">3.14</span>;
+<span class="type">void</span>* ptr;
+
+ptr = &a;  <span class="cmt">// int* → void* (otomatik)</span>
+<span class="fn">printf</span>(<span class="str">"%d\n"</span>, *(<span class="type">int</span>*)ptr);  <span class="cmt">// CAST gerekli!</span>
+
+ptr = &b;  <span class="cmt">// float* → void*</span>
+<span class="fn">printf</span>(<span class="str">"%.2f\n"</span>, *(<span class="type">float</span>*)ptr);  <span class="cmt">// 3.14</span>
+
+<span class="cmt">// void* üzerinde aritmetik YASAK (boyut bilinmiyor)</span>
+<span class="cmt">// ptr++;  // DERLEME HATASI</span>
+</div>
+
+<h2>3. const ve Pointer'lar — 4 Kombinasyon</h2>
+<table>
+  <tr><th>İmza</th><th>Anlamı</th></tr>
+  <tr><td><code>const int* p</code></td><td>Pointer değişir, <strong>değer değişmez</strong> (pointer to const int)</td></tr>
+  <tr><td><code>int* const p</code></td><td>Pointer <strong>değişmez</strong>, değer değişir (const pointer to int)</td></tr>
+  <tr><td><code>const int* const p</code></td><td>İkisi de değişmez</td></tr>
+  <tr><td><code>int* p</code></td><td>İkisi de değişir</td></tr>
+</table>
+<div class="code">
+<span class="type">int</span> x = <span class="num">10</span>, y = <span class="num">20</span>;
+
+<span class="kw">const</span> <span class="type">int</span>* p1 = &x;   <span class="cmt">// değer sabit</span>
+p1 = &y;                   <span class="cmt">// ✅ pointer değişebilir</span>
+<span class="cmt">// *p1 = 30;             // ❌ DERLEME HATASI</span>
+
+<span class="type">int</span>* <span class="kw">const</span> p2 = &x;     <span class="cmt">// pointer sabit</span>
+*p2 = <span class="num">30</span>;                 <span class="cmt">// ✅ değer değişebilir</span>
+<span class="cmt">// p2 = &y;             // ❌ DERLEME HATASI</span>
+
+<span class="kw">const</span> <span class="type">int</span>* <span class="kw">const</span> p3 = &x; <span class="cmt">// ikisi de sabit</span>
+</div>
+<div class="tip">💡 <strong>const'u sağdan sola oku:</strong> <code>const int*</code> = "pointer to const int". <code>int* const</code> = "const pointer to int".</div>
+
+<h2>4. restrict Keyword (C99)</h2>
+<p><code>restrict</code> — pointer'ın bellek bölgesine sadece bu pointer'dan erişileceğini belirtir. Derleyicinin daha iyi optimizasyon yapmasını sağlar.</p>
+<div class="code">
+<span class="type">void</span> <span class="fn">copy</span>(<span class="type">int</span>* <span class="kw">restrict</span> dest, <span class="type">int</span>* <span class="kw">restrict</span> src, <span class="type">int</span> n) {
+    <span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < n; i++) dest[i] = src[i];
+    <span class="cmt">// restrict sayesinde derleyici dest ve src'nin asla örtüşmeyeceğini bilir</span>
+}
+<span class="cmt">// DİKKAT: restrict yanlış kullanılırsa tanımsız davranış!</span>
+</div>
+
+<h2>5. Fonksiyon Pointer'ları — Derinlemesine</h2>
+<div class="func-sig">return_type (*ptr_name)(param_types);  // fonksiyon pointer tanımı</div>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="cmt">// 3 farklı fonksiyon</span>
+<span class="type">int</span> <span class="fn">add</span>(<span class="type">int</span> a, <span class="type">int</span> b) { <span class="kw">return</span> a + b; }
+<span class="type">int</span> <span class="fn">sub</span>(<span class="type">int</span> a, <span class="type">int</span> b) { <span class="kw">return</span> a - b; }
+<span class="type">int</span> <span class="fn">mul</span>(<span class="type">int</span> a, <span class="type">int</span> b) { <span class="kw">return</span> a * b; }
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="cmt">// Fonksiyon pointer dizisi (hesap makinesi)</span>
+    <span class="type">int</span> (*ops[])(<span class="type">int</span>, <span class="type">int</span>) = {add, sub, mul};
+    <span class="type">char</span> op_chars[] = {<span class="str">'+'</span>, <span class="str">'-'</span>, <span class="str">'*'</span>};
+    <span class="type">int</span> x = <span class="num">10</span>, y = <span class="num">5</span>;
+
+    <span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < <span class="num">3</span>; i++) {
+        <span class="fn">printf</span>(<span class="str">"%d %c %d = %d\n"</span>, x, op_chars[i], y, ops[i](x, y));
+    }
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<h3>5.1 typedef ile Fonksiyon Pointer</h3>
+<div class="code">
+<span class="cmt">// typedef ile daha okunabilir</span>
+<span class="kw">typedef</span> <span class="type">int</span> (*MathOp)(<span class="type">int</span>, <span class="type">int</span>);
+
+MathOp op = add;
+<span class="fn">printf</span>(<span class="str">"%d\n"</span>, op(<span class="num">5</span>, <span class="num">3</span>));  <span class="cmt">// 8</span>
+
+<span class="cmt">// Dizi olarak</span>
+MathOp ops[] = {add, sub, mul};
+</div>
+
+<h3>5.2 Fonksiyon Pointer ile Callback</h3>
+<div class="code">
+<span class="cmt">// qsort ile sıralama (callback)</span>
+<span class="pre">#include</span> <span class="str"><stdlib.h></span>
+
+<span class="type">int</span> <span class="fn">cmp_int</span>(<span class="kw">const</span> <span class="type">void</span>* a, <span class="kw">const</span> <span class="type">void</span>* b) {
+    <span class="kw">return</span> *(<span class="type">int</span>*)a - *(<span class="type">int</span>*)b;
+}
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> arr[] = {<span class="num">4</span>, <span class="num">2</span>, <span class="num">7</span>, <span class="num">1</span>, <span class="num">9</span>};
+    <span class="type">int</span> n = <span class="kw">sizeof</span>(arr) / <span class="kw">sizeof</span>(arr[<span class="num">0</span>]);
+    <span class="fn">qsort</span>(arr, n, <span class="kw">sizeof</span>(<span class="type">int</span>), cmp_int);
+    <span class="cmt">// arr artık {1, 2, 4, 7, 9}</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<h2>6. Pointer Aritmetiği — İleri Seviye</h2>
+<div class="code">
+<span class="type">int</span> arr[] = {<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>, <span class="num">50</span>};
+<span class="type">int</span>* p = arr;
+
+<span class="fn">printf</span>(<span class="str">"%d\n"</span>, *(p++));   <span class="cmt">// 10 (önce *p, sonra p++) — post-increment</span>
+<span class="fn">printf</span>(<span class="str">"%d\n"</span>, *(++p));   <span class="cmt">// 30 (önce ++p, sonra *p) — pre-increment</span>
+<span class="fn">printf</span>(<span class="str">"%ld\n"</span>, p - arr); <span class="cmt">// 2 (indeks farkı)</span>
+
+<span class="cmt">// p + n:  p + n * sizeof(type) byte ilerler</span>
+<span class="cmt">// char* ile: +1 = 1 byte</span>
+<span class="cmt">// int* ile:  +1 = 4 byte</span>
+</div>
+
+<h2>7. Pointer-to-Pointer (int**)</h2>
+<div class="code">
+<span class="type">int</span> x = <span class="num">42</span>;
+<span class="type">int</span>* p = &x;     <span class="cmt">// pointer to int</span>
+<span class="type">int</span>** pp = &p;   <span class="cmt">// pointer to pointer to int</span>
+
+<span class="fn">printf</span>(<span class="str">"%d\n"</span>, **pp);  <span class="cmt">// 42</span>
+
+<span class="cmt">// 2D dizi olarak (satır sayısı dinamik)</span>
+<span class="type">int</span>** matrix = <span class="fn">malloc</span>(<span class="num">3</span> * <span class="kw">sizeof</span>(<span class="type">int</span>*));
+<span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < <span class="num">3</span>; i++)
+    matrix[i] = <span class="fn">malloc</span>(<span class="num">4</span> * <span class="kw">sizeof</span>(<span class="type">int</span>));
+
+matrix[<span class="num">1</span>][<span class="num">2</span>] = <span class="num">42</span>;  <span class="cmt">// kullan</span>
+
+<span class="cmt">// Temizlik</span>
+<span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < <span class="num">3</span>; i++) <span class="fn">free</span>(matrix[i]);
+<span class="fn">free</span>(matrix);
+</div>
+
+<h2>8. Null Pointer ve Hatalar</h2>
+<div class="code">
+<span class="type">int</span>* p = NULL;
+
+<span class="cmt">// NULL kontrolü ŞART</span>
+<span class="kw">if</span> (p != NULL) {
+    *p = <span class="num">5</span>;
+} <span class="kw">else</span> {
+    <span class="fn">printf</span>(<span class="str">"NULL pointer!\n"</span>);
+}
+
+<span class="cmt">// NULL = 0 (C'de)</span>
+<span class="kw">if</span> (!p) <span class="fn">printf</span>(<span class="str">"NULL\n"</span>);  <span class="cmt">// aynı kontrol</span>
+
+<span class="cmt">// Sık hatalar:</span>
+<span class="cmt">// ❌ *p = 5;  p NULL ise → crash (segmentation fault)</span>
+<span class="cmt">// ❌ free(p); free(p);  → double free</span>
+<span class="cmt">// ❌ int* p; *p = 5;    → uninitialized pointer</span>
+</div>
+
+<h2>9. Fonksiyon Pointer Tablosu — Pratik Kullanım</h2>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="cmt">// Menü ile farklı işlemler</span>
+<span class="kw">typedef</span> <span class="type">void</span> (*MenuFunc)();
+
+<span class="type">void</span> <span class="fn">new_game</span>()   { <span class="fn">printf</span>(<span class="str">"Yeni oyun başladı\n"</span>); }
+<span class="type">void</span> <span class="fn">load_game</span>()  { <span class="fn">printf</span>(<span class="str">"Oyun yükleniyor\n"</span>); }
+<span class="type">void</span> <span class="fn">settings</span>()   { <span class="fn">printf</span>(<span class="str">"Ayarlar\n"</span>); }
+<span class="type">void</span> <span class="fn">quit</span>()       { <span class="fn">printf</span>(<span class="str">"Çıkış\n"</span>); }
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    MenuFunc menu[] = {new_game, load_game, settings, quit};
+    <span class="type">int</span> choice;
+    <span class="fn">printf</span>(<span class="str">"Seçim (0-3): "</span>); <span class="fn">scanf</span>(<span class="str">"%d"</span>, &choice);
+    <span class="kw">if</span> (choice >= <span class="num">0</span> && choice <= <span class="num">3</span>)
+        menu[choice]();
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<a href="index.html" class="back">← Back</a>
+<a href="10_structs_enums.html" style="float:right; margin-top:20px; color:#5dade2;">Next: Structs →</a>
+</div>
+</body>
+</html>

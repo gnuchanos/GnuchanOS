@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 3: Variables & Data Types</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #1f0d3a;
+    border: 3px solid #2d1554;
+    border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825; color: #50fa7b; font-family: 'Courier New', monospace;
+    padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554;
+    margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output {
+    background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace;
+    padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7;
+    margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word;
+    font-size: 1.05em; line-height: 1.5;
+  }
+  .container content: "\\25B6 OUTPUT"; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>Lesson 3: Variables & Data Types</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2>Variables</h2>
+<p>Variables store data. No <code>int x</code> or <code>let x</code> needed — just assign!</p>
+<div class="code">
+name = <span class="str">"Alice"</span>
+age = <span class="num">25</span>
+height = <span class="num">1.75</span>
+is_student = <span class="kw">True</span>
+<span class="fn">print</span>(name)
+<span class="fn">print</span>(age + <span class="num">5</span>)
+</div>
+<div class="output">
+Alice
+30
+</div>
+
+<h2>Variable Names</h2>
+<ul>
+  <li>Letters, numbers, underscores — start with letter or underscore</li>
+  <li>Case-sensitive: <code>age</code> ≠ <code>Age</code></li>
+  <li>No keywords: <code>if</code>, <code>for</code>, <code>while</code>, etc.</li>
+</ul>
+
+<h2>Basic Data Types</h2>
+<table>
+  <tr><th>Type</th><th>Example</th></tr>
+  <tr><td><code>int</code></td><td><code>5</code>, <code>-3</code>, <code>0</code></td></tr>
+  <tr><td><code>float</code></td><td><code>3.14</code>, <code>-0.5</code></td></tr>
+  <tr><td><code>str</code></td><td><code>"hi"</code>, <code>'bye'</code></td></tr>
+  <tr><td><code>bool</code></td><td><code>True</code>, <code>False</code></td></tr>
+  <tr><td><code>NoneType</code></td><td><code>None</code></td></tr>
+</table>
+
+<h2>Type Conversion</h2>
+<div class="code">
+x = <span class="str">"5"</span>
+y = <span class="num">2</span>
+<span class="fn">print</span>(<span class="type">int</span>(x) + y)        <span class="cmt"># 7</span>
+<span class="fn">print</span>(<span class="type">float</span>(<span class="str">"3.14"</span>))    <span class="cmt"># 3.14</span>
+<span class="fn">print</span>(<span class="type">str</span>(<span class="num">42</span>))           <span class="cmt"># "42"</span>
+</div>
+<div class="output">7
+3.14
+42</div>
+
+<h2>f-Strings</h2>
+<div class="code">
+name = <span class="str">"Bob"</span>
+age = <span class="num">30</span>
+<span class="fn">print</span>(<span class="str">f"My name is {name} and I am {age}."</span>)
+<span class="fn">print</span>(<span class="str">f"Next year: {age + 1}"</span>)
+</div>
+<div class="output">
+My name is Bob and I am 30.
+Next year: 31
+</div>
+
+<div class="note">
+  💡 f-strings use <code>f"text {expr}"</code>. Works in Python 3.6+.
+</div>
+<a href="02_syntax_output.html" class="back">← Syntax & Output</a>
+<a href="04_operators.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">Operators →</a>
+</div>
+</body>
+</html>

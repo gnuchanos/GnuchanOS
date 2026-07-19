@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NumPy Kütüphanesi — Tam Referans</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container h4 { color: #e9d5ff; margin: 10px 0 4px; font-size: 1em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .code .op { color: #ff79c6; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .ref { background: #1a1a30; border-left: 4px solid #38bdf8; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 0.9em; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container td code { font-size: 0.88em; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+  .toc { background: #150825; border: 2px solid #2d1554; border-radius: 10px; padding: 16px 20px; margin: 14px 0; }
+  .toc a { display: block; color: #c4b5fd; text-decoration: none; padding: 3px 0; font-size: 0.88em; }
+  .toc a:hover { color: #a855f7; }
+  .toc a.toc-h2 { padding-left: 0; font-weight: 600; color: #c084fc; }
+  .toc a.toc-h3 { padding-left: 20px; }
+  .toc a.toc-h4 { padding-left: 36px; font-size: 0.82em; }
+  .func-sig { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 6px 12px; border-radius: 6px; border: 1px solid #a855f7; margin: 6px 0 10px; display: inline-block; font-size: 0.85em; }
+  @media (max-width: 768px) { .container { padding: 14px 16px; } }</style>
+</head>
+<body>
+<div class="container">
+
+<h1>📚 NumPy Kütüphanesi — Tam Referans</h1>
+<p><strong>numpy</strong> — Sayısal hesaplama için temel Python kütüphanesi. Çok boyutlu diziler, matematik fonksiyonları, lineer cebir, rastgele sayı üretimi ve daha fazlası.</p>
+
+<div class="note">
+  💡 <strong>Kurulum:</strong> <code>pip install numpy</code> &nbsp;|&nbsp; <strong>İçe aktarma:</strong> <code>import numpy as np</code>
+  <br>Bu referans belgesi tüm önemli NumPy fonksiyonlarını, kullanım şekillerini ve püf noktalarını kapsar.
+</div>
+
+<div class="toc">
+<h3 style="color:#a855f7;margin-bottom:6px;">İçindekiler</h3>
+<a href="#sec1" class="toc-h2">1. Dizi Oluşturma</a>
+<a href="#sec2" class="toc-h2">2. Dizi Özellikleri</a>
+<a href="#sec3" class="toc-h2">3. İndeksleme ve Dilimleme</a>
+<a href="#sec4" class="toc-h2">4. Şekil Değiştirme ve Birleştirme</a>
+<a href="#sec5" class="toc-h2">5. Aritmetik İşlemler</a>
+<a href="#sec6" class="toc-h2">6. Universal Functions (ufunc)</a>
+<a href="#sec7" class="toc-h2">7. Toplama (Aggregation) Fonksiyonları</a>
+<a href="#sec8" class="toc-h2">8. Broadcasting</a>
+<a href="#sec9" class="toc-h2">9. Lineer Cebir</a>
+<a href="#sec10" class="toc-h2">10. Rastgele Sayılar</a>
+<a href="#sec11" class="toc-h2">11. Sıralama ve Arama</a>
+<a href="#sec12" class="toc-h2">12. Küme İşlemleri</a>
+<a href="#sec13" class="toc-h2">13. Dosya I/O</a>
+<a href="#sec14" class="toc-h2">14. Copy vs View</a>
+<a href="#sec15" class="toc-h2">15. Veri Türleri</a>
+<a href="#sec16" class="toc-h2">16. Maskeleme ve Koşullu İşlemler</a>
+<a href="#sec17" class="toc-h2">17. Polinom İşlemleri</a>
+<a href="#sec18" class="toc-h2">18. İstatistik Fonksiyonları</a>
+<a href="#sec19" class="toc-h2">19. Performans İpuçları</a>
+<a href="#sec20" class="toc-h2">20. Tam Fonksiyon Tablosu</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec1">1. Dizi Oluşturma</h2>
+
+<h3>1.1 np.array() — Var olan veriden</h3>
+<div class="func-sig">np.array(object, dtype=None, copy=True, order='K', ndmin=0)</div>
+<div class="code">
+<span class="pre">import</span> numpy <span class="kw">as</span> np
+
+<span class="cmt"># 1D</span>
+a1 = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>])
+
+<span class="cmt"># 2D (matrix)</span>
+a2 = np.<span class="fn">array</span>([[<span class="num">1</span>,<span class="num">2</span>],[<span class="num">3</span>,<span class="num">4</span>]])
+
+<span class="cmt"># 3D</span>
+a3 = np.<span class="fn">array</span>([[[<span class="num">1</span>,<span class="num">2</span>],[<span class="num">3</span>,<span class="num">4</span>]],[[<span class="num">5</span>,<span class="num">6</span>],[<span class="num">7</span>,<span class="num">8</span>]]])
+
+<span class="cmt"># dtype belirterek</span>
+a4 = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>], dtype=np.<span class="type">float32</span>)
+
+<span class="cmt"># ndmin — minimum boyut zorla</span>
+a5 = np.<span class="fn">array</span>([<span class="num">1</span>,<span class="num">2</span>], ndmin=<span class="num">3</span>)  <span class="cmt"># shape: (1,1,2)</span>
+</div>
+
+<h3>1.2 np.zeros(), np.ones(), np.full()</h3>
+<div class="code">
+z = np.<span class="fn">zeros</span>((<span class="num">3</span>,<span class="num">4</span>))        <span class="cmt"># 3×4 sıfır matrisi</span>
+o = np.<span class="fn">ones</span>((<span class="num">2</span>,<span class="num">3</span>), dtype=<span class="type">int</span>)   <span class="cmt"># 2×3 bir matrisi (int)</span>
+f = np.<span class="fn">full</span>((<span class="num">2</span>,<span class="num">2</span>), <span class="num">42</span>)        <span class="cmt"># 2×2, tüm elemanlar 42</span>
+</div>
+
+<h3>1.3 Birim ve Göz Matrisleri</h3>
+<div class="code">
+e = np.<span class="fn">eye</span>(<span class="num">4</span>, dtype=<span class="type">int</span>)          <span class="cmt"># 4×4 identity</span>
+i = np.<span class="fn">identity</span>(<span class="num">3</span>)               <span class="cmt"># 3×3 identity (float)</span>
+
+<span class="cmt"># np.eye() ile offset</span>
+e_off = np.<span class="fn">eye</span>(<span class="num">5</span>, k=<span class="num">1</span>)           <span class="cmt"># 1 üst diyagonal</span>
+</div>
+
+<h3>1.4 np.arange() ve np.linspace()</h3>
+<div class="func-sig">np.arange([start,] stop[, step], dtype=None)</div>
+<div class="func-sig">np.linspace(start, stop, num=50, endpoint=True, retstep=False, dtype=None)</div>
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">10</span>)                  <span class="cmt"># [0 1 2 ... 9]</span>
+b = np.<span class="fn">arange</span>(<span class="num">2</span>, <span class="num">10</span>, <span class="num">2</span>)           <span class="cmt"># [2 4 6 8]</span>
+
+l = np.<span class="fn">linspace</span>(<span class="num">0</span>, <span class="num">1</span>, <span class="num">5</span>)           <span class="cmt"># [0. 0.25 0.5 0.75 1. ]</span>
+l2, step = np.<span class="fn">linspace</span>(<span class="num">0</span>, <span class="num">1</span>, <span class="num">5</span>, retstep=<span class="kw">True</span>)  <span class="cmt"># step=0.25</span>
+</div>
+
+<h3>1.5 np.logspace() ve np.geomspace()</h3>
+<div class="code">
+<span class="cmt"># Logaritmik aralık</span>
+log = np.<span class="fn">logspace</span>(<span class="num">0</span>, <span class="num">3</span>, <span class="num">4</span>)       <span class="cmt"># [1, 10, 100, 1000]</span>
+
+<span class="cmt"># Geometrik aralık</span>
+geo = np.<span class="fn">geomspace</span>(<span class="num">1</span>, <span class="num">1000</span>, <span class="num">4</span>)   <span class="cmt"># [1, 10, 100, 1000]</span>
+</div>
+
+<h3>1.6 np.meshgrid() — Koordinat ızgarası</h3>
+<div class="code">
+x = np.<span class="fn">array</span>([<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>])
+y = np.<span class="fn">array</span>([<span class="num">4</span>,<span class="num">5</span>])
+X, Y = np.<span class="fn">meshgrid</span>(x, y)
+<span class="cmt"># X: [[1,2,3],[1,2,3]], Y: [[4,4,4],[5,5,5]]</span>
+</div>
+
+<h3>1.7 np.fromfunction() ve np.fromiter()</h3>
+<div class="code">
+<span class="cmt"># fromfunction — bir fonksiyon kullanarak</span>
+f = np.<span class="fn">fromfunction</span>(<span class="kw">lambda</span> i, j: i + j, (<span class="num">3</span>, <span class="num">3</span>))
+<span class="cmt"># [[0,1,2],[1,2,3],[2,3,4]]</span>
+
+<span class="cmt"># fromiter — bir iteratorden</span>
+it = np.<span class="fn">fromiter</span>(<span class="fn">range</span>(<span class="num">10</span>), dtype=<span class="type">float</span>)
+</div>
+
+<h3>1.8 np.empty() — Başlatılmamış dizi</h3>
+<div class="code">
+emp = np.<span class="fn">empty</span>((<span class="num">3</span>, <span class="num">3</span>))  <span class="cmt"># rastgele bellek içeriği (hızlı)</span>
+</div>
+
+<h3>1.9 np.diag() — Diyagonal dizi</h3>
+<div class="code">
+d = np.<span class="fn">diag</span>([<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>])         <span class="cmt"># [[1,0,0],[0,2,0],[0,0,3]]</span>
+v = np.<span class="fn">diag</span>(d)                 <span class="cmt"># [1,2,3] — diyagonalı al</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec2">2. Dizi Özellikleri (Attributes)</h2>
+
+<table>
+  <tr><th>Attribute</th><th>Döndürdüğü</th><th>Örnek</th></tr>
+  <tr><td><code>arr.shape</code></td><td>Tuple — her boyutun uzunluğu</td><td><code>(3, 4)</code></td></tr>
+  <tr><td><code>arr.ndim</code></td><td>Boyut sayısı</td><td><code>2</code></td></tr>
+  <tr><td><code>arr.size</code></td><td>Toplam eleman sayısı</td><td><code>12</code></td></tr>
+  <tr><td><code>arr.dtype</code></td><td>Veri türü</td><td><code>dtype('int64')</code></td></tr>
+  <tr><td><code>arr.itemsize</code></td><td>Her elemanın byte cinsinden boyutu</td><td><code>8</code></td></tr>
+  <tr><td><code>arr.nbytes</code></td><td>Toplam byte (size × itemsize)</td><td><code>96</code></td></tr>
+  <tr><td><code>arr.T</code></td><td>Transpoz (2D+ için)</td><td><code>(4, 3)</code></td></tr>
+  <tr><td><code>arr.real</code></td><td>Karmaşık sayıların reel kısmı</td><td>—</td></tr>
+  <tr><td><code>arr.imag</code></td><td>Karmaşık sayıların sanal kısmı</td><td>—</td></tr>
+  <tr><td><code>arr.flat</code></td><td>flatiter — düzleştirilmiş iterator</td><td>—</td></tr>
+  <tr><td><code>arr.data</code></td><td>Ham bellek tamponu</td><td>—</td></tr>
+  <tr><td><code>arr.strides</code></td><td>Her boyutta bir sonraki elemana atlamak için byte sayısı</td><td><code>(32, 8)</code></td></tr>
+</table>
+
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">24</span>).<span class="fn">reshape</span>(<span class="num">2</span>,<span class="num">3</span>,<span class="num">4</span>)
+<span class="fn">print</span>(<span class="str">"shape:"</span>, a.shape, <span class="str">"ndim:"</span>, a.ndim, <span class="str">"size:"</span>, a.size)
+<span class="fn">print</span>(<span class="str">"dtype:"</span>, a.dtype, <span class="str">"itemsize:"</span>, a.itemsize, <span class="str">"nbytes:"</span>, a.nbytes)
+<span class="fn">print</span>(<span class="str">"strides:"</span>, a.strides)
+</div>
+<div class="output">
+shape: (2, 3, 4) ndim: 3 size: 24
+dtype: int64 itemsize: 8 nbytes: 192
+strides: (96, 32, 8)
+</div>
+<div class="note">💡 <strong>Strides:</strong> 96 = 3×4×8, 32 = 4×8, 8 = 1×8. Her boyutta kaç byte atlanacağını gösterir. Transpoz sonrası strides değişir.</div>
+
+<!-- ============================================================ -->
+<h2 id="sec3">3. İndeksleme ve Dilimleme</h2>
+
+<h3>3.1 Temel İndeksleme</h3>
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">10</span>)
+<span class="fn">print</span>(a[<span class="num">0</span>], a[-<span class="num">1</span>], a[<span class="num">2</span>:<span class="num">7</span>])     <span class="cmt"># 0 9 [2 3 4 5 6]</span>
+</div>
+
+<h3>3.2 Çok Boyutlu İndeksleme</h3>
+<div class="code">
+m = np.<span class="fn">arange</span>(<span class="num">12</span>).<span class="fn">reshape</span>(<span class="num">3</span>,<span class="num">4</span>)
+<span class="fn">print</span>(m[<span class="num">1</span>, <span class="num">2</span>])     <span class="cmt"># satır 1, sütun 2 → 6</span>
+<span class="fn">print</span>(m[<span class="num">1</span>])          <span class="cmt"># tüm satır 1 → [4 5 6 7]</span>
+<span class="fn">print</span>(m[:, <span class="num">0</span>])       <span class="cmt"># tüm satırlar, sütun 0 → [0 4 8]</span>
+<span class="fn">print</span>(m[<span class="num">0</span>:<span class="num">2</span>, <span class="num">1</span>:<span class="num">3</span>])   <span class="cmt"># alt matris</span>
+<span class="fn">print</span>(m[::<span class="num">2</span>, ::<span class="num">2</span>])   <span class="cmt"># stride ile seçme</span>
+</div>
+
+<h3>3.3 Fancy Indexing (Liste ile seçme)</h3>
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">12</span>)
+indices = [<span class="num">1</span>, <span class="num">3</span>, <span class="num">7</span>, <span class="num">9</span>]
+<span class="fn">print</span>(a[indices])          <span class="cmt"># [1 3 7 9]</span>
+
+<span class="cmt"># 2D fancy indexing</span>
+rows = [<span class="num">0</span>, <span class="num">2</span>]
+cols = [<span class="num">1</span>, <span class="num">3</span>]
+<span class="fn">print</span>(m[rows, cols])        <span class="cmt"># [m[0,1], m[2,3]]</span>
+</div>
+
+<h3>3.4 Boolean Mask Indexing</h3>
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">10</span>)
+mask = (a > <span class="num">5</span>) & (a < <span class="num">9</span>)
+<span class="fn">print</span>(mask)                 <span class="cmt"># [False False ... True True True False]</span>
+<span class="fn">print</span>(a[mask])              <span class="cmt"># [6 7 8]</span>
+
+<span class="cmt"># Mask ile değiştirme</span>
+a[a > <span class="num">5</span>] = <span class="num">0</span>
+</div>
+
+<h3>3.5 np.where() — Koşullu seçim</h3>
+<div class="func-sig">np.where(condition [, x, y])</div>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>])
+<span class="fn">print</span>(np.<span class="fn">where</span>(a > <span class="num">2</span>))         <span class="cmt"># (array([2, 3]),)</span>
+<span class="fn">print</span>(np.<span class="fn">where</span>(a > <span class="num">2</span>, a, <span class="num">0</span>))  <span class="cmt"># [0 0 3 4] — x if cond else y</span>
+</div>
+
+<h3>3.6 np.nonzero() ve np.argwhere()</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">0</span>, <span class="num">2</span>, <span class="num">0</span>, <span class="num">5</span>])
+<span class="fn">print</span>(np.<span class="fn">nonzero</span>(a))           <span class="cmt"># (array([1, 3]),)</span>
+<span class="fn">print</span>(np.<span class="fn">argwhere</span>(a))           <span class="cmt"># [[1],[3]]</span>
+</div>
+
+<h3>3.7 np.take() ve np.compress()</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>])
+<span class="fn">print</span>(np.<span class="fn">take</span>(a, [<span class="num">0</span>, <span class="num">2</span>]))         <span class="cmt"># [10 30]</span>
+<span class="fn">print</span>(np.<span class="fn">compress</span>([<span class="kw">True</span>,<span class="kw">False</span>,<span class="kw">True</span>,<span class="kw">False</span>], a))  <span class="cmt"># [10 30]</span>
+</div>
+
+<h3>3.8 np.choose()</h3>
+<div class="code">
+choices = np.<span class="fn">array</span>([[<span class="num">0</span>,<span class="num">1</span>,<span class="num">2</span>],[<span class="num">10</span>,<span class="num">11</span>,<span class="num">12</span>],[<span class="num">20</span>,<span class="num">21</span>,<span class="num">22</span>]])
+selector = [<span class="num">0</span>, <span class="num">1</span>, <span class="num">2</span>]
+<span class="fn">print</span>(np.<span class="fn">choose</span>(selector, choices))  <span class="cmt"># [0 11 22]</span>
+</div>
+
+<h3>3.9 np.clip() — Değer sınırlama</h3>
+<div class="func-sig">np.clip(a, a_min, a_max, out=None)</div>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">5</span>, <span class="num">10</span>, <span class="num">15</span>])
+<span class="fn">print</span>(np.<span class="fn">clip</span>(a, <span class="num">3</span>, <span class="num">12</span>))     <span class="cmt"># [3 5 10 12]</span>
+</div>
+
+<h3>3.10 np.extract()</h3>
+<div class="code">
+<span class="fn">print</span>(np.<span class="fn">extract</span>(a > <span class="num">4</span>, a))  <span class="cmt"># koşulu sağlayanları döndür</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec4">4. Şekil Değiştirme ve Birleştirme</h2>
+
+<h3>4.1 reshape(), resize(), flatten(), ravel()</h3>
+<div class="func-sig">np.reshape(a, newshape, order='C')</div>
+<div class="func-sig">np.resize(a, new_shape)  # sığmazsa tekrarla</div>
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">12</span>)
+b = a.<span class="fn">reshape</span>(<span class="num">3</span>, <span class="num">4</span>)        <span class="cmt"># 3 satır 4 sütun</span>
+c = a.<span class="fn">reshape</span>(<span class="num">2</span>, <span class="num">2</span>, <span class="num">3</span>)      <span class="cmt"># 3D</span>
+
+<span class="cmt"># -1: otomatik hesapla</span>
+d = a.<span class="fn">reshape</span>(<span class="num">4</span>, <span class="num">-1</span>)         <span class="cmt"># 4×3</span>
+
+<span class="cmt"># flatten (her zaman kopya) vs ravel (view olabilir)</span>
+f = b.<span class="fn">flatten</span>()              <span class="cmt"># kopya</span>
+r = b.<span class="fn">ravel</span>()                <span class="cmt"># view (mümkünse), değişiklik b'yi etkiler</span>
+
+<span class="cmt"># resize — sığmazsa tekrarla</span>
+rs = np.<span class="fn">resize</span>(a, (<span class="num">2</span>, <span class="num">10</span>))   <span class="cmt"># 20 eleman için a'yı tekrarlar</span>
+</div>
+
+<div class="note">💡 <code>reshape()</code> view döndürür (mümkünse). <code>resize()</code> kopya döndürür ve eksik elemanları tekrarlar.</div>
+
+<h3>4.2 np.newaxis ve np.expand_dims()</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>])           <span class="cmt"># shape (3,)</span>
+b = a[np.<span class="pre">newaxis</span>, :]           <span class="cmt"># shape (1, 3) — satır vektörü</span>
+c = a[:, np.<span class="pre">newaxis</span>]           <span class="cmt"># shape (3, 1) — sütun vektörü</span>
+
+<span class="cmt"># expand_dims ile aynı şey</span>
+d = np.<span class="fn">expand_dims</span>(a, axis=<span class="num">0</span>)   <span class="cmt"># (1, 3)</span>
+e = np.<span class="fn">expand_dims</span>(a, axis=<span class="num">1</span>)   <span class="cmt"># (3, 1)</span>
+</div>
+
+<h3>4.3 squeeze() — Tek boyutluları kaldır</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([[[<span class="num">1</span>],[<span class="num">2</span>]]])       <span class="cmt"># (1, 2, 1)</span>
+b = a.<span class="fn">squeeze</span>()                 <span class="cmt"># (2,) — tüm 1'leri kaldır</span>
+b2 = a.<span class="fn">squeeze</span>(axis=<span class="num">0</span>)         <span class="cmt"># sadece axis 0'ı kaldır</span>
+</div>
+
+<h3>4.4 Birleştirme: concatenate, stack, vstack, hstack, dstack, column_stack</h3>
+<div class="func-sig">np.concatenate((a1, a2, ...), axis=0)</div>
+<div class="code">
+a = np.<span class="fn">array</span>([[<span class="num">1</span>,<span class="num">2</span>],[<span class="num">3</span>,<span class="num">4</span>]])
+b = np.<span class="fn">array</span>([[<span class="num">5</span>,<span class="num">6</span>]])
+
+<span class="cmt"># concatenate — var olan eksende birleştir</span>
+c = np.<span class="fn">concatenate</span>((a, b), axis=<span class="num">0</span>)    <span class="cmt"># dikey: (3,2)</span>
+
+<span class="cmt"># stack — yeni eksende birleştir</span>
+s = np.<span class="fn">stack</span>((a, np.<span class="fn">array</span>([[<span class="num">5</span>,<span class="num">6</span>],[<span class="num">7</span>,<span class="num">8</span>]])), axis=<span class="num">0</span>)  <span class="cmt"># (2,2,2)</span>
+
+<span class="cmt"># vstack / row_stack</span>
+v = np.<span class="fn">vstack</span>((a, b))               <span class="cmt"># dikey birleştir</span>
+
+<span class="cmt"># hstack</span>
+h = np.<span class="fn">hstack</span>((a, np.<span class="fn">array</span>([[<span class="num">7</span>,<span class="num">8</span>],[<span class="num">9</span>,<span class="num">10</span>]])))  <span class="cmt"># yatay</span>
+
+<span class="cmt"># dstack — derinlik boyutunda (3. eksen)</span>
+d = np.<span class="fn">dstack</span>((a, a))               <span class="cmt"># (2,2,2)</span>
+
+<span class="cmt"># column_stack — 1D'leri sütun olarak birleştir</span>
+x = np.<span class="fn">array</span>([<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>])
+y = np.<span class="fn">array</span>([<span class="num">4</span>,<span class="num">5</span>,<span class="num">6</span>])
+col = np.<span class="fn">column_stack</span>((x, y))        <span class="cmt"># (3,2)</span>
+</div>
+
+<h3>4.5 Ayırma: split, vsplit, hsplit, dsplit, array_split</h3>
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">12</span>).<span class="fn">reshape</span>(<span class="num">3</span>,<span class="num">4</span>)
+
+<span class="cmt"># split — eşit parçalara böl</span>
+p = np.<span class="fn">split</span>(a, <span class="num">3</span>)                  <span class="cmt"># 3 parça, axis=0</span>
+p2 = np.<span class="fn">hsplit</span>(a, <span class="num">2</span>)                 <span class="cmt"># 2 parça, axis=1</span>
+p3 = np.<span class="fn">vsplit</span>(a, <span class="num">3</span>)                 <span class="cmt"># 3 parça, axis=0</span>
+
+<span class="cmt"># array_split — eşit olmayan parçalara bölebilir</span>
+ap = np.<span class="fn">array_split</span>(a, <span class="num">2</span>, axis=<span class="num">1</span>)     <span class="cmt"># 2 ve 2 sütun</span>
+</div>
+
+<h3>4.6 transpose() ve swapaxes()</h3>
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">24</span>).<span class="fn">reshape</span>(<span class="num">2</span>,<span class="num">3</span>,<span class="num">4</span>)
+t = np.<span class="fn">transpose</span>(a, (<span class="num">1</span>, <span class="num">0</span>, <span class="num">2</span>))    <span class="cmt"># (3,2,4) — eksenleri yeniden sırala</span>
+t2 = a.<span class="fn">transpose</span>(<span class="num">1</span>, <span class="num">0</span>, <span class="num">2</span>)
+
+sw = np.<span class="fn">swapaxes</span>(a, <span class="num">0</span>, <span class="num">1</span>)          <span class="cmt"># (3,2,4) — iki ekseni yer değiştir</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec5">5. Aritmetik İşlemler</h2>
+
+<h3>5.1 Temel Aritmetik (element-wise)</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>])
+b = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>])
+
+<span class="fn">print</span>(a + b)     <span class="cmt"># toplama</span>
+<span class="fn">print</span>(a - b)     <span class="cmt"># çıkarma</span>
+<span class="fn">print</span>(a * b)     <span class="cmt"># çarpma (element-wise, matris değil!)</span>
+<span class="fn">print</span>(a / b)     <span class="cmt"># bölme</span>
+<span class="fn">print</span>(a // b)    <span class="cmt"># tam bölme</span>
+<span class="fn">print</span>(a % b)     <span class="cmt"># mod</span>
+<span class="fn">print</span>(a ** b)    <span class="cmt"># üs</span>
+<span class="fn">print</span>(-a)        <span class="cmt"># negatif</span>
+<span class="fn">print</span>(+a)        <span class="cmt"># pozitif (kopya)</span>
+<span class="fn">print</span>(~a)        <span class="cmt"># bitwise not (int için)</span>
+</div>
+
+<h3>5.2 Karşılaştırma Operatörleri</h3>
+<div class="code">
+<span class="fn">print</span>(a > <span class="num">15</span>)    <span class="cmt"># [False  True  True]</span>
+<span class="fn">print</span>(a == b)    <span class="cmt"># [False False False]</span>
+<span class="fn">print</span>(a != b)    <span class="cmt"># [ True  True  True]</span>
+<span class="fn">print</span>(a >= <span class="num">20</span>)   <span class="cmt"># [False  True  True]</span>
+</div>
+
+<h3>5.3 Bitwise Operatörler</h3>
+<div class="code">
+x = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">4</span>, <span class="num">8</span>])
+y = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">1</span>, <span class="num">1</span>, <span class="num">1</span>])
+<span class="fn">print</span>(x & y)   <span class="cmt"># AND</span>
+<span class="fn">print</span>(x | y)   <span class="cmt"># OR</span>
+<span class="fn">print</span>(x ^ y)   <span class="cmt"># XOR</span>
+<span class="fn">print</span>(x << <span class="num">1</span>)  <span class="cmt"># left shift</span>
+<span class="fn">print</span>(x >> <span class="num">1</span>)  <span class="cmt"># right shift</span>
+</div>
+
+<h3>5.4 np.add(), np.subtract() ... — Fonksiyonel formlar</h3>
+<div class="code">
+np.<span class="fn">add</span>(a, b)         <span class="cmt"># a + b</span>
+np.<span class="fn">subtract</span>(a, b)    <span class="cmt"># a - b</span>
+np.<span class="fn">multiply</span>(a, b)    <span class="cmt"># a * b</span>
+np.<span class="fn">divide</span>(a, b)      <span class="cmt"># a / b</span>
+np.<span class="fn">floor_divide</span>(a, b) <span class="cmt"># a // b</span>
+np.<span class="fn">mod</span>(a, b)          <span class="cmt"># a % b</span>
+np.<span class="fn">power</span>(a, b)        <span class="cmt"># a ** b</span>
+np.<span class="fn">negative</span>(a)       <span class="cmt"># -a</span>
+np.<span class="fn">absolute</span>(a)       <span class="cmt"># |a|</span>
+np.<span class="fn">reciprocal</span>(a)     <span class="cmt"># 1/a</span>
+</div>
+
+<h3>5.5 np.matmul() / @ — Matris çarpımı</h3>
+<div class="func-sig">np.matmul(a, b)  # veya a @ b</div>
+<div class="code">
+m1 = np.<span class="fn">array</span>([[<span class="num">1</span>,<span class="num">2</span>],[<span class="num">3</span>,<span class="num">4</span>]])
+m2 = np.<span class="fn">array</span>([[<span class="num">5</span>,<span class="num">6</span>],[<span class="num">7</span>,<span class="num">8</span>]])
+<span class="fn">print</span>(m1 @ m2)                     <span class="cmt"># matris çarpımı</span>
+<span class="fn">print</span>(np.<span class="fn">matmul</span>(m1, m2))            <span class="cmt"># aynı</span>
+</div>
+
+<h3>5.6 np.dot() — İç çarpım</h3>
+<div class="code">
+v1 = np.<span class="fn">array</span>([<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>])
+v2 = np.<span class="fn">array</span>([<span class="num">4</span>,<span class="num">5</span>,<span class="num">6</span>])
+<span class="fn">print</span>(np.<span class="fn">dot</span>(v1, v2))     <span class="cmt"># 1*4+2*5+3*6 = 32</span>
+
+<span class="cmt"># 2D için matmult ile aynı</span>
+<span class="fn">print</span>(np.<span class="fn">dot</span>(m1, m2))
+</div>
+
+<h3>5.7 np.cross() — Vektörel çarpım</h3>
+<div class="code">
+v1 = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">0</span>, <span class="num">0</span>])
+v2 = np.<span class="fn">array</span>([<span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>])
+<span class="fn">print</span>(np.<span class="fn">cross</span>(v1, v2))   <span class="cmt"># [0 0 1] — z ekseni</span>
+</div>
+
+<h3>5.8 np.inner() ve np.outer()</h3>
+<div class="code">
+<span class="fn">print</span>(np.<span class="fn">inner</span>(v1, v2))   <span class="cmt"># iç çarpım (dot ile aynı 1D'de)</span>
+<span class="fn">print</span>(np.<span class="fn">outer</span>(v1, v2))   <span class="cmt"># dış çarpım (3×3 matris)</span>
+</div>
+
+<h3>5.9 np.tensordot() — Tensör iç çarpımı</h3>
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">60</span>).<span class="fn">reshape</span>(<span class="num">3</span>,<span class="num">4</span>,<span class="num">5</span>)
+b = np.<span class="fn">arange</span>(<span class="num">24</span>).<span class="fn">reshape</span>(<span class="num">4</span>,<span class="num">3</span>,<span class="num">2</span>)
+c = np.<span class="fn">tensordot</span>(a, b, axes=([<span class="num">0</span>,<span class="num">1</span>], [<span class="num">1</span>,<span class="num">0</span>]))
+<span class="cmt"># axis 0 ve 1'i birleştir → (5, 2)</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec6">6. Universal Functions (ufunc)</h2>
+<p>ufunc'lar NumPy dizileri üzerinde <strong>element-wise</strong> işlem yapan, C ile yazılmış hızlı fonksiyonlardır.</p>
+
+<h3>6.1 Trigonometrik</h3>
+<table>
+  <tr><th>Fonksiyon</th><th>Açıklama</th></tr>
+  <tr><td><code>np.sin(x)</code></td><td>Sinüs</td></tr>
+  <tr><td><code>np.cos(x)</code></td><td>Kosinüs</td></tr>
+  <tr><td><code>np.tan(x)</code></td><td>Tanjant</td></tr>
+  <tr><td><code>np.arcsin(x)</code></td><td>Arc sinüs</td></tr>
+  <tr><td><code>np.arccos(x)</code></td><td>Arc kosinüs</td></tr>
+  <tr><td><code>np.arctan(x)</code></td><td>Arc tanjant</td></tr>
+  <tr><td><code>np.arctan2(y, x)</code></td><td>atan2 — işareti korur</td></tr>
+  <tr><td><code>np.hypot(x, y)</code></td><td>√(x²+y²)</td></tr>
+  <tr><td><code>np.degrees(x)</code></td><td>Radyan → derece</td></tr>
+  <tr><td><code>np.radians(x)</code></td><td>Derece → radyan</td></tr>
+  <tr><td><code>np.sinh(x)</code></td><td>Hiperbolik sinüs</td></tr>
+  <tr><td><code>np.cosh(x)</code></td><td>Hiperbolik kosinüs</td></tr>
+  <tr><td><code>np.tanh(x)</code></td><td>Hiperbolik tanjant</td></tr>
+</table>
+
+<h3>6.2 Üstel, Logaritmik, Kuvvet</h3>
+<table>
+  <tr><th>Fonksiyon</th><th>Açıklama</th></tr>
+  <tr><td><code>np.exp(x)</code></td><td>e^x</td></tr>
+  <tr><td><code>np.expm1(x)</code></td><td>e^x - 1 (küçük x için hassas)</td></tr>
+  <tr><td><code>np.exp2(x)</code></td><td>2^x</td></tr>
+  <tr><td><code>np.log(x)</code></td><td>Doğal logaritma (ln)</td></tr>
+  <tr><td><code>np.log10(x)</code></td><td>10 tabanında log</td></tr>
+  <tr><td><code>np.log2(x)</code></td><td>2 tabanında log</td></tr>
+  <tr><td><code>np.log1p(x)</code></td><td>ln(1+x) (küçük x için hassas)</td></tr>
+  <tr><td><code>np.logaddexp(x1, x2)</code></td><td>log(exp(x1)+exp(x2))</td></tr>
+  <tr><td><code>np.logaddexp2(x1, x2)</code></td><td>log2(2^x1+2^x2)</td></tr>
+  <tr><td><code>np.sqrt(x)</code></td><td>√x</td></tr>
+  <tr><td><code>np.cbrt(x)</code></td><td>∛x (küp kök)</td></tr>
+  <tr><td><code>np.square(x)</code></td><td>x²</td></tr>
+  <tr><td><code>np.power(x, y)</code></td><td>x^y</td></tr>
+</table>
+
+<h3>6.3 Yuvarlama ve Karmaşık</h3>
+<table>
+  <tr><th>Fonksiyon</th><th>Açıklama</th></tr>
+  <tr><td><code>np.round(x, decimals=0)</code></td><td>En yakın sayıya yuvarla</td></tr>
+  <tr><td><code>np.around(x, decimals)</code></td><td>round ile aynı</td></tr>
+  <tr><td><code>np.floor(x)</code></td><td>Aşağı yuvarla (taban)</td></tr>
+  <tr><td><code>np.ceil(x)</code></td><td>Yukarı yuvarla (tavan)</td></tr>
+  <tr><td><code>np.trunc(x)</code></td><td>Ondalık kısmı at</td></tr>
+  <tr><td><code>np.fix(x)</code></td><td>0'a doğru yuvarla</td></tr>
+  <tr><td><code>np.rint(x)</code></td><td>En yakın tam sayıya yuvarla (integer)</td></tr>
+  <tr><td><code>np.sign(x)</code></td><td>İşaret (-1, 0, 1)</td></tr>
+  <tr><td><code>np.abs(x)</code></td><td>Mutlak değer</td></tr>
+  <tr><td><code>np.fabs(x)</code></td><td>float mutlak değer</td></tr>
+  <tr><td><code>np.conj(x)</code></td><td>Karmaşık eşlenik</td></tr>
+  <tr><td><code>np.angle(x)</code></td><td>Karmaşık faz açısı</td></tr>
+  <tr><td><code>np.real(x)</code></td><td>Reel kısım</td></tr>
+  <tr><td><code>np.imag(x)</code></td><td>Sanal kısım</td></tr>
+</table>
+
+<h3>6.4 Karşılaştırma (ufunc)</h3>
+<table>
+  <tr><th>Fonksiyon</th><th>Operatör</th></tr>
+  <tr><td><code>np.greater(a, b)</code></td><td><code>a > b</code></td></tr>
+  <tr><td><code>np.greater_equal(a, b)</code></td><td><code>a >= b</code></td></tr>
+  <tr><td><code>np.less(a, b)</code></td><td><code>a < b</code></td></tr>
+  <tr><td><code>np.less_equal(a, b)</code></td><td><code>a <= b</code></td></tr>
+  <tr><td><code>np.equal(a, b)</code></td><td><code>a == b</code></td></tr>
+  <tr><td><code>np.not_equal(a, b)</code></td><td><code>a != b</code></td></tr>
+  <tr><td><code>np.isnan(x)</code></td><td>NaN mı?</td></tr>
+  <tr><td><code>np.isinf(x)</code></td><td>Sonsuz mu?</td></tr>
+  <tr><td><code>np.isfinite(x)</code></td><td>Sonlu mu?</td></tr>
+  <tr><td><code>np.isclose(a, b, rtol, atol)</code></td><td>Yaklaşık eşitlik</td></tr>
+  <tr><td><code>np.allclose(a, b)</code></td><td>Tüm elemanlar yaklaşık eşit mi?</td></tr>
+</table>
+
+<div class="code">
+<span class="cmt"># ufunc özellikleri</span>
+ufunc = np.<span class="fn">add</span>
+<span class="fn">print</span>(ufunc.<span class="fn">__name__</span>)          <span class="cmt"># "add"</span>
+<span class="fn">print</span>(ufunc.<span class="fn">nargs</span>)             <span class="cmt"># 2 (kaç argüman alır)</span>
+<span class="fn">print</span>(ufunc.<span class="fn">nin</span>)              <span class="cmt"># 2 (girdi sayısı)</span>
+<span class="fn">print</span>(ufunc.<span class="fn">nout</span>)             <span class="cmt"># 1 (çıktı sayısı)</span>
+<span class="fn">print</span>(ufunc.<span class="fn">ntypes</span>)           <span class="cmt"># tür varyant sayısı</span>
+<span class="fn">print</span>(ufunc.<span class="fn">types</span>)            <span class="cmt"># desteklenen türler</span>
+
+<span class="cmt"># ufunc methodları</span>
+a = np.<span class="fn">array</span>([[<span class="num">1</span>,<span class="num">2</span>],[<span class="num">3</span>,<span class="num">4</span>]])
+np.<span class="fn">add</span>.<span class="fn">reduce</span>(a)                <span class="cmt"># [4 6] — satırları topla</span>
+np.<span class="fn">add</span>.<span class="fn">accumulate</span>(a)            <span class="cmt"># kümülatif toplam</span>
+np.<span class="fn">add</span>.<span class="fn">reduceat</span>(a, [<span class="num">0</span>,<span class="num">2</span>])       <span class="cmt"># belirli noktalarda indirge</span>
+np.<span class="fn">add</span>.<span class="fn">outer</span>([<span class="num">1</span>,<span class="num">2</span>], [<span class="num">3</span>,<span class="num">4</span>])     <span class="cmt"># dış çarpım</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec7">7. Toplama (Aggregation) Fonksiyonları</h2>
+
+<table>
+  <tr><th>Fonksiyon</th><th>NaN-safe sürümü</th><th>Açıklama</th></tr>
+  <tr><td><code>np.sum(a)</code></td><td><code>np.nansum(a)</code></td><td>Tüm elemanların toplamı</td></tr>
+  <tr><td><code>np.mean(a)</code></td><td><code>np.nanmean(a)</code></td><td>Aritmetik ortalama</td></tr>
+  <tr><td><code>np.std(a)</code></td><td><code>np.nanstd(a)</code></td><td>Standart sapma</td></tr>
+  <tr><td><code>np.var(a)</code></td><td><code>np.nanvar(a)</code></td><td>Varyans</td></tr>
+  <tr><td><code>np.min(a)</code></td><td><code>np.nanmin(a)</code></td><td>Minimum</td></tr>
+  <tr><td><code>np.max(a)</code></td><td><code>np.nanmax(a)</code></td><td>Maksimum</td></tr>
+  <tr><td><code>np.argmin(a)</code></td><td><code>np.nanargmin(a)</code></td><td>Minimum indeksi</td></tr>
+  <tr><td><code>np.argmax(a)</code></td><td><code>np.nanargmax(a)</code></td><td>Maksimum indeksi</td></tr>
+  <tr><td><code>np.ptp(a)</code></td><td>—</td><td>Range (max - min)</td></tr>
+  <tr><td><code>np.median(a)</code></td><td><code>np.nanmedian(a)</code></td><td>Medyan</td></tr>
+  <tr><td><code>np.average(a)</code></td><td>—</td><td>Ağırlıklı ortalama</td></tr>
+  <tr><td><code>np.prod(a)</code></td><td><code>np.nanprod(a)</code></td><td>Tüm elemanların çarpımı</td></tr>
+  <tr><td><code>np.cumsum(a)</code></td><td><code>np.nancumsum(a)</code></td><td>Kümülatif toplam</td></tr>
+  <tr><td><code>np.cumprod(a)</code></td><td><code>np.nancumprod(a)</code></td><td>Kümülatif çarpım</td></tr>
+  <tr><td><code>np.trapz(a, x)</code></td><td>—</td><td>İntegral (yamuk yöntemi)</td></tr>
+</table>
+
+<div class="code">
+a = np.<span class="fn">array</span>([[<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>],[<span class="num">4</span>,<span class="num">5</span>,<span class="num">6</span>],[<span class="num">7</span>,<span class="num">8</span>,<span class="num">9</span>]])
+
+<span class="fn">print</span>(np.<span class="fn">sum</span>(a))               <span class="cmt"># 45</span>
+<span class="fn">print</span>(np.<span class="fn">mean</span>(a))              <span class="cmt"># 5.0</span>
+<span class="fn">print</span>(np.<span class="fn">std</span>(a))               <span class="cmt"># 2.58...</span>
+<span class="fn">print</span>(np.<span class="fn">var</span>(a))               <span class="cmt"># 6.66...</span>
+<span class="fn">print</span>(np.<span class="fn">min</span>(a), np.<span class="fn">max</span>(a))    <span class="cmt"># 1 9</span>
+<span class="fn">print</span>(np.<span class="fn">argmin</span>(a), np.<span class="fn">argmax</span>(a)) <span class="cmt"># 0 8</span>
+<span class="fn">print</span>(np.<span class="fn">ptp</span>(a))              <span class="cmt"># 8 (max-min)</span>
+<span class="fn">print</span>(np.<span class="fn">median</span>(a))            <span class="cmt"># 5.0</span>
+<span class="fn">print</span>(np.<span class="fn">prod</span>(a))              <span class="cmt"># 362880</span>
+<span class="fn">print</span>(np.<span class="fn">cumsum</span>(a))            <span class="cmt"># [1 3 6 10 15 21 28 36 45]</span>
+<span class="fn">print</span>(np.<span class="fn">cumprod</span>(a))           <span class="cmt"># [1 2 6 24 120 720 5040 40320 362880]</span>
+
+<span class="cmt"># Axis ile</span>
+<span class="fn">print</span>(np.<span class="fn">sum</span>(a, axis=<span class="num">0</span>))         <span class="cmt"># [12 15 18] (sütun toplamı)</span>
+<span class="fn">print</span>(np.<span class="fn">sum</span>(a, axis=<span class="num">1</span>))         <span class="cmt"># [6 15 24] (satır toplamı)</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec8">8. Broadcasting</h2>
+
+<p>Broadcasting, NumPy'nin farklı şekillerdeki diziler üzerinde işlem yapmasını sağlar. Küçük dizi, büyük dizi üzerinde "yayınlanır".</p>
+
+<h3>8.1 Broadcasting Kuralları</h3>
+<p>İki dizi karşılaştırıldığında, sondan başa doğru boyutlar karşılaştırılır. Eğer:</p>
+<ul>
+  <li>Boyutlar eşitse → sorun yok</li>
+  <li>Bir boyut 1 ise → broadcast edilir</li>
+  <li>Hiçbiri 1 değil ve eşit değil → hata</li>
+</ul>
+
+<div class="code">
+<span class="cmt"># Skaler yayma</span>
+a = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>])
+<span class="fn">print</span>(a + <span class="num">100</span>)              <span class="cmt"># [101 102 103]</span>
+
+<span class="cmt"># 1D yayma (satır vektörü)</span>
+mat = np.<span class="fn">array</span>([[<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>],[<span class="num">4</span>,<span class="num">5</span>,<span class="num">6</span>],[<span class="num">7</span>,<span class="num">8</span>,<span class="num">9</span>]])
+row = np.<span class="fn">array</span>([<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>])
+<span class="fn">print</span>(mat + row)             <span class="cmt"># her satıra row eklenir</span>
+
+<span class="cmt"># 2D yayma (sütun vektörü)</span>
+col = np.<span class="fn">array</span>([[<span class="num">1</span>],[<span class="num">2</span>],[<span class="num">3</span>]])
+<span class="fn">print</span>(mat * col)             <span class="cmt"># her sütun col ile çarpılır</span>
+
+<span class="cmt"># 3 farklı şekil</span>
+x = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>])         <span class="cmt"># shape (3,)</span>
+y = np.<span class="fn">array</span>([[<span class="num">4</span>],[<span class="num">5</span>]])          <span class="cmt"># shape (2, 1)</span>
+<span class="fn">print</span>(x + y)                   <span class="cmt"># shape (2, 3) — ikisi de broadcast</span>
+</div>
+
+<h3>8.2 Broadcasting Örnekleri</h3>
+<table>
+  <tr><th>A şekli</th><th>B şekli</th><th>Sonuç</th><th>Açıklama</th></tr>
+  <tr><td>(3,)</td><td>(1,)</td><td>(3,)</td><td>sondaki 1 broadcast</td></tr>
+  <tr><td>(4, 3)</td><td>(3,)</td><td>(4, 3)</td><td>(3,) → (1,3) → (4,3)</td></tr>
+  <tr><td>(4, 1)</td><td>(1, 3)</td><td>(4, 3)</td><td>her ikisi de yayınlanır</td></tr>
+  <tr><td>(4, 3)</td><td>(4,)</td><td>—</td><td>❌ hata — 3 vs 4 eşleşmez</td></tr>
+  <tr><td>(2, 3, 4)</td><td>(4,)</td><td>(2, 3, 4)</td><td>(4,) en sağdan eşleşir</td></tr>
+  <tr><td>(2, 3, 4)</td><td>(3, 4)</td><td>(2, 3, 4)</td><td>(3,4) → (1,3,4) → (2,3,4)</td></tr>
+</table>
+
+<div class="warn">
+  ⚠️ Broadcasting bellek kopyalamaz — sanki kopyalamış gibi davranır. Bu yüzden çok verimlidir.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec9">9. Lineer Cebir</h2>
+
+<h3>9.1 Matris Determinantı</h3>
+<div class="func-sig">np.linalg.det(a)</div>
+<div class="code">
+a = np.<span class="fn">array</span>([[<span class="num">1</span>,<span class="num">2</span>],[<span class="num">3</span>,<span class="num">4</span>]])
+<span class="fn">print</span>(np.linalg.<span class="fn">det</span>(a))  <span class="cmt"># -2.0</span>
+</div>
+
+<h3>9.2 Matris Tersi</h3>
+<div class="func-sig">np.linalg.inv(a)</div>
+<div class="code">
+<span class="fn">print</span>(np.linalg.<span class="fn">inv</span>(a))
+<span class="cmt"># [[-2.   1. ]</span>
+<span class="cmt">#  [ 1.5 -0.5]]</span>
+</div>
+
+<h3>9.3 Lineer Denklem Çözme</h3>
+<div class="func-sig">np.linalg.solve(a, b)  # ax = b</div>
+<div class="code">
+A = np.<span class="fn">array</span>([[<span class="num">3</span>,<span class="num">1</span>],[<span class="num">1</span>,<span class="num">2</span>]])   <span class="cmt"># 3x + y = 9, x + 2y = 8</span>
+b = np.<span class="fn">array</span>([<span class="num">9</span>,<span class="num">8</span>])
+x = np.linalg.<span class="fn">solve</span>(A, b)
+<span class="fn">print</span>(x)  <span class="cmt"># [2. 3.] — x=2, y=3</span>
+</div>
+
+<h3>9.4 Özdeğerler ve Özvektörler</h3>
+<div class="func-sig">np.linalg.eig(a)  # (eigenvalues, eigenvectors)</div>
+<div class="code">
+eigvals, eigvecs = np.linalg.<span class="fn">eig</span>(a)
+<span class="fn">print</span>(<span class="str">"Eigenvalues:"</span>, eigvals)
+<span class="fn">print</span>(<span class="str">"Eigenvectors:\n"</span>, eigvecs)
+</div>
+
+<h3>9.5 SVD — Tekil Değer Ayrışımı</h3>
+<div class="func-sig">np.linalg.svd(a, full_matrices=True)</div>
+<div class="code">
+U, s, Vt = np.linalg.<span class="fn">svd</span>(a)
+<span class="fn">print</span>(<span class="str">"U:"</span>, U.shape, <span class="str">"s:"</span>, s, <span class="str">"Vt:"</span>, Vt.shape)
+</div>
+
+<h3>9.6 QR Ayrışımı</h3>
+<div class="func-sig">np.linalg.qr(a)</div>
+<div class="code">
+Q, R = np.linalg.<span class="fn">qr</span>(a)
+<span class="fn">print</span>(Q @ R)  <span class="cmt"># a'ya eşit olmalı</span>
+</div>
+
+<h3>9.7 Matris Normu</h3>
+<div class="code">
+<span class="fn">print</span>(np.linalg.<span class="fn">norm</span>(a))           <span class="cmt"># Frobenius normu</span>
+<span class="fn">print</span>(np.linalg.<span class="fn">norm</span>(a, ord=<span class="num">1</span>))      <span class="cmt"># 1-norm (max sütun toplamı)</span>
+<span class="fn">print</span>(np.linalg.<span class="fn">norm</span>(a, ord=<span class="num">2</span>))      <span class="cmt"># 2-norm (spektral)</span>
+<span class="fn">print</span>(np.linalg.<span class="fn">norm</span>(a, ord=<span class="str">'fro'</span>)) <span class="cmt"># Frobenius</span>
+</div>
+
+<h3>9.8 Matris Gücü</h3>
+<div class="func-sig">np.linalg.matrix_power(a, n)</div>
+<div class="code">
+a_sq = np.linalg.<span class="fn">matrix_power</span>(a, <span class="num">2</span>)  <span class="cmt"># a²</span>
+a_inv = np.linalg.<span class="fn">matrix_power</span>(a, -<span class="num">1</span>) <span class="cmt"># a⁻¹ (inv ile aynı)</span>
+</div>
+
+<h3>9.9 np.trace() — İz</h3>
+<div class="code">
+<span class="fn">print</span>(np.<span class="fn">trace</span>(a))  <span class="cmt"># 1+4 = 5</span>
+</div>
+
+<h3>9.10 np.kron() — Kronecker çarpımı</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([[<span class="num">1</span>,<span class="num">2</span>],[<span class="num">3</span>,<span class="num">4</span>]])
+b = np.<span class="fn">array</span>([[<span class="num">0</span>,<span class="num">1</span>],[<span class="num">1</span>,<span class="num">0</span>]])
+<span class="fn">print</span>(np.<span class="fn">kron</span>(a, b))  <span class="cmt"># 4×4 blok matris</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec10">10. Rastgele Sayılar (np.random)</h2>
+
+<div class="note">💡 NumPy'nin rastgele modülü <strong>numpy.random</strong> olarak çağrılır. <code>np.random.seed()</code> ile tekrarlanabilirlik sağlanır.</div>
+
+<table>
+  <tr><th>Fonksiyon</th><th>Açıklama</th></tr>
+  <tr><td><code>np.random.random(size)</code></td><td>[0, 1) aralığında uniform</td></tr>
+  <tr><td><code>np.random.rand(d0, d1, ...)</code></td><td>random() ile aynı, ama argümanlar boyut</td></tr>
+  <tr><td><code>np.random.randn(d0, d1, ...)</code></td><td>Standart normal dağılım (μ=0, σ=1)</td></tr>
+  <tr><td><code>np.random.normal(mean, std, size)</code></td><td>Normal dağılım (parametreli)</td></tr>
+  <tr><td><code>np.random.uniform(low, high, size)</code></td><td>Uniform dağılım</td></tr>
+  <tr><td><code>np.random.randint(low, high, size)</code></td><td>Rastgele tam sayılar</td></tr>
+  <tr><td><code>np.random.choice(a, size, replace, p)</code></td><td>Diziden rastgele örnekleme</td></tr>
+  <tr><td><code>np.random.shuffle(a)</code></td><td>Diziyi yerinde karıştır</td></tr>
+  <tr><td><code>np.random.permutation(a)</code></td><td>Karıştırılmış kopya döndür</td></tr>
+  <tr><td><code>np.random.binomial(n, p, size)</code></td><td>Binom dağılımı</td></tr>
+  <tr><td><code>np.random.poisson(lam, size)</code></td><td>Poisson dağılımı</td></tr>
+  <tr><td><code>np.random.exponential(scale, size)</code></td><td>Üstel dağılım</td></tr>
+  <tr><td><code>np.random.beta(a, b, size)</code></td><td>Beta dağılımı</td></tr>
+  <tr><td><code>np.random.gamma(shape, scale, size)</code></td><td>Gamma dağılımı</td></tr>
+  <tr><td><code>np.random.seed(n)</code></td><td>Rastgelelik tohumu (tekrar üretim)</td></tr>
+</table>
+
+<div class="code">
+<span class="cmt"># Seed — aynı rastgele sayıları tekrar üret</span>
+np.random.<span class="fn">seed</span>(<span class="num">42</span>)
+
+<span class="cmt"># Uniform [0,1)</span>
+r1 = np.random.<span class="fn">random</span>((<span class="num">3</span>, <span class="num">3</span>))
+
+<span class="cmt"># Normal dağılım</span>
+r2 = np.random.<span class="fn">normal</span>(loc=<span class="num">0</span>, scale=<span class="num">1</span>, size=(<span class="num">1000</span>,))
+
+<span class="cmt"># Rastgele tam sayı 0-99 arası</span>
+r3 = np.random.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">100</span>, size=<span class="num">20</span>)
+
+<span class="cmt"># choice — ağırlıklı seçim</span>
+items = np.<span class="fn">array</span>([<span class="str">'a'</span>, <span class="str">'b'</span>, <span class="str">'c'</span>])
+weights = [<span class="num">0.1</span>, <span class="num">0.3</span>, <span class="num">0.6</span>]
+chosen = np.random.<span class="fn">choice</span>(items, size=<span class="num">10</span>, p=weights)
+
+<span class="cmt"># shuffle — yerinde karıştır</span>
+deck = np.<span class="fn">arange</span>(<span class="num">52</span>)
+np.random.<span class="fn">shuffle</span>(deck)
+
+<span class="cmt"># permutation — kopya karıştır</span>
+perm = np.random.<span class="fn">permutation</span>(<span class="num">10</span>)
+</div>
+
+<h3>10.1 Yeni Rastgele API (numpy.random.Generator)</h3>
+<p>NumPy 1.17+ ile gelen yeni API, daha hızlı ve daha esnektir.</p>
+<div class="code">
+rng = np.random.<span class="fn">default_rng</span>(seed=<span class="num">42</span>)
+r1 = rng.<span class="fn">random</span>((<span class="num">3</span>, <span class="num">3</span>))
+r2 = rng.<span class="fn">normal</span>(<span class="num">0</span>, <span class="num">1</span>, size=<span class="num">100</span>)
+r3 = rng.<span class="fn">integers</span>(<span class="num">0</span>, <span class="num">100</span>, size=<span class="num">20</span>)
+r4 = rng.<span class="fn">choice</span>(<span class="fn">range</span>(<span class="num">10</span>), size=<span class="num">5</span>, replace=<span class="kw">False</span>)
+r5 = rng.<span class="fn">shuffle</span>(np.<span class="fn">arange</span>(<span class="num">20</span>))
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec11">11. Sıralama ve Arama</h2>
+
+<h3>11.1 np.sort() ve np.argsort()</h3>
+<div class="func-sig">np.sort(a, axis=-1, kind='quicksort', order=None)</div>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>, <span class="num">1</span>, <span class="num">5</span>, <span class="num">9</span>, <span class="num">2</span>, <span class="num">6</span>])
+<span class="fn">print</span>(np.<span class="fn">sort</span>(a))                   <span class="cmt"># [1 1 2 3 4 5 6 9]</span>
+<span class="fn">print</span>(np.<span class="fn">argsort</span>(a))              <span class="cmt"># [1 3 6 0 2 4 7 5] — sıralama indeksleri</span>
+
+<span class="cmt"># 2D sıralama</span>
+mat = np.<span class="fn">array</span>([[<span class="num">3</span>,<span class="num">1</span>,<span class="num">2</span>],[<span class="num">6</span>,<span class="num">5</span>,<span class="num">4</span>]])
+<span class="fn">print</span>(np.<span class="fn">sort</span>(mat))                   <span class="cmt"># her satır ayrı sıralanır</span>
+<span class="fn">print</span>(np.<span class="fn">sort</span>(mat, axis=<span class="num">0</span>))           <span class="cmt"># her sütun ayrı sıralanır</span>
+</div>
+
+<h3>11.2 np.lexsort() — Çoklu anahtar sıralama</h3>
+<div class="code">
+ad = np.<span class="fn">array</span>([<span class="str">"Ali"</span>, <span class="str">"Veli"</span>, <span class="str">"Ali"</span>, <span class="str">"Ayşe"</span>])
+not = np.<span class="fn">array</span>([<span class="num">85</span>, <span class="num">90</span>, <span class="num">75</span>, <span class="num">95</span>])
+siralama = np.<span class="fn">lexsort</span>((not, ad))    <span class="cmt"># önce ad, sonra not</span>
+<span class="fn">print</span>(<span class="fn">list</span>(<span class="fn">zip</span>(ad[siralama], not[siralama])))
+</div>
+
+<h3>11.3 np.searchsorted() — Sıralı dizide arama</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">3</span>, <span class="num">5</span>, <span class="num">7</span>, <span class="num">9</span>])
+<span class="fn">print</span>(np.<span class="fn">searchsorted</span>(a, <span class="num">4</span>))      <span class="cmt"># 2 (indeks: 4 nereye eklenmeli)</span>
+<span class="fn">print</span>(np.<span class="fn">searchsorted</span>(a, [<span class="num">2</span>,<span class="num">6</span>,<span class="num">8</span>])) <span class="cmt"># [1 3 4]</span>
+</div>
+
+<h3>11.4 np.partition() ve np.argpartition()</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>, <span class="num">1</span>, <span class="num">5</span>, <span class="num">9</span>, <span class="num">2</span>, <span class="num">6</span>])
+<span class="fn">print</span>(np.<span class="fn">partition</span>(a, <span class="num">3</span>))         <span class="cmt"># [1 1 2 3 4 5 6 9] — 3. sıradaki (index 3) doğru yerde</span>
+<span class="fn">print</span>(np.<span class="fn">argpartition</span>(a, <span class="num">3</span>))
+</div>
+
+<h3>11.5 np.nonzero(), np.where()</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">0</span>, <span class="num">2</span>, <span class="num">0</span>, <span class="num">5</span>, <span class="num">0</span>, <span class="num">3</span>])
+<span class="fn">print</span>(np.<span class="fn">nonzero</span>(a))               <span class="cmt"># (array([1, 3, 5]),)</span>
+<span class="fn">print</span>(np.<span class="fn">flatnonzero</span>(a))            <span class="cmt"># [1 3 5] — düzleştirilmiş nonzero</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec12">12. Küme İşlemleri</h2>
+
+<table>
+  <tr><th>Fonksiyon</th><th>Açıklama</th></tr>
+  <tr><td><code>np.unique(a)</code></td><td>Benzersiz elemanlar (sıralı)</td></tr>
+  <tr><td><code>np.intersect1d(a, b)</code></td><td>Kesişim</td></tr>
+  <tr><td><code>np.union1d(a, b)</code></td><td>Birleşim</td></tr>
+  <tr><td><code>np.setdiff1d(a, b)</code></td><td>Fark (a'da olup b'de olmayan)</td></tr>
+  <tr><td><code>np.setxor1d(a, b)</code></td><td>Simetrik fark</td></tr>
+  <tr><td><code>np.in1d(a, b)</code></td><td>Eleman bazında üyelik testi</td></tr>
+  <tr><td><code>np.isin(a, b)</code></td><td>in1d ile aynı (daha yeni)</td></tr>
+</table>
+
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>])
+b = np.<span class="fn">array</span>([<span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>])
+
+<span class="fn">print</span>(np.<span class="fn">unique</span>(a))                  <span class="cmt"># [1 2 3 4 5]</span>
+<span class="fn">print</span>(np.<span class="fn">intersect1d</span>(a, b))           <span class="cmt"># [4 5]</span>
+<span class="fn">print</span>(np.<span class="fn">union1d</span>(a, b))               <span class="cmt"># [1 2 3 4 5 6 7]</span>
+<span class="fn">print</span>(np.<span class="fn">setdiff1d</span>(a, b))             <span class="cmt"># [1 2 3]</span>
+<span class="fn">print</span>(np.<span class="fn">in1d</span>(a, b))                  <span class="cmt"># [False False False  True  True]</span>
+
+<span class="cmt"># unique ile frekans</span>
+elemanlar, frekans = np.<span class="fn">unique</span>(a, return_counts=<span class="kw">True</span>)
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec13">13. Dosya I/O</h2>
+
+<h3>13.1 İkili Format (.npy .npz)</h3>
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">12</span>).<span class="fn">reshape</span>(<span class="num">3</span>,<span class="num">4</span>)
+
+<span class="cmt"># Tek dizi kaydet/yükle</span>
+np.<span class="fn">save</span>(<span class="str">"dizi.npy"</span>, a)
+yuklenen = np.<span class="fn">load</span>(<span class="str">"dizi.npy"</span>)
+
+<span class="cmt"># Birden çok dizi</span>
+np.<span class="fn">savez</span>(<span class="str">"coklu.npz"</span>, x=a, y=a*<span class="num">2</span>)
+data = np.<span class="fn">load</span>(<span class="str">"coklu.npz"</span>)
+<span class="fn">print</span>(data[<span class="str">"x"</span>])
+<span class="fn">print</span>(data[<span class="str">"y"</span>])
+
+<span class="cmt"># Sıkıştırılmış (dosya daha küçük)</span>
+np.<span class="fn">savez_compressed</span>(<span class="str">"sıkıstırılmış.npz"</span>, x=a, y=a*<span class="num">2</span>)
+</div>
+
+<h3>13.2 Metin Formatı</h3>
+<div class="code">
+<span class="cmt"># CSV'ye kaydet</span>
+np.<span class="fn">savetxt</span>(<span class="str">"veri.csv"</span>, a, delimiter=<span class="str">","</span>, fmt=<span class="str">"%.2f"</span>, header=<span class="str">"sutun1,sutun2,sutun3,sutun4"</span>)
+
+<span class="cmt"># CSV'den yükle</span>
+y = np.<span class="fn">loadtxt</span>(<span class="str">"veri.csv"</span>, delimiter=<span class="str">","</span>, skiprows=<span class="num">1</span>)
+
+<span class="cmt"># Gen2Format (daha hızlı, sadece sayısal)</span>
+z = np.<span class="fn">genfromtxt</span>(<span class="str">"veri.csv"</span>, delimiter=<span class="str">","</span>, skip_header=<span class="num">1</span>)
+<span class="cmt"># genfromtxt eksik verileri NaN yapar, loadtxt hata verir</span>
+</div>
+
+<h3>13.3 Ham Veri (tofile / fromfile)</h3>
+<div class="code">
+<span class="cmt"># Ham binary — hiçbir başlık yok, çok hızlı</span>
+a.<span class="fn">tofile</span>(<span class="str">"ham.dat"</span>)
+b = np.<span class="fn">fromfile</span>(<span class="str">"ham.dat"</span>, dtype=a.dtype).<span class="fn">reshape</span>(a.shape)
+<span class="cmt"># Dikkat: boyut bilgisi kaybolur, reshape gerekebilir</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec14">14. Copy vs View</h2>
+
+<table>
+  <tr><th>Özellik</th><th>View (Görünüm)</th><th>Copy (Kopya)</th></tr>
+  <tr><td>Veri paylaşımı</td><td>Aynı veriyi gösterir</td><td>Bağımsız kopya</td></tr>
+  <tr><td>Bellek</td><td>Ek bellek kullanmaz</td><td>Yeni bellek ayırır</td></tr>
+  <tr><td>Değişiklik etkisi</td><td>Orijinali değiştirir</td><td>Orijinali etkilemez</td></tr>
+  <tr><td>Hangi işlemler</td><td>slice, transpose, reshape, ravel</td><td>flatten, copy, astype</td></tr>
+</table>
+
+<div class="code">
+a = np.<span class="fn">arange</span>(<span class="num">10</span>)
+
+<span class="cmt"># View — slice</span>
+v = a[<span class="num">2</span>:<span class="num">7</span>]
+v[<span class="num">0</span>] = <span class="num">999</span>
+<span class="fn">print</span>(<span class="str">"a[2] after view change:"</span>, a[<span class="num">2</span>])  <span class="cmt"># 999 — değişti!</span>
+
+<span class="cmt"># Copy</span>
+c = a.<span class="fn">copy</span>()
+c[<span class="num">0</span>] = <span class="num">888</span>
+<span class="fn">print</span>(<span class="str">"a[0] after copy change:"</span>, a[<span class="num">0</span>])  <span class="cmt"># 0 — değişmedi!</span>
+
+<span class="cmt"># View olup olmadığını kontrol et</span>
+<span class="fn">print</span>(v.<span class="fn">base</span> <span class="kw">is</span> a)   <span class="cmt"># True — view</span>
+<span class="fn">print</span>(c.<span class="fn">base</span> <span class="kw">is</span> a)   <span class="cmt"># False — copy</span>
+<span class="fn">print</span>(c.<span class="fn">base</span>)         <span class="cmt"># None — kendi verisi var</span>
+</div>
+
+<div class="warn">⚠️ <code>ravel()</code> mümkünse view döndürür. <code>flatten()</code> her zaman kopya döndürür. Eğer orijinali bozmak istemiyorsanız, <code>.copy()</code> kullanın.</div>
+
+<!-- ============================================================ -->
+<h2 id="sec15">15. Veri Türleri (dtype)</h2>
+
+<table>
+  <tr><th>Tür</th><th>Kod</th><th>Bayt</th><th>Açıklama</th></tr>
+  <tr><td><code>bool_</code></td><td><code>'b'</code></td><td>1</td><td>Boolean (True/False)</td></tr>
+  <tr><td><code>int8</code></td><td><code>'i1'</code></td><td>1</td><td>Signed byte</td></tr>
+  <tr><td><code>uint8</code></td><td><code>'u1'</code></td><td>1</td><td>Unsigned byte</td></tr>
+  <tr><td><code>int16</code></td><td><code>'i2'</code></td><td>2</td><td>Short integer</td></tr>
+  <tr><td><code>uint16</code></td><td><code>'u2'</code></td><td>2</td><td>Unsigned short</td></tr>
+  <tr><td><code>int32</code></td><td><code>'i4'</code></td><td>4</td><td>Integer</td></tr>
+  <tr><td><code>uint32</code></td><td><code>'u4'</code></td><td>4</td><td>Unsigned integer</td></tr>
+  <tr><td><code>int64</code></td><td><code>'i8'</code></td><td>8</td><td>Long integer</td></tr>
+  <tr><td><code>uint64</code></td><td><code>'u8'</code></td><td>8</td><td>Unsigned long</td></tr>
+  <tr><td><code>float16</code></td><td><code>'f2'</code></td><td>2</td><td>Half precision float</td></tr>
+  <tr><td><code>float32</code></td><td><code>'f4'</code></td><td>4</td><td>Single precision float</td></tr>
+  <tr><td><code>float64</code></td><td><code>'f8'</code></td><td>8</td><td>Double precision float</td></tr>
+  <tr><td><code>complex64</code></td><td><code>'c8'</code></td><td>8</td><td>Complex (2 × float32)</td></tr>
+  <tr><td><code>complex128</code></td><td><code>'c16'</code></td><td>16</td><td>Complex (2 × float64)</td></tr>
+  <tr><td><code>str_</code></td><td><code>'U'</code></td><td>—</td><td>Unicode string (U10 = 10 karakter)</td></tr>
+  <tr><td><code>bytes_</code></td><td><code>'S'</code></td><td>—</td><td>Byte string (S10 = 10 byte)</td></tr>
+  <tr><td><code>object_</code></td><td><code>'O'</code></td><td>—</td><td>Python object</td></tr>
+  <tr><td><code>void</code></td><td><code>'V'</code></td><td>—</td><td>Structured type</td></tr>
+</table>
+
+<div class="code">
+<span class="cmt"># dtype değiştirme</span>
+a = np.<span class="fn">arange</span>(<span class="num">5</span>, dtype=np.<span class="type">float32</span>)
+b = a.<span class="fn">astype</span>(np.<span class="type">int32</span>)
+c = a.<span class="fn">astype</span>(<span class="str">'f8'</span>)       <span class="cmt"># string kodu da kullanılabilir</span>
+
+<span class="cmt"># Kendi dtype'ını oluştur</span>
+dt = np.<span class="fn">dtype</span>([(<span class="str">'isim'</span>, <span class="str">'U20'</span>), (<span class="str">'yas'</span>, <span class="str">'i4'</span>), (<span class="str">'boy'</span>, <span class="str">'f4'</span>)])
+veri = np.<span class="fn">array</span>([(<span class="str">'Ali'</span>, <span class="num">25</span>, <span class="num">1.78</span>), (<span class="str">'Ayşe'</span>, <span class="num">30</span>, <span class="num">1.65</span>)], dtype=dt)
+<span class="fn">print</span>(veri[<span class="str">'isim'</span>])       <span class="cmt"># ['Ali' 'Ayşe']</span>
+<span class="fn">print</span>(veri[<span class="str">'yas'</span>])        <span class="cmt"># [25 30]</span>
+</div>
+
+<div class="note">💡 Küçük dtype (ör. float32 yerine float64) daha az bellek kullanır ve daha hızlı işlem sağlar. Ancak hassasiyet kaybı olabilir.</div>
+
+<!-- ============================================================ -->
+<h2 id="sec16">16. Maskeleme ve Koşullu İşlemler</h2>
+
+<h3>16.1 np.ma — Maskelenmiş Diziler</h3>
+<div class="code">
+<span class="pre">import</span> numpy.ma <span class="kw">as</span> ma
+
+x = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">-999</span>, <span class="num">4</span>, <span class="num">5</span>])
+mask = (x == -<span class="num">999</span>)
+mx = ma.<span class="fn">masked_array</span>(x, mask=mask)
+<span class="fn">print</span>(mx)                            <span class="cmt"># [1 2 -- 4 5]</span>
+<span class="fn">print</span>(mx.<span class="fn">mean</span>())                      <span class="cmt"># 3.0 — maskelenmiş değer atlanır</span>
+
+<span class="cmt"># masked_where — koşula göre maskele</span>
+mx2 = ma.<span class="fn">masked_where</span>(x < <span class="num">3</span>, x)
+<span class="fn">print</span>(mx2)                            <span class="cmt"># [-- -- -999 4 5]</span>
+</div>
+
+<h3>16.2 Koşullu Değiştirme</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>])
+
+<span class="cmt"># np.where ile</span>
+b = np.<span class="fn">where</span>(a > <span class="num">3</span>, a, <span class="num">0</span>)          <span class="cmt"># [0 0 0 4 5]</span>
+
+<span class="cmt"># np.clip ile sınırla</span>
+c = np.<span class="fn">clip</span>(a, <span class="num">2</span>, <span class="num">4</span>)               <span class="cmt"># [2 2 3 4 4]</span>
+
+<span class="cmt"># Fancy indexing ile</span>
+a[a % <span class="num">2</span> == <span class="num">0</span>] = -<span class="num">1</span>                <span class="cmt"># [1 -1 3 -1 5]</span>
+</div>
+
+<h3>16.3 np.select() — Çoklu koşul</h3>
+<div class="code">
+a = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">5</span>, <span class="num">10</span>, <span class="num">15</span>, <span class="num">20</span>])
+kosullar = [a < <span class="num">5</span>, a < <span class="num">15</span>, a >= <span class="num">15</span>]
+degerler = [<span class="num">0</span>, <span class="num">1</span>, <span class="num">2</span>]
+<span class="fn">print</span>(np.<span class="fn">select</span>(kosullar, degerler))   <span class="cmt"># [0 1 1 2 2]</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec17">17. Polinom İşlemleri</h2>
+
+<div class="code">
+<span class="cmt"># Polinom katsayıları: x² + 2x + 1</span>
+p = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">1</span>])
+
+<span class="cmt"># np.polyval — polinom değeri hesapla</span>
+<span class="fn">print</span>(np.<span class="fn">polyval</span>(p, <span class="num">0</span>))             <span class="cmt"># 1</span>
+<span class="fn">print</span>(np.<span class="fn">polyval</span>(p, [<span class="num">0</span>, <span class="num">1</span>, <span class="num">2</span>]))      <span class="cmt"># [1 4 9]</span>
+
+<span class="cmt"># np.roots — polinom köklerini bul</span>
+<span class="fn">print</span>(np.<span class="fn">roots</span>(p))                   <span class="cmt"># [-1. -1.]</span>
+
+<span class="cmt"># np.polyfit — veriye polinom uydur</span>
+x = np.<span class="fn">array</span>([<span class="num">0</span>, <span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>])
+y = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">4</span>, <span class="num">9</span>, <span class="num">16</span>, <span class="num">25</span>])
+katsayilar = np.<span class="fn">polyfit</span>(x, y, deg=<span class="num">2</span>)  <span class="cmt"># [1 2 1] — x²+2x+1</span>
+
+<span class="cmt"># np.polyder — türev</span>
+<span class="fn">print</span>(np.<span class="fn">polyder</span>(p))                  <span class="cmt"># [2 2] — 2x + 2</span>
+
+<span class="cmt"># np.polyint — integral</span>
+<span class="fn">print</span>(np.<span class="fn">polyint</span>(p))                  <span class="cmt"># [0.3333 1. 1. 0.] — (1/3)x³ + x² + x</span>
+</div>
+
+<div class="note">💡 NumPy 1.24+ ile birlikte <code>np.polynomial</code> modülü daha kapsamlı polinom işlemleri sunar.</div>
+
+<!-- ============================================================ -->
+<h2 id="sec18">18. İstatistik Fonksiyonları</h2>
+
+<table>
+  <tr><th>Fonksiyon</th><th>Açıklama</th></tr>
+  <tr><td><code>np.mean(a)</code></td><td>Ortalama</td></tr>
+  <tr><td><code>np.median(a)</code></td><td>Medyan</td></tr>
+  <tr><td><code>np.std(a)</code></td><td>Standart sapma</td></tr>
+  <tr><td><code>np.var(a)</code></td><td>Varyans</td></tr>
+  <tr><td><code>np.percentile(a, q)</code></td><td>Yüzdelik dilim</td></tr>
+  <tr><td><code>np.quantile(a, q)</code></td><td>Kantil (percentile ile aynı)</td></tr>
+  <tr><td><code>np.corrcoef(a)</code></td><td>Korelasyon katsayısı matrisi</td></tr>
+  <tr><td><code>np.cov(a)</code></td><td>Kovaryans matrisi</td></tr>
+  <tr><td><code>np.histogram(a, bins)</code></td><td>Histogram</td></tr>
+  <tr><td><code>np.bincount(a)</code></td><td>Her değerin frekansı (sadece int)</td></tr>
+  <tr><td><code>np.digitize(a, bins)</code></td><td>Her değerin hangi aralıkta olduğu</td></tr>
+</table>
+
+<div class="code">
+data = np.<span class="fn">random</span>.<span class="fn">normal</span>(<span class="num">170</span>, <span class="num">10</span>, <span class="num">1000</span>)  <span class="cmt"># 1000 kişi boy (cm)</span>
+
+<span class="fn">print</span>(<span class="str">"Ortalama:"</span>, np.<span class="fn">mean</span>(data))
+<span class="fn">print</span>(<span class="str">"Medyan:"</span>, np.<span class="fn">median</span>(data))
+<span class="fn">print</span>(<span class="str">"Standart sapma:"</span>, np.<span class="fn">std</span>(data))
+<span class="fn">print</span>(<span class="str">"%25:"</span>, np.<span class="fn">percentile</span>(data, <span class="num">25</span>))
+<span class="fn">print</span>(<span class="str">"%75:"</span>, np.<span class="fn">percentile</span>(data, <span class="num">75</span>))
+
+<span class="cmt"># Histogram</span>
+counts, edges = np.<span class="fn">histogram</span>(data, bins=<span class="num">10</span>)
+
+<span class="cmt"># Korelasyon</span>
+x = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>])
+y = np.<span class="fn">array</span>([<span class="num">2</span>, <span class="num">4</span>, <span class="num">6</span>, <span class="num">8</span>, <span class="num">10</span>])
+<span class="fn">print</span>(np.<span class="fn">corrcoef</span>(x, y))  <span class="cmt"># 1.0 — tam korelasyon</span>
+
+<span class="cmt"># bincount (sadece non-negative int)</span>
+sayilar = np.<span class="fn">array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">3</span>, <span class="num">3</span>])
+<span class="fn">print</span>(np.<span class="fn">bincount</span>(sayilar))  <span class="cmt"># [0 1 2 3] — indeks 0:0 tane, 1:1 tane...</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec19">19. Performans İpuçları</h2>
+
+<h3>19.1 Döngü Kullanma — Vektörize Et</h3>
+<div class="code">
+<span class="cmt"># ❌ YAVAŞ — Python döngüsü</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(len(a)):
+    b[i] = a[i] * <span class="num">2</span> + <span class="num">1</span>
+
+<span class="cmt"># ✅ HIZLI — vektörize</span>
+b = a * <span class="num">2</span> + <span class="num">1</span>
+</div>
+
+<h3>19.2 out Parametresi Kullan</h3>
+<div class="code">
+<span class="cmt"># out ile bellek tahsisini azalt</span>
+c = np.<span class="fn">empty_like</span>(a)
+np.<span class="fn">add</span>(a, b, out=c)          <span class="cmt"># c'ye yaz, yeni dizi oluşturma</span>
+</div>
+
+<h3>19.3 Bellek Görünümü (View) Kullan</h3>
+<div class="code">
+<span class="cmt"># Kopya yerine view kullan</span>
+v = a[::<span class="num">2</span>]                     <span class="cmt"># view — kopya yok</span>
+c = a[::<span class="num">2</span>].<span class="fn">copy</span>()              <span class="cmt"># kopya — sadece gerektiğinde</span>
+</div>
+
+<h3>19.4 Doğru dtype Seç</h3>
+<div class="code">
+a = np.<span class="fn">ones</span>((<span class="num">1000</span>, <span class="num">1000</span>), dtype=np.<span class="type">float32</span>)  <span class="cmt"># 4MB</span>
+b = np.<span class="fn">ones</span>((<span class="num">1000</span>, <span class="num">1000</span>), dtype=np.<span class="type">float64</span>)  <span class="cmt"># 8MB (2x)</span>
+</div>
+
+<h3>19.5 np.einsum() — Einstein toplama</h3>
+<div class="code">
+<span class="cmt"># Matris çarpımı: einsum ile</span>
+c = np.<span class="fn">einsum</span>(<span class="str">'ij,jk->ik'</span>, a, b)  <span class="cmt"># a @ b ile aynı</span>
+
+<span class="cmt"># İz (trace)</span>
+trace = np.<span class="fn">einsum</span>(<span class="str">'ii'</span>, a)
+
+<span class="cmt"># Diagonal</span>
+diag = np.<span class="fn">einsum</span>(<span class="str">'ii->i'</span>, a)
+</div>
+<div class="note">💡 <code>einsum</code> çok güçlüdür. Tek bir fonksiyonla transpose, sum, matmul, dot, outer işlemlerinin hepsini yapabilir.</div>
+
+<h3>19.6 Hız Karşılaştırması</h3>
+<div class="code">
+<span class="pre">import</span> time
+n = <span class="num">10_000_000</span>
+
+<span class="cmt"># Python list</span>
+py_list = <span class="fn">list</span>(<span class="fn">range</span>(n))
+start = time.<span class="fn">time</span>()
+result = [x**<span class="num">2</span> <span class="kw">for</span> x <span class="kw">in</span> py_list]
+<span class="fn">print</span>(<span class="str">"Python list:"</span>, time.<span class="fn">time</span>() - start)
+
+<span class="cmt"># NumPy</span>
+np_arr = np.<span class="fn">arange</span>(n)
+start = time.<span class="fn">time</span>()
+result = np_arr ** <span class="num">2</span>
+<span class="fn">print</span>(<span class="str">"NumPy:"</span>, time.<span class="fn">time</span>() - start)
+</div>
+<div class="output">
+Python list: 0.85s
+NumPy: 0.03s  ← 25x+ daha hızlı!
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec20">20. Tam Fonksiyon Tablosu</h2>
+
+<table>
+  <tr><th>Kategori</th><th>Fonksiyonlar</th></tr>
+  <tr><td><strong>Dizi Oluşturma</strong></td><td><code>array</code>, <code>zeros</code>, <code>ones</code>, <code>full</code>, <code>eye</code>, <code>identity</code>, <code>empty</code>, <code>arange</code>, <code>linspace</code>, <code>logspace</code>, <code>geomspace</code>, <code>meshgrid</code>, <code>fromfunction</code>, <code>fromiter</code>, <code>diag</code>, <code>tri</code></td></tr>
+  <tr><td><strong>Şekil Değiştirme</strong></td><td><code>reshape</code>, <code>resize</code>, <code>flatten</code>, <code>ravel</code>, <code>transpose</code>, <code>swapaxes</code>, <code>moveaxis</code>, <code>expand_dims</code>, <code>squeeze</code>, <code>atleast_1d</code>, <code>atleast_2d</code>, <code>atleast_3d</code></td></tr>
+  <tr><td><strong>Birleştirme/Ayırma</strong></td><td><code>concatenate</code>, <code>stack</code>, <code>vstack</code>, <code>hstack</code>, <code>dstack</code>, <code>column_stack</code>, <code>row_stack</code>, <code>split</code>, <code>vsplit</code>, <code>hsplit</code>, <code>dsplit</code>, <code>array_split</code>, <code>tile</code>, <code>repeat</code></td></tr>
+  <tr><td><strong>Aritmetik</strong></td><td><code>add</code>, <code>subtract</code>, <code>multiply</code>, <code>divide</code>, <code>floor_divide</code>, <code>mod</code>, <code>power</code>, <code>negative</code>, <code>absolute</code>, <code>reciprocal</code></td></tr>
+  <tr><td><strong>Matris</strong></td><td><code>matmul</code>, <code>dot</code>, <code>inner</code>, <code>outer</code>, <code>cross</code>, <code>kron</code>, <code>tensordot</code>, <code>einsum</code>, <code>vecdot</code></td></tr>
+  <tr><td><strong>Trigonometri</strong></td><td><code>sin</code>, <code>cos</code>, <code>tan</code>, <code>arcsin</code>, <code>arccos</code>, <code>arctan</code>, <code>arctan2</code>, <code>hypot</code>, <code>degrees</code>, <code>radians</code>, <code>sinh</code>, <code>cosh</code>, <code>tanh</code></td></tr>
+  <tr><td><strong>Üstel/Log</strong></td><td><code>exp</code>, <code>expm1</code>, <code>exp2</code>, <code>log</code>, <code>log10</code>, <code>log2</code>, <code>log1p</code>, <code>logaddexp</code>, <code>logaddexp2</code>, <code>sqrt</code>, <code>cbrt</code>, <code>square</code></td></tr>
+  <tr><td><strong>Yuvarlama</strong></td><td><code>round</code>, <code>around</code>, <code>floor</code>, <code>ceil</code>, <code>trunc</code>, <code>fix</code>, <code>rint</code></td></tr>
+  <tr><td><strong>Toplama</strong></td><td><code>sum</code>, <code>mean</code>, <code>std</code>, <code>var</code>, <code>min</code>, <code>max</code>, <code>argmin</code>, <code>argmax</code>, <code>ptp</code>, <code>median</code>, <code>average</code>, <code>prod</code>, <code>cumsum</code>, <code>cumprod</code>, <code>trapz</code></td></tr>
+  <tr><td><strong>NaN-safe</strong></td><td><code>nansum</code>, <code>nanmean</code>, <code>nanstd</code>, <code>nanvar</code>, <code>nanmin</code>, <code>nanmax</code>, <code>nanargmin</code>, <code>nanargmax</code>, <code>nanmedian</code>, <code>nanprod</code>, <code>nancumsum</code>, <code>nancumprod</code></td></tr>
+  <tr><td><strong>Lineer Cebir</strong></td><td><code>linalg.det</code>, <code>linalg.inv</code>, <code>linalg.solve</code>, <code>linalg.eig</code>, <code>linalg.eigvals</code>, <code>linalg.svd</code>, <code>linalg.qr</code>, <code>linalg.cholesky</code>, <code>linalg.norm</code>, <code>linalg.matrix_power</code>, <code>trace</code></td></tr>
+  <tr><td><strong>Sıralama/Arama</strong></td><td><code>sort</code>, <code>argsort</code>, <code>lexsort</code>, <code>searchsorted</code>, <code>partition</code>, <code>argpartition</code>, <code>nonzero</code>, <code>flatnonzero</code>, <code>where</code>, <code>argwhere</code>, <code>extract</code></td></tr>
+  <tr><td><strong>Küme</strong></td><td><code>unique</code>, <code>intersect1d</code>, <code>union1d</code>, <code>setdiff1d</code>, <code>setxor1d</code>, <code>in1d</code>, <code>isin</code></td></tr>
+  <tr><td><strong>Rastgele</strong></td><td><code>random.random</code>, <code>random.rand</code>, <code>random.randn</code>, <code>random.normal</code>, <code>random.uniform</code>, <code>random.randint</code>, <code>random.choice</code>, <code>random.shuffle</code>, <code>random.permutation</code>, <code>random.seed</code>, <code>random.default_rng</code></

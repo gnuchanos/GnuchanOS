@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 7: Strings</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #1f0d3a;
+    border: 3px solid #2d1554;
+    border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825; color: #50fa7b; font-family: 'Courier New', monospace;
+    padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554;
+    margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output {
+    background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace;
+    padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7;
+    margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word;
+    font-size: 1.05em; line-height: 1.5;
+  }
+  .container .output::before { content: "\\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>Lesson 7: Strings</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2>Creating Strings</h2>
+<p>You can create strings with single quotes, double quotes, or triple quotes:</p>
+<div class="code">
+s1 = <span class="str">'Hello'</span>
+s2 = <span class="str">"World"</span>
+s3 = <span class="str">"""Multi
+line
+string"""</span>
+<span class="fn">print</span>(s1)
+<span class="fn">print</span>(s2)
+<span class="fn">print</span>(s3)
+</div>
+<div class="output">Hello
+World
+Multi
+line
+string</div>
+
+<h2>String Indexing</h2>
+<p>Each character has an index. Index starts at <strong>0</strong>. Negative index counts from the end.</p>
+<div class="code">
+s = <span class="str">"Python"</span>
+<span class="fn">print</span>(<span class="str">f"First char: {s[0]}"</span>)
+<span class="fn">print</span>(<span class="str">f"Third char: {s[2]}"</span>)
+<span class="fn">print</span>(<span class="str">f"Last char: {s[-1]}"</span>)
+<span class="fn">print</span>(<span class="str">f"Second from end: {s[-2]}"</span>)
+</div>
+<div class="output">First char: P
+Third char: t
+Last char: n
+Second from end: o</div>
+
+<h2>Slicing</h2>
+<p><code>s[start:end:step]</code> &mdash; extracts a part of the string:</p>
+<div class="code">
+s = <span class="str">"Python Programming"</span>
+<span class="fn">print</span>(s[<span class="num">0</span>:<span class="num">6</span>])    <span class="cmt"># "Python"</span>
+<span class="fn">print</span>(s[<span class="num">7</span>:])     <span class="cmt"># "Programming"</span>
+<span class="fn">print</span>(s[:<span class="num">6</span>])     <span class="cmt"># "Python"</span>
+<span class="fn">print</span>(s[::<span class="num">2</span>])    <span class="cmt"># every 2nd character</span>
+<span class="fn">print</span>(s[::-<span class="num">1</span>])   <span class="cmt"># reverse the string</span>
+</div>
+<div class="output">Python
+Programming
+Python
+Pto rgamn
+gnimmargorP nohtyP</div>
+
+<h2>Strings Are Immutable</h2>
+<div class="warn">⚠ You <strong>cannot</strong> change a character by index. This will raise an error:</div>
+<div class="code">
+s = <span class="str">"Hello"</span>
+<span class="cmt"># s[0] = "J"   # ❌ TypeError: 'str' object does not support item assignment</span>
+s = <span class="str">"J"</span> + s[<span class="num">1</span>:]  <span class="cmt"># ✅ Create a new string instead</span>
+<span class="fn">print</span>(s)
+</div>
+<div class="output">Jello</div>
+
+<h2>String Methods</h2>
+
+<h3>upper() and lower()</h3>
+<div class="code">
+msg = <span class="str">"Hello World"</span>
+<span class="fn">print</span>(msg.<span class="fn">upper</span>())
+<span class="fn">print</span>(msg.<span class="fn">lower</span>())
+</div>
+<div class="output">HELLO WORLD
+hello world</div>
+
+<h3>strip()</h3>
+<p>Removes whitespace from both ends:</p>
+<div class="code">
+txt = <span class="str">"   Hello!   "</span>
+<span class="fn">print</span>(<span class="str">f"'{txt.<span class="fn">strip</span>()}'"</span>)
+</div>
+<div class="output">'Hello!'</div>
+
+<h3>replace()</h3>
+<div class="code">
+txt = <span class="str">"I like apples"</span>
+<span class="fn">print</span>(txt.<span class="fn">replace</span>(<span class="str">"apples"</span>, <span class="str">"bananas"</span>))
+</div>
+<div class="output">I like bananas</div>
+
+<h3>split()</h3>
+<div class="code">
+csv = <span class="str">"apple,banana,cherry"</span>
+items = csv.<span class="fn">split</span>(<span class="str">","</span>)
+<span class="fn">print</span>(items)
+</div>
+<div class="output">['apple', 'banana', 'cherry']</div>
+
+<h3>join()</h3>
+<div class="code">
+words = [<span class="str">"Python"</span>, <span class="str">"is"</span>, <span class="str">"fun"</span>]
+sentence = <span class="str">" "</span>.<span class="fn">join</span>(words)
+<span class="fn">print</span>(sentence)
+</div>
+<div class="output">Python is fun</div>
+
+<h3>find()</h3>
+<p>Returns the index of the first occurrence, or <strong>-1</strong> if not found:</p>
+<div class="code">
+txt = <span class="str">"Hello, welcome to Python"</span>
+<span class="fn">print</span>(txt.<span class="fn">find</span>(<span class="str">"welcome"</span>))
+<span class="fn">print</span>(txt.<span class="fn">find</span>(<span class="str">"Java"</span>))
+</div>
+<div class="output">7
+-1</div>
+
+<h3>count()</h3>
+<div class="code">
+txt = <span class="str">"banana"</span>
+<span class="fn">print</span>(txt.<span class="fn">count</span>(<span class="str">"a"</span>))
+<span class="fn">print</span>(txt.<span class="fn">count</span>(<span class="str">"na"</span>))
+</div>
+<div class="output">3
+2</div>
+
+<h3>startswith() and endswith()</h3>
+<div class="code">
+file = <span class="str">"image.png"</span>
+<span class="fn">print</span>(file.<span class="fn">startswith</span>(<span class="str">"image"</span>))
+<span class="fn">print</span>(file.<span class="fn">endswith</span>(<span class="str">".png"</span>))
+<span class="fn">print</span>(file.<span class="fn">endswith</span>(<span class="str">".jpg"</span>))
+</div>
+<div class="output">True
+True
+False</div>
+
+<h2>f-Strings (Formatted Strings)</h2>
+<div class="code">
+name = <span class="str">"Alice"</span>
+age = <span class="num">25</span>
+price = <span class="num">49.9567</span>
+<span class="fn">print</span>(<span class="str">f"Name: {name}, Age: {age}"</span>)
+<span class="fn">print</span>(<span class="str">f"Price: {price:.2f}"</span>)      <span class="cmt"># 2 decimal places</span>
+<span class="fn">print</span>(<span class="str">f"|{name:>10}|"</span>)        <span class="cmt"># right-aligned in 10 spaces</span>
+<span class="fn">print</span>(<span class="str">f"|{name:<10}|"</span>)        <span class="cmt"># left-aligned</span>
+<span class="fn">print</span>(<span class="str">f"|{name:^10}|"</span>)        <span class="cmt"># centered</span>
+</div>
+<div class="output">Name: Alice, Age: 25
+Price: 49.96
+|     Alice|
+|Alice     |
+|  Alice   |</div>
+
+<h2>len() &mdash; String Length</h2>
+<div class="code">
+s = <span class="str">"Hello"</span>
+<span class="fn">print</span>(<span class="str">f"Length: {<span class="fn">len</span>(s)}"</span>)
+</div>
+<div class="output">Length: 5</div>
+
+<h2>in / not in (Membership)</h2>
+<div class="code">
+txt = <span class="str">"The rain in Spain"</span>
+<span class="fn">print</span>(<span class="str">"rain"</span> <span class="kw">in</span> txt)
+<span class="fn">print</span>(<span class="str">"snow"</span> <span class="kw">not in</span> txt)
+</div>
+<div class="output">True
+True</div>
+
+<h2>Escape Sequences</h2>
+<div class="code">
+<span class="fn">print</span>(<span class="str">"Line1\\nLine2"</span>)     <span class="cmt"># newline</span>
+<span class="fn">print</span>(<span class="str">"Tab\\tseparated"</span>)  <span class="cmt"># tab</span>
+<span class="fn">print</span>(<span class="str">"Backslash: \\\"</span>)   <span class="cmt"># backslash</span>
+<span class="fn">print</span>(<span class="str">"Quote: \""</span>)        <span class="cmt"># double quote</span>
+</div>
+<div class="output">Line1
+Line2
+Tab	separated
+Backslash: \
+Quote: "</div>
+
+<h2>Raw Strings</h2>
+<p>Raw strings treat backslashes as literal characters &mdash; useful for regex and file paths:</p>
+<div class="code">
+path = <span class="pre">r</span><span class="str">"C:\\Users\\Name"</span>
+regex = <span class="pre">r</span><span class="str">"\\d+"</span>  <span class="cmt"># matches one or more digits</span>
+<span class="fn">print</span>(path)
+<span class="fn">print</span>(regex)
+</div>
+<div class="output">C:\Users\Name
+\d+</div>
+
+<h2>String Concatenation</h2>
+<div class="code">
+a = <span class="str">"Hello"</span>
+b = <span class="str">"World"</span>
+c = a + <span class="str">" "</span> + b
+<span class="fn">print</span>(c)
+<span class="fn">print</span>(a * <span class="num">3</span>)  <span class="cmt"># repeat 3 times</span>
+</div>
+<div class="output">Hello World
+HelloHelloHello</div>
+
+<h2>chr() and ord()</h2>
+<p><code>ord()</code> returns the Unicode code point of a character. <code>chr()</code> converts a code point back to a character.</p>
+<div class="code">
+<span class="fn">print</span>(<span class="fn">ord</span>(<span class="str">"A"</span>))     <span class="cmt"># 65</span>
+<span class="fn">print</span>(<span class="fn">chr</span>(<span class="num">65</span>))     <span class="cmt"># "A"</span>
+<span class="fn">print</span>(<span class="fn">ord</span>(<span class="str">"ñ"</span>))     <span class="cmt"># 241</span>
+<span class="fn">print</span>(<span class="fn">chr</span>(<span class="num">241</span>))    <span class="cmt"># "ñ"</span>
+</div>
+<div class="output">65
+A
+241
+ñ</div>
+
+<div class="note">
+💡 Strings are <strong>immutable</strong> &mdash; every method returns a <strong>new</strong> string. The original stays unchanged.
+</div>
+<div class="tip">
+💡 Use <strong>f-strings</strong> for cleaner, faster string formatting. They work in Python 3.6+.
+</div>
+<a href="06_loops.html" class="back">← Loops</a>
+<a href="08_lists_tuples.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">Lists & Tuples →</a>
+</div>
+</body>
+</html>

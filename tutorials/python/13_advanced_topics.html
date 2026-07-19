@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 13: Advanced Python Topics</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>Lesson 13: Advanced Python Topics</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2>Decorators</h2>
+<p>A decorator is a function that <strong>wraps</strong> another function to extend its behavior without changing its code. The syntax is <code>@decorator_name</code> above the function.</p>
+
+<h3>Basic Decorator</h3>
+<div class="code">
+<span class="kw">def</span> <span class="fn">my_decorator</span>(func):
+    <span class="kw">def</span> <span class="fn">wrapper</span>():
+        <span class="fn">print</span>(<span class="str">"Something before the function"</span>)
+        func()
+        <span class="fn">print</span>(<span class="str">"Something after the function"</span>)
+    <span class="kw">return</span> wrapper
+
+<span class="pre">@my_decorator</span>
+<span class="kw">def</span> <span class="fn">say_hello</span>():
+    <span class="fn">print</span>(<span class="str">"Hello!"</span>)
+
+say_hello()
+</div>
+<div class="output">
+Something before the function
+Hello!
+Something after the function
+</div>
+
+<h3>@timer Decorator</h3>
+<div class="code">
+<span class="pre">import</span> time
+
+<span class="kw">def</span> <span class="fn">timer</span>(func):
+    <span class="kw">def</span> <span class="fn">wrapper</span>(*args, **kwargs):
+        start = time.<span class="fn">time</span>()
+        result = func(*args, **kwargs)
+        end = time.<span class="fn">time</span>()
+        <span class="fn">print</span>(<span class="str">f"func took {end - start:.4f} seconds"</span>)
+        <span class="kw">return</span> result
+    <span class="kw">return</span> wrapper
+
+<span class="pre">@timer</span>
+<span class="kw">def</span> <span class="fn">slow_add</span>(a, b):
+    time.<span class="fn">sleep</span>(<span class="num">0.5</span>)
+    <span class="kw">return</span> a + b
+
+<span class="fn">print</span>(slow_add(<span class="num">3</span>, <span class="num">4</span>))
+</div>
+<div class="output">
+func took 0.5001 seconds
+7
+</div>
+
+<h3>@log Decorator & functools.wraps</h3>
+<div class="code">
+<span class="pre">import</span> functools
+
+<span class="kw">def</span> <span class="fn">log</span>(func):
+    <span class="pre">@functools.wraps</span>(func)
+    <span class="kw">def</span> <span class="fn">wrapper</span>(*args, **kwargs):
+        <span class="fn">print</span>(<span class="str">f"Calling {func.__name__}"</span>)
+        result = func(*args, **kwargs)
+        <span class="fn">print</span>(<span class="str">f"Returned: {result}"</span>)
+        <span class="kw">return</span> result
+    <span class="kw">return</span> wrapper
+
+<span class="pre">@log</span>
+<span class="kw">def</span> <span class="fn">multiply</span>(x, y):
+    <span class="str">"""Multiply two numbers."""</span>
+    <span class="kw">return</span> x * y
+
+<span class="fn">print</span>(multiply.__name__)  <span class="cmt"># multiply (not wrapper!)</span>
+<span class="fn">print</span>(multiply(<span class="num">4</span>, <span class="num">5</span>))
+</div>
+<div class="output">
+multiply
+Calling multiply
+Returned: 20
+20
+</div>
+<div class="note">
+  💡 <strong>functools.wraps</strong> preserves the original function's metadata (name, docstring, etc.) so the wrapper looks like the original function.
+</div>
+
+<h3>Decorator with Arguments</h3>
+<div class="code">
+<span class="kw">def</span> <span class="fn">repeat</span>(n):
+    <span class="kw">def</span> <span class="fn">decorator</span>(func):
+        <span class="kw">def</span> <span class="fn">wrapper</span>(*args, **kwargs):
+            <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(n):
+                func(*args, **kwargs)
+        <span class="kw">return</span> wrapper
+    <span class="kw">return</span> decorator
+
+<span class="pre">@repeat(3)</span>
+<span class="kw">def</span> <span class="fn">say_hi</span>():
+    <span class="fn">print</span>(<span class="str">"Hi there!"</span>)
+
+say_hi()
+</div>
+<div class="output">
+Hi there!
+Hi there!
+Hi there!
+</div>
+
+<h2>Generators</h2>
+<p>A generator <strong>yields</strong> values one at a time, pausing between each yield. This is memory-efficient for large sequences.</p>
+
+<h3>Simple Generator</h3>
+<div class="code">
+<span class="kw">def</span> <span class="fn">count_down</span>(n):
+    <span class="kw">while</span> n > <span class="num">0</span>:
+        <span class="kw">yield</span> n
+        n -= <span class="num">1</span>
+
+<span class="kw">for</span> num <span class="kw">in</span> <span class="fn">count_down</span>(<span class="num">5</span>):
+    <span class="fn">print</span>(num)
+</div>
+<div class="output">
+5
+4
+3
+2
+1
+</div>
+
+<h3>Generator Expressions</h3>
+<div class="code">
+squares = (x ** <span class="num">2</span> <span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">10</span>))
+<span class="fn">print</span>(<span class="fn">list</span>(squares))
+
+<span class="cmt"># Sum of squares</span>
+total = <span class="fn">sum</span>(x ** <span class="num">2</span> <span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">10</span>))
+<span class="fn">print</span>(total)
+</div>
+<div class="output">
+[0, 1, 4, 9, 16, 25, 36, 49, 64, 81]
+285
+</div>
+
+<h3>yield from</h3>
+<div class="code">
+<span class="kw">def</span> <span class="fn">chain</span>(*iters):
+    <span class="kw">for</span> it <span class="kw">in</span> iters:
+        <span class="kw">yield from</span> it
+
+result = <span class="fn">list</span>(<span class="fn">chain</span>([<span class="num">1</span>, <span class="num">2</span>], (<span class="num">3</span>, <span class="num">4</span>), <span class="str">"ab"</span>))
+<span class="fn">print</span>(result)
+</div>
+<div class="output">
+[1, 2, 3, 4, 'a', 'b']
+</div>
+<div class="note">
+  💡 Generators only compute values when you iterate over them — they do <strong>not</strong> store all values in memory at once.
+</div>
+
+<h2>Context Managers</h2>
+<p>The <code>with</code> statement is used for resource management (files, locks, connections). You can create your own context managers.</p>
+
+<h3>Custom Context Manager (Class-based)</h3>
+<div class="code">
+<span class="kw">class</span> <span class="type">ManagedFile</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(<span class="kw">self</span>, filename):
+        <span class="kw">self</span>.filename = filename
+    <span class="kw">def</span> <span class="fn">__enter__</span>(<span class="kw">self</span>):
+        <span class="fn">print</span>(<span class="str">"Opening file..."</span>)
+        <span class="kw">self</span>.file = <span class="fn">open</span>(<span class="kw">self</span>.filename, <span class="str">"w"</span>)
+        <span class="kw">return</span> <span class="kw">self</span>.file
+    <span class="kw">def</span> <span class="fn">__exit__</span>(<span class="kw">self</span>, exc_type, exc_val, exc_tb):
+        <span class="fn">print</span>(<span class="str">"Closing file..."</span>)
+        <span class="kw">self</span>.file.<span class="fn">close</span>()
+
+<span class="kw">with</span> <span class="type">ManagedFile</span>(<span class="str">"test.txt"</span>) <span class="kw">as</span> f:
+    f.<span class="fn">write</span>(<span class="str">"Hello, context manager!"</span>)
+<span class="fn">print</span>(<span class="str">"Done."</span>)
+</div>
+<div class="output">
+Opening file...
+Closing file...
+Done.
+</div>
+
+<h3>Using contextlib.contextmanager</h3>
+<div class="code">
+<span class="pre">from</span> contextlib <span class="pre">import</span> contextmanager
+
+<span class="pre">@contextmanager</span>
+<span class="kw">def</span> <span class="fn">managed_file</span>(filename):
+    <span class="fn">print</span>(<span class="str">"Opening..."</span>)
+    f = <span class="fn">open</span>(filename, <span class="str">"w"</span>)
+    <span class="kw">try</span>:
+        <span class="kw">yield</span> f
+    <span class="kw">finally</span>:
+        <span class="fn">print</span>(<span class="str">"Closing..."</span>)
+        f.<span class="fn">close</span>()
+
+<span class="kw">with</span> <span class="fn">managed_file</span>(<span class="str">"hello.txt"</span>) <span class="kw">as</span> f:
+    f.<span class="fn">write</span>(<span class="str">"Hello from contextmanager!"</span>)
+<span class="fn">print</span>(<span class="str">"Done."</span>)
+</div>
+<div class="output">
+Opening...
+Closing...
+Done.
+</div>
+
+<h2>Threading</h2>
+<p>Threading lets you run multiple tasks <strong>concurrently</strong>. Python threads are great for I/O-bound tasks.</p>
+
+<h3>Basic Thread</h3>
+<div class="code">
+<span class="pre">import</span> threading
+<span class="pre">import</span> time
+
+<span class="kw">def</span> <span class="fn">worker</span>(name, delay):
+    <span class="fn">print</span>(<span class="str">f"{name} started"</span>)
+    time.<span class="fn">sleep</span>(delay)
+    <span class="fn">print</span>(<span class="str">f"{name} finished"</span>)
+
+t1 = threading.<span class="type">Thread</span>(target=worker, args=(<span class="str">"A"</span>, <span class="num">2</span>))
+t2 = threading.<span class="type">Thread</span>(target=worker, args=(<span class="str">"B"</span>, <span class="num">1</span>))
+
+t1.<span class="fn">start</span>()
+t2.<span class="fn">start</span>()
+
+t1.<span class="fn">join</span>()
+t2.<span class="fn">join</span>()
+<span class="fn">print</span>(<span class="str">"All threads done."</span>)
+</div>
+<div class="output">
+A started
+B started
+B finished
+A finished
+All threads done.
+</div>
+
+<h3>Daemon Threads</h3>
+<div class="code">
+t = threading.<span class="type">Thread</span>(target=<span class="kw">lambda</span>: time.<span class="fn">sleep</span>(<span class="num">5</span>))
+t.<span class="fn">daemon</span> = <span class="kw">True</span>
+t.<span class="fn">start</span>()
+<span class="fn">print</span>(<span class="str">"Main exits — daemon dies automatically."</span>)
+</div>
+<div class="output">
+Main exits — daemon dies automatically.
+</div>
+<div class="warn">
+  ⚠️ Daemon threads are killed abruptly when the main process ends. Use <code>join()</code> if you need them to finish.
+</div>
+
+<h3>Threading.Lock</h3>
+<div class="code">
+lock = threading.<span class="type">Lock</span>()
+counter = <span class="num">0</span>
+
+<span class="kw">def</span> <span class="fn">increment</span>(n):
+    <span class="kw">global</span> counter
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(n):
+        <span class="kw">with</span> lock:
+            counter += <span class="num">1</span>
+
+threads = [threading.<span class="type">Thread</span>(target=increment, args=(<span class="num">100000</span>,)) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">4</span>)]
+<span class="kw">for</span> t <span class="kw">in</span> threads: t.<span class="fn">start</span>()
+<span class="kw">for</span> t <span class="kw">in</span> threads: t.<span class="fn">join</span>()
+<span class="fn">print</span>(<span class="str">f"Counter: {counter}"</span>)
+</div>
+<div class="output">
+Counter: 400000
+</div>
+
+<h3>Thread Pool (concurrent.futures)</h3>
+<div class="code">
+<span class="pre">from</span> concurrent.futures <span class="pre">import</span> ThreadPoolExecutor
+
+<span class="kw">def</span> <span class="fn">square</span>(x):
+    <span class="kw">return</span> x * x
+
+<span class="kw">with</span> <span class="type">ThreadPoolExecutor</span>(max_workers=<span class="num">3</span>) <span class="kw">as</span> executor:
+    results = <span class="fn">list</span>(executor.<span class="fn">map</span>(square, [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]))
+<span class="fn">print</span>(results)
+</div>
+<div class="output">
+[1, 4, 9, 16, 25]
+</div>
+
+<h2>Comprehensions Recap</h2>
+
+<h3>List Comprehension</h3>
+<div class="code">
+squares = [x ** <span class="num">2</span> <span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">10</span>) <span class="kw">if</span> x % <span class="num">2</span> == <span class="num">0</span>]
+<span class="fn">print</span>(squares)
+</div>
+<div class="output">
+[0, 4, 16, 36, 64]
+</div>
+
+<h3>Dict Comprehension</h3>
+<div class="code">
+square_dict = {x: x ** <span class="num">2</span> <span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">5</span>)}
+<span class="fn">print</span>(square_dict)
+</div>
+<div class="output">
+{0: 0, 1: 1, 2: 4, 3: 9, 4: 16}
+</div>
+
+<h3>Set Comprehension</h3>
+<div class="code">
+even_set = {x <span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">10</span>) <span class="kw">if</span> x % <span class="num">2</span> == <span class="num">0</span>}
+<span class="fn">print</span>(even_set)
+</div>
+<div class="output">
+{0, 2, 4, 6, 8}
+</div>
+
+<h3>Nested Comprehension</h3>
+<div class="code">
+matrix = [[i * j <span class="kw">for</span> j <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="num">4</span>)] <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="num">4</span>)]
+<span class="fn">print</span>(matrix)
+</div>
+<div class="output">
+[[1, 2, 3], [2, 4, 6], [3, 6, 9]]
+</div>
+
+<h2>Walrus Operator</h2>
+<p>The walrus operator <code>:=</code> (assignment expression) lets you assign a value <strong>and</strong> use it in the same expression.</p>
+
+<div class="code">
+<span class="cmt"># Without walrus</span>
+n = <span class="fn">int</span>(<span class="fn">input</span>(<span class="str">"Enter a number: "</span>))
+<span class="kw">if</span> n > <span class="num">0</span>:
+    <span class="fn">print</span>(<span class="str">f"Positive: {n}"</span>)
+
+<span class="cmt"># With walrus</span>
+<span class="kw">if</span> (n := <span class="fn">int</span>(<span class="fn">input</span>(<span class="str">"Enter a number: "</span>))) > <span class="num">0</span>:
+    <span class="fn">print</span>(<span class="str">f"Positive: {n}"</span>)
+
+<span class="cmt"># Reading a file line-by-line</span>
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"test.txt"</span>, <span class="str">"r"</span>) <span class="kw">as</span> f:
+    <span class="kw">while</span> (line := f.<span class="fn">readline</span>()):
+        <span class="fn">print</span>(line.<span class="fn">strip</span>())
+</div>
+<div class="output">
+Positive: 7
+Positive: 7
+Hello, context manager!
+Hello from contextmanager!
+</div>
+<div class="note">
+  💡 Use parentheses around the walrus expression: <code>if (x := expr) > 0:</code> to make it clear.
+</div>
+
+<h2>🎯 You Now Know Python!</h2>
+<p>Congratulations! You have covered the most important Python topics:</p>
+<ul>
+  <li>✅ Decorators — <code>@timer</code>, <code>@log</code>, <code>functools.wraps</code></li>
+  <li>✅ Generators — <code>yield</code>, generator expressions, <code>yield from</code></li>
+  <li>✅ Context managers — <code>__enter__</code> / <code>__exit__</code>, <code>@contextmanager</code></li>
+  <li>✅ Threading — <code>Thread</code>, <code>Lock</code>, <code>ThreadPoolExecutor</code></li>
+  <li>✅ Comprehensions — list, dict, set, nested</li>
+  <li>✅ Walrus operator — <code>:=</code></li>
+</ul>
+<p>Next up: <strong>os Module</strong> — working with the operating system!</p>
+
+<a href="12_oop_exceptions.html" class="back">← OOP & Exceptions</a>
+<a href="14_os_module.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">os Module →</a>
+</div>
+</body>
+</html>

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 7: C Arrays & Strings — Detaylı Referans</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #150825; color: #eee; padding: 20px; }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container h4 { color: #e9d5ff; margin: 10px 0 4px; font-size: 1em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; } .container .code .kw { color: #ff79c6; } .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; } .container .code .num { color: #bd93f9; } .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; } .container .code .op { color: #ff79c6; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #8b5cf6; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container td code { font-size: 0.88em; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #d8b4fe; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+  .func-sig { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 6px 12px; border-radius: 6px; border: 1px solid #a855f7; margin: 6px 0 10px; display: inline-block; font-size: 0.85em; }
+  @media (max-width: 768px) { .container { padding: 14px 16px; } }</style>
+</head>
+<body>
+<div class="container">
+<h1>Lesson 7: C Arrays & Strings — Detaylı Referans</h1>
+
+<h2>1. Arrays (Diziler)</h2>
+
+<h3>1.1 Temel Dizi Tanımı</h3>
+<div class="func-sig">type name[size];  // static allocation</div>
+<div class="code">
+<span class="type">int</span> a[<span class="num">5</span>];                <span class="cmt">// 5 elemanlı, değerler tanımsız</span>
+<span class="type">int</span> b[<span class="num">5</span>] = {<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>,<span class="num">4</span>,<span class="num">5</span>};  <span class="cmt">// tam başlatma</span>
+<span class="type">int</span> c[<span class="num">5</span>] = {<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>};       <span class="cmt">// kalanlar 0: {1,2,3,0,0}</span>
+<span class="type">int</span> d[<span class="num">5</span>] = {<span class="num">0</span>};            <span class="cmt">// tümü 0</span>
+<span class="type">int</span> e[] = {<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>};        <span class="cmt">// boyut otomatik: 3</span>
+</div>
+<div class="warn">⚠️ Dizilerde <strong>taşma (out-of-bounds)</strong> kontrolü YOKTUR. <code>a[5]</code> yazmak derlenir ama crash veya bellek bozulmasına yol açar.</div>
+
+<h3>1.2 sizeof ile Dizi Boyutu</h3>
+<div class="code">
+<span class="type">int</span> arr[] = {<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>, <span class="num">50</span>};
+<span class="type">int</span> n = <span class="kw">sizeof</span>(arr) / <span class="kw">sizeof</span>(arr[<span class="num">0</span>]);  <span class="cmt">// 5</span>
+<span class="cmt">// sizeof(arr) = 20 (5 × 4 byte)</span>
+<span class="cmt">// sizeof(arr[0]) = 4</span>
+</div>
+<div class="warn">⚠️ Argüman olarak geçilen dizi <strong>pointer'a dönüşür</strong>, sizeof orada çalışmaz!</div>
+
+<h3>1.3 Diziler ve Pointer İlişkisi (Array Decay)</h3>
+<p>Dizi adı bir pointer'dır: <code>arr = &arr[0]</code>. Ancak <strong>decay</strong> kuralı: dizi bir fonksiyona geçildiğinde pointer'a dönüşür, boyut bilgisi kaybolur.</p>
+<div class="code">
+<span class="type">void</span> <span class="fn">print_size</span>(<span class="type">int</span> arr[]) {
+    <span class="fn">printf</span>(<span class="str">"sizeof(arr) in func: %zu\n"</span>, <span class="kw">sizeof</span>(arr));  <span class="cmt">// 8 (pointer!)</span>
+}
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> nums[<span class="num">10</span>];
+    <span class="fn">printf</span>(<span class="str">"sizeof(nums) in main: %zu\n"</span>, <span class="kw">sizeof</span>(nums));  <span class="cmt">// 40</span>
+    <span class="fn">print_size</span>(nums);
+}
+</div>
+
+<h3>1.4 Çok Boyutlu Diziler</h3>
+<div class="code">
+<span class="cmt">// 2D dizi: 3 satır, 4 sütun (bellekte sıralı: row-major)</span>
+<span class="type">int</span> mat[<span class="num">3</span>][<span class="num">4</span>] = {
+    {<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>},
+    {<span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>, <span class="num">8</span>},
+    {<span class="num">9</span>,<span class="num">10</span>,<span class="num">11</span>,<span class="num">12</span>}
+};
+
+<span class="fn">printf</span>(<span class="str">"%d\n"</span>, mat[<span class="num">1</span>][<span class="num">2</span>]);  <span class="cmt">// 7 (satır 1, sütun 2)</span>
+
+<span class="cmt">// Pointer aritmetiği ile aynı şey:</span>
+<span class="fn">printf</span>(<span class="str">"%d\n"</span>, *(*(mat + <span class="num">1</span>) + <span class="num">2</span>));  <span class="cmt">// 7</span>
+</div>
+
+<h3>1.5 Dizi Pointer'ları (Pointer to Array)</h3>
+<div class="code">
+<span class="type">int</span> arr[<span class="num">5</span>] = {<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>,<span class="num">4</span>,<span class="num">5</span>};
+<span class="type">int</span> (*ptr)[<span class="num">5</span>] = &arr;   <span class="cmt">// pointer to int[5]</span>
+<span class="fn">printf</span>(<span class="str">"%d\n"</span>, (*ptr)[<span class="num">2</span>]); <span class="cmt">// 3</span>
+<span class="fn">printf</span>(<span class="str">"%d\n"</span>, ptr[<span class="num">0</span>][<span class="num">2</span>]); <span class="cmt">// 3</span>
+</div>
+
+<h3>1.6 Variable-Length Arrays (VLA, C99+)</h3>
+<p>Boyutu runtime'da belirlenen diziler. Dikkat: stack taşması riski!</p>
+<div class="code">
+<span class="type">int</span> n;
+<span class="fn">printf</span>(<span class="str">"Kaç eleman? "</span>); <span class="fn">scanf</span>(<span class="str">"%d"</span>, &n);
+<span class="type">int</span> vla[n];  <span class="cmt">// VLA — boyut runtime'da</span>
+<span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < n; i++) vla[i] = i * <span class="num">10</span>;
+</div>
+<div class="warn">⚠️ VLA'lar C11'de opsiyonel, C23'te kaldırıldı. <code>malloc</code> tercih edin.</div>
+
+<h3>1.7 Dizileri Fonksiyona Geçirme</h3>
+<div class="code">
+<span class="cmt">// 1D — boyut bilgisi kaybolur, ayrıca gönder</span>
+<span class="type">void</span> <span class="fn">print_array</span>(<span class="type">int</span> arr[], <span class="type">int</span> n) {
+    <span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < n; i++) <span class="fn">printf</span>(<span class="str">"%d "</span>, arr[i]);
+}
+
+<span class="cmt">// 2D — sütun sayısı belirtilmeli</span>
+<span class="type">void</span> <span class="fn">print_matrix</span>(<span class="type">int</span> mat[][<span class="num">4</span>], <span class="type">int</span> rows) {
+    <span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < rows; i++) {
+        <span class="kw">for</span> (<span class="type">int</span> j = <span class="num">0</span>; j < <span class="num">4</span>; j++)
+            <span class="fn">printf</span>(<span class="str">"%3d "</span>, mat[i][j]);
+        <span class="fn">printf</span>(<span class="str">"\n"</span>);
+    }
+}
+</div>
+
+<h2>2. String'ler — Derinlemesine</h2>
+
+<h3>2.1 String = char Dizisi + '\0'</h3>
+<div class="code">
+<span class="type">char</span> s1[] = <span class="str">"Merhaba"</span>;  <span class="cmt">// otomatik: {'M','e','r','h','a','b','a','\0'} — 8 byte</span>
+<span class="type">char</span> s2[<span class="num">20</span>] = <span class="str">"Merhaba"</span>; <span class="cmt">// 20 byte, kalanlar \0</span>
+<span class="type">char</span> s3[] = {<span class="str">'M'</span>,<span class="str">'e'</span>,<span class="str">'r'</span>,<span class="str">'\0'</span>}; <span class="cmt">// elle null-terminated</span>
+<span class="type">char</span>* s4 = <span class="str">"Merhaba"</span>;     <span class="cmt">// string literal (read-only!)</span>
+<span class="cmt">// s4[0] = 'm';  // CRASH! string literal read-only</span>
+</div>
+
+<h3>2.2 String Güvenliği — Tehlikeli Fonksiyonlar</h3>
+<div class="warn">
+<strong>⚠️ ASLA kullanma:</strong> <code>gets()</code>, <code>strcpy()</code> (güvenli değil), <code>strcat()</code>, <code>sprintf()</code>
+<br>Bunlar taşma kontrolü YAPMAZ. Yerine: <code>fgets()</code>, <code>strncpy()</code>, <code>strncat()</code>, <code>snprintf()</code>
+</div>
+
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str"><string.h></span>
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">char</span> dest[<span class="num">10</span>];
+
+    <span class="cmt">// ❌ Tehlikeli — taşma olursa crash</span>
+    <span class="cmt">// strcpy(dest, "Bu çok uzun bir string!!!!!!!!");</span>
+
+    <span class="cmt">// ✅ Güvenli — en fazla 9 karakter + \0 kopyalar</span>
+    <span class="fn">strncpy</span>(dest, <span class="str">"Güvenli"</span>, <span class="num">9</span>);
+    dest[<span class="num">9</span>] = <span class="str">'\0'</span>;  <span class="cmt">// strncpy null eklemeyebilir!</span>
+
+    <span class="cmt">// ✅ snprintf — en güvenlisi</span>
+    <span class="fn">snprintf</span>(dest, <span class="num">10</span>, <span class="str">"%s"</span>, <span class="str">"Güvenli"</span>);
+
+    <span class="cmt">// ✅ fgets — kullanıcı girdisi için</span>
+    <span class="type">char</span> input[<span class="num">100</span>];
+    <span class="fn">fgets</span>(input, <span class="num">100</span>, stdin);
+    <span class="cmt">// fgets newline'i de alır, istersen temizle:</span>
+    input[<span class="fn">strcspn</span>(input, <span class="str">"\n"</span>)] = <span class="str">'\0'</span>;  <span class="cmt">// \n sil</span>
+
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<h3>2.3 string.h — Tüm Fonksiyonlar</h3>
+<table>
+  <tr><th>Fonksiyon</th><th>Açıklama</th><th>Güvenli</th></tr>
+  <tr><td><code>strlen(s)</code></td><td>Uzunluk (\0 hariç)</td><td>✅</td></tr>
+  <tr><td><code>strcpy(d, s)</code></td><td>Kopyala</td><td>❌ taşma yapabilir</td></tr>
+  <tr><td><code>strncpy(d, s, n)</code></td><td>n karakter kopyala</td><td>⚠️ null eklemeyi unutma</td></tr>
+  <tr><td><code>strcat(d, s)</code></td><td>Sonuna ekle</td><td>❌ taşma yapabilir</td></tr>
+  <tr><td><code>strncat(d, s, n)</code></td><td>n karakter ekle</td><td>✅</td></tr>
+  <tr><td><code>strcmp(a, b)</code></td><td>Karşılaştır (0=eşit)</td><td>✅</td></tr>
+  <tr><td><code>strncmp(a, b, n)</code></td><td>n karakter karşılaştır</td><td>✅</td></tr>
+  <tr><td><code>strchr(s, c)</code></td><td>Karakter ara (pointer döner)</td><td>✅</td></tr>
+  <tr><td><code>strrchr(s, c)</code></td><td>Sondan karakter ara</td><td>✅</td></tr>
+  <tr><td><code>strstr(haystack, needle)</code></td><td>Alt string ara</td><td>✅</td></tr>
+  <tr><td><code>strtok(s, delim)</code></td><td>Token'lara ayır</td><td>⚠️ statik buffer</td></tr>
+  <tr><td><code>strspn(s, accept)</code></td><td>Baştan eşleşen karakter sayısı</td><td>✅</td></tr>
+  <tr><td><code>strcspn(s, reject)</code></td><td>Baştan eşleşmeyen karakter sayısı</td><td>✅</td></tr>
+  <tr><td><code>strpbrk(s, accept)</code></td><td>Herhangi bir karakteri ara</td><td>✅</td></tr>
+  <tr><td><code>strerror(errnum)</code></td><td>Hata kodunu string'e çevir</td><td>✅</td></tr>
+</table>
+
+<h3>2.4 strtok() — String Tokenization</h3>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str"><string.h></span>
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">char</span> str[] = <span class="str">"Ali,Ayşe,Veli,Mehmet"</span>;
+    <span class="type">char</span>* token = <span class="fn">strtok</span>(str, <span class="str">","</span>);  <span class="cmt">// ilk çağrı: stringi ver</span>
+    <span class="kw">while</span> (token != NULL) {
+        <span class="fn">printf</span>(<span class="str">"%s\n"</span>, token);
+        token = <span class="fn">strtok</span>(NULL, <span class="str">","</span>);   <span class="cmt">// sonraki: NULL</span>
+    }
+    <span class="cmt">// DİKKAT: strtok orijinal stringi değiştirir!</span>
+    <span class="cmt">// strtok thread-safe değil, strtok_r kullan</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<h2>3. Bellek Kopyalama (mem Fonksiyonları)</h2>
+<div class="func-sig">void* memcpy(void* dest, const void* src, size_t n);  // örtüşen bölgelere DİKKAT</div>
+<div class="func-sig">void* memmove(void* dest, const void* src, size_t n); // örtüşen bölgeler için GÜVENLİ</div>
+<div class="func-sig">void* memset(void* s, int c, size_t n);  // bellek bloğunu doldur</div>
+<div class="func-sig">int memcmp(const void* s1, const void* s2, size_t n); // karşılaştır</div>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><string.h></span>
+
+<span class="type">int</span> arr[<span class="num">5</span>] = {<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>,<span class="num">4</span>,<span class="num">5</span>};
+<span class="type">int</span> copy[<span class="num">5</span>];
+
+<span class="cmt">// memcpy — hızlı, örtüşme yoksa güvenli</span>
+<span class="fn">memcpy</span>(copy, arr, <span class="kw">sizeof</span>(arr));
+
+<span class="cmt">// memmove — örtüşme olsa bile güvenli</span>
+<span class="fn">memmove</span>(arr + <span class="num">2</span>, arr, <span class="num">3</span> * <span class="kw">sizeof</span>(<span class="type">int</span>));  <span class="cmt">// {1,2,1,2,3}</span>
+
+<span class="cmt">// memset — tüm byte'ları aynı değer yap</span>
+<span class="fn">memset</span>(arr, <span class="num">0</span>, <span class="kw">sizeof</span>(arr));  <span class="cmt">// tümünü sıfırla</span>
+
+<span class="cmt">// memcmp — karşılaştır</span>
+<span class="kw">if</span> (<span class="fn">memcmp</span>(arr, copy, <span class="kw">sizeof</span>(arr)) == <span class="num">0</span>)
+    <span class="fn">printf</span>(<span class="str">"Aynı\n"</span>);
+</div>
+
+<h2>4. String İleri Teknikler</h2>
+
+<h3>4.1 sprintf ve snprintf</h3>
+<div class="code">
+<span class="type">char</span> buf[<span class="num">100</span>];
+<span class="type">int</span> age = <span class="num">25</span>; <span class="type">float</span> gpa = <span class="num">3.75</span>;
+
+<span class="cmt">// ❌ sprintf — taşma kontrolü YOK</span>
+<span class="cmt">// sprintf(buf, "Age: %d, GPA: %.2f", age, gpa);</span>
+
+<span class="cmt">// ✅ snprintf — taşma kontrolü VAR</span>
+<span class="fn">snprintf</span>(buf, <span class="kw">sizeof</span>(buf), <span class="str">"Age: %d, GPA: %.2f"</span>, age, gpa);
+<span class="fn">printf</span>(<span class="str">"%s\n"</span>, buf);  <span class="cmt">// "Age: 25, GPA: 3.75"</span>
+</div>
+
+<h3>4.2 String Arama (strstr, strchr)</h3>
+<div class="code">
+<span class="type">char</span> text[] = <span class="str">"Merhaba dünya, merhaba herkes"</span>;
+<span class="type">char</span>* p;
+
+<span class="cmt">// strchr — ilk geçen karakter</span>
+p = <span class="fn">strchr</span>(text, <span class="str">'d'</span>);
+<span class="kw">if</span> (p) <span class="fn">printf</span>(<span class="str">"'d' bulundu: %s\n"</span>, p);  <span class="cmt">// "dünya, merhaba herkes"</span>
+
+<span class="cmt">// strrchr — son geçen karakter</span>
+p = <span class="fn">strrchr</span>(text, <span class="str">'m'</span>);
+<span class="kw">if</span> (p) <span class="fn">printf</span>(<span class="str">"Son 'm': %s\n"</span>, p);     <span class="cmt">// "merhaba herkes"</span>
+
+<span class="cmt">// strstr — alt string ara</span>
+p = <span class="fn">strstr</span>(text, <span class="str">"dünya"</span>);
+<span class="kw">if</span> (p) <span class="fn">printf</span>(<span class="str">"'dünya' bulundu: %s\n"</span>, p);
+</div>
+
+<h3>4.3 String Dizisi (char**)</h3>
+<div class="code">
+<span class="cmt">// İsim listesi — her isim ayrı uzunlukta</span>
+<span class="type">char</span>* isimler[] = {<span class="str">"Ali"</span>, <span class="str">"Ayşe"</span>, <span class="str">"Mehmet"</span>, NULL};  <span class="cmt">// NULL sonlandırıcı</span>
+
+<span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; isimler[i] != NULL; i++) {
+    <span class="fn">printf</span>(<span class="str">"%s (%zu harf)\n"</span>, isimler[i], <span class="fn">strlen</span>(isimler[i]));
+}
+</div>
+
+<h3>4.4 sscanf — String'den Veri Okuma</h3>
+<div class="code">
+<span class="type">char</span> data[] = <span class="str">"42 3.14 Ahmet"</span>;
+<span class="type">int</span> x; <span class="type">float</span> y; <span class="type">char</span> name[<span class="num">50</span>];
+<span class="fn">sscanf</span>(data, <span class="str">"%d %f %s"</span>, &x, &y, name);
+<span class="fn">printf</span>(<span class="str">"%d, %.2f, %s\n"</span>, x, y, name);  <span class="cmt">// 42, 3.14, Ahmet</span>
+</div>
+
+<h3>4.5 String Sabitleri (String Literals) ve const</h3>
+<div class="code">
+<span class="kw">const</span> <span class="type">char</span>* msg = <span class="str">"Değişmez"</span>;  <span class="cmt">// read-only bellekte</span>
+<span class="cmt">// msg[0] = 'd'; // DERLEME HATASI</span>
+
+<span class="type">char</span> arr[] = <span class="str">"Değişebilir"</span>;  <span class="cmt">// stack'te, değiştirilebilir</span>
+arr[<span class="num">0</span>] = <span class="str">'d'</span>;  <span class="cmt">// ✅ çalışır</span>
+</div>
+
+<h2>5. Gerçek Hayat Örnekleri</h2>
+
+<h3>5.1 CSV Satırı Ayrıştırma</h3>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str"><string.h></span>
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">char</span> line[] = <span class="str">"101,Jane Doe,55000.50,Muhasebe"</span>;
+    <span class="type">int</span> id; <span class="type">float</span> salary;
+    <span class="type">char</span> name[<span class="num">50</span>], dept[<span class="num">30</span>];
+
+    <span class="cmt">// sscanf ile ayrıştır</span>
+    <span class="fn">sscanf</span>(line, <span class="str">"%d,%[^,],%f,%s"</span>, &id, name, &salary, dept);
+    <span class="fn">printf</span>(<span class="str">"ID: %d | İsim: %s | Maaş: %.2f | Departman: %s\n"</span>,
+            id, name, salary, dept);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<h3>5.2 String Temizleme ve Dönüştürme</h3>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><ctype.h></span>  <span class="cmt">// toupper, tolower, isspace, vs.</span>
+
+<span class="type">void</span> <span class="fn">to_upper</span>(<span class="type">char</span>* s) {
+    <span class="kw">while</span> (*s) { *s = <span class="fn">toupper</span>(*s); s++; }
+}
+
+<span class="type">void</span> <span class="fn">trim_whitespace</span>(<span class="type">char</span>* s) {
+    <span class="cmt">// Baştaki boşlukları atla</span>
+    <span class="type">char</span>* start = s;
+    <span class="kw">while</span> (<span class="fn">isspace</span>(*start)) start++;
+    <span class="fn">memmove</span>(s, start, <span class="fn">strlen</span>(start) + <span class="num">1</span>);
+    <span class="cmt">// Sondaki boşlukları sil</span>
+    <span class="type">char</span>* end = s + <span class="fn">strlen</span>(s) - <span class="num">1</span>;
+    <span class="kw">while</span> (end > s && <span class="fn">isspace</span>(*end)) *end-- = <span class="str">'\0'</span>;
+}
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">char</span> text[] = <span class="str">"  Hello World!  "</span>;
+    <span class="fn">trim_whitespace</span>(text);
+    <span class="fn">printf</span>(<span class="str">"[%s]\n"</span>, text);  <span class="cmt">// [Hello World!]</span>
+    <span class="fn">to_upper</span>(text);
+    <span class="fn">printf</span>(<span class="str">"%s\n"</span>, text);     <span class="cmt">// HELLO WORLD!</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<h2>6. Sık Yapılan Hatalar</h2>
+<div class="warn">
+<ul>
+  <li>❌ <strong>Null terminator unutmak:</strong> <code>char s[3] = "abc";</code> — \0 sığmaz!</li>
+  <li>❌ <strong>gets() kullanmak:</strong> taşma kontrolü yok — programını çökertebilir</li>
+  <li>❌ <strong>strcpy taşması:</strong> kaynak hedeften büyükse taşma</li>
+  <li>❌ <strong>Dizi sınırı aşımı:</strong> <code>arr[5]</code> 5 elemanlıysa <code>arr[5]</code> geçersiz (0-4)</li>
+  <li>❌ <strong>strtok ardı ardına:</strong> iç içe strtok kullanmayın — statik buffer</li>
+  <li>❌ <strong>== ile string karşılaştırma:</strong> <code>if (s1 == s2)</code> adres karşılaştırır, <code>strcmp</code> kullan</li>
+  <li>❌ <strong>scanf("%s") ile boşluklu girdi:</strong> sadece ilk kelimeyi alır</li>
+</ul>
+</div>
+
+<a href="index.html" class="back">← Back</a>
+<a href="08_functions.html" style="float:right; margin-top:20px; color:#5dade2;">Next: Functions →</a>
+</div>
+</body>
+</html>

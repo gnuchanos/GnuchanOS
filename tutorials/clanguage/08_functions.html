@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 8: C Functions</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #1f0d3a;
+    border: 3px solid #2d1554;
+    border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825;
+    color: #50fa7b;
+    font-family: 'Courier New', monospace;
+    padding: 14px 18px;
+    border-radius: 10px;
+    border: 2px solid #2d1554;
+    margin: 10px 0;
+    overflow-x: auto;
+    font-size: 1.05em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output {
+    background: #150825;
+    color: #f1fa8c;
+    font-family: 'Courier New', monospace;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 2px solid #a855f7;
+    margin: 8px 0 18px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-size: 1.05em;
+    line-height: 1.5;
+  }
+  .container .output::before {
+    content: "\25B6 OUTPUT";
+    display: block;
+    color: #50fa7b;
+    font-size: 0.8em;
+    margin-bottom: 4px;
+  }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #8b5cf6; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #d8b4fe; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+  <h1>Lesson 8: C Functions</h1>
+
+  <p>A <strong>function</strong> is a reusable block of code. Define it once, call it anytime.</p>
+  <div class="note"><strong>💡 Why functions?</strong> They make code organized, reusable, and easier to debug.</div>
+
+  <h2>Creating and Calling a Function</h2>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="cmt">// Function declaration (prototype) - tells C the function exists</span>
+<span class="type">void</span> <span class="fn">sayHello</span>();
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    sayHello();     <span class="cmt">// Call the function</span>
+    sayHello();     <span class="cmt">// Call it again!</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+
+<span class="cmt">// Function definition</span>
+<span class="type">void</span> <span class="fn">sayHello</span>() {
+    <span class="fn">printf</span>(<span class="str">"Hello there!\n"</span>);
+}
+  </div>
+  <div class="output">
+Hello there!<br>
+Hello there!
+  </div>
+
+  <h2>Function with Parameters and Return</h2>
+  <div class="code">
+<span class="cmt">// Function that takes two ints and returns their sum</span>
+<span class="type">int</span> <span class="fn">add</span>(<span class="type">int</span> a, <span class="type">int</span> b) {
+    <span class="kw">return</span> a + b;
+}
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> result = <span class="fn">add</span>(<span class="num">5</span>, <span class="num">3</span>);
+    <span class="fn">printf</span>(<span class="str">"5 + 3 = %d\n"</span>, result);  <span class="cmt">// 8</span>
+    <span class="fn">printf</span>(<span class="str">"10 + 7 = %d\n"</span>, <span class="fn">add</span>(<span class="num">10</span>, <span class="num">7</span>));  <span class="cmt">// 17</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">
+5 + 3 = 8<br>
+10 + 7 = 17
+  </div>
+
+  <h2>Pass by Value vs Pass by Reference</h2>
+  <div class="code">
+<span class="type">void</span> <span class="fn">changeValue</span>(<span class="type">int</span> x) {
+    x = <span class="num">100</span>;  <span class="cmt">// Only changes COPY</span>
+}
+
+<span class="type">void</span> <span class="fn">changeRef</span>(<span class="type">int</span> *ptr) {
+    *ptr = <span class="num">100</span>;  <span class="cmt">// Changes ORIGINAL!</span>
+}
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> num = <span class="num">5</span>;
+    changeValue(num);
+    <span class="fn">printf</span>(<span class="str">"After changeValue: %d\n"</span>, num);  <span class="cmt">// Still 5</span>
+    changeRef(&num);
+    <span class="fn">printf</span>(<span class="str">"After changeRef: %d\n"</span>, num);     <span class="cmt">// Now 100</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">
+After changeValue: 5<br>
+After changeRef: 100
+  </div>
+
+  <div class="note">💡 <strong>Pass by value</strong> (default): function gets a copy. <strong>Pass by reference</strong> (with pointers): function can modify the original.</div>
+
+  <h2>Inline Functions</h2>
+  <p><code>inline</code> tells the compiler to copy the function code directly where it's called (no jump overhead). Useful for very small, fast functions.</p>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="kw">inline</span> <span class="type">int</span> <span class="fn">max</span>(<span class="type">int</span> a, <span class="type">int</span> b) {
+    <span class="kw">return</span> (a > b) ? a : b;
+}
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="fn">printf</span>(<span class="str">"%d\n"</span>, <span class="fn">max</span>(<span class="num">10</span>, <span class="num">20</span>));  <span class="cmt">// 20 - code is "inlined" here</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="note">💡 <code>inline</code> is a <strong>hint</strong> to the compiler — it may ignore it for large functions. Use for tiny 1-2 line functions.</div>
+
+  <h2>Callback Functions (Function Pointers as Parameters)</h2>
+  <p>Pass a <strong>function pointer</strong> as an argument to another function. Used in sorting, event handling, etc.</p>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="cmt">// Function that takes a callback</span>
+<span class="type">void</span> <span class="fn">processArray</span>(<span class="type">int</span> arr[], <span class="type">int</span> size, <span class="type">int</span> (*callback)(<span class="type">int</span>)) {
+    <span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < size; i++) {
+        arr[i] = callback(arr[i]);
+    }
+}
+
+<span class="cmt">// Callback functions</span>
+<span class="type">int</span> <span class="fn">doubleIt</span>(<span class="type">int</span> x) { <span class="kw">return</span> x * <span class="num">2</span>; }
+<span class="type">int</span> <span class="fn">squareIt</span>(<span class="type">int</span> x) { <span class="kw">return</span> x * x; }
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> nums[] = {<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>};
+    <span class="type">int</span> len = <span class="num">4</span>;
+
+    processArray(nums, len, doubleIt);  <span class="cmt">// Now: {2, 4, 6, 8}</span>
+    <span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < len; i++)
+        <span class="fn">printf</span>(<span class="str">"%d "</span>, nums[i]);
+    <span class="fn">printf</span>(<span class="str">"\n"</span>);
+
+    processArray(nums, len, squareIt);  <span class="cmt">// Now: {4, 16, 36, 64}</span>
+    <span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < len; i++)
+        <span class="fn">printf</span>(<span class="str">"%d "</span>, nums[i]);
+    <span class="fn">printf</span>(<span class="str">"\n"</span>);
+
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">
+2 4 6 8<br>
+4 16 36 64
+  </div>
+
+  <h2>Scope (Where Variables Live)</h2>
+  <div class="code">
+<span class="type">int</span> global = <span class="num">999</span>;  <span class="cmt">// Global - accessible everywhere</span>
+
+<span class="type">void</span> <span class="fn">test</span>() {
+    <span class="type">int</span> local = <span class="num">50</span>;  <span class="cmt">// Local - only in this function</span>
+}
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> x = <span class="num">10</span>;    <span class="cmt">// Local to main()</span>
+    <span class="cmt">// x is NOT visible in test()</span>
+    <span class="cmt">// local is NOT visible here</span>
+    <span class="fn">printf</span>(<span class="str">"%d\n"</span>, global);  <span class="cmt">// OK - global works everywhere</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+
+  <h3>Real-Life: Calculator with Functions</h3>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="type">int</span> <span class="fn">square</span>(<span class="type">int</span> n) { <span class="kw">return</span> n * n; }
+<span class="type">int</span> <span class="fn">cube</span>(<span class="type">int</span> n)   { <span class="kw">return</span> n * n * n; }
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> num = <span class="num">5</span>;
+    <span class="fn">printf</span>(<span class="str">"%d squared = %d\n"</span>, num, <span class="fn">square</span>(num));
+    <span class="fn">printf</span>(<span class="str">"%d cubed = %d\n"</span>, num, <span class="fn">cube</span>(num));
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">
+5 squared = 25<br>
+5 cubed = 125
+  </div>
+
+  <a href="index.html" class="back">← Back</a>
+  <a href="09_pointers.html" style="float:right; margin-top:20px; color:#5dade2;">Next: Pointers →</a>
+</div>
+</body>
+</html>

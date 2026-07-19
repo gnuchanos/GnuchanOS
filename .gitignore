@@ -8,8 +8,18 @@
 *.dylib
 *.out
 
-# ── GCL build output ──────────────────────────────────────
-language/_output_test/
+# ── GCL build output (language/build/) ─────────────────────
+language/build/gcl.exe
+language/build/obj/
+language/build/*.c
+language/build/*.out
+
+# ── GCL test temp files (_NOTES/) ──────────────────────────
+language/_NOTES/t_*.gcsf
+language/_NOTES/t_*.gcsf.c
+
+# ── Old test area (empty dirs) ─────────────────────────────
+language/output_test_area/
 
 # ── Python embeddable (downloaded, not source) ─────────────
 *.pyd
@@ -33,4 +43,3 @@ Thumbs.db
 # ── Python cache ──────────────────────────────────────────
 __pycache__/
 *.pyc
-nul

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 3: Types & Operators</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px; margin: 0 auto;
+    background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2.2em; margin-bottom: 6px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825; color: #50fa7b; font-family: 'Courier New', monospace;
+    padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554;
+    margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; } .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; } .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; } .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; } .container .code .op { color: #ff79c6; }
+  .container .output {
+    background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace;
+    padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7;
+    margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word;
+    font-size: 1.05em; line-height: 1.5;
+  }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 1em; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+  .container a.next { float: right; margin-top: 16px; color: #a855f7; text-decoration: none; font-size: 1em; }
+  .container a.next:hover { color: #c084fc; }
+
+  .sidebar-link:hover { background: #2d1554; color: #eee; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>💜 Lesson 3: Types & Operators</h1>
+<p><strong>Lua Tutorial</strong> — GnuchanOS</p>
+<h2>Lua Types</h2>
+<p>Lua <strong>dynamically typed</strong> — değişkenlerin tipi yoktur, <strong>değerlerin</strong> tipi vardır.</p>
+<table>
+<tr><th>Type</th><th>Örnek</th><th>Açıklama</th></tr>
+<tr><td><code>nil</code></td><td><code>nil</code></td><td>Değer yok</td></tr>
+<tr><td><code>boolean</code></td><td><code>true</code>, <code>false</code></td><td>Sadece false ve nil falsy</td></tr>
+<tr><td><code>number</code></td><td><code>42</code>, <code>3.14</code></td><td>Lua 5.3+: integer + double</td></tr>
+<tr><td><code>string</code></td><td><code>"hi"</code></td><td>Immutable, 8-bit clean</td></tr>
+<tr><td><code>table</code></td><td><code>{1,2,3}</code></td><td>Associative array — TEK yapı</td></tr>
+<tr><td><code>function</code></td><td><code>function() end</code></td><td>First-class value</td></tr>
+<tr><td><code>userdata</code></td><td>—</td><td>C/C++ nesneleri</td></tr>
+<tr><td><code>thread</code></td><td>—</td><td>Coroutine</td></tr>
+</table>
+<h2>type() — Type Checking</h2>
+<div class="code"><span class="fn">print</span>(<span class="fn">type</span>(<span class="kw">nil</span>))       <span class="cmt">-- nil</span><br><span class="fn">print</span>(<span class="fn">type</span>(<span class="kw">true</span>))      <span class="cmt">-- boolean</span><br><span class="fn">print</span>(<span class="fn">type</span>(<span class="num">42</span>))         <span class="cmt">-- number</span><br><span class="fn">print</span>(<span class="fn">type</span>(<span class="str">"hello"</span>))   <span class="cmt">-- string</span><br><span class="fn">print</span>(<span class="fn">type</span>({}))          <span class="cmt">-- table</span><br><span class="fn">print</span>(<span class="fn">type</span>(<span class="fn">print</span>))      <span class="cmt">-- function</span></div>
+<h2>Operators</h2>
+<h3>Aritmetik</h3>
+<div class="code"><span class="fn">print</span>(<span class="num">2</span> ^ <span class="num">10</span>)          <span class="cmt">-- 1024.0 (üs)</span><br><span class="fn">print</span>(<span class="num">15</span> // <span class="num">4</span>)         <span class="cmt">-- 3 (floor division)</span><br><span class="fn">print</span>(<span class="num">10</span> % <span class="num">3</span>)           <span class="cmt">-- 1 (mod)</span></div>
+<h3>Karşılaştırma</h3>
+<div class="code"><span class="fn">print</span>(<span class="num">10</span> == <span class="num">10</span>)         <span class="cmt">-- true</span><br><span class="fn">print</span>(<span class="num">10</span> ~= <span class="num">20</span>)         <span class="cmt">-- true (not equal)</span><br><span class="fn">print</span>(<span class="str">"a"</span> < <span class="str">"b"</span>)        <span class="cmt">-- true (lexicographic)</span></div>
+<h3>Mantıksal</h3>
+<div class="code"><span class="fn">print</span>(<span class="kw">true</span> <span class="kw">and</span> <span class="kw">false</span>)   <span class="cmt">-- false</span><br><span class="fn">print</span>(<span class="kw">true</span> <span class="kw">or</span> <span class="kw">false</span>)    <span class="cmt">-- true</span><br><span class="kw">local</span> name = <span class="kw">nil</span><br><span class="fn">print</span>(name <span class="kw">or</span> <span class="str">"Guest"</span>)</div>
+<h3>String Concatenation</h3>
+<div class="code"><span class="fn">print</span>(<span class="str">"Hello"</span> .. <span class="str">" "</span> .. <span class="str">"World"</span>)</div>
+<h2>Truthy & Falsy</h2>
+<p>Sadece <strong>false</strong> ve <strong>nil</strong> falsy'dir. <strong>0 ve boş string TRUE!</strong></p>
+<div class="code"><span class="kw">if</span> <span class="num">0</span> <span class="kw">then</span> <span class="fn">print</span>(<span class="str">"0 is true"</span>) <span class="kw">end</span>     <span class="cmt">-- prints!</span><br><span class="kw">if</span> <span class="str">""</span> <span class="kw">then</span> <span class="fn">print</span>(<span class="str">"empty str is true"</span>) <span class="kw">end</span></div>
+<a href="02_syntax_variables.html" class="back">← 02 syntax variables</a>
+<a href="04_tables_basics.html" class="next">04 tables basics →</a>
+</div>
+</body>
+</html>

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 8: Lists & Tuples</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #1f0d3a;
+    border: 3px solid #2d1554;
+    border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825; color: #50fa7b; font-family: 'Courier New', monospace;
+    padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554;
+    margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output {
+    background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace;
+    padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7;
+    margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word;
+    font-size: 1.05em; line-height: 1.5;
+  }
+  .container .output::before { content: "\\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>Lesson 8: Lists & Tuples</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2>Lists &mdash; Mutable Ordered Collection</h2>
+<p>A list is an ordered, <strong>mutable</strong> collection of items. You can change, add, and remove items after creation.</p>
+<div class="code">
+fruits = [<span class="str">"apple"</span>, <span class="str">"banana"</span>, <span class="str">"cherry"</span>]
+<span class="fn">print</span>(fruits)
+</div>
+<div class="output">['apple', 'banana', 'cherry']</div>
+
+<h2>Indexing & Slicing</h2>
+<p>Same as strings: index starts at 0, negative index counts from end.</p>
+<div class="code">
+nums = [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>, <span class="num">50</span>]
+<span class="fn">print</span>(nums[<span class="num">0</span>])       <span class="cmt"># first</span>
+<span class="fn">print</span>(nums[-<span class="num">1</span>])      <span class="cmt"># last</span>
+<span class="fn">print</span>(nums[<span class="num">1</span>:<span class="num">4</span>])    <span class="cmt"># index 1 to 3</span>
+<span class="fn">print</span>(nums[::<span class="num">2</span>])     <span class="cmt"># every 2nd element</span>
+<span class="fn">print</span>(nums[::-<span class="num">1</span>])    <span class="cmt"># reversed list</span>
+</div>
+<div class="output">10
+50
+[20, 30, 40]
+[10, 30, 50]
+[50, 40, 30, 20, 10]</div>
+
+<h2>Lists Are Mutable</h2>
+<div class="code">
+nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+nums[<span class="num">0</span>] = <span class="num">99</span>        <span class="cmt"># change element</span>
+<span class="fn">print</span>(nums)
+</div>
+<div class="output">[99, 2, 3]</div>
+
+<h2>List Methods</h2>
+
+<h3>append() &mdash; Add at end</h3>
+<div class="code">
+items = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+items.<span class="fn">append</span>(<span class="num">4</span>)
+<span class="fn">print</span>(items)
+</div>
+<div class="output">[1, 2, 3, 4]</div>
+
+<h3>extend() &mdash; Add multiple items</h3>
+<div class="code">
+a = [<span class="num">1</span>, <span class="num">2</span>]
+a.<span class="fn">extend</span>([<span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>])
+<span class="fn">print</span>(a)
+</div>
+<div class="output">[1, 2, 3, 4, 5]</div>
+
+<h3>insert() &mdash; Insert at position</h3>
+<div class="code">
+items = [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>]
+items.<span class="fn">insert</span>(<span class="num">1</span>, <span class="num">15</span>)   <span class="cmt"># insert 15 at index 1</span>
+<span class="fn">print</span>(items)
+</div>
+<div class="output">[10, 15, 20, 30]</div>
+
+<h3>remove() &mdash; Remove by value (first occurrence)</h3>
+<div class="code">
+items = [<span class="str">"a"</span>, <span class="str">"b"</span>, <span class="str">"c"</span>, <span class="str">"b"</span>]
+items.<span class="fn">remove</span>(<span class="str">"b"</span>)
+<span class="fn">print</span>(items)
+</div>
+<div class="output">['a', 'c', 'b']</div>
+
+<h3>pop() &mdash; Remove by index (default: last)</h3>
+<div class="code">
+items = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>]
+last = items.<span class="fn">pop</span>()       <span class="cmt"># removes and returns last</span>
+<span class="fn">print</span>(last)
+<span class="fn">print</span>(items)
+second = items.<span class="fn">pop</span>(<span class="num">1</span>)   <span class="cmt"># removes index 1</span>
+<span class="fn">print</span>(second)
+<span class="fn">print</span>(items)
+</div>
+<div class="output">4
+[1, 2, 3]
+2
+[1, 3]</div>
+
+<h3>clear() &mdash; Remove all items</h3>
+<div class="code">
+items = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+items.<span class="fn">clear</span>()
+<span class="fn">print</span>(items)
+</div>
+<div class="output">[]</div>
+
+<h3>index() &mdash; Find first index of a value</h3>
+<div class="code">
+colors = [<span class="str">"red"</span>, <span class="str">"green"</span>, <span class="str">"blue"</span>, <span class="str">"green"</span>]
+<span class="fn">print</span>(colors.<span class="fn">index</span>(<span class="str">"green"</span>))
+<span class="fn">print</span>(colors.<span class="fn">index</span>(<span class="str">"green"</span>, <span class="num">2</span>))  <span class="cmt"># search from index 2</span>
+</div>
+<div class="output">1
+3</div>
+
+<h3>count() &mdash; Count occurrences</h3>
+<div class="code">
+nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">2</span>]
+<span class="fn">print</span>(nums.<span class="fn">count</span>(<span class="num">2</span>))
+</div>
+<div class="output">3</div>
+
+<h3>sort() &mdash; Sort in place</h3>
+<div class="code">
+nums = [<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>, <span class="num">1</span>, <span class="num">5</span>, <span class="num">9</span>]
+nums.<span class="fn">sort</span>()
+<span class="fn">print</span>(nums)
+nums.<span class="fn">sort</span>(reverse=<span class="kw">True</span>)
+<span class="fn">print</span>(nums)
+</div>
+<div class="output">[1, 1, 3, 4, 5, 9]
+[9, 5, 4, 3, 1, 1]</div>
+
+<h3>reverse() &mdash; Reverse in place</h3>
+<div class="code">
+items = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>]
+items.<span class="fn">reverse</span>()
+<span class="fn">print</span>(items)
+</div>
+<div class="output">[4, 3, 2, 1]</div>
+
+<h3>copy() &mdash; Shallow copy</h3>
+<div class="code">
+original = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+copied = original.<span class="fn">copy</span>()
+copied.append(<span class="num">4</span>)
+<span class="fn">print</span>(<span class="str">"original:"</span>, original)
+<span class="fn">print</span>(<span class="str">"copied:"</span>, copied)
+</div>
+<div class="output">original: [1, 2, 3]
+copied: [1, 2, 3, 4]</div>
+
+<h2>List Comprehension</h2>
+<p>A concise way to create lists:</p>
+<div class="code">
+squares = [x**<span class="num">2</span> <span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">10</span>)]
+<span class="fn">print</span>(squares)
+evens = [x <span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">20</span>) <span class="kw">if</span> x % <span class="num">2</span> == <span class="num">0</span>]
+<span class="fn">print</span>(evens)
+words = [<span class="str">"hello"</span>, <span class="str">"world"</span>, <span class="str">"python"</span>]
+upper_words = [w.<span class="fn">upper</span>() <span class="kw">for</span> w <span class="kw">in</span> words]
+<span class="fn">print</span>(upper_words)
+</div>
+<div class="output">[0, 1, 4, 9, 16, 25, 36, 49, 64, 81]
+[0, 2, 4, 6, 8, 10, 12, 14, 16, 18]
+['HELLO', 'WORLD', 'PYTHON']</div>
+
+<h2>Nested Lists</h2>
+<p>Lists inside lists create a matrix / 2D structure:</p>
+<div class="code">
+matrix = [[<span class="num">1</span>, <span class="num">2</span>], [<span class="num">3</span>, <span class="num">4</span>], [<span class="num">5</span>, <span class="num">6</span>]]
+<span class="fn">print</span>(matrix[<span class="num">0</span>])       <span class="cmt"># first row</span>
+<span class="fn">print</span>(matrix[<span class="num">0</span>][<span class="num">1</span>])    <span class="cmt"># first row, second column</span>
+<span class="fn">print</span>(matrix[<span class="num">2</span>][<span class="num">0</span>])    <span class="cmt"># third row, first column</span>
+<span class="cmt"># Loop through rows</span>
+<span class="kw">for</span> row <span class="kw">in</span> matrix:
+    <span class="fn">print</span>(row)
+</div>
+<div class="output">[1, 2]
+2
+5
+[1, 2]
+[3, 4]
+[5, 6]</div>
+
+<h2>Tuples &mdash; Immutable Ordered Collection</h2>
+<p>A tuple is like a list but <strong>immutable</strong> &mdash; you cannot change it after creation.</p>
+<div class="code">
+point = (<span class="num">3</span>, <span class="num">7</span>)
+<span class="fn">print</span>(point)
+<span class="fn">print</span>(point[<span class="num">0</span>])
+<span class="cmt"># point[0] = 5   # ❌ TypeError: 'tuple' object does not support item assignment</span>
+</div>
+<div class="output">(3, 7)
+3</div>
+
+<h3>Tuple Unpacking</h3>
+<div class="code">
+point = (<span class="num">10</span>, <span class="num">20</span>)
+x, y = point
+<span class="fn">print</span>(<span class="str">f"x={x}, y={y}"</span>)
+<span class="cmt"># Works with lists too</span>
+a, b, c = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+<span class="fn">print</span>(<span class="str">f"a={a}, b={b}, c={c}"</span>)
+</div>
+<div class="output">x=10, y=20
+a=1, b=2, c=3</div>
+
+<h3>One-item Tuple</h3>
+<div class="code">
+single = (<span class="num">5</span>,)       <span class="cmt"># comma is required!</span>
+not_tuple = (<span class="num">5</span>)
+<span class="fn">print</span>(<span class="fn">type</span>(single))
+<span class="fn">print</span>(<span class="fn">type</span>(not_tuple))
+</div>
+<div class="output"><class 'tuple'>
+<class 'int'></div>
+
+<h3>Tuple Methods</h3>
+<p>Tuples only have two methods: <code>count()</code> and <code>index()</code>.</p>
+<div class="code">
+t = (<span class="num">1</span>, <span class="num">2</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">2</span>)
+<span class="fn">print</span>(t.<span class="fn">count</span>(<span class="num">2</span>))
+<span class="fn">print</span>(t.<span class="fn">index</span>(<span class="num">3</span>))
+</div>
+<div class="output">3
+3</div>
+
+<h2>Tuple vs List: When to Use Which</h2>
+<table>
+<tr><th>Feature</th><th>List</th><th>Tuple</th></tr>
+<tr><td>Mutable?</td><td>✅ Yes</td><td>❌ No</td></tr>
+<tr><td>Syntax</td><td><code>[]</code></td><td><code>()</code></td></tr>
+<tr><td>Speed</td><td>Slower</td><td>Faster</td></tr>
+<tr><td>Methods</td><td>Many</td><td>Only 2</td></tr>
+<tr><td>Use Case</td><td>Data that changes</td><td>Fixed data, dictionary keys</td></tr>
+</table>
+
+<div class="tip">
+💡 Use <strong>list</strong> when you need to add/remove items. Use <strong>tuple</strong> when the data should stay constant &mdash; tuples are also hashable, so they can be used as dictionary keys!
+</div>
+<a href="07_strings.html" class="back">← Strings</a>
+<a href="09_dicts_sets.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">Dictionaries & Sets →</a>
+</div>
+</body>
+</html>

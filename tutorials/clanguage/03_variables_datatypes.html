@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 3: C Variables & Data Types</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #1f0d3a;
+    border: 3px solid #2d1554;
+    border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825;
+    color: #50fa7b;
+    font-family: 'Courier New', monospace;
+    padding: 14px 18px;
+    border-radius: 10px;
+    border: 2px solid #2d1554;
+    margin: 10px 0;
+    overflow-x: auto;
+    font-size: 1.05em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output {
+    background: #150825;
+    color: #f1fa8c;
+    font-family: 'Courier New', monospace;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 2px solid #a855f7;
+    margin: 8px 0 18px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-size: 1.05em;
+    line-height: 1.5;
+  }
+  .container .output::before {
+    content: "\25B6 OUTPUT";
+    display: block;
+    color: #50fa7b;
+    font-size: 0.8em;
+    margin-bottom: 4px;
+  }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #8b5cf6; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #d8b4fe; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+  <h1>Lesson 3: C Variables & Data Types</h1>
+
+  <h2>What is a Variable?</h2>
+  <p>A variable is like a <strong>box</strong> that stores data. You give it a name and a type.</p>
+  <div class="code">
+<span class="cmt">// Syntax: type name = value;</span>
+<span class="type">int</span> age = <span class="num">25</span>;
+<span class="type">float</span> price = <span class="num">9.99</span>;
+<span class="type">double</span> pi = <span class="num">3.1415926535</span>;
+<span class="type">char</span> grade = <span class="str">'A'</span>;
+  </div>
+
+  <h2>Basic Data Types</h2>
+  <table>
+    <tr><th>Type</th><th>Size</th><th>Format</th><th>Example</th></tr>
+    <tr><td><code>int</code></td><td>4 bytes</td><td><code>%d</code></td><td><code>int x = 42;</code></td></tr>
+    <tr><td><code>float</code></td><td>4 bytes</td><td><code>%f</code></td><td><code>float f = 3.14f;</code></td></tr>
+    <tr><td><code>double</code></td><td>8 bytes</td><td><code>%lf</code></td><td><code>double d = 3.1415926535;</code></td></tr>
+    <tr><td><code>char</code></td><td>1 byte</td><td><code>%c</code></td><td><code>char c = 'A';</code></td></tr>
+    <tr><td><code>short</code></td><td>2 bytes</td><td><code>%d</code></td><td><code>short s = 100;</code></td></tr>
+    <tr><td><code>long long</code></td><td>8 bytes</td><td><code>%lld</code></td><td><code>long long big = 99999999999LL;</code></td></tr>
+  </table>
+
+  <h2>Print Variables</h2>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> myNum = <span class="num">15</span>;
+    <span class="type">float</span> myFloat = <span class="num">5.99</span>;
+    <span class="type">char</span> myLetter = <span class="str">'D'</span>;
+    <span class="fn">printf</span>(<span class="str">"Number: %d\n"</span>, myNum);
+    <span class="fn">printf</span>(<span class="str">"Price: $%.2f\n"</span>, myFloat);
+    <span class="fn">printf</span>(<span class="str">"Grade: %c\n"</span>, myLetter);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">
+Number: 15<br>
+Price: $5.99<br>
+Grade: D
+  </div>
+
+  <h2>Change Variable Values</h2>
+  <div class="code">
+<span class="type">int</span> score = <span class="num">10</span>;
+score = <span class="num">20</span>;       <span class="cmt">// Changed! (no 'int' again)</span>
+score = score + <span class="num">5</span>; <span class="cmt">// Now 25</span>
+  </div>
+  <div class="warn">⚠️ When changing, don't write the type again! ✅ <code>score = 20;</code> ❌ <code>int score = 20;</code></div>
+
+  <h2>Variable Naming Rules</h2>
+  <ul>
+    <li>✅ Letters, digits, underscore</li>
+    <li>✅ Must start with letter or underscore</li>
+    <li>✅ Case-sensitive (<code>age</code> ≠ <code>Age</code>)</li>
+    <li>❌ No spaces or <code>@</code>, <code>#</code>, <code>$</code></li>
+    <li>❌ No keywords like <code>int</code>, <code>return</code></li>
+  </ul>
+
+  <h2>Booleans (True / False)</h2>
+  <ul>
+    <li><strong>0</strong> = false</li>
+    <li><strong>1 (or any non-zero)</strong> = true</li>
+  </ul>
+  <div class="code">
+<span class="type">int</span> isWeekend = <span class="num">1</span>;  <span class="cmt">// true</span>
+<span class="kw">if</span> (<span class="num">5</span>) { <span class="fn">printf</span>(<span class="str">"5 is true!\n"</span>); }     <span class="cmt">// Runs</span>
+<span class="kw">if</span> (<span class="num">0</span>) { <span class="fn">printf</span>(<span class="str">"0 is false!\n"</span>); }     <span class="cmt">// Won't run</span>
+  </div>
+
+  <h2>Type Conversion (Casting)</h2>
+  <div class="code">
+<span class="type">int</span> x = <span class="num">5</span>;
+<span class="type">float</span> y = x;            <span class="cmt">// Implicit: 5 → 5.0</span>
+<span class="type">float</span> a = <span class="num">7.8</span>;
+<span class="type">int</span> b = (<span class="type">int</span>)a;           <span class="cmt">// Explicit cast: 7.8 → 7</span>
+<span class="type">int</span> p = <span class="num">15</span>, q = <span class="num">4</span>;
+<span class="type">float</span> r = (<span class="type">float</span>)p / q;  <span class="cmt">// 3.75 (fixes int division)</span>
+  </div>
+
+  <h2>Fixed-Width Integers (<stdint.h>)</h2>
+  <p>Use when you need <strong>exact</strong> byte sizes.</p>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdint.h></span>
+<span class="type">int8_t</span>  small = <span class="num">100</span>;    <span class="cmt">// 8 bits, -128 to 127</span>
+<span class="type">uint8_t</span> byte  = <span class="num">255</span>;    <span class="cmt">// 8 bits, 0 to 255</span>
+<span class="type">int32_t</span> normal = <span class="num">2000000</span>; <span class="cmt">// 32 bits</span>
+  </div>
+
+  <h2>sizeof() — Memory Size</h2>
+  <div class="code">
+<span class="fn">printf</span>(<span class="str">"int = %lu bytes\n"</span>, <span class="kw">sizeof</span>(<span class="type">int</span>));
+<span class="fn">printf</span>(<span class="str">"char = %lu byte\n"</span>, <span class="kw">sizeof</span>(<span class="type">char</span>));
+<span class="fn">printf</span>(<span class="str">"double = %lu bytes\n"</span>, <span class="kw">sizeof</span>(<span class="type">double</span>));
+  </div>
+  <div class="output">
+int = 4 bytes<br>
+char = 1 byte<br>
+double = 8 bytes
+  </div>
+
+  <h3>Real-Life: Shopping Cart</h3>
+  <div class="code">
+<span class="type">float</span> applePrice = <span class="num">2.50</span>;
+<span class="type">int</span> appleCount = <span class="num">3</span>;
+<span class="type">float</span> total = applePrice * appleCount;
+<span class="fn">printf</span>(<span class="str">"Total: $%.2f\n"</span>, total);  <span class="cmt">// $7.50</span>
+  </div>
+
+  <a href="index.html" class="back">← Back</a>
+  <a href="04_constants_operators.html" style="float:right; margin-top:20px; color:#5dade2; text-decoration:none;">Next: Constants & Operators →</a>
+</div>
+</body>
+</html>

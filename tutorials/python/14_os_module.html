@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 14: os Module — Operating System</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>Lesson 14: os Module — Operating System</h1>
+<p><strong>Simple English</strong> &mdash; Python Built-in Library</p>
+
+<p>The <code>os</code> module gives you access to operating system functions: files, folders, paths, environment variables, system info, and more.</p>
+
+<div class="code">
+<span class="pre">import</span> os
+</div>
+
+<h2>1. Current Directory</h2>
+
+<h3>os.getcwd() — Get current working directory</h3>
+<div class="code">
+<span class="fn">print</span>(os.<span class="fn">getcwd</span>())
+</div>
+<div class="output">
+d:\GnuchanOS\tutorials\python
+</div>
+
+<h3>os.chdir(path) — Change current directory</h3>
+<div class="code">
+os.<span class="fn">chdir</span>(<span class="str">".."</span>)
+<span class="fn">print</span>(os.<span class="fn">getcwd</span>())
+os.<span class="fn">chdir</span>(<span class="str">"python"</span>)
+</div>
+<div class="output">
+d:\GnuchanOS\tutorials
+</div>
+<div class="note">
+  💡 <code>os.chdir("..")</code> moves up one directory. Always change back if you need the original location.
+</div>
+
+<h2>2. Listing Directory Contents</h2>
+
+<h3>os.listdir(path='.')</h3>
+<div class="code">
+items = os.<span class="fn">listdir</span>(<span class="str">'.'</span>)
+<span class="fn">print</span>(items[:<span class="num">5</span>])  <span class="cmt"># First 5 entries</span>
+</div>
+<div class="output">
+['01_intro_getstarted.html', '02_syntax_output.html', '03_variables_datatypes.html', '04_operators.html', '05_conditions.html']
+</div>
+
+<h3>with os.scandir() — Modern, faster</h3>
+<div class="code">
+<span class="kw">with</span> os.<span class="fn">scandir</span>(<span class="str">'.'</span>) <span class="kw">as</span> entries:
+    <span class="kw">for</span> entry <span class="kw">in</span> entries:
+        <span class="kw">if</span> entry.<span class="fn">is_file</span>():
+            <span class="fn">print</span>(entry.name, entry.<span class="fn">stat</span>().st_size)
+</div>
+<div class="output">
+01_intro_getstarted.html 2874
+02_syntax_output.html 3127
+03_variables_datatypes.html 3266
+...</div>
+<div class="note">
+  💡 <code>os.scandir()</code> returns <code>DirEntry</code> objects with methods like <code>.is_file()</code>, <code>.is_dir()</code>, <code>.stat()</code> — much faster than <code>os.listdir()</code> for large directories.
+</div>
+
+<h2>3. Folder Operations</h2>
+
+<h3>os.mkdir(path) — Single folder</h3>
+<div class="code">
+<span class="kw">try</span>:
+    os.<span class="fn">mkdir</span>(<span class="str">"temp_folder"</span>)
+    <span class="fn">print</span>(<span class="str">"Created temp_folder"</span>)
+<span class="kw">except</span> <span class="type">FileExistsError</span>:
+    <span class="fn">print</span>(<span class="str">"Already exists"</span>)
+</div>
+<div class="output">
+Created temp_folder
+</div>
+
+<h3>os.makedirs(path) — Nested folders (like mkdir -p)</h3>
+<div class="code">
+os.<span class="fn">makedirs</span>(<span class="str">"a/b/c/d"</span>, exist_ok=<span class="kw">True</span>)
+<span class="fn">print</span>(<span class="str">"Created a/b/c/d"</span>)
+</div>
+<div class="output">
+Created a/b/c/d
+</div>
+
+<h3>os.rmdir(path) — Remove empty folder</h3>
+<div class="code">
+os.<span class="fn">rmdir</span>(<span class="str">"temp_folder"</span>)
+<span class="fn">print</span>(<span class="str">"Deleted temp_folder"</span>)
+</div>
+<div class="output">
+Deleted temp_folder
+</div>
+
+<h3>shutil.rmtree(path) — Remove folder with all contents (⚠️ DANGER!)</h3>
+<div class="code">
+<span class="pre">import</span> shutil
+shutil.<span class="fn">rmtree</span>(<span class="str">"a"</span>)
+<span class="fn">print</span>(<span class="str">"Deleted a and all its subfolders"</span>)
+</div>
+<div class="output">
+Deleted a and all its subfolders
+</div>
+<div class="warn">
+  ⚠️ <code>shutil.rmtree()</code> <strong>permanently deletes</strong> the entire directory tree — there is no recycle bin. Use with extreme caution!
+</div>
+
+<h2>4. File Operations</h2>
+
+<h3>os.rename(src, dst) — Rename or move a file</h3>
+<div class="code">
+<span class="cmt"># Create a dummy file first, then rename it</span>
+<span class="fn">open</span>(<span class="str">"old_name.txt"</span>, <span class="str">"w"</span>).<span class="fn">close</span>()
+os.<span class="fn">rename</span>(<span class="str">"old_name.txt"</span>, <span class="str">"new_name.txt"</span>)
+<span class="fn">print</span>(<span class="str">"Renamed to new_name.txt"</span>)
+</div>
+<div class="output">
+Renamed to new_name.txt
+</div>
+
+<h3>os.replace(src, dst) — Rename/move, overwrites destination</h3>
+<div class="code">
+<span class="fn">open</span>(<span class="str">"target.txt"</span>, <span class="str">"w"</span>).<span class="fn">close</span>()
+os.<span class="fn">replace</span>(<span class="str">"new_name.txt"</span>, <span class="str">"target.txt"</span>)
+<span class="fn">print</span>(<span class="str">"Replaced target.txt"</span>)
+</div>
+<div class="output">
+Replaced target.txt
+</div>
+
+<h3>os.remove(path) — Delete a file (PERMANENT!)</h3>
+<div class="code">
+os.<span class="fn">remove</span>(<span class="str">"target.txt"</span>)
+<span class="fn">print</span>(<span class="str">"Deleted target.txt"</span>)
+</div>
+<div class="output">
+Deleted target.txt
+</div>
+
+<h3>os.removedirs(path) — Remove empty folder chain</h3>
+<div class="code">
+os.<span class="fn">makedirs</span>(<span class="str">"x/y/z"</span>, exist_ok=<span class="kw">True</span>)
+os.<span class="fn">removedirs</span>(<span class="str">"x/y/z"</span>)
+<span class="fn">print</span>(<span class="str">"Removed x/y/z chain"</span>)
+</div>
+<div class="output">
+Removed x/y/z chain
+</div>
+<div class="warn">
+  ⚠️ <code>os.remove()</code> deletes files <strong>permanently</strong> — they do not go to the recycle bin. <code>os.removedirs()</code> only works if all directories are empty.
+</div>
+
+<h2>5. File Information</h2>
+
+<h3>os.path.exists(path)</h3>
+<div class="code">
+<span class="fn">print</span>(os.path.<span class="fn">exists</span>(<span class="str">"13_advanced_topics.html"</span>))
+<span class="fn">print</span>(os.path.<span class="fn">exists</span>(<span class="str">"does_not_exist.txt"</span>))
+</div>
+<div class="output">
+True
+False
+</div>
+
+<h3>os.path.isfile / isdir</h3>
+<div class="code">
+<span class="fn">print</span>(os.path.<span class="fn">isfile</span>(<span class="str">"13_advanced_topics.html"</span>))
+<span class="fn">print</span>(os.path.<span class="fn">isdir</span>(<span class="str">"13_advanced_topics.html"</span>))
+<span class="fn">print</span>(os.path.<span class="fn">isdir</span>(<span class="str">"."</span>))
+</div>
+<div class="output">
+True
+False
+True
+</div>
+
+<h3>os.path.getsize(path) — File size in bytes</h3>
+<div class="code">
+size = os.path.<span class="fn">getsize</span>(<span class="str">"13_advanced_topics.html"</span>)
+<span class="fn">print</span>(<span class="str">f"Size: {size} bytes"</span>)
+</div>
+<div class="output">
+Size: 7268 bytes
+</div>
+
+<h3>os.path.getmtime / getctime — Timestamps</h3>
+<div class="code">
+<span class="pre">import</span> time
+mtime = os.path.<span class="fn">getmtime</span>(<span class="str">"13_advanced_topics.html"</span>)
+ctime = os.path.<span class="fn">getctime</span>(<span class="str">"13_advanced_topics.html"</span>)
+<span class="fn">print</span>(<span class="str">"Modified:"</span>, time.<span class="fn">ctime</span>(mtime))
+<span class="fn">print</span>(<span class="str">"Created:"</span>, time.<span class="fn">ctime</span>(ctime))
+</div>
+<div class="output">
+Modified: Mon Feb 10 10:00:00 2025
+Created: Mon Feb 10 10:00:00 2025
+</div>
+
+<h2>6. Path Operations</h2>
+
+<h3>os.path.join(a, b) — Smart path joining (OS-aware)</h3>
+<div class="code">
+path = os.path.<span class="fn">join</span>(<span class="str">"folder"</span>, <span class="str">"sub"</span>, <span class="str">"file.txt"</span>)
+<span class="fn">print</span>(path)
+</div>
+<div class="output">
+folder\sub\file.txt
+</div>
+<div class="note">
+  💡 On Windows it uses backslashes, on Linux/macOS forward slashes — automatically!
+</div>
+
+<h3>os.path.dirname / basename / splitext</h3>
+<div class="code">
+p = <span class="str">r"d:\projects\data\report.csv"</span>
+<span class="fn">print</span>(<span class="str">"Dir:"</span>, os.path.<span class="fn">dirname</span>(p))
+<span class="fn">print</span>(<span class="str">"File:"</span>, os.path.<span class="fn">basename</span>(p))
+<span class="fn">print</span>(<span class="str">"Split ext:"</span>, os.path.<span class="fn">splitext</span>(p))
+</div>
+<div class="output">
+Dir: d:\projects\data
+File: report.csv
+Split ext: ('d:\\projects\\data\\report', '.csv')
+</div>
+
+<h3>os.path.abspath / realpath</h3>
+<div class="code">
+<span class="fn">print</span>(os.path.<span class="fn">abspath</span>(<span class="str">"14_os_module.html"</span>))
+<span class="fn">print</span>(os.path.<span class="fn">realpath</span>(<span class="str">"14_os_module.html"</span>))
+</div>
+<div class="output">
+d:\GnuchanOS\tutorials\python\14_os_module.html
+d:\GnuchanOS\tutorials\python\14_os_module.html
+</div>
+
+<h3>os.path.split / expanduser</h3>
+<div class="code">
+path = <span class="str">r"d:\data\docs\report.pdf"</span>
+<span class="fn">print</span>(os.path.<span class="fn">split</span>(path))
+<span class="fn">print</span>(os.path.<span class="fn">expanduser</span>(<span class="str">"~"</span>))
+</div>
+<div class="output">
+('d:\\data\\docs', 'report.pdf')
+C:\Users\btw
+</div>
+
+<h2>7. Environment Variables</h2>
+
+<h3>os.environ — Dictionary of all env vars</h3>
+<div class="code">
+<span class="fn">print</span>(os.environ.<span class="fn">get</span>(<span class="str">"PATH"</span>)[:<span class="num">60</span>])  <span class="cmt"># First 60 chars</span>
+</div>
+<div class="output">
+C:\Windows\system32;C:\Windows;C:\Program Files\Python312\Scripts\...
+</div>
+
+<h3>os.environ.get / os.getenv</h3>
+<div class="code">
+home = os.environ.<span class="fn">get</span>(<span class="str">"HOME"</span>, <span class="str">"Not set"</span>)
+user = os.<span class="fn">getenv</span>(<span class="str">"USERNAME"</span>, <span class="str">"Unknown"</span>)
+<span class="fn">print</span>(<span class="str">"Home:"</span>, home)
+<span class="fn">print</span>(<span class="str">"User:"</span>, user)
+</div>
+<div class="output">
+Home: Not set
+User: btw
+</div>
+
+<h3>Setting environment variables</h3>
+<div class="code">
+os.environ[<span class="str">"MY_VAR"</span>] = <span class="str">"hello"</span>
+<span class="fn">print</span>(os.<span class="fn">getenv</span>(<span class="str">"MY_VAR"</span>))
+</div>
+<div class="output">
+hello
+</div>
+<div class="warn">
+  ⚠️ Environment variables set via <code>os.environ</code> only affect the current process — they are <strong>not</strong> permanent system-wide changes.
+</div>
+
+<h2>8. System Information</h2>
+
+<h3>os.name — OS name ('nt' or 'posix')</h3>
+<div class="code">
+<span class="fn">print</span>(os.name)
+</div>
+<div class="output">
+nt
+</div>
+
+<h3>os.cpu_count() — Number of CPU cores</h3>
+<div class="code">
+<span class="fn">print</span>(<span class="str">"CPU cores:"</span>, os.<span class="fn">cpu_count</span>())
+</div>
+<div class="output">
+CPU cores: 8
+</div>
+
+<h3>os.uname() — Detailed system info (Unix only)</h3>
+<div class="code">
+<span class="cmt"># On Linux/macOS:</span>
+<span class="cmt"># print(os.uname())</span>
+<span class="fn">print</span>(<span class="str">"Only available on Unix systems"</span>)
+</div>
+<div class="output">
+Only available on Unix systems
+</div>
+
+<h3>os.getlogin() — Current user name</h3>
+<div class="code">
+<span class="fn">print</span>(<span class="str">"Logged in as:"</span>, os.<span class="fn">getlogin</span>())
+</div>
+<div class="output">
+Logged in as: btw
+</div>
+
+<h2>9. Directory Walking</h2>
+
+<h3>os.walk(top) — Recursively traverse directories</h3>
+<div class="code">
+<span class="kw">for</span> dirpath, dirnames, filenames <span class="kw">in</span> os.<span class="fn">walk</span>(<span class="str">"."</span>):
+    <span class="fn">print</span>(<span class="str">"Dir:"</span>, dirpath)
+    <span class="fn">print</span>(<span class="str">"  Files:"</span>, filenames[:<span class="num">3</span>])
+    <span class="kw">break</span>  <span class="cmt"># Just show the first level</span>
+</div>
+<div class="output">
+Dir: .
+  Files: ['01_intro_getstarted.html', '02_syntax_output.html', '03_variables_datatypes.html', ...]
+</div>
+<div class="note">
+  💡 <code>os.walk()</code> is perfect for recursively processing all files in a directory tree. Modifying <code>dirnames</code> in-place lets you prune the walk.
+</div>
+
+<h2>10. Running Commands (Legacy)</h2>
+
+<h3>os.system('cmd') — Run command, no output capture</h3>
+<div class="code">
+exit_code = os.<span class="fn">system</span>(<span class="str">"echo Hello from cmd"</span>)
+<span class="fn">print</span>(<span class="str">"Exit code:"</span>, exit_code)
+</div>
+<div class="output">
+Hello from cmd
+Exit code: 0
+</div>
+
+<h3>os.popen('cmd').read() — Capture output</h3>
+<div class="code">
+result = os.<span class="fn">popen</span>(<span class="str">"echo Hello from popen"</span>).<span class="fn">read</span>()
+<span class="fn">print</span>(result)
+</div>
+<div class="output">
+Hello from popen
+</div>
+
+<div class="note">
+  💡 For modern Python, use <code>subprocess.run()</code> instead of <code>os.system()</code> or <code>os.popen()</code>.
+</div>
+
+<h2>11. shutil — Higher-Level File Operations</h2>
+
+<div class="code">
+<span class="pre">import</span> shutil
+</div>
+
+<h3>shutil.copy(src, dst) — Copy a file</h3>
+<div class="code">
+<span class="cmt"># Create a source file first</span>
+<span class="fn">open</span>(<span class="str">"source.txt"</span>, <span class="str">"w"</span>).<span class="fn">write</span>(<span class="str">"Hello\n"</span>)
+shutil.<span class="fn">copy</span>(<span class="str">"source.txt"</span>, <span class="str">"dest.txt"</span>)
+<span class="fn">print</span>(<span class="str">"Copied"</span>)
+os.<span class="fn">remove</span>(<span class="str">"source.txt"</span>)
+os.<span class="fn">remove</span>(<span class="str">"dest.txt"</span>)
+</div>
+<div class="output">
+Copied
+</div>
+
+<h3>shutil.copytree(src, dst) — Copy entire directory tree</h3>
+<div class="code">
+os.<span class="fn">makedirs</span>(<span class="str">"backup/original"</span>, exist_ok=<span class="kw">True</span>)
+<span class="fn">open</span>(<span class="str">"backup/original/readme.txt"</span>, <span class="str">"w"</span>).<span class="fn">close</span>()
+shutil.<span class="fn">copytree</span>(<span class="str">"backup"</span>, <span class="str">"backup_copy"</span>)
+<span class="fn">print</span>(<span class="str">"Copied backup to backup_copy"</span>)
+shutil.<span class="fn">rmtree</span>(<span class="str">"backup"</span>)
+shutil.<span class="fn">rmtree</span>(<span class="str">"backup_copy"</span>)
+</div>
+<div class="output">
+Copied backup to backup_copy
+</div>
+
+<h3>shutil.move(src, dst) — Move/rename</h3>
+<div class="code">
+<span class="fn">open</span>(<span class="str">"move_me.txt"</span>, <span class="str">"w"</span>).<span class="fn">close</span>()
+shutil.<span class="fn">move</span>(<span class="str">"move_me.txt"</span>, <span class="str">"moved.txt"</span>)
+<span class="fn">print</span>(<span class="str">"Moved"</span>)
+os.<span class="fn">remove</span>(<span class="str">"moved.txt"</span>)
+</div>
+<div class="output">
+Moved
+</div>
+
+<h3>shutil.rmtree(path) — Delete directory tree (already covered)</h3>
+
+<h3>shutil.disk_usage(path) — Disk usage statistics</h3>
+<div class="code">
+usage = shutil.<span class="fn">disk_usage</span>(<span class="str">"."</span>)
+<span class="fn">print</span>(<span class="str">f"Total: {usage.total // (1024**3)} GB"</span>)
+<span class="fn">print</span>(<span class="str">f"Used: {usage.used // (1024**3)} GB"</span>)
+<span class="fn">print</span>(<span class="str">f"Free: {usage.free // (1024**3)} GB"</span>)
+</div>
+<div class="output">
+Total: 256 GB
+Used: 182 GB
+Free: 74 GB
+</div>
+
+<h2>Complete os Module Function Reference</h2>
+<table>
+  <tr><th>Function</th><th>Description</th></tr>
+  <tr><td><code>os.getcwd()</code></td><td>Current working directory</td></tr>
+  <tr><td><code>os.chdir(path)</code></td><td>Change directory</td></tr>
+  <tr><td><code>os.listdir(path)</code></td><td>List directory entries</td></tr>
+  <tr><td><code>os.scandir(path)</code></td><td>Modern directory iterator</td></tr>
+  <tr><td><code>os.mkdir(path)</code></td><td>Create single folder</td></tr>
+  <tr><td><code>os.makedirs(path)</code></td><td>Create nested folders</td></tr>
+  <tr><td><code>os.rmdir(path)</code></td><td>Remove empty folder</td></tr>
+  <tr><td><code>os.rename(src, dst)</code></td><td>Rename / move file</td></tr>
+  <tr><td><code>os.replace(src, dst)</code></td><td>Replace destination file</td></tr>
+  <tr><td><code>os.remove(path)</code></td><td>Delete file permanently</td></tr>
+  <tr><td><code>os.removedirs(path)</code></td><td>Remove empty folder chain</td></tr>
+  <tr><td><code>os.path.exists(path)</code></td><td>Check if path exists</td></tr>
+  <tr><td><code>os.path.isfile(path)</code></td><td>Check if file</td></tr>
+  <tr><td><code>os.path.isdir(path)</code></td><td>Check if directory</td></tr>
+  <tr><td><code>os.path.getsize(path)</code></td><td>File size in bytes</td></tr>
+  <tr><td><code>os.path.getmtime(path)</code></td><td>Last modified time</td></tr>
+  <tr><td><code>os.path.getctime(path)</code></td><td>Creation time</td></tr>
+  <tr><td><code>os.path.join(a, b)</code></td><td>Smart path joining</td></tr>
+  <tr><td><code>os.path.dirname(path)</code></td><td>Directory part</td></tr>
+  <tr><td><code>os.path.basename(path)</code></td><td>File name part</td></tr>
+  <tr><td><code>os.path.splitext(path)</code></td><td>Split extension</td></tr>
+  <tr><td><code>os.path.abspath(path)</code></td><td>Absolute path</td></tr>
+  <tr><td><code>os.path.realpath(path)</code></td><td>Resolve symlinks</td></tr>
+  <tr><td><code>os.path.split(path)</code></td><td>Split into (dir, file)</td></tr>
+  <tr><td><code>os.path.expanduser('~')</code></td><td>Home directory</td></tr>
+  <tr><td><code>os.environ</code></td><td>Environment variables dict</td></tr>
+  <tr><td><code>os.getenv(key)</code></td><td>Get env variable</td></tr>
+  <tr><td><code>os.name</code></td><td>OS name ('nt' / 'posix')</td></tr>
+  <tr><td><code>os.cpu_count()</code></td><td>CPU core count</td></tr>
+  <tr><td><code>os.getlogin()</code></td><td>Current user name</td></tr>
+  <tr><td><code>os.walk(top)</code></td><td>Recursive directory walk</td></tr>
+  <tr><td><code>os.system(cmd)</code></td><td>Run command (no output)</td></tr>
+  <tr><td><code>os.popen(cmd)</code></td><td>Run command (with output)</td></tr>
+  <tr><td><code>shutil.copy(src, dst)</code></td><td>Copy file</td></tr>
+  <tr><td><code>shutil.copytree(src, dst)</code></td><td>Copy directory tree</td></tr>
+  <tr><td><code>shutil.move(src, dst)</code></td><td>Move file/directory</td></tr>
+  <tr><td><code>shutil.rmtree(path)</code></td><td>Delete directory tree</td></tr>
+  <tr><td><code>shutil.disk_usage(path)</code></td><td>Disk usage statistics</td></tr>
+</table>
+
+<p>This covers the most important functions of the <code>os</code> and <code>shutil</code> modules. They are essential for file system automation!</p>
+
+<a href="13_advanced_topics.html" class="back">← Advanced Topics</a>
+</div>
+</body>
+</html>

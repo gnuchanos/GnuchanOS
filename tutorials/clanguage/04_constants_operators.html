@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 4: C Constants & Operators</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #1f0d3a;
+    border: 3px solid #2d1554;
+    border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825;
+    color: #50fa7b;
+    font-family: 'Courier New', monospace;
+    padding: 14px 18px;
+    border-radius: 10px;
+    border: 2px solid #2d1554;
+    margin: 10px 0;
+    overflow-x: auto;
+    font-size: 1.05em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output {
+    background: #150825;
+    color: #f1fa8c;
+    font-family: 'Courier New', monospace;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 2px solid #a855f7;
+    margin: 8px 0 18px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-size: 1.05em;
+    line-height: 1.5;
+  }
+  .container .output::before {
+    content: "\25B6 OUTPUT";
+    display: block;
+    color: #50fa7b;
+    font-size: 0.8em;
+    margin-bottom: 4px;
+  }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #8b5cf6; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #d8b4fe; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+</style>
+<link rel="stylesheet" href="tutorial.css">
+<link rel="stylesheet" href="style.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #150825; color: #eee; padding: 20px; }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 4px solid #2d1554; border-radius: 16px; padding: 30px; }
+  h1 { color: #a855f7; font-size: 2.2em; margin-bottom: 10px; }
+  h2 { color: #c084fc; font-size: 1.5em; margin: 25px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 5px; }
+  h3 { color: #d8b4fe; margin: 15px 0 8px; }
+  p, li { line-height: 1.6; color: #ccc; font-size: 1.05em; }
+  ul, ol { padding-left: 25px; margin: 10px 0; } li { margin: 5px 0; }
+  .code {
+    background: #150825; color: #50fa7b; font-family: 'Courier New', monospace;
+    padding: 15px 20px; border-radius: 10px; border: 2px solid #2d1554;
+    margin: 12px 0; overflow-x: auto; overflow-wrap: break-word; white-space: pre-wrap; font-size: 0.95em; line-height: 1.4; overflow-wrap: break-word; white-space: pre-wrap;
+  }
+  .code .cmt { color: #6272a4; overflow-wrap: break-word; } .code .kw { color: #ff79c6; } .code .fn { color: #50fa7b; }
+  .code .str { color: #f1fa8c; overflow-wrap: break-word; } .code .num { color: #bd93f9; } .code .pre { color: #8be9fd; }
+  .code .type { color: #66d9ef; overflow-wrap: break-word; }
+  .output {
+    background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace;
+    padding: 12px 18px; border-radius: 8px; border: 2px solid #a855f7;
+    margin: 10px 0 20px;
+  }
+  .output::before { content: "▶ OUTPUT"; display: block; color: #50fa7b; font-size: 0.85em; margin-bottom: 5px; }
+  .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 12px 16px; margin: 12px 0; border-radius: 6px; }
+  .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 12px 16px; margin: 12px 0; border-radius: 6px; }
+  .tip { background: #1a1030; border-left: 4px solid #8b5cf6; padding: 12px 16px; margin: 12px 0; border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th { background: #2d1554; color: #c084fc; padding: 8px 12px; text-align: left; border: 1px solid #3b1d6e; }
+  td { padding: 8px 12px; border: 1px solid #3b1d6e; color: #ccc; word-break: break-word; }
+  .back { display: inline-block; margin-top: 20px; color: #d8b4fe; text-decoration: none; }
+  .back:hover { color: #a855f7; }
+</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+  <h1>Lesson 4: C Constants & Operators</h1>
+
+  <h2>Constants</h2>
+  <p>A <strong>constant</strong> is a variable whose value <strong>cannot change</strong>. Use the <code>const</code> keyword.</p>
+  <div class="code">
+<span class="kw">const</span> <span class="type">float</span> PI = <span class="num">3.14159</span>;
+<span class="kw">const</span> <span class="type">int</span> MAX_USERS = <span class="num">100</span>;
+<span class="cmt">// PI = 3.0;  // ERROR! Can't change a constant</span>
+  </div>
+  <div class="tip">
+    <strong>🔥 Tip:</strong> Use ALL_CAPS for constant names (<code>TAX_RATE</code>, <code>MAX_SIZE</code>). Easy to spot!
+  </div>
+
+  <h3>Real-Life: Tax Calculator</h3>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="kw">const</span> <span class="type">float</span> TAX = <span class="num">0.18</span>;
+    <span class="type">float</span> price = <span class="num">250.00</span>;
+    <span class="type">float</span> total = price + (price * TAX);
+    <span class="fn">printf</span>(<span class="str">"Total with tax: $%.2f\n"</span>, total);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">Total with tax: $295.00</div>
+
+  <h2>Operators</h2>
+  <p>Operators are symbols that <strong>do something</strong> with values.</p>
+
+  <h3>Arithmetic Operators</h3>
+  <table>
+    <tr><th>Op</th><th>Name</th><th>Example</th><th>Result</th></tr>
+    <tr><td><code>+</code></td><td>Addition</td><td><code>10 + 3</code></td><td>13</td></tr>
+    <tr><td><code>-</code></td><td>Subtraction</td><td><code>10 - 3</code></td><td>7</td></tr>
+    <tr><td><code>*</code></td><td>Multiplication</td><td><code>10 * 3</code></td><td>30</td></tr>
+    <tr><td><code>/</code></td><td>Division</td><td><code>10 / 3</code></td><td>3 (int!)</td></tr>
+    <tr><td><code>%</code></td><td>Remainder</td><td><code>10 % 3</code></td><td>1</td></tr>
+    <tr><td><code>++</code></td><td>Increment</td><td><code>++x</code></td><td>x+1</td></tr>
+    <tr><td><code>--</code></td><td>Decrement</td><td><code>--x</code></td><td>x-1</td></tr>
+  </table>
+
+  <div class="warn">
+    <strong>⚠️ Integer division trap!</strong> <code>15 / 4 = 3</code> (not 3.75!). Both are <code>int</code> so C drops the decimal. Use <code>float</code> to fix.
+  </div>
+
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> a = <span class="num">15</span>, b = <span class="num">4</span>;
+    <span class="fn">printf</span>(<span class="str">"a + b = %d\n"</span>, a + b);
+    <span class="fn">printf</span>(<span class="str">"a / b = %d (int division!)\n"</span>, a / b);
+    <span class="type">float</span> fa = <span class="num">15.0</span>, fb = <span class="num">4.0</span>;
+    <span class="fn">printf</span>(<span class="str">"fa / fb = %.2f (float division)\n"</span>, fa / fb);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">
+a + b = 19<br>
+a / b = 3 (int division!)<br>
+fa / fb = 3.75 (float division)
+  </div>
+
+  <h3>Assignment Operators</h3>
+  <table>
+    <tr><th>Op</th><th>Example</th><th>Same as</th></tr>
+    <tr><td><code>=</code></td><td><code>x = 5</code></td><td>x = 5</td></tr>
+    <tr><td><code>+=</code></td><td><code>x += 3</code></td><td>x = x + 3</td></tr>
+    <tr><td><code>-=</code></td><td><code>x -= 3</code></td><td>x = x - 3</td></tr>
+    <tr><td><code>*=</code></td><td><code>x *= 3</code></td><td>x = x * 3</td></tr>
+    <tr><td><code>/=</code></td><td><code>x /= 3</code></td><td>x = x / 3</td></tr>
+  </table>
+
+  <h3>Comparison Operators (result: 1 = true, 0 = false)</h3>
+  <table>
+    <tr><th>Op</th><th>Meaning</th><th>Example</th></tr>
+    <tr><td><code>==</code></td><td>Equal to</td><td><code>5 == 5</code> → 1</td></tr>
+    <tr><td><code>!=</code></td><td>Not equal</td><td><code>5 != 3</code> → 1</td></tr>
+    <tr><td><code>></code></td><td>Greater than</td><td><code>5 > 3</code> → 1</td></tr>
+    <tr><td><code><</code></td><td>Less than</td><td><code>5 < 3</code> → 0</td></tr>
+    <tr><td><code>>=</code></td><td>Greater or equal</td><td><code>5 >= 5</code> → 1</td></tr>
+    <tr><td><code><=</code></td><td>Less or equal</td><td><code>4 <= 5</code> → 1</td></tr>
+  </table>
+
+  <h3>Logical Operators</h3>
+  <table>
+    <tr><th>Op</th><th>Meaning</th><th>Example</th></tr>
+    <tr><td><code>&&</code></td><td>AND (both true)</td><td><code>(5>3) && (2>1)</code> → 1</td></tr>
+    <tr><td><code>||</code></td><td>OR (one true)</td><td><code>(5>3) || (2<1)</code> → 1</td></tr>
+    <tr><td><code>!</code></td><td>NOT (flip)</td><td><code>!(5>3)</code> → 0</td></tr>
+  </table>
+
+  <h3>Real-Life: Roller Coaster Check</h3>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> age = <span class="num">14</span>; <span class="type">float</span> h = <span class="num">1.55</span>;
+    <span class="type">int</span> canRide = (age >= <span class="num">12</span>) && (h >= <span class="num">1.40</span>);
+    <span class="fn">printf</span>(<span class="str">"Can ride? %s\n"</span>, canRide ? <span class="str">"Yes"</span> : <span class="str">"No"</span>);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">Can ride? Yes</div>
+
+  <a href="index.html" class="back">← Back</a>
+  <a href="05_conditions.html" style="float:right; margin-top:20px; color:#5dade2;">Next: Conditions →</a>
+</div>
+</body>
+</html>

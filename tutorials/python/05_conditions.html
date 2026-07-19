@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 5: Conditions (if/elif/else)</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>Lesson 5: Conditions (if/elif/else)</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2>The <code>if</code> Statement</h2>
+<p>An <code>if</code> statement runs a block of code only when a condition is <code>True</code>.</p>
+<div class="code">
+x = <span class="num">10</span>
+<span class="kw">if</span> x > <span class="num">0</span>:
+    <span class="fn">print</span>(<span class="str">"x is positive"</span>)
+</div>
+<div class="output">
+x is positive
+</div>
+
+<div class="warn">
+  ⚠️ <strong>Don't forget the colon (:) at the end of the condition!</strong> Everything inside the <code>if</code> block must be indented (4 spaces).
+</div>
+
+<h2><code>elif</code> — Multiple Conditions</h2>
+<p>Check several conditions in order. The first <code>True</code> condition runs its block; the rest are skipped.</p>
+<div class="code">
+score = <span class="num">85</span>
+<span class="kw">if</span> score >= <span class="num">90</span>:
+    <span class="fn">print</span>(<span class="str">"Grade: A"</span>)
+<span class="kw">elif</span> score >= <span class="num">80</span>:
+    <span class="fn">print</span>(<span class="str">"Grade: B"</span>)
+<span class="kw">elif</span> score >= <span class="num">70</span>:
+    <span class="fn">print</span>(<span class="str">"Grade: C"</span>)
+<span class="kw">else</span>:
+    <span class="fn">print</span>(<span class="str">"Grade: F"</span>)
+</div>
+<div class="output">
+Grade: B
+</div>
+
+<h2><code>else</code> — Catch All</h2>
+<p><code>else</code> runs when no condition is <code>True</code>.</p>
+<div class="code">
+age = <span class="num">17</span>
+<span class="kw">if</span> age >= <span class="num">18</span>:
+    <span class="fn">print</span>(<span class="str">"You can vote"</span>)
+<span class="kw">else</span>:
+    <span class="fn">print</span>(<span class="str">"Too young to vote"</span>)
+</div>
+<div class="output">
+Too young to vote
+</div>
+
+<h2>Nested <code>if</code> (İç İçe)</h2>
+<p>You can put an <code>if</code> inside another <code>if</code>.</p>
+<div class="code">
+num = <span class="num">15</span>
+<span class="kw">if</span> num > <span class="num">0</span>:
+    <span class="fn">print</span>(<span class="str">"Positive number"</span>)
+    <span class="kw">if</span> num % <span class="num">2</span> == <span class="num">0</span>:
+        <span class="fn">print</span>(<span class="str">"and even"</span>)
+    <span class="kw">else</span>:
+        <span class="fn">print</span>(<span class="str">"and odd"</span>)
+<span class="kw">else</span>:
+    <span class="fn">print</span>(<span class="str">"Non-positive"</span>)
+</div>
+<div class="output">
+Positive number
+and odd
+</div>
+
+<h2>Ternary Operator (Conditional Expression)</h2>
+<p>A short way to write <code>if-else</code> in one line: <code>x if condition else y</code>.</p>
+<div class="code">
+age = <span class="num">20</span>
+status = <span class="str">"Adult"</span> <span class="kw">if</span> age >= <span class="num">18</span> <span class="kw">else</span> <span class="str">"Minor"</span>
+<span class="fn">print</span>(status)
+
+num = <span class="num">7</span>
+result = <span class="str">"Even"</span> <span class="kw">if</span> num % <span class="num">2</span> == <span class="num">0</span> <span class="kw">else</span> <span class="str">"Odd"</span>
+<span class="fn">print</span>(<span class="str">f"{num} is {result}"</span>)
+</div>
+<div class="output">
+Adult
+7 is Odd
+</div>
+
+<h2>Truthy & Falsy Values</h2>
+<p>In Python, some values are considered <code>False</code> in a condition <strong>without being explicitly <code>False</code></strong>. These are called <strong>falsy</strong> values.</p>
+<table>
+  <tr><th>Falsy</th><th>Truthy</th></tr>
+  <tr><td><code>0</code>, <code>0.0</code></td><td>Any non-zero number</td></tr>
+  <tr><td><code>""</code> (empty string)</td><td>Any non-empty string</td></tr>
+  <tr><td><code>[]</code>, <code>()</code>, <code>{}</code> (empty collections)</td><td>Non-empty collections</td></tr>
+  <tr><td><code>None</code></td><td>Everything else</td></tr>
+  <tr><td><code>False</code></td><td><code>True</code></td></tr>
+</table>
+<div class="code">
+<span class="kw">if</span> <span class="num">0</span>:
+    <span class="fn">print</span>(<span class="str">"Won't print — 0 is falsy"</span>)
+
+<span class="kw">if</span> <span class="str">"hello"</span>:
+    <span class="fn">print</span>(<span class="str">"Will print — non-empty string is truthy"</span>)
+
+data = []
+<span class="kw">if not</span> data:
+    <span class="fn">print</span>(<span class="str">"Empty list — falsy"</span>)
+
+value = <span class="kw">None</span>
+<span class="kw">if</span> value <span class="kw">is</span> <span class="kw">None</span>:
+    <span class="fn">print</span>(<span class="str">"value is None"</span>)
+</div>
+<div class="output">
+Will print — non-empty string is truthy
+Empty list — falsy
+value is None
+</div>
+
+<div class="note">
+  💡 Use <code>if x:</code> to check if a value is "truthy" (non-zero, non-empty, not None). Use <code>if not x:</code> to check if it's "falsy".
+</div>
+
+<h2>Short-Circuit with <code>and</code> / <code>or</code></h2>
+<p>Python stops evaluating as soon as the result is determined. Use this for concise condition chains.</p>
+<div class="code">
+user = <span class="str">"Alice"</span>
+password = <span class="str">"secret"</span>
+
+<span class="cmt"># 'and' short-circuits on first False</span>
+<span class="kw">if</span> user <span class="kw">and</span> password:
+    <span class="fn">print</span>(<span class="str">"Both user and password exist"</span>)
+
+<span class="cmt"># 'or' short-circuits on first True</span>
+name = <span class="str">""</span>
+display = name <span class="kw">or</span> <span class="str">"Guest"</span>
+<span class="fn">print</span>(<span class="str">f"Hello, {display}"</span>)
+</div>
+<div class="output">
+Both user and password exist
+Hello, Guest
+</div>
+
+<h2><code>match-case</code> (Python 3.10+)</h2>
+<p>A cleaner alternative to many <code>elif</code> branches. Similar to <code>switch</code> in other languages.</p>
+<div class="code">
+command = <span class="str">"start"</span>
+
+<span class="kw">match</span> command:
+    <span class="kw">case</span> <span class="str">"start"</span>:
+        <span class="fn">print</span>(<span class="str">"Starting..."</span>)
+    <span class="kw">case</span> <span class="str">"stop"</span>:
+        <span class="fn">print</span>(<span class="str">"Stopping..."</span>)
+    <span class="kw">case</span> <span class="str">"restart"</span>:
+        <span class="fn">print</span>(<span class="str">"Restarting..."</span>)
+    <span class="kw">case</span> _:
+        <span class="fn">print</span>(<span class="str">"Unknown command"</span>)
+
+<span class="cmt"># You can also match patterns with values</span>
+point = (<span class="num">0</span>, <span class="num">5</span>)
+<span class="kw">match</span> point:
+    <span class="kw">case</span> (<span class="num">0</span>, y):
+        <span class="fn">print</span>(<span class="str">f"On the Y axis at {y}"</span>)
+    <span class="kw">case</span> (x, <span class="num">0</span>):
+        <span class="fn">print</span>(<span class="str">f"On the X axis at {x}"</span>)
+    <span class="kw">case</span> (x, y):
+        <span class="fn">print</span>(<span class="str">f"At ({x}, {y})"</span>)
+</div>
+<div class="output">
+Starting...
+On the Y axis at 5
+</div>
+
+<h2><code>pass</code> — Empty Block</h2>
+<p>If you need an <code>if</code> or <code>else</code> block that does nothing (syntax placeholder), use <code>pass</code>.</p>
+<div class="code">
+x = <span class="num">42</span>
+<span class="kw">if</span> x > <span class="num">100</span>:
+    <span class="kw">pass</span>  <span class="cmt"># TODO: handle this case later</span>
+<span class="kw">else</span>:
+    <span class="fn">print</span>(<span class="str">f"x is {x}"</span>)
+</div>
+<div class="output">
+x is 42
+</div>
+
+<h2>Putting It All Together</h2>
+<div class="code">
+temperature = <span class="num">30</span>
+weather = <span class="str">"sunny"</span>
+
+<span class="kw">if</span> temperature > <span class="num">25</span> <span class="kw">and</span> weather == <span class="str">"sunny"</span>:
+    <span class="fn">print</span>(<span class="str">"It's a hot sunny day! 🏖️"</span>)
+<span class="kw">elif</span> temperature > <span class="num">15</span>:
+    <span class="fn">print</span>(<span class="str">"Pleasant weather"</span>)
+<span class="kw">else</span>:
+    <span class="fn">print</span>(<span class="str">"Better stay inside"</span>)
+
+<span class="cmt"># Ternary example</span>
+activity = <span class="str">"go out"</span> <span class="kw">if</span> temperature > <span class="num">20</span> <span class="kw">else</span> <span class="str">"stay home"</span>
+<span class="fn">print</span>(<span class="str">f"Suggestion: {activity}"</span>)
+</div>
+<div class="output">
+It's a hot sunny day! 🏖️
+Suggestion: go out
+</div>
+
+<a href="04_operators.html" class="back">← Operators</a>
+<a href="06_loops.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">Loops →</a>
+</div>
+</body>
+</html>

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 10: Functions</title>
+<link rel="stylesheet" href="tutorial.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Lesson 10: Functions</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2>Defining a Function (def)</h2>
+<p>A function is a block of code that runs only when it is called. In Python we use <strong>def</strong> to define a function.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">greet</span>():
+    <span class="fn">print</span>(<span class="str">"Hello, World!"</span>)
+
+<span class="fn">greet</span>()</div>
+<div class="output">Hello, World!</div>
+
+<h2>Parameters vs Arguments</h2>
+<p>Parameters are the variables listed inside the parentheses in the function definition. Arguments are the values you send into the function when you call it.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">greet</span>(name):  <span class="cmt"># name is a parameter</span>
+    <span class="fn">print</span>(<span class="str">f"Hello, {name}!"</span>)
+
+<span class="fn">greet</span>(<span class="str">"Alice"</span>)  <span class="cmt"># "Alice" is an argument</span></div>
+<div class="output">Hello, Alice!</div>
+
+<h2>Return Statement</h2>
+<p>Use <strong>return</strong> to send a value back from a function. Without return, the function returns <strong>None</strong>.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">add</span>(a, b):
+    <span class="kw">return</span> a + b
+
+result = <span class="fn">add</span>(<span class="num">5</span>, <span class="num">3</span>)
+<span class="fn">print</span>(result)
+
+<span class="kw">def</span> <span class="fn">no_return</span>():
+    <span class="fn">print</span>(<span class="str">"This function returns None"</span>)
+
+<span class="fn">print</span>(<span class="fn">no_return</span>())</div>
+<div class="output">8
+This function returns None
+None</div>
+
+<h2>Default Parameters</h2>
+<p>You can give a parameter a default value. If no argument is passed, the default is used.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">greet</span>(name=<span class="str">"Guest"</span>):
+    <span class="fn">print</span>(<span class="str">f"Hello, {name}!"</span>)
+
+<span class="fn">greet</span>()
+<span class="fn">greet</span>(<span class="str">"Bob"</span>)</div>
+<div class="output">Hello, Guest!
+Hello, Bob!</div>
+
+<h2>Keyword Arguments</h2>
+<p>When calling a function, you can specify arguments by their parameter name. This lets you pass them in any order.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">display</span>(name, age):
+    <span class="fn">print</span>(<span class="str">f"{name} is {age} years old"</span>)
+
+<span class="fn">display</span>(age=<span class="num">25</span>, name=<span class="str">"Alice"</span>)  <span class="cmt"># keyword arguments</span></div>
+<div class="output">Alice is 25 years old</div>
+
+<h2>*args – Variable Positional Arguments</h2>
+<p><strong>*args</strong> allows a function to accept any number of positional arguments. They become a tuple inside the function.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">sum_all</span>(*args):
+    <span class="kw">return</span> <span class="fn">sum</span>(args)
+
+<span class="fn">print</span>(<span class="fn">sum_all</span>(<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>))
+<span class="fn">print</span>(<span class="fn">sum_all</span>(<span class="num">10</span>, <span class="num">20</span>))</div>
+<div class="output">10
+30</div>
+
+<h2>**kwargs – Variable Keyword Arguments</h2>
+<p><strong>**kwargs</strong> allows a function to accept any number of keyword arguments. They become a dict inside the function.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">print_info</span>(**kwargs):
+    <span class="kw">for</span> key, value <span class="kw">in</span> <span class="fn">kwargs</span>.<span class="fn">items</span>():
+        <span class="fn">print</span>(<span class="str">f"{key}: {value}"</span>)
+
+<span class="fn">print_info</span>(name=<span class="str">"Alice"</span>, age=<span class="num">30</span>, city=<span class="str">"London"</span>)</div>
+<div class="output">name: Alice
+age: 30
+city: London</div>
+
+<h2>Lambda Functions</h2>
+<p>A <strong>lambda</strong> is a small anonymous function defined in one line. It can take any number of arguments but has only one expression.</p>
+<div class="code"><span class="cmt"># Normal function</span>
+<span class="kw">def</span> <span class="fn">square</span>(x):
+    <span class="kw">return</span> x ** <span class="num">2</span>
+
+<span class="cmt"># Lambda equivalent</span>
+square_lambda = <span class="kw">lambda</span> x: x ** <span class="num">2</span>
+
+<span class="fn">print</span>(<span class="fn">square</span>(<span class="num">5</span>))
+<span class="fn">print</span>(square_lambda(<span class="num">5</span>))
+
+<span class="cmt"># Using lambda with map()</span>
+numbers = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>]
+squared = <span class="fn">list</span>(<span class="fn">map</span>(<span class="kw">lambda</span> x: x**<span class="num">2</span>, numbers))
+<span class="fn">print</span>(squared)</div>
+<div class="output">25
+25
+[1, 4, 9, 16]</div>
+
+<h2>Scope – LEGB Rule</h2>
+<p>Python looks for variables in this order: <strong>L</strong>ocal → <strong>E</strong>nclosing → <strong>G</strong>lobal → <strong>B</strong>uilt-in.</p>
+<div class="code">x = <span class="str">"global"</span>  <span class="cmt"># Global scope</span>
+
+<span class="kw">def</span> <span class="fn">outer</span>():
+    x = <span class="str">"enclosing"</span>  <span class="cmt"># Enclosing scope</span>
+    
+    <span class="kw">def</span> <span class="fn">inner</span>():
+        x = <span class="str">"local"</span>  <span class="cmt"># Local scope</span>
+        <span class="fn">print</span>(<span class="str">"Inner:"</span>, x)
+    
+    <span class="fn">inner</span>()
+    <span class="fn">print</span>(<span class="str">"Outer:"</span>, x)
+
+<span class="fn">outer</span>()
+<span class="fn">print</span>(<span class="str">"Global:"</span>, x)</div>
+<div class="output">Inner: local
+Outer: enclosing
+Global: global</div>
+
+<h2>Global Keyword</h2>
+<p>The <strong>global</strong> keyword lets you modify a global variable from inside a function.</p>
+<div class="code">counter = <span class="num">0</span>
+
+<span class="kw">def</span> <span class="fn">increment</span>():
+    <span class="kw">global</span> counter
+    counter += <span class="num">1</span>
+
+<span class="fn">increment</span>()
+<span class="fn">increment</span>()
+<span class="fn">print</span>(counter)</div>
+<div class="output">2</div>
+
+<h2>Nonlocal Keyword</h2>
+<p><strong>nonlocal</strong> lets you modify a variable from the enclosing (outer) scope inside a nested function.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">outer</span>():
+    count = <span class="num">0</span>
+    
+    <span class="kw">def</span> <span class="fn">inner</span>():
+        <span class="kw">nonlocal</span> count
+        count += <span class="num">1</span>
+        <span class="kw">return</span> count
+    
+    <span class="kw">return</span> inner
+
+counter_fn = <span class="fn">outer</span>()
+<span class="fn">print</span>(counter_fn())
+<span class="fn">print</span>(counter_fn())
+<span class="fn">print</span>(counter_fn())</div>
+<div class="output">1
+2
+3</div>
+
+<h2>Docstrings</h2>
+<p>A <strong>docstring</strong> is a string literal that appears right after a function definition, used to document what the function does.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">add</span>(a, b):
+    <span class="str">"""Return the sum of a and b."""</span>
+    <span class="kw">return</span> a + b
+
+<span class="fn">print</span>(<span class="fn">add</span>.<span class="pre">__doc__</span>)
+<span class="fn">print</span>(<span class="fn">help</span>(add))</div>
+<div class="output">Return the sum of a and b.
+Help on function add in module __main__:
+
+add(a, b)
+    Return the sum of a and b.
+</div>
+
+<h2>Type Hints</h2>
+<p>Type hints indicate the expected type of parameters and return values. They don't enforce types but help with readability and tools.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">greet</span>(name: <span class="type">str</span>) -> <span class="type">str</span>:
+    <span class="kw">return</span> <span class="str">f"Hello, {name}!"</span>
+
+result: <span class="type">str</span> = <span class="fn">greet</span>(<span class="str">"Alice"</span>)
+<span class="fn">print</span>(result)</div>
+<div class="output">Hello, Alice!</div>
+
+<h2>Recursion</h2>
+<p><strong>Recursion</strong> is when a function calls itself. Every recursive function needs a base case to stop.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">factorial</span>(n):
+    <span class="str">"""Calculate factorial using recursion."""</span>
+    <span class="kw">if</span> n == <span class="num">1</span>:  <span class="cmt"># base case</span>
+        <span class="kw">return</span> <span class="num">1</span>
+    <span class="kw">return</span> n * <span class="fn">factorial</span>(n - <span class="num">1</span>)
+
+<span class="fn">print</span>(<span class="fn">factorial</span>(<span class="num">5</span>))
+<span class="fn">print</span>(<span class="fn">factorial</span>(<span class="num">7</span>))</div>
+<div class="output">120
+5040</div>
+
+<h2>Nested Functions</h2>
+<p>You can define a function inside another function. The inner function is only available inside the outer function.</p>
+<div class="code"><span class="kw">def</span> <span class="fn">outer</span>(x):
+    <span class="kw">def</span> <span class="fn">inner</span>(y):
+        <span class="kw">return</span> y * <span class="num">2</span>
+    <span class="kw">return</span> <span class="fn">inner</span>(x) + <span class="num">1</span>
+
+<span class="fn">print</span>(<span class="fn">outer</span>(<span class="num">5</span>))
+<span class="fn">print</span>(<span class="fn">outer</span>(<span class="num">10</span>))</div>
+<div class="output">11
+21</div>
+
+<div class="note"><strong>Summary:</strong> Functions help you organize code into reusable blocks. You can pass data via parameters, return results, use lambdas for quick functions, control variable scope, and even have functions call themselves with recursion.</div>
+
+<a href="09_dicts_sets.html" class="back">← Lesson 9: Dictionaries & Sets</a>
+<a href="11_modules_files.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">Lesson 11: Modules & File I/O →</a>
+</div>
+</body>
+</html>

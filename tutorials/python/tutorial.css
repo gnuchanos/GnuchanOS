@@ -1,0 +1,110 @@
+/* ===== GnuchanOS Python Tutorial — Shared Content Styles ===== */
+
+
+
+.code {
+
+  background: #150825;
+
+  color: #50fa7b;
+
+  font-family: 'Courier New', monospace;
+
+  padding: 14px 18px;
+
+  border-radius: 10px;
+
+  border: 2px solid #2d1554;
+
+  margin: 10px 0;
+
+  overflow-x: auto;
+
+  font-size: 1.05em;
+
+  line-height: 1.5;
+
+  white-space: pre-wrap;
+
+  overflow-wrap: break-word;
+
+}
+
+.code .cmt { color: #6272a4; }
+
+.code .kw  { color: #ff79c6; }
+
+.code .fn  { color: #50fa7b; }
+
+.code .str { color: #f1fa8c; }
+
+.code .num { color: #bd93f9; }
+
+.code .pre { color: #8be9fd; }
+
+.code .type { color: #66d9ef; }
+
+
+
+.output {
+
+  background: #150825;
+
+  color: #f1fa8c;
+
+  font-family: 'Courier New', monospace;
+
+  padding: 10px 16px;
+
+  border-radius: 8px;
+
+  border: 2px solid #a855f7;
+
+  margin: 8px 0 18px;
+
+  white-space: pre-wrap;
+
+  overflow-wrap: break-word;
+
+  font-size: 1.05em;
+
+  line-height: 1.5;
+
+}
+
+.output::before {
+
+  content: "▶ OUTPUT";
+
+  display: block;
+
+  color: #50fa7b;
+
+  font-size: 0.8em;
+
+  margin-bottom: 4px;
+
+}
+
+
+
+.note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 0.95em; }
+
+.warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 0.95em; }
+
+.tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 0.95em; }
+
+
+
+.container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+
+.container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 0.95em; }
+
+.container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+
+
+
+.container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 0.95em; }
+
+.container a.back:hover { color: #a855f7; }
+

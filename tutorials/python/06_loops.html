@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 6: Loops</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>Lesson 6: Loops</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2><code>for</code> Loop</h2>
+<p>A <code>for</code> loop iterates over each item in a sequence (list, string, range, etc.).</p>
+<div class="code">
+fruits = [<span class="str">"apple"</span>, <span class="str">"banana"</span>, <span class="str">"cherry"</span>]
+<span class="kw">for</span> fruit <span class="kw">in</span> fruits:
+    <span class="fn">print</span>(fruit)
+</div>
+<div class="output">
+apple
+banana
+cherry
+</div>
+
+<h2><code>range()</code> Function</h2>
+<p>Generate a sequence of numbers. Useful for running a loop a fixed number of times.</p>
+<table>
+  <tr><th>Call</th><th>Generates</th></tr>
+  <tr><td><code>range(5)</code></td><td><code>0, 1, 2, 3, 4</code></td></tr>
+  <tr><td><code>range(2, 5)</code></td><td><code>2, 3, 4</code></td></tr>
+  <tr><td><code>range(2, 10, 2)</code></td><td><code>2, 4, 6, 8</code></td></tr>
+</table>
+<div class="code">
+<span class="cmt"># range(stop) — from 0 to stop-1</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">5</span>):
+    <span class="fn">print</span>(i, end=<span class="str">" "</span>)
+<span class="fn">print</span>()  <span class="cmt"># newline</span>
+
+<span class="cmt"># range(start, stop)</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">2</span>, <span class="num">6</span>):
+    <span class="fn">print</span>(i, end=<span class="str">" "</span>)
+<span class="fn">print</span>()
+
+<span class="cmt"># range(start, stop, step)</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">0</span>, <span class="num">10</span>, <span class="num">2</span>):
+    <span class="fn">print</span>(i, end=<span class="str">" "</span>)
+<span class="fn">print</span>()
+</div>
+<div class="output">
+0 1 2 3 4
+2 3 4 5
+0 2 4 6 8
+</div>
+
+<h2><code>while</code> Loop</h2>
+<p>Repeats as long as a condition remains <code>True</code>. Be careful — it can run forever!</p>
+<div class="code">
+count = <span class="num">0</span>
+<span class="kw">while</span> count < <span class="num">5</span>:
+    <span class="fn">print</span>(count, end=<span class="str">" "</span>)
+    count += <span class="num">1</span>
+<span class="fn">print</span>(<span class="str">"\nDone!"</span>)
+</div>
+<div class="output">
+0 1 2 3 4
+Done!
+</div>
+
+<h2><code>break</code> — Exit the Loop</h2>
+<p><code>break</code> immediately stops the loop, no matter what.</p>
+<div class="code">
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="num">10</span>):
+    <span class="kw">if</span> i == <span class="num">5</span>:
+        <span class="kw">break</span>
+    <span class="fn">print</span>(i, end=<span class="str">" "</span>)
+<span class="fn">print</span>(<span class="str">"\nLoop stopped at 5"</span>)
+</div>
+<div class="output">
+1 2 3 4
+Loop stopped at 5
+</div>
+
+<h2><code>continue</code> — Skip to Next Iteration</h2>
+<p><code>continue</code> skips the rest of the current iteration and moves to the next one.</p>
+<div class="code">
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="num">8</span>):
+    <span class="kw">if</span> i % <span class="num">2</span> == <span class="num">0</span>:
+        <span class="kw">continue</span>
+    <span class="fn">print</span>(i, end=<span class="str">" "</span>)
+<span class="fn">print</span>(<span class="str">"\nOnly odd numbers"</span>)
+</div>
+<div class="output">
+1 3 5 7
+Only odd numbers
+</div>
+
+<h2><code>else</code> in Loops</h2>
+<p>Both <code>for</code> and <code>while</code> can have an <code>else</code> block. It runs only if the loop <strong>completed normally</strong> (no <code>break</code>).</p>
+<div class="code">
+<span class="cmt"># else runs — no break</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):
+    <span class="fn">print</span>(i)
+<span class="kw">else</span>:
+    <span class="fn">print</span>(<span class="str">"Loop finished, no break!"</span>)
+
+<span class="fn">print</span>(<span class="str">"---"</span>)
+
+<span class="cmt"># else does NOT run — break hit</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):
+    <span class="kw">if</span> i == <span class="num">1</span>:
+        <span class="kw">break</span>
+    <span class="fn">print</span>(i)
+<span class="kw">else</span>:
+    <span class="fn">print</span>(<span class="str">"Won't run because of break"</span>)
+</div>
+<div class="output">
+0
+1
+2
+Loop finished, no break!
+---
+0
+</div>
+
+<div class="note">
+  💡 <strong>Loop <code>else</code>:</strong> The <code>else</code> block runs only if the loop ended normally (not via <code>break</code>). It's like a "no-break" reward block.
+</div>
+
+<h2>Nested Loops</h2>
+<p>You can put one loop inside another. The inner loop runs completely for each outer iteration.</p>
+<div class="code">
+<span class="kw">for</span> row <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="num">4</span>):
+    <span class="kw">for</span> col <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="num">4</span>):
+        <span class="fn">print</span>(row * col, end=<span class="str">"\t"</span>)
+    <span class="fn">print</span>()  <span class="cmt"># new row</span>
+</div>
+<div class="output">
+1	2	3
+2	4	6
+3	6	9
+</div>
+
+<h2><code>enumerate()</code> — Loop with Index</h2>
+<p>When you need both the index and the value in a <code>for</code> loop, use <code>enumerate()</code>.</p>
+<div class="code">
+colors = [<span class="str">"red"</span>, <span class="str">"green"</span>, <span class="str">"blue"</span>]
+<span class="kw">for</span> index, color <span class="kw">in</span> <span class="fn">enumerate</span>(colors):
+    <span class="fn">print</span>(<span class="str">f"{index}: {color}"</span>)
+</div>
+<div class="output">
+0: red
+1: green
+2: blue
+</div>
+
+<h2><code>zip()</code> — Parallel Iteration</h2>
+<p>Loop over multiple sequences at the same time with <code>zip()</code>.</p>
+<div class="code">
+names = [<span class="str">"Alice"</span>, <span class="str">"Bob"</span>, <span class="str">"Charlie"</span>]
+scores = [<span class="num">85</span>, <span class="num">92</span>, <span class="num">78</span>]
+grades = [<span class="str">"B"</span>, <span class="str">"A"</span>, <span class="str">"C"</span>]
+
+<span class="kw">for</span> name, score, grade <span class="kw">in</span> <span class="fn">zip</span>(names, scores, grades):
+    <span class="fn">print</span>(<span class="str">f"{name}: {score} → {grade}"</span>)
+</div>
+<div class="output">
+Alice: 85 → B
+Bob: 92 → A
+Charlie: 78 → C
+</div>
+
+<h2><code>pass</code> vs <code>continue</code></h2>
+<ul>
+  <li><code>pass</code> — does nothing, used as placeholder (syntax needs a statement)</li>
+  <li><code>continue</code> — skips current iteration and goes to next</li>
+</ul>
+<div class="code">
+<span class="cmt"># pass — just placeholder</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):
+    <span class="kw">if</span> i == <span class="num">1</span>:
+        <span class="kw">pass</span>  <span class="cmt"># Does nothing, continues normally</span>
+    <span class="fn">print</span>(i, end=<span class="str">" "</span>)
+<span class="fn">print</span>(<span class="str">"\n---"</span>)
+
+<span class="cmt"># continue — skips the rest</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):
+    <span class="kw">if</span> i == <span class="num">1</span>:
+        <span class="kw">continue</span>  <span class="cmt"># Skips printing 1</span>
+    <span class="fn">print</span>(i, end=<span class="str">" "</span>)
+<span class="fn">print</span>()
+</div>
+<div class="output">
+0 1 2
+---
+0 2
+</div>
+
+<h2>Infinite Loop — <code>while True</code></h2>
+<p>Sometimes you want a loop that runs forever until a condition inside breaks it.</p>
+<div class="code">
+attempts = <span class="num">0</span>
+<span class="kw">while</span> <span class="kw">True</span>:
+    attempts += <span class="num">1</span>
+    <span class="fn">print</span>(<span class="str">f"Attempt {attempts}"</span>)
+    <span class="kw">if</span> attempts >= <span class="num">3</span>:
+        <span class="fn">print</span>(<span class="str">"Maximum attempts reached"</span>)
+        <span class="kw">break</span>
+</div>
+<div class="output">
+Attempt 1
+Attempt 2
+Attempt 3
+Maximum attempts reached
+</div>
+
+<div class="warn">
+  ⚠️ <strong>Be careful with infinite loops!</strong> If you forget to add a <code>break</code>, your program will run forever. Always ensure there's a way out.
+</div>
+
+<h2>Putting It All Together</h2>
+<div class="code">
+numbers = [<span class="num">7</span>, <span class="num">12</span>, <span class="num">5</span>, <span class="num">18</span>, <span class="num">3</span>, <span class="num">9</span>]
+<span class="fn">print</span>(<span class="str">"Processing numbers:"</span>)
+
+<span class="kw">for</span> idx, num <span class="kw">in</span> <span class="fn">enumerate</span>(numbers):
+    <span class="kw">if</span> num % <span class="num">2</span> == <span class="num">0</span>:
+        <span class="kw">continue</span>  <span class="cmt"># skip even numbers</span>
+    <span class="kw">if</span> num > <span class="num">15</span>:
+        <span class="fn">print</span>(<span class="str">"Found a big number, stopping!"</span>)
+        <span class="kw">break</span>
+    <span class="fn">print</span>(<span class="str">f"  [{idx}] {num} is odd"</span>)
+<span class="kw">else</span>:
+    <span class="fn">print</span>(<span class="str">"All odd numbers processed (no break)"</span>)
+</div>
+<div class="output">
+Processing numbers:
+  [0] 7 is odd
+  [2] 5 is odd
+Found a big number, stopping!
+</div>
+
+<a href="05_conditions.html" class="back">← Conditions</a>
+<a href="07_strings.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">Strings →</a>
+</div>
+</body>
+</html>

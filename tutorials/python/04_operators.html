@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 4: Python Operators</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+<h1>Lesson 4: Python Operators</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2>Arithmetic Operators</h2>
+<p>Used for mathematical calculations.</p>
+<table>
+  <tr><th>Operator</th><th>Name</th><th>Example</th><th>Result</th></tr>
+  <tr><td><code>+</code></td><td>Addition</td><td><code>5 + 3</code></td><td>8</td></tr>
+  <tr><td><code>-</code></td><td>Subtraction</td><td><code>5 - 3</code></td><td>2</td></tr>
+  <tr><td><code>*</code></td><td>Multiplication</td><td><code>5 * 3</code></td><td>15</td></tr>
+  <tr><td><code>/</code></td><td>Division (float)</td><td><code>5 / 2</code></td><td>2.5</td></tr>
+  <tr><td><code>//</code></td><td>Floor division</td><td><code>5 // 2</code></td><td>2</td></tr>
+  <tr><td><code>%</code></td><td>Modulus (remainder)</td><td><code>5 % 3</code></td><td>2</td></tr>
+  <tr><td><code>**</code></td><td>Exponent (power)</td><td><code>5 ** 3</code></td><td>125</td></tr>
+</table>
+
+<h3>Division: <code>/</code> vs <code>//</code></h3>
+<p><strong>Important:</strong> Regular division <code>/</code> always returns a <code>float</code>. Floor division <code>//</code> rounds <strong>down</strong> (toward negative infinity).</p>
+<div class="code">
+<span class="fn">print</span>(<span class="num">5</span> / <span class="num">2</span>)     <span class="cmt"># 2.5  (float division)</span>
+<span class="fn">print</span>(<span class="num">5</span> // <span class="num">2</span>)    <span class="cmt"># 2    (floor — rounds down)</span>
+<span class="fn">print</span>(-<span class="num">5</span> // <span class="num">2</span>)    <span class="cmt"># -3   (floor goes DOWN)</span>
+<span class="fn">print</span>(<span class="num">10</span> % <span class="num">3</span>)    <span class="cmt"># 1    (remainder)</span>
+<span class="fn">print</span>(<span class="num">2</span> ** <span class="num">4</span>)     <span class="cmt"># 16   (2 to the power of 4)</span>
+</div>
+<div class="output">
+2.5
+2
+-3
+1
+16
+</div>
+
+<h2>Comparison Operators</h2>
+<p>Compare values and return <code>True</code> or <code>False</code>.</p>
+<table>
+  <tr><th>Operator</th><th>Meaning</th><th>Example</th></tr>
+  <tr><td><code>==</code></td><td>Equal to</td><td><code>5 == 5</code> → True</td></tr>
+  <tr><td><code>!=</code></td><td>Not equal to</td><td><code>5 != 3</code> → True</td></tr>
+  <tr><td><code>></code></td><td>Greater than</td><td><code>5 > 3</code> → True</td></tr>
+  <tr><td><code><</code></td><td>Less than</td><td><code>5 < 3</code> → False</td></tr>
+  <tr><td><code>>=</code></td><td>Greater than or equal</td><td><code>5 >= 5</code> → True</td></tr>
+  <tr><td><code><=</code></td><td>Less than or equal</td><td><code>5 <= 3</code> → False</td></tr>
+</table>
+<div class="code">
+x, y = <span class="num">10</span>, <span class="num">20</span>
+<span class="fn">print</span>(x == y)     <span class="cmt"># False</span>
+<span class="fn">print</span>(x != y)     <span class="cmt"># True</span>
+<span class="fn">print</span>(x > y)      <span class="cmt"># False</span>
+<span class="fn">print</span>(x < y)      <span class="cmt"># True</span>
+<span class="fn">print</span>(x >= <span class="num">10</span>)   <span class="cmt"># True</span>
+<span class="fn">print</span>(y <= <span class="num">15</span>)   <span class="cmt"># False</span>
+</div>
+<div class="output">
+False
+True
+False
+True
+True
+False
+</div>
+
+<h2>Logical Operators</h2>
+<p>Combine conditions: <code>and</code>, <code>or</code>, <code>not</code>.</p>
+<table>
+  <tr><th>Operator</th><th>Meaning</th><th>Example</th></tr>
+  <tr><td><code>and</code></td><td>True if both are True</td><td><code>True and False</code> → False</td></tr>
+  <tr><td><code>or</code></td><td>True if at least one is True</td><td><code>True or False</code> → True</td></tr>
+  <tr><td><code>not</code></td><td>Inverts the boolean</td><td><code>not True</code> → False</td></tr>
+</table>
+<div class="code">
+a, b = <span class="kw">True</span>, <span class="kw">False</span>
+<span class="fn">print</span>(a <span class="kw">and</span> b)    <span class="cmt"># False</span>
+<span class="fn">print</span>(a <span class="kw">or</span> b)     <span class="cmt"># True</span>
+<span class="fn">print</span>(<span class="kw">not</span> a)       <span class="cmt"># False</span>
+
+<span class="cmt"># Short-circuit: Python stops evaluating as soon as result is known</span>
+<span class="fn">print</span>(<span class="kw">False</span> <span class="kw">and</span> <span class="fn">print</span>(<span class="str">"won't run"</span>))   <span class="cmt"># Short-circuits, no print</span>
+<span class="fn">print</span>(<span class="kw">True</span> <span class="kw">or</span> <span class="fn">print</span>(<span class="str">"won't run"</span>))    <span class="cmt"># Short-circuits, no print</span>
+</div>
+<div class="output">
+False
+True
+False
+False
+True
+</div>
+
+<h2>Assignment Operators</h2>
+<p>Assign or update a variable in one step.</p>
+<table>
+  <tr><th>Operator</th><th>Example</th><th>Same as</th></tr>
+  <tr><td><code>=</code></td><td><code>x = 5</code></td><td><code>x = 5</code></td></tr>
+  <tr><td><code>+=</code></td><td><code>x += 3</code></td><td><code>x = x + 3</code></td></tr>
+  <tr><td><code>-=</code></td><td><code>x -= 3</code></td><td><code>x = x - 3</code></td></tr>
+  <tr><td><code>*=</code></td><td><code>x *= 3</code></td><td><code>x = x * 3</code></td></tr>
+  <tr><td><code>/=</code></td><td><code>x /= 3</code></td><td><code>x = x / 3</code></td></tr>
+  <tr><td><code>//=</code></td><td><code>x //= 3</code></td><td><code>x = x // 3</code></td></tr>
+  <tr><td><code>%=</code></td><td><code>x %= 3</code></td><td><code>x = x % 3</code></td></tr>
+  <tr><td><code>**=</code></td><td><code>x **= 3</code></td><td><code>x = x ** 3</code></td></tr>
+</table>
+<div class="code">
+x = <span class="num">10</span>
+x += <span class="num">5</span>     <span class="cmt"># x = x + 5</span>
+<span class="fn">print</span>(x)       <span class="cmt"># 15</span>
+x //= <span class="num">4</span>    <span class="cmt"># x = x // 4</span>
+<span class="fn">print</span>(x)       <span class="cmt"># 3</span>
+x **= <span class="num">3</span>    <span class="cmt"># x = x ** 3</span>
+<span class="fn">print</span>(x)       <span class="cmt"># 27</span>
+</div>
+<div class="output">
+15
+3
+27
+</div>
+
+<h2>Identity Operators: <code>is</code> and <code>is not</code></h2>
+<p>Check if two variables refer to the <strong>same object in memory</strong>, not just equal values.</p>
+<div class="code">
+a = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+b = a           <span class="cmt"># b points to SAME object as a</span>
+c = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>] <span class="cmt"># c is a DIFFERENT object with same value</span>
+
+<span class="fn">print</span>(a <span class="kw">is</span> b)    <span class="cmt"># True  — same object</span>
+<span class="fn">print</span>(a <span class="kw">is</span> c)    <span class="cmt"># False — different objects</span>
+<span class="fn">print</span>(a == c)    <span class="cmt"># True  — same value</span>
+<span class="fn">print</span>(a <span class="kw">is not</span> c) <span class="cmt"># True  — indeed different objects</span>
+</div>
+<div class="output">
+True
+False
+True
+True
+</div>
+
+<div class="note">
+  💡 <strong><code>is</code> vs <code>==</code>:</strong> <code>is</code> checks if two variables point to the same object (memory address). <code>==</code> checks if the values are equal. Use <code>==</code> for value comparison, <code>is</code> for checking <code>None</code> or singletons.
+</div>
+
+<h2>Membership Operators: <code>in</code> and <code>not in</code></h2>
+<p>Check if a value exists inside a sequence (string, list, tuple, etc.).</p>
+<div class="code">
+fruits = [<span class="str">"apple"</span>, <span class="str">"banana"</span>, <span class="str">"cherry"</span>]
+<span class="fn">print</span>(<span class="str">"banana"</span> <span class="kw">in</span> fruits)        <span class="cmt"># True</span>
+<span class="fn">print</span>(<span class="str">"grape"</span> <span class="kw">not in</span> fruits)      <span class="cmt"># True</span>
+
+<span class="cmt"># Works with strings too</span>
+text = <span class="str">"Hello World"</span>
+<span class="fn">print</span>(<span class="str">"World"</span> <span class="kw">in</span> text)            <span class="cmt"># True</span>
+<span class="fn">print</span>(<span class="str">"xyz"</span> <span class="kw">not in</span> text)          <span class="cmt"># True</span>
+</div>
+<div class="output">
+True
+True
+True
+True
+</div>
+
+<h2>Operator Precedence</h2>
+<p>Python follows a strict order when evaluating expressions. Highest precedence first:</p>
+<table>
+  <tr><th>Precedence</th><th>Operators</th></tr>
+  <tr><td>1 (highest)</td><td><code>()</code> — Parentheses</td></tr>
+  <tr><td>2</td><td><code>**</code> — Exponentiation</td></tr>
+  <tr><td>3</td><td><code>+x</code>, <code>-x</code>, <code>~x</code> — Unary plus/minus/bitwise NOT</td></tr>
+  <tr><td>4</td><td><code>*</code>, <code>/</code>, <code>//</code>, <code>%</code> — Multiplication, division, floor, modulus</td></tr>
+  <tr><td>5</td><td><code>+</code>, <code>-</code> — Addition, subtraction</td></tr>
+  <tr><td>6</td><td><code><<</code>, <code>>></code> — Bitwise shifts</td></tr>
+  <tr><td>7</td><td><code>&</code> — Bitwise AND</td></tr>
+  <tr><td>8</td><td><code>^</code> — Bitwise XOR</td></tr>
+  <tr><td>9</td><td><code>|</code> — Bitwise OR</td></tr>
+  <tr><td>10</td><td><code>==</code>, <code>!=</code>, <code>></code>, <code><</code>, <code>>=</code>, <code><=</code>, <code>is</code>, <code>in</code> — Comparisons</td></tr>
+  <tr><td>11</td><td><code>not</code> — Logical NOT</td></tr>
+  <tr><td>12</td><td><code>and</code> — Logical AND</td></tr>
+  <tr><td>13 (lowest)</td><td><code>or</code> — Logical OR</td></tr>
+</table>
+<div class="code">
+<span class="cmt"># Without parentheses — multiplication happens first</span>
+<span class="fn">print</span>(<span class="num">2</span> + <span class="num">3</span> * <span class="num">4</span>)      <span class="cmt"># 14  (not 20)</span>
+<span class="cmt"># With parentheses</span>
+<span class="fn">print</span>((<span class="num">2</span> + <span class="num">3</span>) * <span class="num">4</span>)    <span class="cmt"># 20</span>
+<span class="cmt"># Mixing operators</span>
+<span class="fn">print</span>(<span class="num">5</span> + <span class="num">3</span> > <span class="num">1</span> + <span class="num">2</span> * <span class="num">3</span>)  <span class="cmt"># 8 > 7 → True</span>
+</div>
+<div class="output">
+14
+20
+True
+</div>
+
+<h2>Putting It All Together</h2>
+<div class="code">
+x = <span class="num">10</span>
+y = <span class="num">3</span>
+<span class="fn">print</span>(<span class="str">f"Sum: {x + y}"</span>)            <span class="cmt"># 13</span>
+<span class="fn">print</span>(<span class="str">f"Float division: {x / y}"</span>)  <span class="cmt"># 3.333...</span>
+<span class="fn">print</span>(<span class="str">f"Floor division: {x // y}"</span>) <span class="cmt"># 3</span>
+<span class="fn">print</span>(<span class="str">f"Remainder: {x % y}"</span>)      <span class="cmt"># 1</span>
+<span class="fn">print</span>(<span class="str">f"Power: {x ** y}"</span>)          <span class="cmt"># 1000</span>
+
+<span class="fn">print</span>(x > <span class="num">5</span> <span class="kw">and</span> y < <span class="num">5</span>)          <span class="cmt"># True</span>
+<span class="fn">print</span>(x <span class="kw">is not</span> <span class="kw">None</span>)               <span class="cmt"># True</span>
+<span class="fn">print</span>(<span class="str">"0"</span> <span class="kw">in</span> <span class="str">"102030"</span>)             <span class="cmt"># True</span>
+</div>
+<div class="output">
+Sum: 13
+Float division: 3.3333333333333335
+Floor division: 3
+Remainder: 1
+Power: 1000
+True
+True
+True
+</div>
+
+<a href="03_variables_datatypes.html" class="back">← Variables & Data Types</a>
+<a href="05_conditions.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">Conditions →</a>
+</div>
+</body>
+</html>

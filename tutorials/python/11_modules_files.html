@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 11: Modules & File I/O</title>
+<link rel="stylesheet" href="tutorial.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Lesson 11: Modules and File I/O</h1>
+<p><strong>Simple English</strong> &mdash; Based on W3Schools Python Tutorial</p>
+
+<h2>Importing a Module</h2>
+<p>A <strong>module</strong> is a file containing Python code (functions, classes, variables) that you can reuse. Use <strong>import</strong> to bring in a module.</p>
+<div class="code"><span class="kw">import</span> math
+
+<span class="fn">print</span>(math.pi)
+<span class="fn">print</span>(math.<span class="fn">sqrt</span>(<span class="num">16</span>))
+<span class="fn">print</span>(math.<span class="fn">ceil</span>(<span class="num">3.7</span>))</div>
+<div class="output">3.141592653589793
+4.0
+4</div>
+
+<h2>from ... import</h2>
+<p>You can import specific items from a module instead of the whole module.</p>
+<div class="code"><span class="kw">from</span> math <span class="kw">import</span> pi, sqrt
+
+<span class="fn">print</span>(pi)
+<span class="fn">print</span>(<span class="fn">sqrt</span>(<span class="num">25</span>))</div>
+<div class="output">3.141592653589793
+5.0</div>
+
+<h2>Alias (as)</h2>
+<p>Use <strong>as</strong> to give a module or function a shorter name.</p>
+<div class="code"><span class="kw">import</span> math <span class="kw">as</span> m
+<span class="kw">from</span> datetime <span class="kw">import</span> datetime <span class="kw">as</span> dt
+
+<span class="fn">print</span>(m.<span class="fn">floor</span>(<span class="num">4.9</span>))
+<span class="fn">print</span>(dt.<span class="fn">now</span>())</div>
+<div class="output">4
+2025-01-15 14:30:00.123456</div>
+
+<h2>dir() - List Module Contents</h2>
+<p>The <strong>dir()</strong> function returns all the names inside a module.</p>
+<div class="code"><span class="kw">import</span> math
+
+<span class="fn">print</span>(<span class="fn">dir</span>(math)[:<span class="num">10</span>])  <span class="cmt"># show first 10 items</span></div>
+<div class="output">['__doc__', '__loader__', '__name__', '__package__', '__spec__', 'acos', 'acosh', 'asin', 'asinh', 'atan']</div>
+
+<h2>pip install - Installing External Packages</h2>
+<p><strong>pip</strong> is Python's package manager. You install third-party modules from the internet.</p>
+<div class="code"><span class="cmt"># In terminal / command prompt:</span>
+<span class="cmt"># pip install requests</span>
+<span class="cmt"># pip install numpy</span>
+
+<span class="cmt"># Then in your code:</span>
+<span class="fn">print</span>(<span class="str">"Use 'pip install packagename' to install packages"</span>)
+<span class="fn">print</span>(<span class="str">"Then import them in your code!"</span>)</div>
+<div class="output">Use 'pip install packagename' to install packages
+Then import them in your code!</div>
+
+<h2>Creating Your Own Module</h2>
+<p>Any <code>.py</code> file is a module. You can create one and import it from another script.</p>
+<div class="code"><span class="cmt"># Save this as mymodule.py</span>
+<span class="kw">def</span> <span class="fn">hello</span>(name):
+    <span class="kw">return</span> <span class="str">f"Hello, {name}!"</span>
+
+PI = <span class="num">3.14159</span>
+
+<span class="cmt"># In another file:</span>
+<span class="cmt"># import mymodule</span>
+<span class="cmt"># print(mymodule.hello("Alice"))</span>
+<span class="cmt"># print(mymodule.PI)</span>
+<span class="fn">print</span>(<span class="str">"Module created! You can import it."</span>)</div>
+<div class="output">Module created! You can import it.</div>
+
+<h2>The __name__ == "__main__" Idiom</h2>
+<p>This checks if the script is run directly (not imported). Useful for test code.</p>
+<div class="code"><span class="cmt"># mymodule.py</span>
+<span class="kw">def</span> <span class="fn">add</span>(a, b):
+    <span class="kw">return</span> a + b
+
+<span class="kw">if</span> __name__ == <span class="str">"__main__"</span>:
+    <span class="cmt"># This runs only when the file is executed directly</span>
+    <span class="fn">print</span>(<span class="str">"Running tests..."</span>)
+    <span class="fn">print</span>(<span class="fn">add</span>(<span class="num">2</span>, <span class="num">3</span>))</div>
+<div class="output">Running tests...
+5</div>
+
+<h2>File I/O - open() Function</h2>
+<p>Use <strong>open()</strong> to work with files. Common modes:</p>
+<table>
+<tr><th>Mode</th><th>Meaning</th></tr>
+<tr><td>"r"</td><td>Read (default)</td></tr>
+<tr><td>"w"</td><td>Write (overwrites existing file)</td></tr>
+<tr><td>"a"</td><td>Append (adds to end)</td></tr>
+<tr><td>"x"</td><td>Exclusive creation (fails if file exists)</td></tr>
+<tr><td>"r+"</td><td>Read and write</td></tr>
+<tr><td>"b"</td><td>Binary mode (add to another mode, e.g. "rb")</td></tr>
+</table>
+
+<div class="code"><span class="cmt"># Writing to a file</span>
+file = <span class="fn">open</span>(<span class="str">"test.txt"</span>, <span class="str">"w"</span>)
+file.<span class="fn">write</span>(<span class="str">"Hello, File!\n"</span>)
+file.<span class="fn">write</span>(<span class="str">"Second line."</span>)
+file.<span class="fn">close</span>()
+
+<span class="cmt"># Reading from a file</span>
+file = <span class="fn">open</span>(<span class="str">"test.txt"</span>, <span class="str">"r"</span>)
+content = file.<span class="fn">read</span>()
+file.<span class="fn">close</span>()
+<span class="fn">print</span>(content)</div>
+<div class="output">Hello, File!
+Second line.</div>
+
+<h2>Reading Methods: read(), readline(), readlines()</h2>
+<div class="code"><span class="cmt"># Assuming test.txt contains 3 lines</span>
+file = <span class="fn">open</span>(<span class="str">"test.txt"</span>, <span class="str">"r"</span>)
+
+<span class="cmt"># readline() reads one line at a time</span>
+line = file.<span class="fn">readline</span>()
+<span class="fn">print</span>(<span class="str">"First line:"</span>, line)
+
+file.<span class="fn">seek</span>(<span class="num">0</span>)  <span class="cmt"># go back to start</span>
+
+<span class="cmt"># readlines() returns a list of lines</span>
+lines = file.<span class="fn">readlines</span>()
+file.<span class="fn">close</span>()
+<span class="fn">print</span>(<span class="str">"All lines:"</span>, lines)</div>
+<div class="output">First line: Hello, File!
+
+All lines: ['Hello, File!\n', 'Second line.']</div>
+
+<h2>Writing to a File</h2>
+<div class="code"><span class="cmt"># Write numbers 1 to 5</span>
+file = <span class="fn">open</span>(<span class="str">"numbers.txt"</span>, <span class="str">"w"</span>)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="num">6</span>):
+    file.<span class="fn">write</span>(<span class="str">f"Number {i}\n"</span>)
+file.<span class="fn">close</span>()
+
+<span class="cmt"># Read and print</span>
+file = <span class="fn">open</span>(<span class="str">"numbers.txt"</span>, <span class="str">"r"</span>)
+<span class="fn">print</span>(file.<span class="fn">read</span>())
+file.<span class="fn">close</span>()</div>
+<div class="output">Number 1
+Number 2
+Number 3
+Number 4
+Number 5
+</div>
+
+<h2>With Statement - Context Manager</h2>
+<p>The <strong>with</strong> statement automatically closes the file when the block ends. It is the recommended way to handle files.</p>
+<div class="code"><span class="kw">with</span> <span class="fn">open</span>(<span class="str">"test.txt"</span>, <span class="str">"r"</span>) <span class="kw">as</span> file:
+    content = file.<span class="fn">read</span>()
+    <span class="fn">print</span>(content)
+<span class="cmt"># No need to call close() - it's automatic!</span></div>
+<div class="output">Hello, File!
+Second line.</div>
+
+<h2>Working with JSON</h2>
+<p>JSON is a lightweight data format. Python's <strong>json</strong> module converts between JSON strings and Python objects.</p>
+<div class="code"><span class="kw">import</span> json
+
+<span class="cmt"># Python dict - JSON string</span>
+data = {<span class="str">"name"</span>: <span class="str">"Alice"</span>, <span class="str">"age"</span>: <span class="num">30</span>, <span class="str">"city"</span>: <span class="str">"London"</span>}
+json_str = json.<span class="fn">dumps</span>(data, indent=<span class="num">2</span>)
+<span class="fn">print</span>(json_str)
+
+<span class="cmt"># JSON string - Python dict</span>
+parsed = json.<span class="fn">loads</span>(json_str)
+<span class="fn">print</span>(parsed[<span class="str">"name"</span>])</div>
+<div class="output">{
+  "name": "Alice",
+  "age": 30,
+  "city": "London"
+}
+Alice</div>
+
+<div class="code"><span class="cmt"># Write JSON to a file</span>
+<span class="kw">import</span> json
+data = {<span class="str">"score"</span>: <span class="num">95</span>, <span class="str">"level"</span>: <span class="num">3</span>}
+
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"data.json"</span>, <span class="str">"w"</span>) <span class="kw">as</span> f:
+    json.<span class="fn">dump</span>(data, f)
+
+<span class="cmt"># Read JSON from a file</span>
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"data.json"</span>, <span class="str">"r"</span>) <span class="kw">as</span> f:
+    loaded = json.<span class="fn">load</span>(f)
+<span class="fn">print</span>(loaded)</div>
+<div class="output">{'score': 95, 'level': 3}</div>
+
+<h2>CSV Module</h2>
+<p>The <strong>csv</strong> module handles comma-separated value files.</p>
+<div class="code"><span class="kw">import</span> csv
+
+<span class="cmt"># Writing CSV</span>
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"people.csv"</span>, <span class="str">"w"</span>, newline=<span class="str">""</span>) <span class="kw">as</span> f:
+    writer = csv.<span class="fn">writer</span>(f)
+    writer.<span class="fn">writerow</span>([<span class="str">"Name"</span>, <span class="str">"Age"</span>])
+    writer.<span class="fn">writerow</span>([<span class="str">"Alice"</span>, <span class="str">"30"</span>])
+    writer.<span class="fn">writerow</span>([<span class="str">"Bob"</span>, <span class="str">"25"</span>])
+
+<span class="cmt"># Reading CSV</span>
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"people.csv"</span>, <span class="str">"r"</span>) <span class="kw">as</span> f:
+    reader = csv.<span class="fn">reader</span>(f)
+    <span class="kw">for</span> row <span class="kw">in</span> reader:
+        <span class="fn">print</span>(row)</div>
+<div class="output">['Name', 'Age']
+['Alice', '30']
+['Bob', '25']</div>
+
+<h2>try/except/finally with Files</h2>
+<p>Always handle errors when working with files, especially if the file might not exist.</p>
+<div class="code"><span class="kw">try</span>:
+    <span class="kw">with</span> <span class="fn">open</span>(<span class="str">"missing.txt"</span>, <span class="str">"r"</span>) <span class="kw">as</span> f:
+        content = f.<span class="fn">read</span>()
+<span class="kw">except</span> <span class="type">FileNotFoundError</span>:
+    <span class="fn">print</span>(<span class="str">"File not found!"</span>)
+<span class="kw">finally</span>:
+    <span class="fn">print</span>(<span class="str">"This always runs."</span>)</div>
+<div class="output">File not found!
+This always runs.</div>
+
+<h2>Pathlib - Modern File Paths</h2>
+<p>The <strong>pathlib</strong> module provides an object-oriented way to handle file paths.</p>
+<div class="code"><span class="kw">from</span> pathlib <span class="kw">import</span> Path
+
+<span class="cmt"># Create a Path object</span>
+path = <span class="type">Path</span>(<span class="str">"test.txt"</span>)
+
+<span class="fn">print</span>(path.<span class="fn">exists</span>())      <span class="cmt"># Does the file exist?</span>
+<span class="fn">print</span>(path.<span class="fn">name</span>)        <span class="cmt"># File name</span>
+<span class="fn">print</span>(path.<span class="fn">stem</span>)        <span class="cmt"># Name without extension</span>
+<span class="fn">print</span>(path.<span class="fn">suffix</span>)      <span class="cmt"># Extension (.txt)</span>
+<span class="fn">print</span>(path.<span class="fn">read_text</span>()) <span class="cmt"># Read entire file</span></div>
+<div class="output">True
+test.txt
+test
+.txt
+Hello, File!
+Second line.</div>
+
+<div class="note"><strong>Summary:</strong> Modules let you reuse code from other files. pip installs third-party packages. File I/O with <strong>open()</strong> and <strong>with</strong> lets you read and write data to disk. JSON and CSV are standard formats for data exchange. The <strong>pathlib</strong> module is the modern Python way to work with paths.</div>
+
+<a href="10_functions.html" class="back">← Lesson 10: Functions</a>
+<a href="12_oop_exceptions.html" style="float:right; margin-top:16px; color:#a855f7; text-decoration:none;">Lesson 12: OOP and Exceptions →</a>
+</div>
+</body>
+</html>

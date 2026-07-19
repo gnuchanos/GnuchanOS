@@ -1,0 +1,77 @@
+name: GCL Build & Release
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build GCL (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build GCL
+        run: python src/makefile.py
+        working-directory: language
+
+      - name: Run tests
+        run: python src/makefile.py test
+        working-directory: language
+
+      - name: Upload GCL binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcl-${{ runner.os }}
+          path: language/build/gcl*
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: gcl-Linux
+          path: artifacts/linux/
+
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: gcl-Windows
+          path: artifacts/windows/
+
+      - name: Create zip packages
+        run: |
+          mkdir -p dist
+          cd artifacts/linux && zip -r ../../dist/gcl-linux-x86_64.zip gcl* && cd ../..
+          cd artifacts/windows && zip -r ../../dist/gcl-windows-x86_64.zip gcl* && cd ../..
+          ls -la dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          name: GCL ${{ github.ref_name }}
+          body: |
+            GCL ${{ github.ref_name }} pre-built binaries.
+          generate_release_notes: true

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 1: C Introduction & Getting Started</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #1f0d3a;
+    border: 3px solid #2d1554;
+    border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825;
+    color: #50fa7b;
+    font-family: 'Courier New', monospace;
+    padding: 14px 18px;
+    border-radius: 10px;
+    border: 2px solid #2d1554;
+    margin: 10px 0;
+    overflow-x: auto;
+    font-size: 1.05em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output {
+    background: #150825;
+    color: #f1fa8c;
+    font-family: 'Courier New', monospace;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 2px solid #a855f7;
+    margin: 8px 0 18px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-size: 1.05em;
+    line-height: 1.5;
+  }
+  .container .output::before {
+    content: "\25B6 OUTPUT";
+    display: block;
+    color: #50fa7b;
+    font-size: 0.8em;
+    margin-bottom: 4px;
+  }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #8b5cf6; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #d8b4fe; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+  <h1>🔥 Lesson 1: C Introduction & Getting Started</h1>
+  <p><strong>Simple English</strong> — W3Schools C Tutorial</p>
+
+  <h2>What is C?</h2>
+  <p>C is a programming language created in <strong>1972</strong> by Dennis Ritchie at Bell Labs. It is very fast and powerful. Many important programs are written in C:</p>
+  <ul>
+    <li>🖥 Operating systems (Linux, Windows, macOS)</li>
+    <li>🎮 Game engines</li>
+    <li>🗄 Databases (MySQL, PostgreSQL)</li>
+    <li>📡 Embedded systems (cars, TVs, smart watches)</li>
+  </ul>
+
+  <h2>Why Learn C?</h2>
+  <ul>
+    <li>✅ C teaches you how memory and computers <em>really</em> work</li>
+    <li>✅ After C, learning C++, Java, Python is much easier</li>
+    <li>✅ C code runs very fast</li>
+    <li>✅ C is still in the top 5 most used languages</li>
+  </ul>
+
+  <h2>What You Need to Start</h2>
+  <ol>
+    <li><strong>A text editor</strong> — VS Code, Notepad++, or any code editor</li>
+    <li><strong>A C compiler</strong> — turns your code into a runnable program</li>
+  </ol>
+
+  <table>
+    <tr><th>Compiler</th><th>Install</th></tr>
+    <tr><td>GCC (recommended)</td><td>Windows: MinGW. Linux: built-in (<code>sudo apt install gcc</code>). Mac: <code>brew install gcc</code></td></tr>
+    <tr><td>Clang</td><td>Mac (built-in with Xcode). Linux: <code>sudo apt install clang</code></td></tr>
+  </table>
+
+  <h2>Your First C Program</h2>
+  <p>Create a file called <code>hello.c</code> and write this:</p>
+
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>   <span class="cmt">// Include standard I/O library</span>
+
+<span class="type">int</span> <span class="fn">main</span>() {            <span class="cmt">// Program starts here</span>
+    <span class="fn">printf</span>(<span class="str">"Hello, World!\n"</span>);  <span class="cmt">// Print to screen</span>
+    <span class="kw">return</span> <span class="num">0</span>;                  <span class="cmt">// Exit successfully</span>
+}
+  </div>
+
+  <div class="output">
+Hello, World!
+  </div>
+
+  <h2>How to Compile and Run</h2>
+  <div class="code">
+<span class="cmt"># Step 1: Compile (create executable)</span>
+gcc hello.c -o hello
+
+<span class="cmt"># Step 2: Run</span>
+./hello
+
+<span class="cmt"># Output:</span>
+Hello, World!
+  </div>
+
+  <div class="note">
+    <strong>💡 Every C program must have a <code>main()</code> function.</strong> The computer looks for <code>main()</code> to start execution.
+  </div>
+
+  <h2>Explaining Hello World</h2>
+  <table>
+    <tr><th>Code</th><th>What It Does</th></tr>
+    <tr><td><code>#include <stdio.h></code></td><td>Includes the standard input/output library (for printf)</td></tr>
+    <tr><td><code>int main()</code></td><td>Declares the main function — program entry point</td></tr>
+    <tr><td><code>{ }</code></td><td>Curly braces define a code block</td></tr>
+    <tr><td><code>printf("...");</code></td><td>Prints text to the screen</td></tr>
+    <tr><td><code>\n</code></td><td>New line character (like pressing Enter)</td></tr>
+    <tr><td><code>return 0;</code></td><td>Tells the OS the program ended successfully</td></tr>
+    <tr><td><code>;</code></td><td>Each statement ends with a semicolon</td></tr>
+  </table>
+
+  <div class="warn">
+    <strong>⚠️ Common mistake:</strong> Forgetting the semicolon <code>;</code> at the end of a statement. The compiler will show an error.
+  </div>
+
+  <a href="index.html" class="back">← Back to Table of Contents</a>
+  <a href="02_syntax_output.html" style="float:right; margin-top:20px; color:#5dade2; text-decoration:none;">Next: Syntax & Output →</a>
+</div>
+</body>
+</html>

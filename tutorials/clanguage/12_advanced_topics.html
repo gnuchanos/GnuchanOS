@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 12: Advanced C Topics — Detaylı</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #150825; color: #eee; padding: 20px; }
+  .container { max-width: 960px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; }  .container h2 { color: #c084fc; font-size: 1.4em; margin: 22px 0 8px; border-bottom: 2px solid #2d1554; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.6; color: #ddd; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; } .container .code .kw { color: #ff79c6; } .container .code .fn { color: #50fa7b; } .container .code .str { color: #f1fa8c; } .container .code .num { color: #bd93f9; } .container .code .type { color: #66d9ef; } .container .code .pre { color: #8be9fd; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #d8b4fe; }
+  .container a.back:hover { color: #a855f7; }
+  .func-sig { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 6px 12px; border-radius: 6px; border: 1px solid #a855f7; margin: 6px 0 10px; display: inline-block; font-size: 0.85em; }
+  @media (max-width: 768px) { .container { padding: 14px 16px; } }</style>
+</head>
+<body>
+<div class="container">
+<h1>Lesson 12: Advanced C Topics — Detaylı Referans</h1>
+
+<h2>1. Variadic Functions — Değişken Argümanlar</h2>
+<p>Fonksiyonların değişken sayıda argüman almasını sağlar. <code><stdarg.h></code> gerekli.</p>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str"><stdarg.h></span>
+
+<span class="cmt">// ... ile değişken argüman</span>
+<span class="type">double</span> <span class="fn">average</span>(<span class="type">int</span> count, ...) {
+    <span class="type">va_list</span> args;
+    <span class="fn">va_start</span>(args, count);   <span class="cmt">// başlat</span>
+    <span class="type">double</span> sum = <span class="num">0</span>;
+    <span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < count; i++)
+        sum += <span class="fn">va_arg</span>(args, <span class="type">double</span>);  <span class="cmt">// sıradaki double</span>
+    <span class="fn">va_end</span>(args);             <span class="cmt">// temizlik</span>
+    <span class="kw">return</span> sum / count;
+}
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="fn">printf</span>(<span class="str">"%.2f\n"</span>, <span class="fn">average</span>(<span class="num">3</span>, <span class="num">10.0</span>, <span class="num">20.0</span>, <span class="num">30.0</span>));  <span class="cmt">// 20.0</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<h3>1.1 Kendi printf'inizi Yazın</h3>
+<div class="code">
+<span class="type">void</span> <span class="fn">my_printf</span>(<span class="kw">const</span> <span class="type">char</span>* fmt, ...) {
+    <span class="type">va_list</span> args;
+    <span class="fn">va_start</span>(args, fmt);
+    <span class="fn">vprintf</span>(fmt, args);  <span class="cmt">// vprintf ile doğrudan yazdır</span>
+    <span class="fn">va_end</span>(args);
+}
+</div>
+
+<h2>2. setjmp / longjmp — Sıçrama</h2>
+<p><code>setjmp</code>/<code>longjmp</code> ile fonksiyonlar arası atlama yapılabilir. Exception handling benzeri bir mekanizma. <code><setjmp.h></code></p>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str"><setjmp.h></span>
+
+<span class="type">jmp_buf</span> buf;
+
+<span class="type">void</span> <span class="fn">error_handler</span>() {
+    <span class="fn">printf</span>(<span class="str">"Hata! Başa dönülüyor...\n"</span>);
+    <span class="fn">longjmp</span>(buf, <span class="num">1</span>);  <span class="cmt">// setjmp'nin olduğu yere dön, 1 döndür</span>
+}
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="kw">if</span> (<span class="fn">setjmp</span>(buf) == <span class="num">0</span>) {  <span class="cmt">// ilk çağrı: 0 döner</span>
+        <span class="fn">printf</span>(<span class="str">"Normal akış\n"</span>);
+        error_handler();
+        <span class="fn">printf</span>(<span class="str">"Bu satır çalışmaz\n"</span>);
+    } <span class="kw">else</span> {                  <span class="cmt">// longjmp sonrası: 1 döndü</span>
+        <span class="fn">printf</span>(<span class="str">"Kurtarıldı!\n"</span>);
+    }
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+<div class="warn">⚠️ <code>longjmp</code> ile atlandığında local değişkenlerin değeri tanımsız olabilir (volatile kullanın).</div>
+
+<h2>3. volatile Keyword</h2>
+<p><code>volatile</code> derleyiciye "bu değişkeni optimize etme, her seferinde bellekten oku" der. Donanım register'ları, sinyal işleyicileri, çok thread'li değişkenler için kullanılır.</p>
+<div class="code">
+<span class="kw">volatile</span> <span class="type">int</span> flag = <span class="num">0</span>;  <span class="cmt">// derleyici her okumada belleğe gider</span>
+
+<span class="type">void</span> <span class="fn">wait_for_flag</span>() {
+    <span class="kw">while</span> (!flag) {  <span class="cmt">// volatile olmazsa derleyici flag'i register'a alır, sonsuz döngü!</span>
+        <span class="cmt">// bekle</span>
+    }
+}
+</div>
+
+<h2>4. _Generic (C11) — Tür Seçimi</h2>
+<p><code>_Generic</code> ile tür bazında farklı kod seçimi yapılabilir. Overloading benzeri.</p>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="pre">#define</span> TYPE_NAME(x) _Generic((x), \
+    <span class="type">int</span>: <span class="str">"int"</span>, \
+    <span class="type">float</span>: <span class="str">"float"</span>, \
+    <span class="type">double</span>: <span class="str">"double"</span>, \
+    <span class="type">char</span>*: <span class="str">"string"</span>, \
+    default: <span class="str">"diğer"</span> \
+)
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="fn">printf</span>(<span class="str">"%s\n"</span>, TYPE_NAME(<span class="num">42</span>));         <span class="cmt">// int</span>
+    <span class="fn">printf</span>(<span class="str">"%s\n"</span>, TYPE_NAME(<span class="num">3.14f</span>));      <span class="cmt">// float</span>
+    <span class="fn">printf</span>(<span class="str">"%s\n"</span>, TYPE_NAME(<span class="str">"merhaba"</span>)); <span class="cmt">// string</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<h2>5. Alignment — _Alignas, _Alignof (C11)</h2>
+<p>Bellek hizalamasını kontrol eder. Bazı veri türleri belirli adreslerde olmalıdır (ör. int → 4'ün katı).</p>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str"><stdalign.h></span>
+
+<span class="cmt">// 16-byte hizalı buffer</span>
+<span class="kw">alignas</span>(<span class="num">16</span>) <span class="type">char</span> buffer[<span class="num">64</span>];
+<span class="cmt">// SIMD işlemleri için 16-byte hizalama gerekebilir</span>
+
+<span class="fn">printf</span>(<span class="str">"Alignment of double: %zu\n"</span>, <span class="kw">alignof</span>(<span class="type">double</span>));  <span class="cmt">// 8</span>
+</div>
+
+<h2>6. Signal Handling — sinyal.h</h2>
+<p>Programa gönderilen sinyalleri yakalamak için (Ctrl+C, segmentation fault, vs.)</p>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str"><signal.h></span>
+
+<span class="type">void</span> <span class="fn">handle_sigint</span>(<span class="type">int</span> sig) {
+    <span class="fn">printf</span>(<span class="str">"\nCtrl+C yakalandı! (sinyal %d)\n"</span>, sig);
+    <span class="cmt">// cleanup yap</span>
+}
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="fn">signal</span>(SIGINT, handle_sigint);  <span class="cmt">// Ctrl+C yakala</span>
+    <span class="fn">printf</span>(<span class="str">"Ctrl+C'ye basmayı dene...\n"</span>);
+    <span class="kw">while</span>(<span class="num">1</span>);  <span class="cmt">// sonsuz döngü</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+</div>
+
+<table>
+  <tr><th>Sinyal</th><th>Anlamı</th><th>Varsayılan</th></tr>
+  <tr><td><code>SIGINT</code></td><td>Ctrl+C</td><td>Programı sonlandır</td></tr>
+  <tr><td><code>SIGTERM</code></td><td>kill komutu</td><td>Programı sonlandır</td></tr>
+  <tr><td><code>SIGSEGV</code></td><td>Segmentation fault (invalid memory)</td><td>Core dump + sonlandır</td></tr>
+  <tr><td><code>SIGABRT</code></td><td>abort() çağrısı</td><td>Core dump + sonlandır</td></tr>
+  <tr><td><code>SIGFPE</code></td><td>Float exception (sıfıra bölme)</td><td>Core dump + sonlandır</td></tr>
+</table>
+
+<h2>7. assert.h — Debug Assertions</h2>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><assert.h></span>
+
+<span class="type">int</span> <span class="fn">divide</span>(<span class="type">int</span> a, <span class="type">int</span> b) {
+    <span class="fn">assert</span>(b != <span class="num">0</span>);  <span class="cmt">// b=0 ise program durur, hata gösterilir</span>
+    <span class="kw">return</span> a / b;
+}
+
+<span class="cmt">// NDEBUG tanımlıysa assert'ler devre dışı:</span>
+<span class="cmt">// #define NDEBUG</span>
+</div>
+
+<h2>8. Compile-Time İşlemler — static_assert (C11)</h2>
+<div class="code">
+<span class="pre">#include</span> <span class="str"><assert.h></span>
+
+<span class="cmt">// Derleme zamanında kontrol</span>
+<span class="fn">static_assert</span>(<span class="kw">sizeof</span>(<span class="type">int</span>) == <span class="num">4</span>, <span class="str">"int 4 byte olmalı!"</span>);
+<span class="fn">static_assert</span>(<span class="num">10</span> > <span class="num">5</span>, <span class="str">"Bu her zaman doğru"</span>);
+<span class="cmt">// Eğer koşul yanlışsa → derleme hatası!</span>
+</div>
+
+<h2>9. Flex Array Member (C99)</h2>
+<p>Struct'ın sonunda boyutsuz dizi tanımlamak için kullanılır. Dinamik boyutlu struct.</p>
+<div class="code">
+<span class="kw">typedef</span> <span class="kw">struct</span> {
+    <span class="type">int</span> len;
+    <span class="type">int</span> data[];  <span class="cmt">// flexible array member (son alan olmalı)</span>
+} FlexArray;
+
+FlexArray* fa = <span class="fn">malloc</span>(<span class="kw">sizeof</span>(FlexArray) + <span class="num">10</span> * <span class="kw">sizeof</span>(<span class="type">int</span>));
+fa->len = <span class="num">10</span>;
+fa->data[<span class="num">0</span>] = <span class="num">42</span>;
+<span class="fn">free</span>(fa);
+</div>
+
+<h2>10. Compound Literals (C99)</h2>
+<p>İsimsiz geçici nesneler oluşturur.</p>
+<div class="code">
+<span class="cmt">// Struct literal</span>
+<span class="fn">some_func</span>((<span class="kw">struct</span> <span class="type">Point</span>){<span class="num">10</span>, <span class="num">20</span>});
+
+<span class="cmt">// Array literal</span>
+<span class="type">int</span>* arr = (<span class="type">int</span>[]){<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>};
+</div>
+
+<h2>11. Designated Initializers (C99)</h2>
+<div class="code">
+<span class="cmt">// Struct alanlarını isimle başlat</span>
+<span class="kw">struct</span> <span class="type">Student</span> s = {.name = <span class="str">"Ali"</span>, .age = <span class="num">20</span>, .gpa = <span class="num">3.5</span>};
+
+<span class="cmt">// Dizide belirli indeksi başlat</span>
+<span class="type">int</span> arr[<span class="num">10</span>] = {[<span class="num">0</span>] = <span class="num">100</span>, [<span class="num">5</span>] = <span class="num">200</span>};  <span class="cmt">// diğerleri 0</span>
+</div>
+
+<h2>12. constexpr (C23) sabit ifadeler</h2>
+<p>C23 ile gelen derleme-zamanı sabit ifadeleri. Derleyici sonucu derleme anında hesaplar.</p>
+<div class="code">
+<span class="cmt">// C23: constexpr int square(int n) { return n * n; }</span>
+<span class="cmt">// int arr[square(5)];  // geçerli (sabit ifade)</span>
+<span class="cmt">// Şimdilik bu işi enum veya macro ile yapıyoruz:</span>
+<span class="pre">#define</span> SQUARE(x) ((x)*(x))
+</div>
+
+<a href="index.html" class="back">← Back</a>
+</div>
+</body>
+</html>

@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Threading & Multiprocessing Kütüphane Referansı</title>
+<style>  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825; color: #eee; padding: 20px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; background: #1f0d3a; border: 3px solid #2d1554; border-radius: 14px; padding: 24px 28px; }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container h4 { color: #e9d5ff; margin: 10px 0 4px; font-size: 1em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code { background: #150825; color: #50fa7b; font-family: 'Courier New', monospace; padding: 14px 18px; border-radius: 10px; border: 2px solid #2d1554; margin: 10px 0; overflow-x: auto; font-size: 1.05em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 10px 16px; border-radius: 8px; border: 2px solid #a855f7; margin: 8px 0 18px; white-space: pre-wrap; overflow-wrap: break-word; font-size: 1.05em; line-height: 1.5; }
+  .container .output::before { content: "\25B6 OUTPUT"; display: block; color: #50fa7b; font-size: 0.8em; margin-bottom: 4px; }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #a855f7; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 0.9em; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container td code { font-size: 0.88em; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #c4b5fd; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+  .toc { background: #150825; border: 2px solid #2d1554; border-radius: 10px; padding: 16px 20px; margin: 14px 0; }
+  .toc a { display: block; color: #c4b5fd; text-decoration: none; padding: 3px 0; font-size: 0.88em; }
+  .toc a:hover { color: #a855f7; }
+  .toc a.toc-h2 { padding-left: 0; font-weight: 600; color: #c084fc; }
+  .toc a.toc-h3 { padding-left: 20px; }
+  .func-sig { background: #150825; color: #f1fa8c; font-family: 'Courier New', monospace; padding: 6px 12px; border-radius: 6px; border: 1px solid #a855f7; margin: 6px 0 10px; display: inline-block; font-size: 0.85em; }
+  @media (max-width: 768px) { .container { padding: 14px 16px; } }</style>
+</head>
+<body>
+<div class="container">
+
+<h1>🧵 Threading & Multiprocessing Kütüphane Referansı</h1>
+<p><strong>threading</strong>, <strong>multiprocessing</strong>, <strong>concurrent.futures</strong>, <strong>queue</strong> — Python'da eşzamanlılık ve paralel işlem kütüphaneleri.</p>
+
+<div class="note">
+  💡 <strong>İçe aktarma:</strong><br>
+  <code>import threading</code> — thread tabanlı eşzamanlılık<br>
+  <code>import multiprocessing</code> — proses tabanlı paralellik<br>
+  <code>from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor</code><br>
+  <code>import queue</code> — thread-safe kuyruk
+</div>
+
+<div class="toc">
+<h3 style="color:#a855f7;margin-bottom:6px;">İçindekiler</h3>
+<a href="#s0" class="toc-h2">0. GIL — Global Interpreter Lock</a>
+<a href="#s1" class="toc-h2">1. Threading — Temeller</a>
+<a href="#s2" class="toc-h2">2. Thread Sınıfı Alt Sınıflama</a>
+<a href="#s3" class="toc-h2">3. Daemon Threads</a>
+<a href="#s4" class="toc-h2">4. Lock — Senkronizasyon</a>
+<a href="#s5" class="toc-h2">5. RLock — Reentrant Lock</a>
+<a href="#s6" class="toc-h2">6. Semaphore</a>
+<a href="#s7" class="toc-h2">7. Event — Thread Haberleşmesi</a>
+<a href="#s8" class="toc-h2">8. Condition</a>
+<a href="#s9" class="toc-h2">9. Barrier</a>
+<a href="#s10" class="toc-h2">10. queue.Queue</a>
+<a href="#s11" class="toc-h2">11. ThreadPoolExecutor</a>
+<a href="#s12" class="toc-h2">12. Thread-Local Data</a>
+<a href="#s13" class="toc-h2">13. Timer Threads</a>
+<a href="#s14" class="toc-h2">14. Multiprocessing — Temeller</a>
+<a href="#s15" class="toc-h2">15. multiprocessing.Pool</a>
+<a href="#s16" class="toc-h2">16. ProcessPoolExecutor</a>
+<a href="#s17" class="toc-h2">17. Queue & Pipe (IPC)</a>
+<a href="#s18" class="toc-h2">18. Shared Memory</a>
+<a href="#s19" class="toc-h2">19. Manager</a>
+<a href="#s20" class="toc-h2">20. Async Results & Callbacks</a>
+<a href="#s21" class="toc-h2">21. Process Senkronizasyon</a>
+<a href="#s22" class="toc-h2">22. Thread vs Process</a>
+<a href="#s23" class="toc-h2">23. Best Practices</a>
+<a href="#s24" class="toc-h2">24. Tam Fonksiyon Tablosu</a>
+</div>
+
+<h2 id="s0">0. GIL — Global Interpreter Lock</h2>
+<div class="warn">⚠ <strong>GIL:</strong> CPython'da her proses aynı anda sadece 1 thread'in Python bytecode çalıştırmasına izin verir.</div>
+<table>
+  <tr><th></th><th>Threading</th><th>Multiprocessing</th></tr>
+  <tr><td>GIL'den etkilenir?</td><td>✅ Evet</td><td>❌ Hayır (her prosesin kendi GIL'i)</td></tr>
+  <tr><td>En uygun</td><td>I/O-bound (dosya, ağ, DB)</td><td>CPU-bound (hesaplama)</td></tr>
+  <tr><td>Bellek</td><td>Paylaşımlı, düşük</td><td>Ayrı, yüksek</td></tr>
+  <tr><td>Başlatma süresi</td><td>~1ms</td><td>~50-200ms</td></tr>
+</table>
+
+<h2 id="s1">1. Threading — Temeller</h2>
+<div class="func-sig">threading.Thread(target=None, name=None, args=(), kwargs={}, daemon=None)</div>
+<div class="code">
+<span class="pre">import</span> threading, time
+
+<span class="kw">def</span> <span class="fn">worker</span>(name, delay):
+    <span class="fn">print</span>(<span class="str">f"  {name}: başladı"</span>)
+    time.<span class="fn">sleep</span>(delay)
+    <span class="fn">print</span>(<span class="str">f"  {name}: bitti"</span>)
+
+t1 = threading.<span class="type">Thread</span>(target=worker, args=(<span class="str">"A"</span>, <span class="num">2</span>))
+t2 = threading.<span class="type">Thread</span>(target=worker, args=(<span class="str">"B"</span>, <span class="num">1</span>))
+t1.<span class="fn">start</span>(); t2.<span class="fn">start</span>()
+t1.<span class="fn">join</span>(); t2.<span class="fn">join</span>()
+<span class="fn">print</span>(<span class="str">"Ana thread: tümü tamam"</span>)
+</div>
+<div class="output">
+  A: başladı
+  B: başladı
+  B: bitti
+  A: bitti
+Ana thread: tümü tamam
+</div>
+
+<h3>Thread Bilgileri</h3>
+<div class="code">
+<span class="fn">print</span>(threading.<span class="fn">current_thread</span>().<span class="fn">name</span>)   <span class="cmt"># "MainThread"</span>
+<span class="fn">print</span>(threading.<span class="fn">active_count</span>())             <span class="cmt"># aktif thread sayısı</span>
+<span class="fn">print</span>(threading.<span class="fn">enumerate</span>())                 <span class="cmt"># tüm thread listesi</span>
+<span class="fn">print</span>(t.<span class="fn">is_alive</span>())                            <span class="cmt"># çalışıyor mu</span>
+<span class="fn">print</span>(t.<span class="fn">ident</span>)                                <span class="cmt"># thread ID</span>
+<span class="fn">print</span>(t.<span class="fn">native_id</span>)                            <span class="cmt"># OS thread ID</span>
+</div>
+
+<h2 id="s2">2. Thread Sınıfı Alt Sınıflama</h2>
+<div class="code">
+<span class="kw">class</span> <span class="type">MyThread</span>(threading.<span class="type">Thread</span>):
+    <span class="kw">def</span> <span class="fn">__init__</span>(<span class="kw">self</span>, name, count):
+        <span class="kw">super</span>().<span class="fn">__init__</span>(name=name)
+        <span class="kw">self</span>.count = count
+    <span class="kw">def</span> <span class="fn">run</span>(<span class="kw">self</span>):
+        <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="kw">self</span>.count):
+            <span class="fn">print</span>(<span class="str">f"{self.name}: {i}"</span>); time.<span class="fn">sleep</span>(<span class="num">0.2</span>)
+
+ts = [<span class="type">MyThread</span>(<span class="str">f"T-{i}"</span>, <span class="num">3</span>) <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>)]
+<span class="kw">for</span> t <span class="kw">in</span> ts: t.<span class="fn">start</span>()
+<span class="kw">for</span> t <span class="kw">in</span> ts: t.<span class="fn">join</span>()
+</div>
+
+<h2 id="s3">3. Daemon Threads</h2>
+<p>Ana thread sonlandığında otomatik öldürülür.</p>
+<div class="code">
+<span class="kw">def</span> <span class="fn">bg</span>():
+    <span class="kw">while</span> <span class="kw">True</span>:
+        <span class="fn">print</span>(<span class="str">"."</span>, end=<span class="str">""</span>, flush=<span class="kw">True</span>); time.<span class="fn">sleep</span>(<span class="num">0.3</span>)
+
+t = threading.<span class="type">Thread</span>(target=bg, daemon=<span class="kw">True</span>)
+t.<span class="fn">start</span>()
+time.<span class="fn">sleep</span>(<span class="num">1</span>)
+<span class="fn">print</span>(<span class="str">"\nAna thread bitiyor"</span>)
+</div>
+
+<h2 id="s4">4. Lock — Senkronizasyon</h2>
+<div class="func-sig">threading.Lock()  # .acquire(blocking, timeout) / .release() / 'with lock:'</div>
+<div class="code">
+counter = <span class="num">0</span>; lock = threading.<span class="type">Lock</span>()
+
+<span class="kw">def</span> <span class="fn">safe_inc</span>(n):
+    <span class="kw">global</span> counter
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(n):
+        <span class="kw">with</span> lock:
+            counter += <span class="num">1</span>
+
+<span class="cmt"># Non-blocking acquire</span>
+<span class="kw">if</span> lock.<span class="fn">acquire</span>(blocking=<span class="kw">False</span>):
+    <span class="kw">try</span>: <span class="fn">print</span>(<span class="str">"Lock alındı"</span>)
+    <span class="kw">finally</span>: lock.<span class="fn">release</span>()
+
+<span class="cmt"># Timeout ile</span>
+<span class="kw">if</span> lock.<span class="fn">acquire</span>(timeout=<span class="num">3</span>):
+    lock.<span class="fn">release</span>()
+</div>
+
+<h2 id="s5">5. RLock — Reentrant Lock</h2>
+<p>Aynı thread tarafından birden çok kez alınabilir. Bir fonksiyon başka bir kilitli fonksiyonu çağırdığında deadlock'u önler.</p>
+<div class="code">
+rlock = threading.<span class="type">RLock</span>()
+
+<span class="kw">def</span> <span class="fn">inner</span>():
+    <span class="kw">with</span> rlock: <span class="fn">print</span>(<span class="str">"Inner"</span>)
+
+<span class="kw">def</span> <span class="fn">outer</span>():
+    <span class="kw">with</span> rlock:
+        <span class="fn">print</span>(<span class="str">"Outer"</span>)
+        inner()  <span class="cmt"># ← Lock ile deadlock olurdu!</span>
+
+outer()
+</div>
+
+<h2 id="s6">6. Semaphore</h2>
+<p>Bir kaynağı aynı anda kullanabilecek maksimum thread sayısını sınırlar.</p>
+<div class="func-sig">threading.Semaphore(value=1)  # value=3 → 3 thread aynı anda</div>
+<div class="code">
+sem = threading.<span class="type">Semaphore</span>(<span class="num">3</span>)
+
+<span class="kw">def</span> <span class="fn">access_db</span>(n):
+    <span class="kw">with</span> sem:
+        <span class="fn">print</span>(<span class="str">f"  DB-{n}: bağlandı"</span>)
+        time.<span class="fn">sleep</span>(<span class="num">1</span>)
+    <span class="fn">print</span>(<span class="str">f"  DB-{n}: çıktı"</span>)
+
+threads = [threading.<span class="type">Thread</span>(target=access_db, args=(i,)) <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">6</span>)]
+<span class="kw">for</span> t <span class="kw">in</span> threads: t.<span class="fn">start</span>()
+<span class="kw">for</span> t <span class="kw">in</span> threads: t.<span class="fn">join</span>()
+</div>
+
+<h2 id="s7">7. Event — Thread Haberleşmesi</h2>
+<p>Bir thread'in diğer thread'lere sinyal göndermesini sağlar.</p>
+<div class="func-sig">threading.Event()  # .set() / .clear() / .wait(timeout) / .is_set()</div>
+<div class="code">
+event = threading.<span class="type">Event</span>()
+
+<span class="kw">def</span> <span class="fn">waiter</span>(name):
+    <span class="fn">print</span>(<span class="str">f"{name}: bekliyor..."</span>)
+    event.<span class="fn">wait</span>()
+    <span class="fn">print</span>(<span class="str">f"{name}: sinyal alındı!"</span>)
+
+<span class="kw">def</span> <span class="fn">signaller</span>():
+    time.<span class="fn">sleep</span>(<span class="num">1</span>)
+    <span class="fn">print</span>(<span class="str">"Sinyal: SET!"</span>)
+    event.<span class="fn">set</span>()
+
+threading.<span class="type">Thread</span>(target=waiter, args=(<span class="str">"W1"</span>,)).<span class="fn">start</span>()
+threading.<span class="type">Thread</span>(target=waiter, args=(<span class="str">"W2"</span>,)).<span class="fn">start</span>()
+threading.<span class="type">Thread</span>(target=signaller).<span class="fn">start</span>()
+
+<span class="cmt"># .wait(timeout) — zaman aşımı ile bekle</span>
+event.<span class="fn">wait</span>(timeout=<span class="num">5</span>)
+
+<span class="cmt"># .clear() — sinyali sıfırla</span>
+event.<span class="fn">clear</span>()
+</div>
+
+<h2 id="s8">8. Condition</h2>
+<p>Gelişmiş wait/notify pattern. Bir thread koşul gerçekleşene kadar bekler, diğer thread koşulu gerçekleştirip haber verir.</p>
+<div class="func-sig">threading.Condition(lock=None)  # .wait(timeout) / .notify(n) / .notify_all()</div>
+<div class="code">
+cv = threading.<span class="type">Condition</span>()
+items = []
+
+<span class="kw">def</span> <span class="fn">producer</span>():
+    <span class="kw">with</span> cv:
+        <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">5</span>):
+            items.<span class="fn">append</span>(i)
+            cv.<span class="fn">notify</span>(<span class="num">1</span>)          <span class="cmt"># 1 tüketiciyi uyandır</span>
+            time.<span class="fn">sleep</span>(<span class="num">0.3</span>)
+
+<span class="kw">def</span> <span class="fn">consumer</span>():
+    <span class="kw">with</span> cv:
+        <span class="kw">while</span> <span class="kw">True</span>:
+            <span class="kw">while</span> <span class="kw">not</span> items:
+                cv.<span class="fn">wait</span>()        <span class="cmt"># notify gelene kadar bekle</span>
+            item = items.<span class="fn">pop</span>(<span class="num">0</span>)
+            <span class="fn">print</span>(<span class="str">"Tüketildi:"</span>, item)
+            <span class="kw">if</span> item == <span class="num">4</span>: <span class="kw">break</span>
+
+threading.<span class="type">Thread</span>(target=producer).<span class="fn">start</span>()
+threading.<span class="type">Thread</span>(target=consumer).<span class="fn">start</span>()
+</div>
+
+<h2 id="s9">9. Barrier</h2>
+<p>N thread'in tümü bariyere ulaşana kadar bloke olur, sonra hepsi serbest kalır.</p>
+<div class="func-sig">threading.Barrier(n, action=None, timeout=None)</div>
+<div class="code">
+barrier = threading.<span class="type">Barrier</span>(<span class="num">3</span>)
+
+<span class="kw">def</span> <span class="fn">race_car</span>(name):
+    time.<span class="fn">sleep</span>(<span class="fn">hash</span>(name) % <span class="num">3</span>)
+    <span class="fn">print</span>(<span class="str">f"{name}: bariyerde bekliyor"</span>)
+    barrier.<span class="fn">wait</span>()
+    <span class="fn">print</span>(<span class="str">f"{name}: GO!"</span>)
+
+cars = [threading.<span class="type">Thread</span>(target=race_car, args=(<span class="str">f"Car {i}"</span>,)) <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>)]
+<span class="kw">for</span> c <span class="kw">in</span> cars: c.<span class="fn">start</span>()
+<span class="kw">for</span> c <span class="kw">in</span> cars: c.<span class="fn">join</span>()
+
+<span class="cmt"># .abort() — tüm bekleyenlere BrokenBarrierError fırlat</span>
+<span class="cmt"># .reset() — bariyeri sıfırla</span>
+</div>
+
+<h2 id="s10">10. queue.Queue — Thread-Safe Kuyruk</h2>
+<div class="func-sig">queue.Queue(maxsize=0)  # FIFO kuyruk</div>
+<div class="func-sig">queue.LifoQueue(maxsize=0)  # LIFO (stack)</div>
+<div class="func-sig">queue.PriorityQueue(maxsize=0)  # öncelik kuyruğu</div>
+<div class="code">
+<span class="pre">import</span> queue
+
+q = queue.<span class="type">Queue</span>(maxsize=<span class="num">5</span>)
+
+<span class="cmt"># Üretici</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">8</span>):
+    q.<span class="fn">put</span>(i, block=<span class="kw">True</span>, timeout=<span class="num">2</span>)  <span class="cmt"># doluysa bekle</span>
+
+<span class="cmt"># Tüketici</span>
+item = q.<span class="fn">get</span>(block=<span class="kw">True</span>, timeout=<span class="num">2</span>)  <span class="cmt"># boşsa bekle</span>
+q.<span class="fn">task_done</span>()                          <span class="cmt"># işleme bitti sinyali</span>
+q.<span class="fn">join</span>()                                <span class="cmt"># tüm task_done gelene kadar bekle</span>
+
+<span class="cmt"># Non-blocking</span>
+item = q.<span class="fn">get_nowait</span>()                     <span class="cmt"># boşsa queue.Empty hatası</span>
+q.<span class="fn">put_nowait</span>(item)                       <span class="cmt"># doluysa queue.Full hatası</span>
+
+<span class="cmt"># Kuyruk durumu</span>
+<span class="fn">print</span>(q.<span class="fn">qsize</span>())     <span class="cmt"># eleman sayısı</span>
+<span class="fn">print</span>(q.<span class="fn">empty</span>())     <span class="cmt"># boş mu</span>
+<span class="fn">print</span>(q.<span class="fn">full</span>())      <span class="cmt"># dolu mu</span>
+</div>
+
+<h3>Producer-Consumer Pattern (Tam)</h3>
+<div class="code">
+q = queue.<span class="type">Queue</span>(maxsize=<span class="num">5</span>)
+
+<span class="kw">def</span> <span class="fn">producer</span>():
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">8</span>):
+        q.<span class="fn">put</span>(i); <span class="fn">print</span>(<span class="str">f"Üretildi: {i}"</span>); time.<span class="fn">sleep</span>(<span class="num">0.2</span>)
+
+<span class="kw">def</span> <span class="fn">consumer</span>(name):
+    <span class="kw">while</span> <span class="kw">True</span>:
+        item = q.<span class="fn">get</span>()
+        <span class="kw">if</span> item <span class="kw">is</span> <span class="kw">None</span>: <span class="kw">break</span>  <span class="cmt"># sinyal: kapat</span>
+        <span class="fn">print</span>(<span class="str">f"  {name} tüketti: {item}"</span>)
+        q.<span class="fn">task_done</span>(); time.<span class="fn">sleep</span>(<span class="num">0.5</span>)
+
+threading.<span class="type">Thread</span>(target=producer).<span class="fn">start</span>()
+threading.<span class="type">Thread</span>(target=consumer, args=(<span class="str">"C1"</span>,)).<span class="fn">start</span>()
+threading.<span class="type">Thread</span>(target=consumer, args=(<span class="str">"C2"</span>,)).<span class="fn">start</span>()
+q.<span class="fn">join</span>()  <span class="cmt"># tüm öğeler işlenene kadar bekle</span>
+</div>
+
+<h2 id="s11">11. ThreadPoolExecutor</h2>
+<p>concurrent.futures modülü ile thread havuzu yönetimi — manuel thread yönetiminden çok daha kolay.</p>
+<div class="func-sig">ThreadPoolExecutor(max_workers=None, thread_name_prefix='')</div>
+<h3>submit() + as_completed()</h3>
+<div class="code">
+<span class="pre">from</span> concurrent.futures <span class="pre">import</span> ThreadPoolExecutor, as_completed
+
+<span class="kw">def</span> <span class="fn">fetch</span>(url):
+    time.<span class="fn">sleep</span>(<span class="num">1</span>)
+    <span class="kw">return</span> <span class="str">f"Veri: {url}"</span>
+
+urls = [<span class="str">"a.com"</span>, <span class="str">"b.com"</span>, <span class="str">"c.com"</span>, <span class="str">"d.com"</span>, <span class="str">"e.com"</span>]
+
+<span class="kw">with</span> <span class="type">ThreadPoolExecutor</span>(max_workers=<span class="num">3</span>) <span class="kw">as</span> ex:
+    futures = {ex.<span class="fn">submit</span>(fetch, url): url <span class="kw">for</span> url <span class="kw">in</span> urls}
+    <span class="kw">for</span> future <span class="kw">in</span> <span class="fn">as_completed</span>(futures):
+        <span class="fn">print</span>(future.<span class="fn">result</span>())
+</div>
+
+<h3>map() — Sıralı sonuç</h3>
+<div class="code">
+<span class="kw">with</span> <span class="type">ThreadPoolExecutor</span>(<span class="num">4</span>) <span class="kw">as</span> ex:
+    results = <span class="fn">list</span>(ex.<span class="fn">map</span>(fetch, urls))
+<span class="fn">print</span>(results)
+</div>
+
+<h3>Future Metodları</h3>
+<div class="code">
+future = ex.<span class="fn">submit</span>(fetch, <span class="str">"test.com"</span>)
+future.<span class="fn">result</span>(timeout=<span class="num">5</span>)      <span class="cmt"># sonucu al (bekle)</span>
+future.<span class="fn">done</span>()                      <span class="cmt"># tamamlandı mı</span>
+future.<span class="fn">cancel</span>()                    <span class="cmt"># iptal et (başlamadıysa)</span>
+future.<span class="fn">cancelled</span>()                 <span class="cmt"># iptal edildi mi</span>
+future.<span class="fn">running</span>()                   <span class="cmt"># çalışıyor mu</span>
+future.<span class="fn">exception</span>()                  <span class="cmt"># varsa exception'ı döndür</span>
+<span class="fn">print</span>(future.<span class="fn">add_done_callback</span>(<span class="kw">lambda</span> f: <span class="fn">print</span>(<span class="str">"Bitti!"</span>)))
+</div>
+
+<h2 id="s12">12. Thread-Local Data</h2>
+<p>Her thread'in kendi kopyasına sahip olduğu veri.</p>
+<div class="code">
+local_data = threading.<span class="type">local</span>()
+
+<span class="kw">def</span> <span class="fn">worker</span>(value):
+    local_data.val = value  <span class="cmt"># her thread kendi kopyasını alır</span>
+    time.<span class="fn">sleep</span>(<span class="num">0.1</span>)
+    <span class="fn">print</span>(<span class="str">f"{threading.current_thread().name}: {local_data.val}"</span>)
+
+threads = [threading.<span class="type">Thread</span>(target=worker, args=(i,)) <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>)]
+<span class="kw">for</span> t <span class="kw">in</span> threads: t.<span class="fn">start</span>()
+<span class="kw">for</span> t <span class="kw">in</span> threads: t.<span class="fn">join</span>()
+</div>
+
+<h2 id="s13">13. Timer Threads</h2>
+<div class="func-sig">threading.Timer(interval, function, args=None, kwargs=None)</div>
+<div class="code">
+<span class="kw">def</span> <span class="fn">alarm</span>():
+    <span class="fn">print</span>(<span class="str">"⏰ Zaman doldu!"</span>)
+
+t = threading.<span class="type">Timer</span>(<span class="num">3</span>, alarm)  <span class="cmt"># 3 saniye sonra çalıştır</span>
+t.<span class="fn">start</span>()
+t.<span class="fn">cancel</span>()  <span class="cmt"># iptal et (henüz başlamadıysa)</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s14">14. Multiprocessing — Temeller</h2>
+
+<h3>14.1 Process Oluşturma</h3>
+<div class="func-sig">multiprocessing.Process(target=None, name=None, args=(), kwargs={}, daemon=None)</div>
+<div class="code">
+<span class="pre">import</span> multiprocessing
+
+<span class="kw">def</span> <span class="fn">cpu_work</span>(n):
+    <span class="kw">return</span> <span class="fn">sum</span>(i*i <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(n))
+
+p = multiprocessing.<span class="type">Process</span>(target=cpu_work, args=(<span class="num">10_000_000</span>,))
+p.<span class="fn">start</span>()
+p.<span class="fn">join</span>()
+<span class="fn">print</span>(<span class="str">"Process bitti"</span>)
+</div>
+
+<h3>14.2 Multiprocessing Pool — Pool()</h3>
+<div class="func-sig">multiprocessing.Pool(processes=None, initializer=None, initargs=())</div>
+<div class="code">
+<span class="kw">def</span> <span class="fn">square</span>(x):
+    <span class="kw">return</span> x * x
+
+<span class="kw">with</span> multiprocessing.<span class="type">Pool</span>(processes=<span class="num">4</span>) <span class="kw">as</span> pool:
+    <span class="cmt"># map — bloklu</span>
+    results = pool.<span class="fn">map</span>(square, <span class="fn">range</span>(<span class="num">20</span>))
+    <span class="fn">print</span>(results)
+
+    <span class="cmt"># imap — lazy (tek tek iterator döndürür)</span>
+    <span class="kw">for</span> r <span class="kw">in</span> pool.<span class="fn">imap</span>(square, <span class="fn">range</span>(<span class="num">20</span>)):
+        <span class="fn">print</span>(r, end=<span class="str">" "</span>)
+
+    <span class="cmt"># starmap — çoklu argüman</span>
+    r2 = pool.<span class="fn">starmap</span>(<span class="kw">lambda</span> a, b: a+b, [(<span class="num">1</span>,<span class="num">2</span>), (<span class="num">3</span>,<span class="num">4</span>)])
+</div>
+
+<h3>14.3 Pool.apply() & Pool.apply_async()</h3>
+<div class="code">
+<span class="kw">def</span> <span class="fn">add</span>(a, b):
+    time.<span class="fn">sleep</span>(<span class="num">0.5</span>)
+    <span class="kw">return</span> a + b
+
+<span class="kw">with</span> multiprocessing.<span class="type">Pool</span>(<span class="num">4</span>) <span class="kw">as</span> pool:
+    <span class="cmt"># apply — bloklu</span>
+    r1 = pool.<span class="fn">apply</span>(add, (<span class="num">10</span>, <span class="num">20</span>))
+
+    <span class="cmt"># apply_async — non-bloklu</span>
+    result = pool.<span class="fn">apply_async</span>(add, (<span class="num">30</span>, <span class="num">40</span>))
+    <span class="fn">print</span>(<span class="str">"Başka iş yapılıyor..."</span>)
+    r2 = result.<span class="fn">get</span>(timeout=<span class="num">5</span>)  <span class="cmt"># sonucu al</span>
+
+    <span class="cmt"># Callback ile async</span>
+    pool.<span class="fn">apply_async</span>(add, (<span class="num">5</span>, <span class="num">6</span>), callback=<span class="kw">lambda</span> r: <span class="fn">print</span>(<span class="str">f"Callback: {r}"</span>))
+    pool.<span class="fn">close</span>()  <span class="cmt"># yeni iş kabul etme</span>
+    pool.<span class="fn">join</span>()    <span class="cmt"># tüm işler bitene kadar bekle</span>
+</div>
+
+<h2 id="s15">15. multiprocessing.Pool — Detaylı</h2>
+
+<table>
+  <tr><th>Metod</th><th>Açıklama</th></tr>
+  <tr><td><code>pool.map(func, iterable, chunksize)</code></td><td>Bloklu haritalama, sonuç listesi döner</td></tr>
+  <tr><td><code>pool.imap(func, iterable, chunksize)</code></td><td>Lazy iterator (sıralı)</td></tr>
+  <tr><td><code>pool.imap_unordered(func, iterable)</code></td><td>Lazy iterator (sırasız, daha hızlı)</td></tr>
+  <tr><td><code>pool.starmap(func, iterable, chunksize)</code></td><td>Çoklu argüman için</td></tr>
+  <tr><td><code>pool.starmap_async(func, iterable)</code></td><td>Async starmap</td></tr>
+  <tr><td><code>pool.apply(func, args, kwds)</code></td><td>Bloklu tek işlem</td></tr>
+  <tr><td><code>pool.apply_async(func, args, kwds, callback, error_callback)</code></td><td>Async tek işlem</td></tr>
+  <tr><td><code>pool.map_async(func, iterable, chunksize, callback)</code></td><td>Async map</td></tr>
+  <tr><td><code>pool.terminate()</code></td><td>Tüm worker'ları hemen durdur</td></tr>
+  <tr><td><code>pool.close()</code></td><td>Yeni iş kabul etme</td></tr>
+  <tr><td><code>pool.join()</code></td><td>İşlerin bitmesini bekle</td></tr>
+</table>
+
+<h2 id="s16">16. ProcessPoolExecutor</h2>
+<div class="func-sig">ProcessPoolExecutor(max_workers=None)</div>
+<div class="code">
+<span class="pre">from</span> concurrent.futures <span class="pre">import</span> ProcessPoolExecutor
+
+<span class="kw">def</span> <span class="fn">is_prime</span>(n):
+    <span class="kw">if</span> n < <span class="num">2</span>: <span class="kw">return</span> <span class="kw">False</span>
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">2</span>, <span class="type">int</span>(n**<span class="num">0.5</span>)+<span class="num">1</span>):
+        <span class="kw">if</span> n % i == <span class="num">0</span>: <span class="kw">return</span> <span class="kw">False</span>
+    <span class="kw">return</span> <span class="kw">True</span>
+
+nums = [<span class="num">2</span>, <span class="num">17</span>, <span class="num">100</span>, <span class="num">97</span>, <span class="num">9999991</span>]
+<span class="kw">with</span> <span class="type">ProcessPoolExecutor</span>(<span class="num">4</span>) <span class="kw">as</span> ex:
+    results = <span class="fn">list</span>(ex.<span class="fn">map</span>(is_prime, nums))
+<span class="fn">print</span>(results)
+</div>
+
+<h2 id="s17">17. Queue & Pipe (IPC)</h2>
+
+<h3>17.1 multiprocessing.Queue</h3>
+<div class="code">
+q = multiprocessing.<span class="type">Queue</span>()
+
+<span class="kw">def</span> <span class="fn">sender</span>(q):
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">5</span>):
+        q.<span class="fn">put</span>(i)
+    q.<span class="fn">put</span>(<span class="kw">None</span>)  <span class="cmt"># bitiş sinyali</span>
+
+<span class="kw">def</span> <span class="fn">receiver</span>(q):
+    <span class="kw">while</span> <span class="kw">True</span>:
+        item = q.<span class="fn">get</span>()
+        <span class="kw">if</span> item <span class="kw">is</span> <span class="kw">None</span>: <span class="kw">break</span>
+        <span class="fn">print</span>(<span class="str">f"Aldı: {item}"</span>)
+
+p1 = multiprocessing.<span class="type">Process</span>(target=sender, args=(q,))
+p2 = multiprocessing.<span class="type">Process</span>(target=receiver, args=(q,))
+p1.<span class="fn">start</span>(); p2.<span class="fn">start</span>()
+p1.<span class="fn">join</span>(); p2.<span class="fn">join</span>()
+</div>
+
+<h3>17.2 Pipe — Çift yönlü haberleşme</h3>
+<div class="func-sig">multiprocessing.Pipe(duplex=True)</div>
+<div class="code">
+parent, child = multiprocessing.<span class="type">Pipe</span>(duplex=<span class="kw">True</span>)
+
+<span class="kw">def</span> <span class="fn">child_proc</span>(conn):
+    conn.<span class="fn">send</span>([<span class="str">"Merhaba"</span>, <span class="str">"çocuktan"</span>])
+    msg = conn.<span class="fn">recv</span>()
+    <span class="fn">print</span>(<span class="str">"Çocuk aldı:"</span>, msg)
+    conn.<span class="fn">close</span>()
+
+p = multiprocessing.<span class="type">Process</span>(target=child_proc, args=(child,))
+p.<span class="fn">start</span>()
+msg = parent.<span class="fn">recv</span>()
+<span class="fn">print</span>(<span class="str">"Ebeveyn aldı:"</span>, msg)
+parent.<span class="fn">send</span>(<span class="str">"Merhaba ebeveynden!"</span>)
+p.<span class="fn">join</span>()
+
+<span class="cmt"># conn.poll() — veri var mı kontrol et</span>
+<span class="cmt"># conn.send_bytes() — byte verisi gönder</span>
+<span class="cmt"># conn.recv_bytes() — byte verisi al</span>
+</div>
+
+<h3>17.3 multiprocessing.JoinableQueue</h3>
+<p>Queue + task_done()/join() desteği:</p>
+<div class="code">
+jq = multiprocessing.<span class="type">JoinableQueue</span>()
+<span class="cmt"># .put() / .get() / .task_done() / .join() — threading.Queue ile aynı API</span>
+</div>
+
+<h2 id="s18">18. Shared Memory — Value & Array</h2>
+<p>Process'ler arasında paylaşılan bellek (daha hızlı, kopya yok).</p>
+
+<h3>18.1 Value</h3>
+<div class="func-sig">multiprocessing.Value(typecode_or_type, *args, lock=True)</div>
+<div class="code">
+counter = multiprocessing.<span class="type">Value</span>(<span class="str">'i'</span>, <span class="num">0</span>)  <span class="cmt"># 'i' = signed int</span>
+lock = multiprocessing.<span class="type">Lock</span>()
+
+<span class="kw">def</span> <span class="fn">inc</span>(n):
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(n):
+        <span class="kw">with</span> lock:
+            counter.<span class="fn">value</span> += <span class="num">1</span>
+
+procs = [multiprocessing.<span class="type">Process</span>(target=inc, args=(<span class="num">10000</span>,)) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">4</span>)]
+<span class="kw">for</span> p <span class="kw">in</span> procs: p.<span class="fn">start</span>()
+<span class="kw">for</span> p <span class="kw">in</span> procs: p.<span class="fn">join</span>()
+<span class="fn">print</span>(counter.<span class="fn">value</span>)  <span class="cmt"># 40000</span>
+</div>
+
+<h3>18.2 Array</h3>
+<div class="func-sig">multiprocessing.Array(typecode_or_type, size_or_sequence, lock=True)</div>
+<div class="code">
+arr = multiprocessing.<span class="type">Array</span>(<span class="str">'d'</span>, <span class="fn">range</span>(<span class="num">10</span>))  <span class="cmt"># 'd' = double</span>
+
+<span class="kw">def</span> <span class="fn">double_arr</span>(arr, lock):
+    <span class="kw">with</span> lock:
+        <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(len(arr)):
+            arr[i] *= <span class="num">2</span>
+
+lock = multiprocessing.<span class="type">Lock</span>()
+p = multiprocessing.<span class="type">Process</span>(target=double_arr, args=(arr, lock))
+p.<span class="fn">start</span>(); p.<span class="fn">join</span>()
+<span class="fn">print</span>(<span class="fn">list</span>(arr))
+</div>
+
+<table>
+  <tr><th>Typecode</th><th>C türü</th><th>Python türü</th><th>Boyut</th></tr>
+  <tr><td><code>'b'</code></td><td>signed char</td><td>int</td><td>1</td></tr>
+  <tr><td><code>'B'</code></td><td>unsigned char</td><td>int</td><td>1</td></tr>
+  <tr><td><code>'h'</code></td><td>signed short</td><td>int</td><td>2</td></tr>
+  <tr><td><code>'H'</code></td><td>unsigned short</td><td>int</td><td>2</td></tr>
+  <tr><td><code>'i'</code></td><td>signed int</td><td>int</td><td>4</td></tr>
+  <tr><td><code>'I'</code></td><td>unsigned int</td><td>int</td><td>4</td></tr>
+  <tr><td><code>'l'</code></td><td>signed long</td><td>int</td><td>8</td></tr>
+  <tr><td><code>'L'</code></td><td>unsigned long</td><td>int</td><td>8</td></tr>
+  <tr><td><code>'f'</code></td><td>float</td><td>float</td><td>4</td></tr>
+  <tr><td><code>'d'</code></td><td>double</td><td>float</td><td>8</td></tr>
+</table>
+
+<h2 id="s19">19. Manager — Proxy Nesneler</h2>
+<p>Manager, farklı process'lerin paylaşılan Python nesnelerine (list, dict, Queue, Lock, vs.) proxy aracılığıyla erişmesini sağlar.</p>
+<div class="code">
+<span class="kw">def</span> <span class="fn">worker</span>(d, l):
+    d[<span class="str">"key"</span>] = <span class="str">"value"</span>
+    l.<span class="fn">append</span>(<span class="num">42</span>)
+
+<span class="kw">with</span> multiprocessing.<span class="type">Manager</span>() <span class="kw">as</span> manager:
+    d = manager.<span class="fn">dict</span>()         <span class="cmt"># paylaşımlı dict</span>
+    l = manager.<span class="fn">list</span>()         <span class="cmt"># paylaşımlı list</span>
+
+    p = multiprocessing.<span class="type">Process</span>(target=worker, args=(d, l))
+    p.<span class="fn">start</span>(); p.<span class="fn">join</span>()
+
+    <span class="fn">print</span>(d)  <span class="cmt"># {'key': 'value'}</span>
+    <span class="fn">print</span>(l)  <span class="cmt"># [42]</span>
+<span class="cmt"># Manager otomatik kapanır</span>
+</div>
+
+<h3>Manager ile paylaşılabilen tipler</h3>
+<table>
+  <tr><th>Metod</th><th>Dönen tip</th></tr>
+  <tr><td><code>manager.dict()</code></td><td>Proxy dict</td></tr>
+  <tr><td><code>manager.list()</code></td><td>Proxy list</td></tr>
+  <tr><td><code>manager.Namespace()</code></td><td>Proxy namespace (attr erişimi)</td></tr>
+  <tr><td><code>manager.Queue()</code></td><td>Proxy queue</td></tr>
+  <tr><td><code>manager.Lock()</code></td><td>Proxy lock</td></tr>
+  <tr><td><code>manager.RLock()</code></td><td>Proxy rlock</td></tr>
+  <tr><td><code>manager.Semaphore()</code></td><td>Proxy semaphore</td></tr>
+  <tr><td><code>manager.Event()</code></td><td>Proxy event</td></tr>
+  <tr><td><code>manager.Condition()</code></td><td>Proxy condition</td></tr>
+  <tr><td><code>manager.Barrier()</code></td><td>Proxy barrier</td></tr>
+  <tr><td><code>manager.Value(type, value)</code></td><td>Proxy value</td></tr>
+  <tr><td><code>manager.Array(type, seq)</code></td><td>Proxy array</td></tr>
+</table>
+
+<h2 id="s20">20. Async Results & Callbacks</h2>
+<div class="code">
+<span class="kw">def</span> <span class="fn">slow_square</span>(x):
+    time.<span class="fn">sleep</span>(<span class="num">1</span>)
+    <span class="kw">if</span> x == <span class="num">3</span>: <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">"3'ü sevmem"</span>)
+    <span class="kw">return</span> x*x
+
+<span class="kw">with</span> multiprocessing.<span class="type">Pool</span>(<span class="num">4</span>) <span class="kw">as</span> pool:
+    results = [pool.<span class="fn">apply_async</span>(slow_square, (i,)) <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">6</span>)]
+
+    <span class="kw">for</span> r <span class="kw">in</span> results:
+        <span class="kw">try</span>:
+            val = r.<span class="fn">get</span>(timeout=<span class="num">2</span>)
+            <span class="fn">print</span>(<span class="str">"Sonuç:"</span>, val)
+        <span class="kw">except</span> <span class="type">ValueError</span> <span class="kw">as</span> e:
+            <span class="fn">print</span>(<span class="str">"Hata:"</span>, e)
+</div>
+
+<h2 id="s21">21. Process Senkronizasyon</h2>
+<p>multiprocessing modülü threading'deki tüm senkronizasyon araçlarını sunar.</p>
+<table>
+  <tr><th>Araç</th><th>Kullanım</th></tr>
+  <tr><td><code>multiprocessing.Lock()</code></td><td>Mutex — with lock: ile kullan</td></tr>
+  <tr><td><code>multiprocessing.RLock()</code></td><td>Reentrant lock</td></tr>
+  <tr><td><code>multiprocessing.Semaphore(n)</code></td><td>N adet process sınırı</td></tr>
+  <tr><td><code>multiprocessing.BoundedSemaphore(n)</code></td><td>Sınırlı semafor</td></tr>
+  <tr><td><code>multiprocessing.Event()</code></td><td>Process sinyali</td></tr>
+  <tr><td><code>multiprocessing.Condition()</code></td><td>Wait/notify</td></tr>
+  <tr><td><code>multiprocessing.Barrier(n)</code></td><td>N process bariyeri</td></tr>
+</table>
+
+<h2 id="s22">22. Thread vs Process Karşılaştırması</h2>
+<table>
+  <tr><th>Özellik</th><th>Thread</th><th>Process</th></tr>
+  <tr><td>Bellek</td><td>Paylaşımlı</td><td>Ayrı</td></tr>
+  <tr><td>GIL</td><td>Etkilenir</td><td>Etkilenmez</td></tr>
+  <tr><td>Başlatma</td><td>~1ms</td><td>~50-200ms</td></tr>
+  <tr><td>Bellek maliyeti</td><td>~8KB/thread</td><td>~8MB+ / process</td></tr>
+  <tr><td>Maksimum sayı</td><td>~1000-2000</td><td>~CPU sayısı kadar</td></tr>
+  <tr><td>Crash</td><td>Tüm prosesi öldürür</td><td>Sadece o proses</td></tr>
+  <tr><td>IPC</td><td>Paylaşılan değişkenler</td><td>Queue, Pipe, Manager</td></tr>
+  <tr><td>En uygun</td><td>I/O-bound</td><td>CPU-bound</td></tr>
+  <tr><td>Hata ayıklama</td><td>Daha kolay</td><td>Daha zor</td></tr>
+</table>
+
+<h2 id="s23">23. Best Practices</h2>
+
+<div class="tip">
+<strong>✅ Do:</strong>
+<ul>
+  <li>ThreadPoolExecutor / ProcessPoolExecutor kullan — manuel yönetimden kaçın</li>
+  <li><code>with lock:</code> kullan — manuel acquire/release'den kaçın</li>
+  <li>Queue kullan — thread-safe veri alışverişi için</li>
+  <li>Daemon thread'leri arka plan görevleri için kullan</li>
+  <li>Process havuzu boyutunu CPU çekirdek sayısına eşit yap (<code>os.cpu_count()</code>)</li>
+  <li>Kaynakları temizlemek için finally blokları kullan</li>
+  <li>Process'ler arası büyük veri için Manager yerine Queue/Pipe tercih et (daha hızlı)</li>
+  <li>Timeout kullan — asla sonsuz bekleme yapma</li>
+</ul>
+</div>
+
+<div class="warn">
+<strong>❌ Don't:</strong>
+<ul>
+  <li>Thread'leri CPU-bound işler için kullanma (GIL darboğazı)</li>
+  <li>Paylaşılan veriyi Lock'suz değiştirme</li>
+  <li>join()'i unutma — main thread erken çıkabilir</li>
+  <li>Çok fazla thread/process oluşturma — havuz kullan</li>
+  <li>multiprocessing'de global değişkenleri değiştirme (her proses kopyasını alır)</li>
+  <li>Pool.map()'e lambda verme — pickle edilemez</li>
+  <li>Lock alırken sırayı bozma — deadlock riski</li>
+</ul>
+</div>
+
+<h2 id="s24">24. Tam Fonksiyon Tablosu</h2>
+
+<table>
+  <tr><th>Kategori</th><th>Fonksiyon/Sınıf</th><th>Modül</th></tr>
+  <tr><td>Thread oluşturma</td><td><code>Thread()</code></td><td>threading</td></tr>
+  <tr><td>Thread havuzu</td><td><code>ThreadPoolExecutor</code></td><td>concurrent.futures</td></tr>
+  <tr><td>Thread yerel veri</td><td><code>local()</code></td><td>threading</td></tr>
+  <tr><td>Zamanlayıcı</td><td><code>Timer()</code></td><td>threading</td></tr>
+  <tr><td>Kilit (mutex)</td><td><code>Lock()</code></td><td>threading, multiprocessing</td></tr>
+  <tr><td>Reentrant kilit</td><td><code>RLock()</code></td><td>threading, multiprocessing</td></tr>
+  <tr><td>Semafor</td><td><code>Semaphore(n)</code></td><td>threading, multiprocessing</td></tr>
+  <tr><td>Sınırlı semafor</td><td><code>BoundedSemaphore(n)</code></td><td>threading, multiprocessing</td></tr>
+  <tr><td>Olay sinyali</td><td><code>Event()</code></td><td>threading, multiprocessing</td></tr>
+  <tr><td>Koşul değişkeni</td><td><code>Condition()</code></td><td>threading, multiprocessing</td></tr>
+  <tr><td>Bariyer</td><td><code>Barrier(n)</code></td><td>threading, multiprocessing</td></tr>
+  <tr><td>Thread-safe kuyruk</td><td><code>Queue()</code>, <code>LifoQueue()</code>, <code>PriorityQueue()</code></td><td>queue</td></tr>
+  <tr><td>Process oluşturma</td><td><code>Process()</code></td><td>multiprocessing</td></tr>
+  <tr><td>Process havuzu</td><td><code>Pool()</code></td><td>multiprocessing</td></tr>
+  <tr><td>Process executor</td><td><code>ProcessPoolExecutor</code></td><td>concurrent.futures</td></tr>
+  <tr><td>IPC — kuyruk</td><td><code>Queue()</code>, <code>JoinableQueue()</code></td><td>multiprocessing</td></tr>
+  <tr><td>IPC — boru</td><td><code>Pipe()</code></td><td>multiprocessing</td></tr>
+  <tr><td>Paylaşımlı değer</td><td><code>Value(type, init)</code></td><td>multiprocessing</td></tr>
+  <tr><td>Paylaşımlı dizi</td><td><code>Array(type, seq)</code></td><td>multiprocessing</td></tr>
+  <tr><td>Proxy yöneticisi</td><td><code>Manager()</code></td><td>multiprocessing</td></tr>
+  <tr><td>Manager dict</td><td><code>manager.dict()</code></td><td>multiprocessing</td></tr>
+  <tr><td>Manager list</td><td><code>manager.list()</code></td><td>multiprocessing</td></tr>
+  <tr><td>Manager namespace</td><td><code>manager.Namespace()</code></td><td>multiprocessing</td></tr>
+  <tr><td>Async sonuç</td><td><code>AsyncResult</code> (.get(), .ready(), .wait(), .successful())</td><td>multiprocessing

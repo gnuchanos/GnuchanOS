@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 13: Extra C Topics — Macros, Storage, Date, Errors</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #1f0d3a;
+    border: 3px solid #2d1554;
+    border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825;
+    color: #50fa7b;
+    font-family: 'Courier New', monospace;
+    padding: 14px 18px;
+    border-radius: 10px;
+    border: 2px solid #2d1554;
+    margin: 10px 0;
+    overflow-x: auto;
+    font-size: 1.05em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output {
+    background: #150825;
+    color: #f1fa8c;
+    font-family: 'Courier New', monospace;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 2px solid #a855f7;
+    margin: 8px 0 18px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-size: 1.05em;
+    line-height: 1.5;
+  }
+  .container .output::before {
+    content: "\25B6 OUTPUT";
+    display: block;
+    color: #50fa7b;
+    font-size: 0.8em;
+    margin-bottom: 4px;
+  }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #8b5cf6; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #d8b4fe; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+  <h1>Lesson 13: Extra C Topics</h1>
+
+  <h2>1. Macros (#define)</h2>
+  <p>A <strong>macro</strong> is a name that the preprocessor replaces with a value or code <strong>before compilation</strong>. No semicolon needed.</p>
+  <div class="code">
+<span class="pre">#define</span> PI 3.14159
+<span class="pre">#define</span> MAX 100
+<span class="pre">#define</span> AREA(r) (PI * (r) * (r))  <span class="cmt">// Macro with parameter</span>
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="fn">printf</span>(<span class="str">"PI = %f\n"</span>, PI);        <span class="cmt">// Becomes: 3.14159</span>
+    <span class="fn">printf</span>(<span class="str">"Max = %d\n"</span>, MAX);       <span class="cmt">// Becomes: 100</span>
+    <span class="fn">printf</span>(<span class="str">"Area = %f\n"</span>, AREA(<span class="num">5</span>)); <span class="cmt">// Becomes: (3.14159 * (5) * (5))</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">
+PI = 3.141590<br>
+Max = 100<br>
+Area = 78.539750
+  </div>
+
+  <div class="warn">
+    <strong>⚠️ Parentheses in macros!</strong> Always wrap parameters in <code>()</code>.
+    <code>#define SQUARE(x) x*x</code> with <code>SQUARE(1+2)</code> becomes <code>1+2*1+2 = 5</code> (wrong!).
+    Use <code>#define SQUARE(x) ((x)*(x))</code> instead.
+  </div>
+
+  <h3>Conditional Compilation</h3>
+  <div class="code">
+<span class="pre">#define</span> DEBUG  <span class="cmt">// Comment this line to disable debug</span>
+
+<span class="kw">#ifdef</span> DEBUG
+    <span class="fn">printf</span>(<span class="str">"Debug: x = %d\n"</span>, x);
+<span class="pre">#endif</span>
+
+<span class="pre">#if</span> MAX > <span class="num">50</span>
+    <span class="fn">printf</span>(<span class="str">"MAX is large\n"</span>);
+<span class="pre">#endif</span>
+  </div>
+
+  <h2>2. Storage Classes</h2>
+  <p>They tell the compiler <strong>where</strong> a variable lives and <strong>how long</strong> it lives.</p>
+  <table>
+    <tr><th>Keyword</th><th>Where stored</th><th>Lifetime</th><th>Default value</th></tr>
+    <tr><td><code>auto</code></td><td>Stack</td><td>Function scope</td><td>Garbage (random)</td></tr>
+    <tr><td><code>register</code></td><td>CPU register (maybe)</td><td>Function scope</td><td>Garbage</td></tr>
+    <tr><td><code>static</code></td><td>Data segment</td><td>Program lifetime</td><td>0</td></tr>
+    <tr><td><code>extern</code></td><td>Data segment</td><td>Program lifetime</td><td>0</td></tr>
+  </table>
+
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="type">void</span> <span class="fn">counter</span>() {
+    <span class="kw">static</span> <span class="type">int</span> count = <span class="num">0</span>;  <span class="cmt">// Keeps value between calls!</span>
+    count++;
+    <span class="fn">printf</span>(<span class="str">"Called %d times\n"</span>, count);
+}
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    counter();  <span class="cmt">// Called 1 times</span>
+    counter();  <span class="cmt">// Called 2 times</span>
+    counter();  <span class="cmt">// Called 3 times</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">
+Called 1 times<br>
+Called 2 times<br>
+Called 3 times
+  </div>
+
+  <div class="note">💡 <code>auto</code> is the default (you never write it). <code>register</code> is a <em>suggestion</em> to the compiler. <code>static</code> makes a local variable <strong>keep its value</strong> between calls.</div>
+
+  <h2>3. Date & Time (<time.h>)</h2>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str"><time.h></span>
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="cmt">// Get current time</span>
+    <span class="type">time_t</span> now;
+    <span class="fn">time</span>(&now);
+
+    <span class="fn">printf</span>(<span class="str">"Current time: %s"</span>, <span class="fn">ctime</span>(&now));  <span class="cmt">// Convert to string</span>
+
+    <span class="cmt">// Measure how long something takes</span>
+    <span class="type">clock_t</span> start = <span class="fn">clock</span>();
+    <span class="kw">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i < <span class="num">100000000</span>; i++);  <span class="cmt">// Busy wait</span>
+    <span class="type">clock_t</span> end = <span class="fn">clock</span>();
+
+    <span class="type">double</span> seconds = (<span class="type">double</span>)(end - start) / CLOCKS_PER_SEC;
+    <span class="fn">printf</span>(<span class="str">"Loop took: %.3f seconds\n"</span>, seconds);
+
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">
+Current time: Sat Jul 18 15:30:00 2026<br>
+Loop took: 0.245 seconds
+  </div>
+
+  <h2>4. Random Numbers (<stdlib.h>)</h2>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str"><stdlib.h></span>
+<span class="pre">#include</span> <span class="str"><time.h></span>
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="cmt">// Seed the random generator (once)</span>
+    <span class="fn">srand</span>(<span class="fn">time</span>(NULL));
+
+    <span class="cmt">// Random numbers</span>
+    <span class="fn">printf</span>(<span class="str">"Random: %d\n"</span>, <span class="fn">rand</span>());          <span class="cmt">// 0 to RAND_MAX (32767)</span>
+    <span class="fn">printf</span>(<span class="str">"Dice: %d\n"</span>, (<span class="fn">rand</span>() % <span class="num">6</span>) + <span class="num">1</span>);    <span class="cmt">// 1 to 6</span>
+    <span class="fn">printf</span>(<span class="str">"0-99: %d\n"</span>, <span class="fn">rand</span>() % <span class="num">100</span>);       <span class="cmt">// 0 to 99</span>
+
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="note">💡 Always call <code>srand()</code> once before using <code>rand()</code>. The seed makes the numbers different each run.</div>
+
+  <h2>5. Error Handling & Debugging</h2>
+
+  <h3>Checking for Errors</h3>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str"><errno.h></span>
+<span class="pre">#include</span> <span class="str"><string.h></span>
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    FILE* f = <span class="fn">fopen</span>(<span class="str">"nonexistent.txt"</span>, <span class="str">"r"</span>);
+    <span class="kw">if</span> (f == NULL) {
+        <span class="fn">printf</span>(<span class="str">"Error: %s\n"</span>, <span class="fn">strerror</span>(errno));  <span class="cmt">// "No such file or directory"</span>
+        <span class="fn">perror</span>(<span class="str">"fopen"</span>);                           <span class="cmt">// Same thing, shorter</span>
+        <span class="kw">return</span> <span class="num">1</span>;
+    }
+    <span class="fn">fclose</span>(f);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+
+  <h3>The NULL Pointer</h3>
+  <p><code>NULL</code> is a pointer that points to "nothing". Always check for NULL!</p>
+  <div class="code">
+<span class="type">int</span>* ptr = <span class="kw">NULL</span>;       <span class="cmt">// Not pointing to anything yet</span>
+
+<span class="kw">if</span> (ptr == NULL) {
+    <span class="fn">printf</span>(<span class="str">"Pointer is NULL - can't use it!\n"</span>);
+}
+
+<span class="cmt">// *ptr = 5;  // CRASH! Can't dereference NULL</span>
+  </div>
+
+  <h3>Input Validation</h3>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> age;
+    <span class="fn">printf</span>(<span class="str">"Enter age: "</span>);
+    <span class="kw">if</span> (<span class="fn">scanf</span>(<span class="str">"%d"</span>, &age) != <span class="num">1</span>) {   <span class="cmt">// scanf returns 1 if it read 1 item</span>
+        <span class="fn">printf</span>(<span class="str">"Invalid input! Must be a number.\n"</span>);
+        <span class="kw">return</span> <span class="num">1</span>;
+    }
+    <span class="kw">if</span> (age < <span class="num">0</span> || age > <span class="num">150</span>) {
+        <span class="fn">printf</span>(<span class="str">"Age out of range!\n"</span>);
+        <span class="kw">return</span> <span class="num">1</span>;
+    }
+    <span class="fn">printf</span>(<span class="str">"You are %d years old\n"</span>, age);
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+
+  <h2>6. Organize Code (Multiple Files)</h2>
+  <p>Split your code into <strong>.h files</strong> (header — declarations) and <strong>.c files</strong> (source — implementation).</p>
+
+  <div class="code">
+<span class="cmt">// math_helpers.h — HEADER file</span>
+<span class="pre">#ifndef</span> MATH_HELPERS_H  <span class="cmt">// Include guard — prevents double inclusion</span>
+<span class="pre">#define</span> MATH_HELPERS_H
+
+<span class="type">int</span> <span class="fn">add</span>(<span class="type">int</span> a, <span class="type">int</span> b);
+<span class="type">int</span> <span class="fn">square</span>(<span class="type">int</span> n);
+
+<span class="pre">#endif</span>
+  </div>
+
+  <div class="code">
+<span class="cmt">// math_helpers.c — SOURCE file</span>
+<span class="pre">#include</span> <span class="str">"math_helpers.h"</span>
+
+<span class="type">int</span> <span class="fn">add</span>(<span class="type">int</span> a, <span class="type">int</span> b) { <span class="kw">return</span> a + b; }
+<span class="type">int</span> <span class="fn">square</span>(<span class="type">int</span> n) { <span class="kw">return</span> n * n; }
+  </div>
+
+  <div class="code">
+<span class="cmt">// main.c — the program</span>
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="pre">#include</span> <span class="str">"math_helpers.h"</span>  <span class="cmt">// Use "" for YOUR files</span>
+
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="fn">printf</span>(<span class="str">"%d\n"</span>, <span class="fn">square</span>(<span class="num">5</span>));  <span class="cmt">// 25</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+
+<span class="cmt">// Compile together:</span>
+<span class="cmt">// gcc main.c math_helpers.c -o program</span>
+  </div>
+
+  <div class="note">💡 <strong>Include guards</strong> (<code>#ifndef</code> / <code>#define</code> / <code>#endif</code>) prevent a header from being included twice.</div>
+
+  <hr style="border:1px solid #2d1554;margin:25px 0;">
+
+  <h2>🎯 You Now Know C!</h2>
+  <p>From <strong>zero to hero</strong> — you've learned:</p>
+  <ul>
+    <li>✅ Variables, data types, booleans, type conversion, fixed-width integers</li>
+    <li>✅ Constants, all operator types</li>
+    <li>✅ If/else, switch, ternary</li>
+    <li>✅ Loops: while, do/while, for, break, continue</li>
+    <li>✅ Arrays, strings, string functions, user input</li>
+    <li>✅ Functions, parameters, pass by value/reference, scope, inline, callbacks</li>
+    <li>✅ Pointers, pointer arithmetic, pointer-to-pointer, pointers & arrays</li>
+    <li>✅ Structs, typedef, unions, enums, struct padding</li>
+    <li>✅ File I/O, dynamic memory (malloc/free)</li>
+    <li>✅ Macros, storage classes, conditional compilation</li>
+    <li>✅ Date/time, random numbers</li>
+    <li>✅ Error handling, NULL, input validation, debugging</li>
+    <li>✅ Math functions, recursion, function pointers, bitwise operators</li>
+    <li>✅ Organizing code with header files</li>
+  </ul>
+  <p><strong>Now go build something awesome! 🚀</strong></p>
+
+  <a href="index.html" class="back">← Back to Table of Contents</a>
+</div>
+</body>
+</html>

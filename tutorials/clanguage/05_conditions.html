@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 5: C Conditions (If/Else & Switch)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #150825;
+    color: #eee;
+    padding: 20px;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #1f0d3a;
+    border: 3px solid #2d1554;
+    border-radius: 14px;
+    padding: 24px 28px;
+  }
+  .container h1 { color: #a855f7; font-size: 2em; margin-bottom: 8px; }
+  .container h2 { color: #c084fc; font-size: 1.6em; margin: 26px 0 10px; border-bottom: 2px solid #2d1554; padding-bottom: 4px; }
+  .container h3 { color: #d8b4fe; margin: 16px 0 8px; font-size: 1.15em; }
+  .container p, .container li { line-height: 1.7; color: #ddd; font-size: 1.1em; }
+  .container ul, .container ol { padding-left: 24px; margin: 8px 0; }
+  .container li { margin: 4px 0; }
+  .container pre, .container .code {
+    background: #150825;
+    color: #50fa7b;
+    font-family: 'Courier New', monospace;
+    padding: 14px 18px;
+    border-radius: 10px;
+    border: 2px solid #2d1554;
+    margin: 10px 0;
+    overflow-x: auto;
+    font-size: 1.05em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  .container .code .cmt { color: #6272a4; }
+  .container .code .kw { color: #ff79c6; }
+  .container .code .fn { color: #50fa7b; }
+  .container .code .str { color: #f1fa8c; }
+  .container .code .num { color: #bd93f9; }
+  .container .code .pre { color: #8be9fd; }
+  .container .code .type { color: #66d9ef; }
+  .container .output {
+    background: #150825;
+    color: #f1fa8c;
+    font-family: 'Courier New', monospace;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 2px solid #a855f7;
+    margin: 8px 0 18px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-size: 1.05em;
+    line-height: 1.5;
+  }
+  .container .output::before {
+    content: "\25B6 OUTPUT";
+    display: block;
+    color: #50fa7b;
+    font-size: 0.8em;
+    margin-bottom: 4px;
+  }
+  .container .note { background: #1a1030; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .warn { background: #2a1020; border-left: 4px solid #e74c3c; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container .tip { background: #1a1030; border-left: 4px solid #8b5cf6; padding: 10px 14px; margin: 10px 0; border-radius: 6px; font-size: 1em; }
+  .container table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  .container th { background: #2d1554; color: #c084fc; padding: 7px 10px; text-align: left; border: 1px solid #3b1d6e; font-size: 1em; }
+  .container td { padding: 7px 10px; border: 1px solid #3b1d6e; color: #ddd; font-size: 1.05em; overflow-wrap: break-word; }
+  .container a.back { display: inline-block; margin-top: 16px; color: #d8b4fe; text-decoration: none; font-size: 1em; }
+  .container a.back:hover { color: #a855f7; }
+</style>
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body>
+<div class="container">
+  <h1>Lesson 5: C Conditions</h1>
+
+  <h2>if Statement</h2>
+  <p>Use <code>if</code> to run code when a condition is <strong>true</strong>.</p>
+  <div class="code">
+<span class="type">int</span> age = <span class="num">18</span>;
+<span class="kw">if</span> (age >= <span class="num">18</span>) {
+    <span class="fn">printf</span>(<span class="str">"You can vote!\n"</span>);
+}
+  </div>
+  <div class="output">You can vote!</div>
+
+  <h2>if...else</h2>
+  <div class="code">
+<span class="type">int</span> score = <span class="num">75</span>;
+<span class="kw">if</span> (score >= <span class="num">60</span>) {
+    <span class="fn">printf</span>(<span class="str">"Pass\n"</span>);
+} <span class="kw">else</span> {
+    <span class="fn">printf</span>(<span class="str">"Fail\n"</span>);
+}
+  </div>
+  <div class="output">Pass</div>
+
+  <h2>else if — Multiple Conditions</h2>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> score = <span class="num">85</span>;
+    <span class="kw">if</span> (score >= <span class="num">90</span>) { <span class="fn">printf</span>(<span class="str">"Grade: A\n"</span>); }
+    <span class="kw">else</span> <span class="kw">if</span> (score >= <span class="num">80</span>) { <span class="fn">printf</span>(<span class="str">"Grade: B\n"</span>); }
+    <span class="kw">else</span> <span class="kw">if</span> (score >= <span class="num">70</span>) { <span class="fn">printf</span>(<span class="str">"Grade: C\n"</span>); }
+    <span class="kw">else</span> { <span class="fn">printf</span>(<span class="str">"Grade: F\n"</span>); }
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">Grade: B</div>
+
+  <h2>Ternary Operator (Short If-Else)</h2>
+  <p><code>condition ? value_if_true : value_if_false</code></p>
+  <div class="code">
+<span class="type">int</span> age = <span class="num">20</span>;
+<span class="fn">printf</span>(<span class="str">"%s\n"</span>, (age >= <span class="num">18</span>) ? <span class="str">"Adult"</span> : <span class="str">"Minor"</span>);
+  </div>
+  <div class="output">Adult</div>
+
+  <h2>Switch Statement</h2>
+  <p>Use <code>switch</code> when checking one variable against many values.</p>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">int</span> day = <span class="num">4</span>;
+    <span class="kw">switch</span> (day) {
+        <span class="kw">case</span> <span class="num">1</span>: <span class="fn">printf</span>(<span class="str">"Monday\n"</span>); <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">2</span>: <span class="fn">printf</span>(<span class="str">"Tuesday\n"</span>); <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">3</span>: <span class="fn">printf</span>(<span class="str">"Wednesday\n"</span>); <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">4</span>: <span class="fn">printf</span>(<span class="str">"Thursday\n"</span>); <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">5</span>: <span class="fn">printf</span>(<span class="str">"Friday\n"</span>); <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">6</span>:
+        <span class="kw">case</span> <span class="num">7</span>: <span class="fn">printf</span>(<span class="str">"Weekend!\n"</span>); <span class="kw">break</span>;
+        <span class="kw">default</span>: <span class="fn">printf</span>(<span class="str">"Invalid day\n"</span>);
+    }
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">Thursday</div>
+
+  <div class="warn">
+    <strong>⚠️ Don't forget <code>break</code>!</strong> Without it, code "falls through" to the next case.
+  </div>
+
+  <h3>Real-Life: ATM Withdrawal</h3>
+  <div class="code">
+<span class="pre">#include</span> <span class="str"><stdio.h></span>
+<span class="type">int</span> <span class="fn">main</span>() {
+    <span class="type">float</span> balance = <span class="num">250.00</span>;
+    <span class="type">float</span> amount = <span class="num">80.00</span>;
+    <span class="kw">if</span> (amount <= <span class="num">0</span>) { <span class="fn">printf</span>(<span class="str">"Invalid\n"</span>); }
+    <span class="kw">else</span> <span class="kw">if</span> (amount > balance) { <span class="fn">printf</span>(<span class="str">"Insufficient funds\n"</span>); }
+    <span class="kw">else</span> { balance -= amount; <span class="fn">printf</span>(<span class="str">"New balance: $%.2f\n"</span>, balance); }
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+  </div>
+  <div class="output">New balance: $170.00</div>
+
+  <a href="index.html" class="back">← Back</a>
+  <a href="06_loops.html" style="float:right; margin-top:20px; color:#5dade2;">Next: Loops →</a>
+</div>
+</body>
+</html>

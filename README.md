@@ -17,61 +17,86 @@ GnuchanOS/
 ├── fun_things/              # Denemeler, Lua binding vs.
 ├── language/                # GCL (Gnuchan C-Like) Dil Derleyicisi
 │   ├── src/                 # Kaynak kod
-│   │   ├── lexer/           # Lexer (tokenizer)
-│   │   ├── parser/          # Parser → AST
-│   │   ├── type/            # Type system
-│   │   ├── semantic/        # Semantic analysis
-│   │   ├── ir/              # Intermediate Representation
-│   │   ├── codegen/         # Code generation (IR → C)
-│   │   └── runtime/         # Runtime (debug, crash analyzer)
-│   ├── NOTES/               # Geliştirme notları
-│   ├── _output_test/        # Build çıktıları (git ignore)
-│   └── build.py             # Build script
+│   │   ├── include/         # Header'lar (gcl.h, error.h, memory.h, semantic.h, version.h ...)
+│   │   ├── cli/             # CLI flag parser
+│   │   ├── lexer/           # Lexer — hex/oct/bin/char/tüm operatorler
+│   │   ├── parser/          # Pratt parser, operator precedence
+│   │   ├── ast/             # AST node helper'ları + dump
+│   │   ├── codegen/         # C kodu üretimi
+│   │   ├── error/           # Rust-stili hata + source line + caret
+│   │   ├── runtime/         # Memory allocator (arena/pool/freelist/page)
+│   │   ├── semantic/        # Sembol tablosu + scope yönetimi
+│   │   └── version/         # Derleyici + dil versiyon bilgisi
+│   ├── build/               # Build script + obj/ + gcl.exe
+│   ├── NOTES/               # Geliştirme notları (SECURITY.MD)
+│   └── output_test_area/    # .gcsf test dosyaları + run_tests.py
 ├── os/                      # OS ile ilgili dosyalar
+├── tutorials/               # C/Lua/Python eğitimleri
 ├── .gitignore
 ├── README.md
-└── road_map_todo.md
+└── LICENSE
 ```
 
 ## 🚀 GCL — Gnuchan C-Like Language Compiler
 
 **Pipeline:**
 ```
-Source → Lexer → Parser → AST → Semantic → IR → Codegen → C → GCC → Executable
+Source → Lexer → Parser → AST → Semantic Analysis → Codegen → C → GCC → Executable
 ```
 
 ### Kullanım
 
 ```bash
-# Derle ve çalıştır (language/ içinde)
-cd language
+# Derle (language/build/ icinde)
+cd language/build
 python build.py
-.\_output_test\gcl.exe test.gcsf -run
+.\gcl.exe input.gcsf -o out.c
 
-# Sadece IR dökümü
-.\_output_test\gcl.exe test.gcsf -emit-ir
+# Token akisi
+.\gcl.exe -lexer input.gcsf
 
-# Debug mod (runtime monitoring)
-.\_output_test\gcl.exe test.gcsf -debug -run
+# AST dökümü
+.\gcl.exe -ast input.gcsf
+
+# Versiyon bilgisi
+.\gcl.exe -v
 ```
 
 ### Seçenekler
 
 | Seçenek         | Açıklama                                |
 |-----------------|-----------------------------------------|
-| `-o <file>`     | Çıktı dosyası (varsayılan: a.out)       |
-| `-run`          | Derle ve çalıştır                       |
-| `-debug`        | Debug mod (runtime monitor + crash analyzer) |
-| `-emit-c`       | Sadece C kodu üret (derleme yapma)      |
-| `-emit-ir`      | IR dökümünü göster                       |
-| `-help`         | Yardım                                  |
+| `-o <file>`     | Çıktı dosyası                           |
+| `-lexer`        | Token akisini göster                    |
+| `-ast` / `-parser` | AST dökümünü göster                  |
+| `-debug`        | Debug mod                               |
+| `-v` / `--version` | Versiyon bilgisi                     |
+
+### Özellikler
+
+- ✅ `int` değişken bildirimi: `int a = 5;`
+- ✅ Hex / Octal / Binary literal: `0xFF`, `077`, `0b1010`
+- ✅ Char literal + kaçış karakterleri: `'A'`, `'\n'`
+- ✅ Tüm C operatörleri (Pratt parser, doğru öncelik)
+- ✅ Rust-stili hata raporlama (source line + caret + hata kodu)
+- ✅ Memory: arena (hızlı) + pool (≤64B) + freelist (≤64KB) + page (>64KB)
+- ✅ Semantic analiz: bildirilmemiş/tekrar bildirilmiş değişken yakalama
+- ✅ Versiyon: `gcl -v` → `0.1.0-dev`, `GCL'25` standardı
+- 🔒 Runtime güvenlik katmanı debug-only (plan)
+
+### Performans
+
+Tüm güvenlik katmanları **debug-only**. Release modda:
+- Sıfır runtime overhead → direkt C hızı
+- Semantic kontroller derleme anında → runtime maliyeti yok
 
 ## 🛠 Build
 
 ```bash
-cd language
-python build.py
-# Çıktı: language/_output_test/gcl.exe
+cd language/build
+python build.py         # derle
+python build.py test    # derle + 7 test
+python build.py clean   # obj + binary temizle
 ```
 
 ## 📜 Lisans
