@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #define MAX_PATHS 32
 
