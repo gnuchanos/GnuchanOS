@@ -40,19 +40,22 @@ UTF-8 SUPPORT
                           │
             ┌─────────────┴─────────────┐
             ▼                           ▼
-      [JIT]                      [Code Generation]
-                                        │
-                                        ▼
-                                    [Assembler]
-                                        │
-                                        ▼
-                                    [Object File]
+      [JIT Compiler]              [Code Generation]
+            │                           │
+            ▼                           ▼
+   [Machine Code (RAM)]           [Assembler]
+            │                           │
+            ▼                           ▼
+     [Execute Immediately]       [Object File]
                                         │
                                         ▼
                                      [Linker]
                                         │
                                         ▼
                                    [Executable]
+                                        │
+                                        ▼
+                                    [Run Later]
 
 
 # ==========================================================
@@ -286,8 +289,17 @@ error[E001]: expected ';' after declaration
 
 ```
 #extern <file.dll>      # .dll, .so, .a — external C library
+    extern "c" {}
+    extern type func
+    direk cagirma
 #lib    <file>          # .gclib textfile
+    file. python class gibi cagirma
+    custome modules
+    ready variable
+    extern
 #include <file>         # .gcsf source file
+    .c+.h birlesimi include sistemi direk cagirma
+
 ```
 
 ---
@@ -297,6 +309,9 @@ error[E001]: expected ';' after declaration
 # ==========================================================
 
 ```
+
+# burada olmayan seyleri dile ekleme
+
 # how flag and vlaue works
 gcl -flag value or gcl -flag value value value
 
@@ -327,9 +342,68 @@ gcl -istedigin_kadar_flag_girebilirsin -run file.gcsf
 
 ---
 
-# ==========================================================
-## comment
-# ==========================================================
+###### HEADERS #################################################
+
+#include <script> or "script" --> .gcsf
+#lib     <library> or "library" --> .gclib
+#extern  <raylib.dll> or "raylib.dll"
+
+# yorum 
+#| yorumlar
+devam 
+ediyorlar
+|#
+
+#include <stdio.h>
+
+#define MAX 100
+#undef MAX
+
+#ifdef DEBUG
+    printf("Debug");
+#endif
+
+#ifndef DEBUG
+    #define DEBUG
+#endif
+
+#if VERSION == 1
+    #define TEXT "v1"
+#elif VERSION == 2
+    #define TEXT "v2"
+#else
+    #error VERSION tanımlı değil veya geçersiz.
+#endif
+
+#pragma message("Derleniyor...")
+
+#line 200 "example.gcsf"
+###### HEADERS #################################################
+
+
+###### MAIN ENTRY #################################################
+int main(int argc, char *argv[]) {
+
+    return 0;
+}
+
+int main(int argc, char **argv) {
+
+    return 0;
+}
+
+int main() {
+
+    return 0;
+}
+
+#// her .gcsf icinde main olmasina gerek yok sadece
+gcc -run file.gcsf burada olmasi yeterli  main
+gcc file.gcsf (burada olsun yeter main) -o path/output
+###### MAIN ENTRY #################################################
+
+
+###### comment #################################################
 c comment
 // 
 /* .... */ 
@@ -337,6 +411,7 @@ c comment
 # gcl comment
 #| ... |#
 #//
+###### comment #################################################
 
 
 ---
@@ -347,123 +422,450 @@ c comment
 // ── Primitive Types ──────────────────────────────────────────
 # INT
 ```
-X  int a = 5;              // basit tamsayi (MEVCUT)
-O  int a = -5;             // negatif sayi
-O  int a = +5;             // pozitif isareti
-O  int a = 'A';            // karakter
-O  int a = '\n';           // kacis karakteri
-O  int a = 0xFF;           // hexadecimal
-O  int a = 077;            // octal
-O  int a = 0b1010;         // binary (GNU extension)
-O  int a = b;              // degisken atama
-O  int a = func();         // fonksiyon cagrisi
-O  int a = x + y;          // toplama
-O  int a = x - y;          // cikarma
-O  int a = x * y;          // carpma
-O  int a = x / y;          // bolme
-O  int a = x % y;          // mod alma
-O  int a = x & y;          // bitwise AND
-O  int a = x | y;          // bitwise OR
-O  int a = x ^ y;          // bitwise XOR
-O  int a = ~x;             // bitwise NOT
-O  int a = x << 2;         // sola kaydirma
-O  int a = x >> 2;         // saga kaydirma
-O  int a = x > y;          // buyuktur
-O  int a = x < y;          // kucuktur
-O  int a = x >= y;         // buyuk esit
-O  int a = x <= y;         // kucuk esit
-O  int a = x == y;         // esitlik
-O  int a = x != y;         // esit degil
-O  int a = x && y;         // mantiksal AND
-O  int a = x || y;         // mantiksal OR
-O  int a = !x;             // mantiksal NOT
-O  int a = x ? y : z;      // ternary
-O  int a = ++x;            // pre-increment
-O  int a = --x;            // pre-decrement
-O  int a = x++;            // post-increment
-O  int a = x--;            // post-decrement
-O  int a = (int)3.14;      // cast
-O  int a = sizeof(int);    // sizeof
-O  int a = (x = 5);        // atama ifadesi icinde
-O  int a = (x += 5);       // bilesik atama
-O  int a = (x -= 5);
-O  int a = (x *= 5);
-O  int a = (x /= 5);
-O  int a = (x %= 5);
-O  int a = (x &= 5);
-O  int a = (x |= 5);
-O  int a = (x ^= 5);
-O  int a = (x <<= 1);
-O  int a = (x >>= 1);
-O  int a = (1, 2, 3);      // virgul operatoru
+int a = 5;              // Tam sayı sabiti
+int a = -5;             // Negatif tam sayı
+int a = +5;             // Pozitif işaretli tam sayı
+int a = 'A';            // Karakter sabiti ('A' ASCII/Unicode kodu)
+int a = '\n';           // Kaçış karakteri (yeni satır)
+int a = 0xFF;           // Hexadecimal (16 tabanlı) sayı
+int a = 077;            // Octal (8 tabanlı) sayı
+int a = 0b1010;         // Binary (2 tabanlı) sayı (GNU Extension / C23)
+
+int a = b;              // Başka bir değişkenin değerini kopyala
+int a = func();         // Fonksiyonun döndürdüğü değeri ata
+
+int a = x + y;          // Toplama
+int a = x - y;          // Çıkarma
+int a = x * y;          // Çarpma
+int a = x / y;          // Bölme
+int a = x % y;          // Mod (kalan)
+
+int a = x & y;          // Bit düzeyinde AND
+int a = x | y;          // Bit düzeyinde OR
+int a = x ^ y;          // Bit düzeyinde XOR
+int a = ~x;             // Bit düzeyinde NOT (tüm bitleri ters çevir)
+
+int a = x << 2;         // Bitleri sola kaydır
+int a = x >> 2;         // Bitleri sağa kaydır
+
+int a = x > y;          // x, y'den büyük mü? (1 veya 0)
+int a = x < y;          // x, y'den küçük mü? (1 veya 0)
+int a = x >= y;         // x, y'den büyük veya eşit mi? (1 veya 0)
+int a = x <= y;         // x, y'den küçük veya eşit mi? (1 veya 0)
+int a = x == y;         // x ve y eşit mi? (1 veya 0)
+int a = x != y;         // x ve y farklı mı? (1 veya 0)
+
+int a = x && y;         // Mantıksal AND (ikisi de true ise 1)
+int a = x || y;         // Mantıksal OR (biri true ise 1)
+int a = !x;             // Mantıksal NOT (true ↔ false)
+
+int a = x ? y : z;      // Koşul doğruysa y, yanlışsa z
+
+int a = ++x;            // Önce artır, sonra değeri kullan
+int a = --x;            // Önce azalt, sonra değeri kullan
+int a = x++;            // Önce değeri kullan, sonra artır
+int a = x--;            // Önce değeri kullan, sonra azalt
+
+int a = (int)3.14;      // Tür dönüşümü (cast)
+int a = sizeof(int);    // Türün boyutu (byte cinsinden)
+
+int a = x = 5;          // Önce x'e 5 ata, sonra sonucu a'ya ata
+
+int a = x += 5;         // x = x + 5; sonucunu a'ya ata
+int a = x -= 5;         // x = x - 5; sonucunu a'ya ata
+int a = x *= 5;         // x = x * 5; sonucunu a'ya ata
+int a = x /= 5;         // x = x / 5; sonucunu a'ya ata
+int a = x %= 5;         // x = x % 5; sonucunu a'ya ata
+
+int a = x &= 5;         // x = x & 5; sonucunu a'ya ata
+int a = x |= 5;         // x = x | 5; sonucunu a'ya ata
+int a = x ^= 5;         // x = x ^ 5; sonucunu a'ya ata
+
+int a = x <<= 1;        // x = x << 1; sonucunu a'ya ata
+int a = x >>= 1;        // x = x >> 1; sonucunu a'ya ata
+
 ```
 
-char               // 1 byte
-short              // 2 byte
-long               // 4/8 byte (platform)
-long long          // 8 byte
-float              // 4 byte
-double             // 8 byte
-long double        // 10/16 byte (platform)
+// ───────────────── Primitive Types ─────────────────────────
 
-void               // no type
+char               // Unicode codepoint (32-bit)
+short              // 16-bit signed integer
+long               // 32-bit or 64-bit signed integer (platform dependent)
+long long          // 64-bit signed integer
+float              // 32-bit IEEE 754 floating point
+double             // 64-bit IEEE 754 floating point
+long double        // Extended precision floating point (80-bit / 128-bit)
+void               // No value / no type
 
-// ── GCL-Specific Fixed-Width ────────────────────────────────
-int8               // signed 8-bit
-int16              // signed 16-bit
-int32              // signed 32-bit
-int64              // signed 64-bit
-int128             // signed 128-bit
+// ───────────────── Fixed-Width Signed Integers ─────────────
 
-// ── Unsigned ────────────────────────────────────────────────
-unsigned char
-unsigned short
-unsigned int
-unsigned long
-unsigned long long
+int8               // Signed 8-bit integer
+int16              // Signed 16-bit integer
+int32              // Signed 32-bit integer
+int64              // Signed 64-bit integer
+int128             // Signed 128-bit integer
 
-uint8              // unsigned 8-bit
-uint16             // unsigned 16-bit
-uint32             // unsigned 32-bit
-uint64             // unsigned 64-bit
+// ───────────────── Unsigned Integers ───────────────────────
 
-// ── GCL-Specific Unsigned Float/Double ─────────────────────
-// Behaves like standard float/double but signals on NaN/Inf
-unsigned float     // float with overflow guard
-unsigned double    // double with overflow guard
+unsigned char      // Unsigned Unicode codepoint
+unsigned short     // Unsigned 16-bit integer
+unsigned int       // Unsigned integer
+unsigned long      // Unsigned long integer
+unsigned long long // Unsigned 64-bit integer
 
-// ── Boolean ────────────────────────────────────────────────
-bool               // stdbool, values: true / false
-```
+uint8              // Unsigned 8-bit integer
+uint16             // Unsigned 16-bit integer
+uint32             // Unsigned 32-bit integer
+uint64             // Unsigned 64-bit integer
 
-###### 101 — Types #################################################
+// ───────────────── Unsigned Floating Types ─────────────────
 
+unsigned float     // Float with NaN / Infinity runtime guard
+unsigned double    // Double with NaN / Infinity runtime guard
 
+// ───────────────── Boolean ─────────────────────────────────
 
+bool               // Boolean type (true / false)
 
 
+// ───────────────── Character & String Types ────────────────
+
+char               // Single Unicode codepoint (char32)
+char[]             // UTF-8 string stored directly in an array
+char*              // Raw byte pointer (not a string type)
 
 
+// ───────────────── Examples ────────────────────────────────
+
+// String stored on the stack (modifiable)
+char name[] = "Gordon Freeman";
+
+// Pointer to a string literal (read-only memory)
+char *game = "HALF LIFE 3";
+
+// Fixed-size 2D string array (32 strings × 32 characters)
+char stack_string_array[32][32] = {"a", "abc"};
+
+// Compiler automatically determines the number of rows
+char stack_string_array[][32] = {"a", "abc"};
+
+// INVALID: Last array dimension cannot be omitted in C
+// char stack_string_array[32][] = {"a", "abc"};
+
+// Array of pointers to string literals
+char *string_array[] = {"a", "ABC"};
+
+// Dynamically allocated array of string pointers
+char **ready_now = malloc(2 * sizeof(*ready_now));
+
+ready_now[0] = "Half Life 3";
+ready_now[1] = "Left 4 Dead 3";
+
+// ───────────────── typedef ─────────────────
+
+// Mevcut bir tipe yeni isim (alias) verir.
+typedef unsigned int uint;
+
+
+// ───────────────── struct ─────────────────
+
+// Yeni bir yapı tipi tanımlar.
+struct Player {
+    int hp;
+    int armor;
+};
+
+
+// ───────────────── enum ───────────────────
+
+// İsimlendirilmiş sabitler tanımlar.
+enum Weapon {
+    PISTOL,
+    SHOTGUN,
+    RPG
+};
+
+// ───────────────── union ───────────────────
+
+// Aynı belleği paylaşan üyelerden oluşan yeni bir tip tanımlar.
+union Value {
+    int i;
+    float f;
+    char *str;
+};
+
+// ───────────────── typedef struct ─────────
+
+// struct anahtar kelimesini kullanmadan erişmeyi sağlar.
+typedef struct Player {
+    int hp;
+    int armor;
+} Player;
+
+
+// ───────────────── typedef enum ───────────
+
+// enum anahtar kelimesini kullanmadan erişmeyi sağlar.
+typedef enum Weapon {
+    PISTOL,
+    SHOTGUN,
+    RPG
+} Weapon;
+
+// ───────────────── typedef union ───────────
+
+// union anahtar kelimesini kaldırır.
+typedef union Value {
+    int i;
+    float f;
+    char *str;
+} Value;
+
+// ─── MULTI VALUE SIGNE ───────────────────────────────────────────
+type variable0, variable1, variable2 = value;
+type variable0, variable1, variable2 = value0, value1, value2;
+
+###### 101 — Types ##############################################
+
+###### PRINTF — Types ##############################################
+
+int printf(const char *format, ...);
+
+/*
+FORMAT:
+
+%[flags][width][.precision][length]specifier
+
+FLAGS:
+-    Left align
++    Always show sign
+' '  Leading space for positive
+#    Alternate form
+0    Zero padding
+
+WIDTH:
+<number>
+*
+
+PRECISION:
+.<number>
+.*
+
+LENGTH:
+hh
+h
+l
+ll
+j
+z
+t
+L
+
+SPECIFIERS:
+%d  signed int
+%i  signed int
+%u  unsigned int
+%o  unsigned octal
+%x  hexadecimal (lowercase)
+%X  hexadecimal (uppercase)
+%f  double
+%F  double
+%e  scientific
+%E  scientific
+%g  shortest float
+%G  shortest float
+%a  hexadecimal float
+%A  hexadecimal float
+%c  char
+%s  string
+%p  pointer
+%n  write character count
+%%  percent sign
+*/
+
+###### PRINTF — Types ##############################################
+
+
+###### function #################################################
+
+// Function declaration
+int add(int a, int b);
+
+// Function definition
+int add(int a, int b) {
+    return a + b;
+}
+
+// No parameters
+void hello(void) {
+}
+
+// No return value
+void print_number(int value) {
+}
+
+// Return primitive type
+int get_score(void) {
+    return 100;
+}
+
+// Return pointer
+char *get_name(void) {
+    return "Gordon";
+}
+
+// Return struct
+Player create_player(void) {
+    Player p = {100, 50};
+    return p;
+}
+
+// Function pointer
+int (*operation)(int, int);
+
+// Function pointer declaration
+typedef int (*MathFunc)(int, int);
+
+MathFunc func = add;
+
+// Variadic function
+int printf(const char *fmt, ...);
+
+###### function #################################################
+
+
+###### if / else / else if ######################################
+
+if (x > 0) {
+}
+
+if (x > 0) {
+}
+else {
+}
+
+if (x > 0) {
+}
+else if (x == 0) {
+}
+else {
+}
+
+###### if / else / else if ######################################
+
+
+###### switch / case ############################################
+
+switch (value) {
+
+case 0:
+    break;
+case 1:
+    break;
+case 2:
+    break;
+case 3:
+    break;
+default:
+    break;
+}
+
+###### switch / case ############################################
+
+###### memory (malloc / calloc / realloc / free) #################
+
+// Allocate memory
+int *ptr = malloc(10 * sizeof(int));
+
+// Allocate zero-initialized memory
+int *ptr = calloc(10, sizeof(int));
+
+// Resize allocated memory
+ptr = realloc(ptr, 20 * sizeof(int));
+
+// Release memory
+free(ptr);
+
+// Allocate a single object
+Player *player = malloc(sizeof(Player));
+
+// Allocate an array of objects
+Player *players = malloc(100 * sizeof(Player));
+
+###### memory (malloc / calloc / realloc / free) #################
+
+
+###### for #######################################################
+
+// Classic for loop
+for (int i = 0; i < 10; i++) {
+}
+
+// Multiple variables
+for (int i = 0, j = 9; i < j; i++, j--) {
+}
+
+// Infinite loop
+for (;;) {
+}
+
+// Empty body
+for (int i = 0; i < 10; i++);
+
+###### for #######################################################
+
+
+###### while #####################################################
+
+// Basic while loop
+while (running) {
+}
+
+// Infinite loop
+while (1) {
+}
+
+// Empty body
+while (condition);
+
+###### while #####################################################
+
+
+###### do / while ################################################
+
+// Execute at least once
+do {
+} while (running);
+
+// Empty body
+do {
+} while (condition);
+
+###### do / while ################################################
+
+
+##### GELICEKDE SUANDA GEREK YOK
 ==========================================================
 ## networking -> built-in networking library
 # ==========================================================
-
+--- daha degil
 ==========================================================
 ## http request -> https client functionality
 # ==========================================================
-
+--- daha degil
 ==========================================================
 ## json support -> native json parsing/serialization
 # ==========================================================
-
+--- daha degil
 ==========================================================
 ## modern I/O async I/O operations
 # ==========================================================
-
+--- daha degil
 ==========================================================
 ## unicode support full unicode text handling
 # ==========================================================
-
+--- daha degil
 ==========================================================
 ## CLI arguments command line argument parsin
 # ==========================================================
+--- daha degil

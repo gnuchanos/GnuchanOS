@@ -31,7 +31,7 @@ TSTDIR = os.path.join(BASE, "_NOTES")
 
 # ── compiler flags ─────────────────────────────────────────
 CC  = os.environ.get("CC", "gcc")
-BASE_CFLAGS = ["-std=gnu99", "-Wall", "-Wextra", "-I", INCDIR]
+BASE_CFLAGS = ["-std=gnu99", "-Wall", "-Wextra", "-I", INCDIR, "-I", SRC]
 BASE_LDFLAGS = ["-lm"]
 
 # detect platform
@@ -52,6 +52,8 @@ SOURCES = [
     os.path.join(SRC, "version/version.c"),
     os.path.join(SRC, "linker/linker.c"),
     os.path.join(SRC, "shell/shell.c"),
+    os.path.join(SRC, "type/type.c"),
+    os.path.join(SRC, "jit/jit.c"),
 ]
 
 OBJECTS = [os.path.join(OBJ, os.path.splitext(os.path.basename(s))[0] + ".o")

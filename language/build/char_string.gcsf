@@ -1,0 +1,75 @@
+#lib <stdio>
+
+
+
+
+int main() {
+
+    // Unicode Character
+    char ch = 'A';
+
+    // String
+    char name1[] = "Gordon Freeman";
+    
+    char *game = "HALF LIFE 3";
+    int game_str_len = strlen(game);
+    int game_sizeof  = sizeof(game);
+
+    // Byte Pointer
+    char *buffer = malloc(1024);
+
+    // Stack String Arrays
+    char names1[3][32] = {
+        "Gordon",
+        "Alyx",
+        "Barney"
+    };
+
+    char names2[][32] = {
+        "Gordon",
+        "Alyx",
+        "Barney"
+    };
+
+    char names3[3][] = {
+        "Gordon",
+        "Alyx",
+        "Barney"
+    };
+
+    // Mixed String Array
+    char values[4][32] = {
+        'A',
+        "ABC",
+        'Z',
+        "Hello"
+    };
+
+    // Heap String Array
+    char *games1[] = {
+        'A',
+        "Half Life",
+        "Portal",
+        "Left 4 Dead"
+    };
+
+    // Dynamically Built String Array
+    char **ready_now = malloc(2 * sizeof(*ready_now));
+
+    ready_now[0] = "Half Life 3";
+    ready_now[1] = "Left 4 Dead 3";
+
+    //# eger yazim unutulursa otomatik free oluyor kontrol edilip free mi degil mi diye
+    free(ready_now);
+
+
+    char *games2[] = {
+        "Half Life",
+        "Team Fortress 3",
+        "Left 4 Dead"
+    };
+
+    int games_size = sizeof(games2) / sizeof(games2[0]);
+
+    return 0;
+}

@@ -1,0 +1,99 @@
+#lib <stdio>
+
+
+
+
+
+int main() {
+
+    int x = 10;
+    int y = 3;
+    bool b = true;
+
+    int a1 = 5;
+    int a2 = -5;
+    int a3 = +5;
+    int a4 = 'A';
+    int a5 = '\n';
+    int a6 = 0xFF;
+    int a7 = 077;
+    int a8 = 0b1010;
+    int a9 = b;
+    int a10 = x;
+
+    int add  = x + y;
+    int sub  = x - y;
+    int mul  = x * y;
+    int div  = x / y;
+    int mod  = x % y;
+
+    int band = x & y;
+    int bor  = x | y;
+    int bxor = x ^ y;
+    int bnot = ~x;
+    int lsh  = x << 2;
+    int rsh  = x >> 2;
+
+    int gt = x > y;
+    int lt = x < y;
+    int ge = x >= y;
+    int le = x <= y;
+    int eq = x == y;
+    int ne = x != y;
+
+    int land = x && y;
+    int lor  = x || y;
+    int lnot = !x;
+
+    int tern = x ? y : 100;
+
+    int preinc = ++x;
+    int predec = --x;
+    int postinc = x++;
+    int postdec = x--;
+
+    int cast = (int)3.14;
+    int sz = sizeof(int);
+
+    int assign = (x = 5);
+    int add_eq = (x += 5);
+    int sub_eq = (x -= 5);
+    int mul_eq = (x *= 5);
+    int div_eq = (x /= 5);
+    int mod_eq = (x %= 5);
+    int and_eq = (x &= 5);
+    int or_eq  = (x |= 5);
+    int xor_eq = (x ^= 5);
+    int shl_eq = (x <<= 1);
+    int shr_eq = (x >>= 1);
+
+    char c = 'A';
+    short s = 10;
+    long l = 100;
+    long long ll = 1000;
+    float f = 1.5f;
+    double d = 2.5;
+    long double ld = 3.5L;
+
+    int8 i8 = -1;
+    int16 i16 = -2;
+    int32 i32 = -3;
+    int64 i64 = -4;
+    int128 i128 = 123456;
+
+    unsigned char uc = 255;
+    unsigned short us = 65535;
+    unsigned int ui = 123;
+    unsigned long ul = 456;
+    unsigned long long ull = 789;
+
+    uint8 u8 = 255;
+    uint16 u16 = 65535;
+    uint32 u32 = 123456;
+    uint64 u64 = 123456789;
+
+    unsigned float uf = 1.5f;
+    unsigned double ud = 2.5;
+
+    return 0;
+}

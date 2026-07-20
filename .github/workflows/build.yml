@@ -1,81 +1,121 @@
-name: GCL Build & Release
+name: GCL Compiler Build & Test
 
 on:
   push:
-    branches: [ main ]
-    tags:
-      - 'v*'
+    branches: [main, master]
+    paths:
+      - 'language/**'
+      - '.github/workflows/build.yml'
   pull_request:
-    branches: [ main ]
+    branches: [main, master]
+    paths:
+      - 'language/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: Build GCL (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+  build-ubuntu:
+    name: Build (Ubuntu)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: language/src
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make python3
+
+      - name: Build GCL compiler
+        run: python3 makefile.py
+
+      - name: Verify binary exists
+        run: |
+          if [ -f ../build/gcl ]; then
+            echo "GCL binary built successfully"
+            ls -la ../build/gcl
+          else
+            echo "ERROR: GCL binary not found!"
+            exit 1
+          fi
+
+      - name: Test - main.gcsf
+        run: python3 makefile.py run ../build/main.gcsf
+
+      - name: Test - numbers.gcsf
+        run: python3 makefile.py run ../build/numbers.gcsf
+
+      - name: Test - comment.gcsf
+        run: python3 makefile.py run ../build/comment.gcsf
+
+      - name: Test - char_string.gcsf
+        run: python3 makefile.py run ../build/char_string.gcsf
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          fetch-depth: 1
+          name: gcl-ubuntu
+          path: |
+            language/build/gcl
+            language/build/*.c
+            language/build/obj/
+
+  build-windows:
+    name: Build (Windows MinGW)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: language/src
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MinGW
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          platform: x64
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
-      - name: Build GCL
-        run: python src/makefile.py
-        working-directory: language
+      - name: Build GCL compiler
+        run: python makefile.py
 
-      - name: Run tests
-        run: python src/makefile.py test
-        working-directory: language
+      - name: Verify binary exists
+        shell: pwsh
+        run: |
+          if (Test-Path ../build/gcl.exe) {
+            Write-Host "GCL binary built successfully"
+            Get-ChildItem ../build/gcl.exe
+          } else {
+            Write-Host "ERROR: GCL binary not found!"
+            exit 1
+          }
 
-      - name: Upload GCL binary
+      - name: Test - main.gcsf
+        run: python makefile.py run ../build/main.gcsf
+
+      - name: Test - numbers.gcsf
+        run: python makefile.py run ../build/numbers.gcsf
+
+      - name: Test - comment.gcsf
+        run: python makefile.py run ../build/comment.gcsf
+
+      - name: Test - char_string.gcsf
+        run: python makefile.py run ../build/char_string.gcsf
+
+      - name: Archive build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: gcl-${{ runner.os }}
-          path: language/build/gcl*
-          if-no-files-found: error
-
-  release:
-    name: Create Release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Download Linux binary
-        uses: actions/download-artifact@v4
-        with:
-          name: gcl-Linux
-          path: artifacts/linux/
-
-      - name: Download Windows binary
-        uses: actions/download-artifact@v4
-        with:
-          name: gcl-Windows
-          path: artifacts/windows/
-
-      - name: Create zip packages
-        run: |
-          mkdir -p dist
-          cd artifacts/linux && zip -r ../../dist/gcl-linux-x86_64.zip gcl* && cd ../..
-          cd artifacts/windows && zip -r ../../dist/gcl-windows-x86_64.zip gcl* && cd ../..
-          ls -la dist/
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*.zip
-          name: GCL ${{ github.ref_name }}
-          body: |
-            GCL ${{ github.ref_name }} pre-built binaries.
-          generate_release_notes: true
+          name: gcl-windows
+          path: |
+            language/build/gcl.exe
+            language/build/*.c
+            language/build/obj/
