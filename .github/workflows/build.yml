@@ -42,3 +42,10 @@ jobs:
 
       - name: Test — shell help/exit
         run: printf "help\nexit\n" | language/build/gcl || true
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcl-linux-x86_64
+          path: language/build/gcl
+          if-no-files-found: error
