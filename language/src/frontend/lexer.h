@@ -16,4 +16,7 @@ void lexer_init(Lexer *l, const char *source, const char *filename);
 Token lexer_next(Lexer *l);
 Token lexer_peek(Lexer *l);
 
+/* enable/disable condition-context mode: / and , become separators inside #if/#elif */
+void lexer_set_condition(int on);
+
 #endif

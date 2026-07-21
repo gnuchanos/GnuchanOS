@@ -24,6 +24,10 @@ SOURCES = [
     "frontend/lexer.c",
     "frontend/parser.c",
     "backend/codegen.c",
+    "backend/codegen_ast.c",
+    "backend/codegen_ir.c",
+    "backend/codegen_c.c",
+    "backend/codegen_debug.c",
 ]
 
 # Include directories relative to SRC_DIR (each gets -I flag)

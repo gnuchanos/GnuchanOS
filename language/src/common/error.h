@@ -4,5 +4,6 @@
 #include "types.h"
 
 void error(const char *code, size_t line, size_t col, const char *msg);
+void warn(const char *code, size_t line, size_t col, const char *msg);
 
 #endif

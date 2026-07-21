@@ -1,3 +1,0 @@
-Library: libraryanan : librarybaban
-math: 3.14159 : 6 : GnuchanOS
-local define: my biggest Bitch

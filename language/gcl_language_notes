@@ -1,0 +1,181 @@
+# GCL — Gnuchan C-Like Language (GNU99)
+
+# Gnuchan Language System — Before Start
+
+- **Güvenli C** — runtime safety eklenmiş, debug her zaman net
+- **Sıfır maliyet** — debug kapalıyken hiçbir overhead yok
+
+gcl looks c language but -> gcl != c language -> TRUE
+
+
+# ==========================================================
+## CLI Parameters
+# ==========================================================
+
+# GCL FLAGS
+gcl -flag value or gcl -flag value value value
+
+gcl                     → interactive shell
+gcl -version, -v        → version info
+gcl -help, -h           → help
+
+# Path / Library
+gcl -linclude path      → extra include path
+gcl -llib path          → extra library path
+gcl -lextend path       → extension module path
+
+# Debug / Pipeline
+gcl -lexer file.gcsf    → token stream
+gcl -parser file.gcsf   → parse tree
+gcl -ast file.gcsf      → AST dump
+gcl -ir file.gcsf       → IR dump
+gcl -codegen file.gcsf  → C code dump
+gcl -istedigin_kadar_flag_girebilirsin file.gcsf -o out → full pipeline to executable
+
+gcl -debug
+
+# manuel path
+gcl -linclude path -llib path -lextend path .\main.gcsf -o out_test
+
+# in same folder search
+gcl.exe .\main.gcsf -o out_test 
+
+# ==========================================================
+# COMPILER PIPELINE
+# ==========================================================
+
+    gcl codes -> .c language -> .o -> .exe or gnu/linux
+
+         #extern Resolution
+                │
+        ┌───────┴────────┐
+        ▼                ▼
+      .gclib          .gcsf
+        │                │
+        ├── #extern ─────┤
+        │                │
+        ▼                ▼
+   Resolve Recursively
+                │
+                ▼
+      Merged Source File
+                │
+                ▼
+       Compiler Frontend
+  (Lexer → Parser → AST → Semantic)
+                │
+                ▼
+         Code Generation
+                │
+                ▼
+            output.c
+                │
+                ▼
+        GCC Compilation
+                │
+                ▼
+            output.o
+                │
+                ▼
+             Linker
+                │
+      ┌─────────┴─────────┐
+      ▼                   ▼
+ output.exe        output.gcdebug
+
+.gclib -> .h      #lib
+.gcsf  -> .c + .h #include
+
+#include <gclib.h> -> #include <gcscript_file.h> -> output_name.c --> .o -> create dir output+_project (.c files, .h files, .exe yada gnu/linux)
+
+
+# ==========================================================
+# CLANG / RUST STYLE ERROR HANDLING
+# ==========================================================
+
+## Mevcut Durum (v0.1)
+- Parser'da `error(E001, line, col, msg)` fonksiyonu
+- Çıktı formatı:
+  ```
+  error[E001]: expected number after '='
+   --> test.gcsf:1:8
+    |
+  1 | int a = ;
+    |        ^ expected number after '='
+  ```
+- Hata kodu: `E001` (tekil, genel)
+- Kaynak satırı: caret ile işaretleniyor
+- Lokasyon: dosya:satır:kolon doğru
+
+---
+
+### HEADERS
+
+#include <script> or "script" --> .gcsf
+    call normal name --> things
+#lib     <library> or "library" --> .gclib
+    call python like --> library_name.things
+#extern  <raylib.dll> or "raylib.dll"
+    extern "c" {
+        #define _name call_name
+    }
+
+    extern 'c' {
+        #define _name call_name
+    }
+
+    extern _name call_name
+
+# yorum 
+#| yorumlar
+devam 
+ediyorlar
+|#
+
+// c yorumu
+
+/* c
+yorumu
+bu
+*/
+
+#undef MAX
+#define MAX 100
+#define name "string"
+#define number 31.690000
+
+#debug "Library: " library._anan " : " library._baban
+#debug "math: " PI " : " TAU " : " AUTHOR
+#debug "local define: " your_mother
+
+#pragma once
+
+
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
+
+#ifdef DEBUG
+    #debug "Debug"
+#endif
+
+#ifndef DEBUG
+    #define DEBUG
+#endif
+
+# gnu, linux, gnu/linux, linux alternative keywords
+#if gnu/linux 
+    message("YES")
+elif windows
+    message("YES")
+#else
+    message("????")
+#endif
+
+#if VERSION == 1
+    #define TEXT "v1"
+#elif VERSION == 2
+    #define TEXT "v2"
+#else
+    #error VERSION tanımlı değil veya geçersiz.
+#endif
+

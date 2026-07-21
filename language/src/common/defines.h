@@ -12,6 +12,8 @@ typedef struct DefineEntry {
 void defines_init(void);
 void defines_set(const char *name, const char *value);
 const char *defines_get(const char *name);
+void defines_undef(const char *name);
+int  defines_exists(const char *name);
 
 /* track extern symbols for codegen: "extern const char *name;" */
 void defines_add_extern(const char *name);

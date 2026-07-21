@@ -20,6 +20,9 @@ typedef struct {
     int         debug_flag;
 } CodegenOpts;
 
+/* shared output file for all codegen modules */
+extern FILE *g_codegen_out;
+
 void codegen_emit(AstNode *prog, CodegenOpts *opts);
 
 #endif

@@ -1,3 +1,5 @@
+#pragma once
+
 #lib <library>
 #include <math>
 
@@ -7,3 +9,32 @@
 #debug "Library: " library._anan " : " library._baban
 #debug "math: " PI " : " TAU " : " AUTHOR
 #debug "local define: " your_mother
+
+#ifdef DEBUG
+    #debug "Debug"
+#endif
+
+#ifndef DEBUG
+    #define DEBUG
+#endif
+
+# gnu, linux, gnu/linux, linux alternative keywords
+#if gnu/linux 
+    message("YES")
+#elif windows
+    message("YES")
+#else
+    message("????")
+#endif
+
+#define VERSION 1
+
+#if VERSION == 1
+    #define TEXT "v1"
+    #debug "TEXT " TEXT
+#elif VERSION == 2
+    #define TEXT "v2"
+    #debug "TEXT " TEXT
+#else
+    #error VERSION is not defined or is invalid.
+#endif

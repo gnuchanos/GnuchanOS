@@ -12,13 +12,38 @@ typedef struct ExternEntry {
 static ExternEntry *extern_head = NULL;
 static ExternEntry *extern_iter = NULL;
 
+/* built-in platform defines */
+static void add_builtin_defines(void) {
+    /* platform */
+#ifdef _WIN32
+    defines_set("windows", "1");
+#elif defined(__linux__)
+    defines_set("linux", "1");
+    defines_set("gnu", "1");
+#elif defined(__APPLE__)
+    defines_set("apple", "1");
+#endif
+
+    /* GCL version */
+    defines_set("GCL_VERSION", "1");
+}
+
 void defines_init(void) {
     head = NULL;
     extern_head = NULL;
     extern_iter = NULL;
+    add_builtin_defines();
 }
 
 void defines_set(const char *name, const char *value) {
+    /* overwrite if exists */
+    for (DefineEntry *e = head; e; e = e->next) {
+        if (strcmp(e->name, name) == 0) {
+            free((void*)e->value);
+            e->value = strdup(value);
+            return;
+        }
+    }
     DefineEntry *e = malloc(sizeof(DefineEntry));
     e->name = strdup(name);
     e->value = strdup(value);
@@ -33,8 +58,26 @@ const char *defines_get(const char *name) {
     return NULL;
 }
 
+void defines_undef(const char *name) {
+    DefineEntry *prev = NULL;
+    for (DefineEntry *e = head; e; e = e->next) {
+        if (strcmp(e->name, name) == 0) {
+            if (prev) prev->next = e->next;
+            else head = e->next;
+            free((void*)e->name);
+            free((void*)e->value);
+            free(e);
+            return;
+        }
+        prev = e;
+    }
+}
+
+int defines_exists(const char *name) {
+    return defines_get(name) != NULL;
+}
+
 void defines_add_extern(const char *name) {
-    /* dedup: skip if already in list */
     for (ExternEntry *ee = extern_head; ee; ee = ee->next)
         if (strcmp(ee->name, name) == 0)
             return;
@@ -46,9 +89,7 @@ void defines_add_extern(const char *name) {
 }
 
 int defines_next_extern(const char **name) {
-    /* pass NULL to reset iterator to head */
     if (name == NULL) { extern_iter = extern_head; return 0; }
-    /* end of list: stop, do NOT auto-restart */
     if (extern_iter == NULL) return 0;
     *name = extern_iter->name;
     extern_iter = extern_iter->next;
