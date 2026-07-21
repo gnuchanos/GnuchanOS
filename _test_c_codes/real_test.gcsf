@@ -1,0 +1,27 @@
+#define VERSION 1
+#define BUFFER_SIZE 256
+#define APP_NAME "GnuchanOS"
+
+#ifdef DEBUG
+    printf("Debug mode\n");
+#endif
+
+#ifndef RELEASE
+    #define RELEASE 1
+#endif
+
+#if VERSION == 1
+    #define TEXT "v1"
+#elif VERSION == 2
+    #define TEXT "v2"
+#else
+    #error VERSION tanimsiz
+#endif
+
+#pragma message("Building " APP_NAME "...")
+
+int main() {
+    char buffer[BUFFER_SIZE];
+    printf("App: %s, Version: %s\n", APP_NAME, TEXT);
+    return 0;
+}

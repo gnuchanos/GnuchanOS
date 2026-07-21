@@ -1,0 +1,6 @@
+#define MAX 100
+#define NAME "GnuchanOS"
+
+int add(int a, int b) {
+    return a + b;
+}

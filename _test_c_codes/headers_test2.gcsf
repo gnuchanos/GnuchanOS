@@ -1,0 +1,43 @@
+#define VERSION 1
+
+#include "math"
+
+#lib "mylib"
+
+#extern "raylib.dll"
+
+# Bu bir yorum satiri
+#| Bu bir
+cok satirli
+yorum |#
+
+// c yorumu
+/* c blok yorumu */
+
+#define MAX 100
+#define NAME GnuchanOS
+#undef MAX
+
+#ifdef DEBUG
+    printf("Debug on\n");
+#endif
+
+#ifndef RELEASE
+    #define RELEASE 1
+#endif
+
+#if VERSION == 1
+    #define TEXT "v1"
+#elif VERSION == 2
+    #define TEXT "v2"
+#else
+    #error VERSION tanimsiz
+#endif
+
+#pragma message("Derleniyor...")
+
+#line 200 "example.gcsf"
+
+int main() {
+    return 0;
+}
