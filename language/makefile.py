@@ -41,7 +41,7 @@ INCLUDES = [
 
 # Compiler flags
 CC = os.environ.get("CC", "gcc")
-CFLAGS = os.environ.get("CFLAGS", "-Wall -Wextra -std=c11 -O2").split()
+CFLAGS = os.environ.get("CFLAGS", "-Wall -Wextra -std=c11 -O2 -D_GNU_SOURCE").split()
 LDFLAGS = os.environ.get("LDFLAGS", "").split()
 
 
