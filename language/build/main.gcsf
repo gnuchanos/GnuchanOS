@@ -1,0 +1,9 @@
+#lib <library>
+#include <math>
+
+#define your_mother "my biggest WAIFU"
+
+
+#debug "Library: " library._anan " : " library._baban
+#debug "math: " PI " : " TAU " : " AUTHOR
+#debug "local define: " your_mother

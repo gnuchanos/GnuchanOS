@@ -1,0 +1,4 @@
+// math.gcsf — standard math library (simulated)
+#define PI 3.14159
+#define TAU 6
+#define AUTHOR "GnuchanOS"

@@ -1,0 +1,7 @@
+#extern <out.dll>
+
+
+extern "c" {
+    #define _anan anan
+    #define _baban baban
+}

@@ -1,0 +1,21 @@
+; ── IR Dump ──
+; Dependency chain:
+  #lib       library
+  #include   math
+  #extern    out.dll
+
+; Resolved defines:
+  your_mother          = "my biggest Bitch"
+  PI                   = 3.14159
+  TAU                  = 6
+  AUTHOR               = "GnuchanOS"
+
+; Extern symbols:
+  baban
+  anan
+
+; #debug statements:
+  #debug  "Library: " anan " : " baban
+  #debug  "math: " 3.14159 " : " 6 " : " "GnuchanOS"
+  #debug  "local define: " "my biggest Bitch"
+;

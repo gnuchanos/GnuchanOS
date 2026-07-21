@@ -11,13 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build compiler (auto-find all sources)
+      - name: Build compiler
         shell: bash
         run: |
           cd language
           mkdir -p build
           SOURCES=$(find src -name "*.c" | tr '\n' ' ')
-          echo "Sources: $SOURCES"
 
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             EXE="build/gcl.exe"
@@ -25,12 +24,14 @@ jobs:
             EXE="build/gcl"
           fi
 
-          gcc -std=gnu99 -Wall -Wextra $SOURCES -I src -o "$EXE"
+          gcc -std=c11 -Wall -Wextra -O2 \
+            -I src -I src/types -I src/common -I src/frontend -I src/backend \
+            $SOURCES -o "$EXE"
           echo "BINARY=$EXE" >> $GITHUB_ENV
 
-      - name: Verify binary exists
+      - name: Verify binary
         shell: bash
-        run: ls -la language/${{ env.BINARY }} || ls -la language/build/
+        run: ls -la language/${{ env.BINARY }}
 
       - name: Test — version
         shell: bash
@@ -40,27 +41,47 @@ jobs:
         shell: bash
         run: language/${{ env.BINARY }} -help
 
-      - name: Test — lexer pipeline
+      - name: Test — lexer
         shell: bash
         run: |
-          echo "int a = 5;" > /tmp/test.gcsf
+          printf '#define FOO 42\n#debug "hello" FOO\n' > /tmp/test.gcsf
           language/${{ env.BINARY }} -lexer /tmp/test.gcsf
 
-      - name: Test — full pipeline
+      - name: Test — parser
         shell: bash
         run: |
-          echo "int a = 5;" > /tmp/test2.gcsf
-          language/${{ env.BINARY }} /tmp/test2.gcsf -o /tmp/out.c
+          printf '#define FOO 42\n#debug "hello" FOO\n' > /tmp/test.gcsf
+          language/${{ env.BINARY }} -parser /tmp/test.gcsf
 
-      - name: Test — debug + multiple paths
+      - name: Test — AST
         shell: bash
         run: |
-          echo "int x = 10;" > /tmp/test3.gcsf
-          language/${{ env.BINARY }} -debug -linclude inc1 -linclude inc2 -llib lib -lextend ext /tmp/test3.gcsf -o /tmp/out2.c
+          printf '#define FOO 42\n#debug "hello" FOO\n' > /tmp/test.gcsf
+          language/${{ env.BINARY }} -ast /tmp/test.gcsf
 
-      - name: Test — shell help/exit
+      - name: Test — IR dump
         shell: bash
-        run: printf "help\nexit\n" | language/${{ env.BINARY }} || true
+        run: |
+          printf '#define FOO 42\n#debug "hello" FOO\n' > /tmp/test.gcsf
+          language/${{ env.BINARY }} -ir /tmp/test.gcsf
+
+      - name: Test — codegen
+        shell: bash
+        run: |
+          printf '#define FOO 42\n#debug "hello" FOO\n' > /tmp/test.gcsf
+          language/${{ env.BINARY }} -codegen /tmp/test.gcsf
+
+      - name: Test — export (-o)
+        shell: bash
+        run: |
+          printf '#define FOO 42\n#debug "hello" FOO\n' > /tmp/test.gcsf
+          language/${{ env.BINARY }} /tmp/test.gcsf -o /tmp/out
+
+      - name: Test — flags passthrough
+        shell: bash
+        run: |
+          printf '#define FOO 42\n#debug "hello" FOO\n' > /tmp/test.gcsf
+          language/${{ env.BINARY }} -linclude inc1 -llib lib1 -lextend ext1 /tmp/test.gcsf -o /tmp/out2
 
       - name: Upload artifact (Linux)
         if: matrix.os == 'ubuntu-latest'
