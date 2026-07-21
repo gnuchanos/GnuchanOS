@@ -4,48 +4,76 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Build compiler (auto-find all sources)
+        shell: bash
         run: |
           cd language
           mkdir -p build
           SOURCES=$(find src -name "*.c" | tr '\n' ' ')
           echo "Sources: $SOURCES"
-          gcc -std=gnu99 -Wall -Wextra $SOURCES -I src -o build/gcl
+
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            EXE="build/gcl.exe"
+          else
+            EXE="build/gcl"
+          fi
+
+          gcc -std=gnu99 -Wall -Wextra $SOURCES -I src -o "$EXE"
+          echo "BINARY=$EXE" >> $GITHUB_ENV
 
       - name: Verify binary exists
-        run: ls -la language/build/gcl && file language/build/gcl
+        shell: bash
+        run: ls -la language/${{ env.BINARY }} || ls -la language/build/
 
       - name: Test — version
-        run: language/build/gcl -version
+        shell: bash
+        run: language/${{ env.BINARY }} -version
 
       - name: Test — help
-        run: language/build/gcl -help
+        shell: bash
+        run: language/${{ env.BINARY }} -help
 
       - name: Test — lexer pipeline
+        shell: bash
         run: |
           echo "int a = 5;" > /tmp/test.gcsf
-          language/build/gcl -lexer /tmp/test.gcsf
+          language/${{ env.BINARY }} -lexer /tmp/test.gcsf
 
       - name: Test — full pipeline
+        shell: bash
         run: |
           echo "int a = 5;" > /tmp/test2.gcsf
-          language/build/gcl /tmp/test2.gcsf -o /tmp/out.c
+          language/${{ env.BINARY }} /tmp/test2.gcsf -o /tmp/out.c
 
       - name: Test — debug + multiple paths
+        shell: bash
         run: |
           echo "int x = 10;" > /tmp/test3.gcsf
-          language/build/gcl -debug -linclude inc1 -linclude inc2 -llib lib -lextend ext /tmp/test3.gcsf -o /tmp/out2.c
+          language/${{ env.BINARY }} -debug -linclude inc1 -linclude inc2 -llib lib -lextend ext /tmp/test3.gcsf -o /tmp/out2.c
 
       - name: Test — shell help/exit
-        run: printf "help\nexit\n" | language/build/gcl || true
+        shell: bash
+        run: printf "help\nexit\n" | language/${{ env.BINARY }} || true
 
-      - name: Upload build artifact
+      - name: Upload artifact (Linux)
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: gcl-linux-x86_64
           path: language/build/gcl
+          if-no-files-found: error
+
+      - name: Upload artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcl-windows-x86_64
+          path: language/build/gcl.exe
           if-no-files-found: error
