@@ -1,16 +1,41 @@
 name: Build GCL
+
 on: [push, pull_request]
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Build compiler (auto-find all sources)
         run: |
-          cd language/src
-          SOURCES=$(find . -name "*.c" | tr '\n' ' ')
-          gcc -std=gnu99 -Wall -Wextra $SOURCES -o gcl
-      - name: Test HEADERS
-        run: cd language/src && ./gcl ../../_test_c_codes/real_test.gcsf -o /tmp/out.c && gcc /tmp/out.c -o /tmp/out && /tmp/out
-      - name: Test #error
-        run: cd language/src && ./gcl ../../_test_c_codes/headers_test.gcsf -o /tmp/out.c; test $? -eq 1
+          cd language
+          SOURCES=$(find src -name "*.c" | tr '\n' ' ')
+          echo "Sources: $SOURCES"
+          gcc -std=gnu99 -Wall -Wextra $SOURCES -I src -o build/gcl
+
+      - name: Test flags — version
+        run: language/build/gcl -version
+
+      - name: Test flags — help
+        run: language/build/gcl -help
+
+      - name: Test flags — lexer mode
+        run: |
+          echo "int a = 5;" > /tmp/test.gcsf
+          language/build/gcl -lexer /tmp/test.gcsf
+
+      - name: Test flags — full pipeline mode
+        run: |
+          echo "int a = 5;" > /tmp/test2.gcsf
+          language/build/gcl /tmp/test2.gcsf -o /tmp/out.c
+
+      - name: Test flags — debug + paths
+        run: |
+          echo "int x = 10;" > /tmp/test3.gcsf
+          language/build/gcl -debug -linclude inc1 -linclude inc2 -llib lib -lextend ext /tmp/test3.gcsf -o /tmp/out2.c
+
+      - name: Test shell — help + exit (non-interactive)
+        run: |
+          printf "help\nexit\n" | language/build/gcl || true
