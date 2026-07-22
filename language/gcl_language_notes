@@ -151,9 +151,6 @@ bu
 #pragma once
 
 
-#pragma GCC diagnostic ignored "-Wunused-variable"
-
-
 #ifdef DEBUG
     #debug "Debug"
 #endif

@@ -3,6 +3,7 @@
 #include "colors.h"
 #include "lexer.h"
 #include "parser.h"
+#include "parse_directive.h"
 #include "io.h"
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +30,7 @@ int preprocess_included_is_lib(int i)         { return g_included[i].is_lib; }
 
 void preprocess_free_included(void) {
     for (int i = 0; i < g_included_count; i++) {
-        free(g_included[i].ast);
+        ast_free(g_included[i].ast);
         g_included[i].ast = NULL;
     }
     g_included_count = 0;
@@ -212,6 +213,19 @@ static void register_included(const char *name, AstNode *ast, int is_lib) {
     g_included_count++;
 }
 
+/* Strip known file extensions for dedup normalization */
+static void strip_gcl_extension(char *name) {
+    size_t len = strlen(name);
+    const char *exts[] = { ".gcsf", ".gclib", ".h" };
+    for (int i = 0; i < 3; i++) {
+        size_t elen = strlen(exts[i]);
+        if (len > elen && strcmp(name + len - elen, exts[i]) == 0) {
+            name[len - elen] = '\0';
+            return;
+        }
+    }
+}
+
 void preprocess_load(AstNode *prog, const char *src_dir) {
     AstNode *n = prog->left;
     while (n) {
@@ -226,6 +240,9 @@ void preprocess_load(AstNode *prog, const char *src_dir) {
                 if (len >= sizeof(trimmed)) len = sizeof(trimmed) - 1;
                 memcpy(trimmed, start, len);
                 trimmed[len] = '\0';
+
+                /* Normalize: strip extension for dedup so "math" and "math.gcsf" match */
+                strip_gcl_extension(trimmed);
 
                 if (!already_included(trimmed)) {
                     char *content = preprocess_resolve_path(src_dir, fname);

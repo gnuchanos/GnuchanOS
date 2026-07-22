@@ -1,5 +1,7 @@
 #include "lexer.h"
 #include "parser.h"
+#include "parse_directive.h"
+#include "shell.h"
 #include "defines.h"
 #include "codegen.h"
 #include "colors.h"
@@ -53,24 +55,7 @@ int main(int argc, char **argv) {
 
     /* --- REPL --- */
     if (!input_file) {
-        printf(CLR_PURPLE "gcl v0.2" CLR_RESET " — interactive shell\n\n");
-        char line[1024];
-        while (1) {
-            printf(CLR_PURPLE "gcl> " CLR_RESET); fflush(stdout);
-            if (!fgets(line,sizeof(line),stdin)) break;
-            size_t len = strlen(line);
-            while (len>0&&(line[len-1]=='\n'||line[len-1]=='\r')) line[--len]='\0';
-            if (len==0) continue;
-            if (strcmp(line,"exit")==0||strcmp(line,"quit")==0) break;
-            Lexer sl; lexer_init(&sl,line,"<shell>");
-            Parser *sp=parser_new(&sl);
-            AstNode *spg=parser_parse(sp);
-            spg->left=preprocess_inline(spg);
-            for (AstNode *sn=spg->left;sn;sn=sn->next)
-                if (sn->kind==NODE_DEBUG) { opts.mode=MODE_EXEC; opts.output=stdout; codegen_emit(spg,&opts); break; }
-            free(sp);
-        }
-        printf("bye.\n"); return 0;
+        return shell_run(&opts);
     }
 
     /* --- load source --- */
@@ -102,18 +87,19 @@ int main(int argc, char **argv) {
     AstNode *prog = parser_parse(parser);
     preprocess_load(prog, src_dir);
 
-    if (opts.mode==MODE_CODEGEN || opts.base_name)
-        prog->left = preprocess_codegen(prog);
-    else
+    if (opts.mode == MODE_EXEC && !opts.base_name)
         prog->left = preprocess_inline(prog);
+    else
+        prog->left = preprocess_codegen(prog);
 
     /* --- export or display --- */
     if (opts.base_name) {
         export_project(prog, opts.base_name, lextend_dir);
-        defines_free(); preprocess_free_included(); free(source); free(parser); return 0;
+        ast_free(prog); defines_free(); preprocess_free_included(); free(source); free(parser);
+        return 0;
     }
 
     opts.output = stdout; codegen_emit(prog, &opts);
-    defines_free(); preprocess_free_included(); free(source); free(parser);
+    ast_free(prog); defines_free(); preprocess_free_included(); free(source); free(parser);
     return 0;
 }

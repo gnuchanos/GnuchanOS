@@ -14,7 +14,8 @@ char *file_read(const char *path) {
     size_t usz = (size_t)sz;
     char *buf = malloc(usz + 1);
     if (!buf) { fclose(f); return NULL; }
-    fread(buf, 1, usz, f);
+    size_t nread = fread(buf, 1, usz, f);
+    if (nread != usz) { free(buf); fclose(f); return NULL; }
     buf[usz] = '\0';
     fclose(f);
     return buf;
@@ -30,7 +31,8 @@ int file_copy_to_dir(const char *src, const char *dst_dir) {
     size_t usz = (size_t)sz;
     char *buf = malloc(usz);
     if (!buf) { fclose(fs); return 0; }
-    fread(buf, 1, usz, fs);
+    size_t nread = fread(buf, 1, usz, fs);
+    if (nread != usz) { free(buf); fclose(fs); return 0; }
     fclose(fs);
 
     const char *fname = strrchr(src, '/');

@@ -34,4 +34,7 @@ AstNode *parse_raw_line(Parser *p);
 /* Check if an identifier name matches a bare directive keyword */
 int bare_directive_dispatch(const char *s, size_t len);
 
+/* Recursively free an AST node and all its children */
+void ast_free(AstNode *n);
+
 #endif

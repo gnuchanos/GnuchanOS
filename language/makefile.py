@@ -25,6 +25,8 @@ SOURCES = [
     "common/preprocessor.c",
     "frontend/lexer.c",
     "frontend/parser.c",
+    "frontend/ast.c",
+    "frontend/shell.c",
     "frontend/parse_directive.c",
     "backend/codegen.c",
     "backend/codegen_ast.c",

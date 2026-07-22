@@ -38,11 +38,6 @@ void lexer_init(Lexer *l, const char *source, const char *filename) {
 
 Token lexer_peek(Lexer *l) { return l->current; }
 
-void lexer_set_condition(int on) {
-    (void)on;
-    /* deprecated — condition is now per-lexer-instance via Lexer.in_condition_context */
-}
-
 Token lexer_next(Lexer *l) {
     while (!is_eof(l)) {
         skip_ws(l);
@@ -249,9 +244,17 @@ Token lexer_next(Lexer *l) {
             while (isalnum((unsigned char)l->source[l->pos]) || l->source[l->pos] == '_') advance(l);
             size_t len = l->source + l->pos - start;
 
+            /* Check for extern "c" { pattern — peek at source ahead */
             if (len == 6 && strncmp(start, "extern", 6) == 0) {
-                l->last_was_directive = 0;
-                return make_tok(l, TOK_EXTERN_C_OPEN, start, len);
+                const char *p = l->source + l->pos;
+                while (*p == ' ' || *p == '\t') p++;
+                if (*p == '"' && (*(p+1) == 'c' || *(p+1) == 'C') && *(p+2) == '"') {
+                    p += 3;
+                    while (*p == ' ' || *p == '\t') p++;
+                    if (*p == '{') {
+                        return make_tok(l, TOK_EXTERN_C_OPEN, start, len);
+                    }
+                }
             }
 
             l->last_was_directive = 0;

@@ -182,7 +182,7 @@ AstNode *parse_pragma(Parser *p) {
 AstNode *parse_error(Parser *p) {
     Token hash = eat(p);
     AstNode *n = make_node(NODE_ERROR, NULL, 0, hash.line, hash.col);
-    char msg[1024] = "";
+    char msg[4096] = "";
     int first = 1;
     while (p->lexer->current.kind != TOK_NEWLINE && p->lexer->current.kind != TOK_EOF) {
         Token t = p->lexer->current;
@@ -200,7 +200,7 @@ AstNode *parse_error(Parser *p) {
 AstNode *parse_message(Parser *p) {
     Token hash = eat(p);
     AstNode *n = make_node(NODE_MESSAGE, NULL, 0, hash.line, hash.col);
-    char msg[1024] = "";
+    char msg[4096] = "";
     while (p->lexer->current.kind != TOK_NEWLINE && p->lexer->current.kind != TOK_EOF) {
         Token t = p->lexer->current;
         size_t rem = sizeof(msg) - strlen(msg) - 1;

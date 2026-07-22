@@ -151,6 +151,9 @@ static void emit_ir_conditional_block(AstNode *n, int depth) {
         } else if (child->kind == NODE_ERROR) {
             for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
             fprintf(g_codegen_out, CLR_RED "#error: %s" CLR_RESET "\n", child->left ? child->left->value : "");
+        } else if (child->kind == NODE_DEBUG) {
+            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
+            fprintf(g_codegen_out, CLR_YELLOW "#debug" CLR_RESET "\n");
         }
         child = child->next;
     }

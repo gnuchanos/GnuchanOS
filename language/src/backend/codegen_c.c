@@ -198,6 +198,7 @@ static int inside_conditional(AstNode *prog, AstNode *target) {
 
 void codegen_c_emit_header(AstNode *prog, const char *guard) {
     (void)guard;
+    fprintf(g_codegen_out, "/* GCL header — %s */\n", guard ? guard : "unnamed");
     fprintf(g_codegen_out, "#pragma once\n\n");
 
     AstNode *n = prog->left;
