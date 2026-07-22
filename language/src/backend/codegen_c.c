@@ -85,8 +85,13 @@ static void emit_debug_fmt(AstNode *arg, char *fmt, char *args, int *ac) {
             strcat(fmt, "%s"); if (*ac > 0) strcat(args, ", "); (*ac)++;
             strcat(args, resolved);
         } else {
-            /* number or other value — embed directly */
-            fmt_append(fmt, resolved, strlen(resolved));
+            /* number or other value — embed directly, escape % */
+            const char *p = resolved;
+            while (*p) {
+                if (*p == '%') fmt_append(fmt, "%%", 2);
+                else fmt_append(fmt, p, 1);
+                p++;
+            }
         }
     } else if (arg->kind == NODE_NUMBER) {
         fmt_append(fmt, arg->value, arg->len);

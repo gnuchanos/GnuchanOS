@@ -21,13 +21,17 @@ SOURCES = [
     "main.c",
     "common/error.c",
     "common/defines.c",
+    "common/io.c",
+    "common/preprocessor.c",
     "frontend/lexer.c",
     "frontend/parser.c",
+    "frontend/parse_directive.c",
     "backend/codegen.c",
     "backend/codegen_ast.c",
     "backend/codegen_ir.c",
     "backend/codegen_c.c",
     "backend/codegen_debug.c",
+    "backend/exporter.c",
 ]
 
 # Include directories relative to SRC_DIR (each gets -I flag)

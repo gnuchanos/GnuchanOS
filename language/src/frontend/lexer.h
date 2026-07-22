@@ -10,6 +10,8 @@ typedef struct {
     size_t      line;
     size_t      col;
     Token       current;
+    int         last_was_directive;  /* set when #include/#lib/#extern was just emitted */
+    int         in_condition_context;/* inside #if/#elif: / and , are separators */
 } Lexer;
 
 void lexer_init(Lexer *l, const char *source, const char *filename);
