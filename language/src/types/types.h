@@ -40,12 +40,12 @@ typedef enum {
     TOK_GT,
     TOK_GE,
     TOK_EXTERN_C_OPEN,
-    TOK_EXTERN_C_CLOSE,
     TOK_DOT,
-    TOK_LBRACE,
-    TOK_RBRACE,
+    TOK_LPAREN,
+    TOK_RPAREN,
+    TOK_BRACE_OPEN,
+    TOK_BRACE_CLOSE,
     TOK_NEWLINE,
-    TOK_COMMENT,
 } TokenKind;
 
 typedef struct {

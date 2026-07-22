@@ -93,7 +93,7 @@ static void emit_debug_fmt(AstNode *arg, char *fmt, char *args, int *ac) {
     }
 }
 
-static void emit_node(AstNode *n, int indent) {
+static void emit_node(AstNode *n, int indent, int inside_cond) {
     if (!n) return;
     char ind[32]; memset(ind, ' ', indent * 4); ind[indent * 4] = '\0';
 
@@ -115,21 +115,41 @@ static void emit_node(AstNode *n, int indent) {
     case NODE_UNDEF:  fprintf(g_codegen_out, "%s#undef %s\n", ind, n->value ? n->value : ""); break;
     case NODE_ERROR:  fprintf(g_codegen_out, "%s#error %s\n", ind, n->left ? n->left->value : ""); break;
     case NODE_DEBUG: {
+        int wrap = !inside_cond;
+        if (wrap) fprintf(g_codegen_out, "%s#ifdef DEBUG\n", ind);
         char fmt[4096] = "", args[4096] = ""; int ac = 0;
-        for (AstNode *a = n->left; a; a = a->next) emit_debug_fmt(a, fmt, args, &ac);
-        if (ac > 0) fprintf(g_codegen_out, "%sprintf(\"%s\\n\", %s);\n", ind, fmt, args);
-        else fprintf(g_codegen_out, "%sprintf(\"%s\\n\");\n", ind, fmt);
+        /* when inside a conditional, don't resolve — let C preprocessor handle it */
+        if (inside_cond) {
+            for (AstNode *a = n->left; a; a = a->next) {
+                if (a->kind == NODE_STRING) {
+                    size_t len = a->len; const char *s = a->value;
+                    if (len >= 2 && s[0] == '"') { s++; len -= 2; }
+                    fmt_append(fmt, s, len);
+                } else if (a->kind == NODE_IDENT) {
+                    strcat(fmt, "%s"); if (ac > 0) strcat(args, ", "); ac++;
+                    strcat(args, a->value);
+                } else if (a->kind == NODE_NUMBER) {
+                    fmt_append(fmt, a->value, a->len);
+                }
+            }
+        } else {
+            for (AstNode *a = n->left; a; a = a->next) emit_debug_fmt(a, fmt, args, &ac);
+        }
+        if (ac > 0) fprintf(g_codegen_out, "%s    printf(\"%s\\n\", %s);\n", ind, fmt, args);
+        else fprintf(g_codegen_out, "%s    printf(\"%s\\n\");\n", ind, fmt);
+        if (wrap) fprintf(g_codegen_out, "%s#endif\n", ind);
         break;
     }
     case NODE_MESSAGE:
+        /* compile-time message via #pragma message (C standard) */
         if (n->left && n->left->value) {
-            fprintf(g_codegen_out, "%sprintf(\"", ind);
+            fprintf(g_codegen_out, "%s#pragma message \"", ind);
             for (const char *c = n->left->value; *c; c++) {
                 if (*c == '\\') fputs("\\\\", g_codegen_out);
                 else if (*c == '"') fputs("\\\"", g_codegen_out);
                 else fputc(*c, g_codegen_out);
             }
-            fprintf(g_codegen_out, "\\n\");\n");
+            fprintf(g_codegen_out, "\"\n");
         }
         break;
     case NODE_RAW:
@@ -139,19 +159,34 @@ static void emit_node(AstNode *n, int indent) {
         if (n->left)
             for (AstNode *inner = n->left; inner; inner = inner->next)
                 if (inner->kind == NODE_DEFINE)
-                    emit_node(inner, indent);
+                    emit_node(inner, indent, 0);
         break;
     default: break;
     }
 }
 
 static int is_runtime(NodeKind k) {
-    return k == NODE_DEBUG || k == NODE_MESSAGE || k == NODE_RAW;
+    return k == NODE_DEBUG || k == NODE_RAW;
 }
 
 static int is_conditional(NodeKind k) {
     return k == NODE_IFDEF || k == NODE_IFNDEF || k == NODE_IF ||
            k == NODE_ELIF || k == NODE_ELSE || k == NODE_ENDIF || k == NODE_ERROR;
+}
+
+/* check if node is inside a conditional chain (follows a #if/#ifdef/#ifndef
+   without a matching #endif before it) */
+static int inside_conditional(AstNode *prog, AstNode *target) {
+    /* walk backwards from target through parent's children */
+    AstNode *n = prog->left;
+    int depth = 0;
+    while (n && n != target) {
+        if (n->kind == NODE_IFDEF || n->kind == NODE_IFNDEF || n->kind == NODE_IF) depth++;
+        else if (n->kind == NODE_ENDIF) depth--;
+        if (n == target) break;
+        n = n->next;
+    }
+    return depth > 0;
 }
 
 /* ---------- header emission ---------- */
@@ -163,7 +198,7 @@ void codegen_c_emit_header(AstNode *prog, const char *guard) {
     AstNode *n = prog->left;
     while (n) {
         if (n->kind == NODE_DEFINE) {
-            emit_node(n, 0);
+            emit_node(n, 0, 0);
         } else if (n->kind == NODE_EXTERN_C_BLOCK && n->left) {
             for (AstNode *inner = n->left; inner; inner = inner->next) {
                 if (inner->kind == NODE_DEFINE) {
@@ -194,8 +229,9 @@ void codegen_c_emit_source(AstNode *prog) {
 
     n = prog->left;
     while (n) {
+        int in_cond = inside_conditional(prog, n);
         if (is_runtime(n->kind) || is_conditional(n->kind))
-            emit_node(n, 0);
+            emit_node(n, 0, in_cond);
         n = n->next;
     }
 }
@@ -203,10 +239,13 @@ void codegen_c_emit_source(AstNode *prog) {
 /* ---------- main .c ---------- */
 
 void codegen_c_emit(AstNode *prog) {
-    /* check if we need stdio */
+    /* check if we need stdio — scan all nodes (standalone + conditional) */
     int need_stdio = 0;
     AstNode *n = prog->left;
-    while (n) { if (is_runtime(n->kind)) { need_stdio = 1; break; } n = n->next; }
+    while (n) {
+        if (is_runtime(n->kind)) { need_stdio = 1; break; }
+        n = n->next;
+    }
     if (need_stdio) fprintf(g_codegen_out, "#include <stdio.h>\n\n");
 
     /* extern symbol definitions (only in main .c) */
@@ -219,23 +258,27 @@ void codegen_c_emit(AstNode *prog) {
     }
     if (has_ext) fprintf(g_codegen_out, "\n");
 
-    /* defines + extern block aliases from main AST */
+    /* Top-level: everything except standalone runtime.
+       Defines, conditionals (#if/#elif/#else/#endif/#error), and
+       runtime code inside conditionals all stay at file scope.
+       Only standalone #debug/raw goes into main(). */
     n = prog->left;
     while (n) {
-        if (n->kind == NODE_DEFINE || n->kind == NODE_EXTERN_C_BLOCK)
-            emit_node(n, 0);
+        int in_cond = inside_conditional(prog, n);
+        /* standalone runtime → skip for now, goes into main() */
+        if (is_runtime(n->kind) && !in_cond) { n = n->next; continue; }
+        emit_node(n, 0, in_cond);
         n = n->next;
     }
 
-    /* main() */
-    if (need_stdio) {
-        fprintf(g_codegen_out, "\nint main(void) {\n");
-        n = prog->left;
-        while (n) {
-            if (is_runtime(n->kind) || is_conditional(n->kind))
-                emit_node(n, 1);
-            n = n->next;
-        }
-        fprintf(g_codegen_out, "    return 0;\n}\n");
+    /* main(): only standalone runtime code (not inside any #if block) */
+    fprintf(g_codegen_out, "\nint main(void) {\n");
+    n = prog->left;
+    while (n) {
+        int in_cond = inside_conditional(prog, n);
+        if (is_runtime(n->kind) && !in_cond)
+            emit_node(n, 1, 0);
+        n = n->next;
     }
+    fprintf(g_codegen_out, "    return 0;\n}\n");
 }

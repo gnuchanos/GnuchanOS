@@ -260,9 +260,9 @@ Token lexer_next(Lexer *l) {
             return make_tok(l, TOK_IDENT, start, len);
         }
 
-        /* ( ) for defined() */
-        if (c == '(') { advance(l); return make_tok(l, TOK_LBRACE, "(", 1); }
-        if (c == ')') { advance(l); return make_tok(l, TOK_RBRACE, ")", 1); }
+        /* ( ) for defined() and message() */
+        if (c == '(') { advance(l); return make_tok(l, TOK_LPAREN, "(", 1); }
+        if (c == ')') { advance(l); return make_tok(l, TOK_RPAREN, ")", 1); }
 
         /* dot */
         if (c == '.') {
@@ -271,8 +271,8 @@ Token lexer_next(Lexer *l) {
         }
 
         /* { } */
-        if (c == '{') { advance(l); return make_tok(l, TOK_LBRACE, "{", 1); }
-        if (c == '}') { advance(l); return make_tok(l, TOK_RBRACE, "}", 1); }
+        if (c == '{') { advance(l); return make_tok(l, TOK_BRACE_OPEN, "{", 1); }
+        if (c == '}') { advance(l); return make_tok(l, TOK_BRACE_CLOSE, "}", 1); }
 
         /* unknown — skip */
         advance(l);

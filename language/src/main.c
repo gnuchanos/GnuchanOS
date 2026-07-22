@@ -304,11 +304,17 @@ static int export_project(AstNode *prog, const char *base_name, const char *lext
         }
     }
 
-    /* create output directory */
+    /* create output directory (cross-platform) */
     {
         char mkcmd[2048];
-        snprintf(mkcmd, sizeof(mkcmd), "mkdir \"%s\" 2>nul", out_dir);
+#ifdef _WIN32
+        snprintf(mkcmd, sizeof(mkcmd), "if not exist \"%.900s\" mkdir \"%.900s\"", out_dir, out_dir);
+#else
+        snprintf(mkcmd, sizeof(mkcmd), "mkdir -p \"%.1024s\"", out_dir);
+#endif
         system(mkcmd);
+        /* also handle the case where out_dir exists as a regular file */
+        { FILE *test = fopen(out_dir, "r"); if (test) { fclose(test); } else { /* ok */ } }
     }
 
     CodegenOpts opts = { .mode = MODE_CODEGEN };
