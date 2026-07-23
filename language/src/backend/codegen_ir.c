@@ -142,6 +142,9 @@ static void emit_ir_conditional_block(AstNode *n, int depth) {
             for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
             const char *val = child->left ? child->left->value : "";
             fprintf(g_codegen_out, CLR_CYAN "#define" CLR_RESET " %s " CLR_MAGENTA "%s" CLR_RESET "\n", child->value, val);
+        } else if (child->kind == NODE_UNDEF) {
+            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
+            fprintf(g_codegen_out, CLR_CYAN "#undef" CLR_RESET " %s\n", child->value ? child->value : "");
         } else if (child->kind == NODE_RAW) {
             for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
             fprintf(g_codegen_out, CLR_DIM "%.*s" CLR_RESET, (int)child->len, child->value);
@@ -154,6 +157,26 @@ static void emit_ir_conditional_block(AstNode *n, int depth) {
         } else if (child->kind == NODE_DEBUG) {
             for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
             fprintf(g_codegen_out, CLR_YELLOW "#debug" CLR_RESET "\n");
+        } else if (child->kind == NODE_PRAGMA) {
+            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
+            fprintf(g_codegen_out, CLR_YELLOW "#pragma %s" CLR_RESET "\n",
+                child->left && child->left->value ? child->left->value : "");
+        } else if (child->kind == NODE_EXTERN) {
+            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
+            const char *fn = child->left ? child->left->value : "?";
+            fprintf(g_codegen_out, CLR_CYAN "#extern %s" CLR_RESET "\n", fn);
+        } else if (child->kind == NODE_EXTERN_C_BLOCK) {
+            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
+            fprintf(g_codegen_out, CLR_YELLOW "extern \"c\" {" CLR_RESET "\n");
+            for (AstNode *inner = child->left; inner; inner = inner->next) {
+                if (inner->kind == NODE_DEFINE) {
+                    for (int i = 0; i < depth + 2; i++) fprintf(g_codegen_out, "%s", indent);
+                    fprintf(g_codegen_out, CLR_CYAN "#define" CLR_RESET " %s " CLR_MAGENTA "%s" CLR_RESET "\n",
+                        inner->value, inner->left ? inner->left->value : "");
+                }
+            }
+            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
+            fprintf(g_codegen_out, CLR_YELLOW "}" CLR_RESET "\n");
         }
         child = child->next;
     }

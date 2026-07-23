@@ -145,23 +145,31 @@ AstNode *preprocess_inline_ex(AstNode *prog, int keep_all) {
                 else ok = eval_condition(n);
                 cstack[csp] = ok ? 1 : 0;
             }
-            n->next = NULL; tail->next = n; tail = n; n = next; continue;
+            if (keep_all) { n->next = NULL; tail->next = n; tail = n; }
+            else { n->next = NULL; ast_free(n); }
+            n = next; continue;
         }
         if (n->kind == NODE_ELIF) {
-            if (csp <= 0) { n = next; continue; }
+            if (csp <= 0) { n->next = NULL; ast_free(n); n = next; continue; }
             if (cstack[csp] == 1 || cstack[csp] == 2) cstack[csp] = 2;
             else if (cstack[csp - 1] == 1) cstack[csp] = eval_condition(n) ? 1 : 0;
-            n->next = NULL; tail->next = n; tail = n; n = next; continue;
+            if (keep_all) { n->next = NULL; tail->next = n; tail = n; }
+            else { n->next = NULL; ast_free(n); }
+            n = next; continue;
         }
         if (n->kind == NODE_ELSE) {
-            if (csp <= 0) { n = next; continue; }
+            if (csp <= 0) { n->next = NULL; ast_free(n); n = next; continue; }
             if (cstack[csp] == 1 || cstack[csp] == 2) cstack[csp] = 2;
             else if (cstack[csp] == 0 && cstack[csp - 1] == 1) cstack[csp] = 1;
-            n->next = NULL; tail->next = n; tail = n; n = next; continue;
+            if (keep_all) { n->next = NULL; tail->next = n; tail = n; }
+            else { n->next = NULL; ast_free(n); }
+            n = next; continue;
         }
         if (n->kind == NODE_ENDIF) {
             if (csp > 0) csp--;
-            n->next = NULL; tail->next = n; tail = n; n = next; continue;
+            if (keep_all) { n->next = NULL; tail->next = n; tail = n; }
+            else { n->next = NULL; ast_free(n); }
+            n = next; continue;
         }
 
         int active = 1;

@@ -20,6 +20,7 @@ int main(int argc, char **argv) {
 
     CodegenOpts opts = { .mode = MODE_EXEC, .output = NULL, .base_name = NULL, .debug_flag = 0 };
     const char *input_file = NULL;
+    const char *input_file_heap = NULL;  /* set when input_file points to heap-allocated auto_path */
     const char *lextend_dir = NULL;
 
     #define NEXT_ARG_OR_ERR(flag) \
@@ -61,9 +62,18 @@ int main(int argc, char **argv) {
     /* --- load source --- */
     char *source = file_read(input_file);
     if (!source) {
-        char auto_path[1024];
-        snprintf(auto_path,sizeof(auto_path),"%s.gcsf",input_file);
-        source=file_read(auto_path); if (source) input_file=auto_path;
+        /* NOTE: Must use heap allocation so input_file stays valid outside this block */
+        size_t ap_len = strlen(input_file) + 6; /* ".gcsf" + NUL */
+        char *auto_path = malloc(ap_len);
+        if (!auto_path) { fprintf(stderr, "gcl: malloc failed\n"); return 1; }
+        snprintf(auto_path, ap_len, "%s.gcsf", input_file);
+        source = file_read(auto_path);
+        if (source) {
+            input_file = auto_path;
+            input_file_heap = auto_path;
+        } else {
+            free(auto_path);
+        }
     }
     if (!source) { fprintf(stderr,"gcl: cannot open '%s'\n",input_file); return 1; }
 
@@ -96,10 +106,12 @@ int main(int argc, char **argv) {
     if (opts.base_name) {
         export_project(prog, opts.base_name, lextend_dir);
         ast_free(prog); defines_free(); preprocess_free_included(); free(source); free(parser);
+        free((void*)input_file_heap);
         return 0;
     }
 
     opts.output = stdout; codegen_emit(prog, &opts);
     ast_free(prog); defines_free(); preprocess_free_included(); free(source); free(parser);
+    free((void*)input_file_heap);
     return 0;
 }

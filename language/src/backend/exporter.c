@@ -126,7 +126,6 @@ int export_project(AstNode *prog, const char *base_name, const char *lextend_dir
         int found = 0;
         const char *search_dirs[] = { lextend_dir, ".", NULL };
         for (int di = 0; search_dirs[di] && !found; di++) {
-            if (!search_dirs[di]) continue;
             char src_path[2048];
             snprintf(src_path, sizeof(src_path), "%s/%s", search_dirs[di], bare);
             if (file_copy_to_dir(src_path, out_dir)) found = 1;
