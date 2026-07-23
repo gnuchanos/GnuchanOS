@@ -6,6 +6,17 @@
 #include <stdio.h>
 #include <string.h>
 
+/* ==========================================================
+ * IR Dump — codegen_ir.c
+ *
+ * Dumps the preprocessed AST in a readable IR format with
+ * color-coded output showing dependency chain, defines,
+ * extern symbols, conditional blocks, and debug statements.
+ *
+ * Refactored: body-printing logic extracted into a single
+ * helper to eliminate duplication.
+ * ========================================================== */
+
 /* ---------- helpers ---------- */
 
 static const char *node_kind_name(NodeKind k) {
@@ -32,6 +43,77 @@ static void emit_if_condition(AstNode *n) {
             alt = alt->next;
         }
     }
+}
+
+/* ---------- unified body node printer ---------- */
+
+/*
+ * Print a single directive/raw node at a given indent depth.
+ * Returns 1 if the node was handled (always true — falls through to raw).
+ */
+static int emit_ir_body_node(AstNode *body, int depth) {
+    const char *indent = "  ";
+    for (int i = 0; i < depth; i++) fprintf(g_codegen_out, "%s", indent);
+
+    if (!body) return 0;
+
+    switch (body->kind) {
+    case NODE_DEFINE: {
+        const char *val = body->left ? body->left->value : "";
+        fprintf(g_codegen_out, CLR_CYAN "#define" CLR_RESET " %s " CLR_MAGENTA "%s" CLR_RESET "\n", body->value, val);
+        return 1;
+    }
+    case NODE_UNDEF:
+        fprintf(g_codegen_out, CLR_CYAN "#undef" CLR_RESET " %s\n", body->value ? body->value : "");
+        return 1;
+    case NODE_RAW:
+        fprintf(g_codegen_out, CLR_DIM "%.*s" CLR_RESET, (int)body->len, body->value);
+        return 1;
+    case NODE_MESSAGE:
+        fprintf(g_codegen_out, CLR_YELLOW "message: %s" CLR_RESET "\n", body->left ? body->left->value : "");
+        return 1;
+    case NODE_ERROR:
+        fprintf(g_codegen_out, CLR_RED "#error: %s" CLR_RESET "\n", body->left ? body->left->value : "");
+        return 1;
+    case NODE_DEBUG:
+        fprintf(g_codegen_out, CLR_YELLOW "#debug" CLR_RESET "\n");
+        return 1;
+    case NODE_PRAGMA:
+        fprintf(g_codegen_out, CLR_YELLOW "#pragma %s" CLR_RESET "\n",
+            body->left && body->left->value ? body->left->value : "");
+        return 1;
+    case NODE_EXTERN:
+        fprintf(g_codegen_out, CLR_CYAN "#extern %s" CLR_RESET "\n", body->left ? body->left->value : "?");
+        return 1;
+    case NODE_EXTERN_C_BLOCK: {
+        fprintf(g_codegen_out, CLR_YELLOW "extern \"c\" {" CLR_RESET "\n");
+        for (AstNode *inner = body->left; inner; inner = inner->next) {
+            if (inner->kind == NODE_DEFINE) emit_ir_body_node(inner, depth + 1);
+        }
+        for (int i = 0; i < depth; i++) fprintf(g_codegen_out, "%s", indent);
+        fprintf(g_codegen_out, CLR_YELLOW "}" CLR_RESET "\n");
+        return 1;
+    }
+    default:
+        return 0;
+    }
+}
+
+/*
+ * Walk a sequence of body nodes (starting from `start`) until hitting a
+ * terminating directive kind (ELIF, ELSE, ENDIF, IFDEF, IFNDEF, IF, or NULL).
+ * Emits each body node at `depth` indentation via emit_ir_body_node().
+ * Returns the terminating node (or NULL if exhausted).
+ */
+static AstNode *emit_ir_body_sequence(AstNode *start, int depth) {
+    AstNode *body = start;
+    while (body && body->kind != NODE_ELIF && body->kind != NODE_ELSE &&
+           body->kind != NODE_ENDIF && body->kind != NODE_IFDEF &&
+           body->kind != NODE_IFNDEF && body->kind != NODE_IF) {
+        emit_ir_body_node(body, depth);
+        body = body->next;
+    }
+    return body;
 }
 
 /* ---------- conditional block recursive dump ---------- */
@@ -78,28 +160,7 @@ static void emit_ir_conditional_block(AstNode *n, int depth) {
             fprintf(g_codegen_out, "%s#elif%s ", CLR_CYAN, CLR_RESET);
             emit_if_condition(child);
             fprintf(g_codegen_out, "\n");
-            /* body between #elif and next directive */
-            AstNode *body = child->next;
-            while (body && body->kind != NODE_ELIF && body->kind != NODE_ELSE &&
-                   body->kind != NODE_ENDIF && body->kind != NODE_IFDEF &&
-                   body->kind != NODE_IFNDEF && body->kind != NODE_IF) {
-                if (body->kind == NODE_DEFINE) {
-                    for (int i = 0; i < depth + 2; i++) fprintf(g_codegen_out, "%s", indent);
-                    const char *val = body->left ? body->left->value : "";
-                    fprintf(g_codegen_out, CLR_CYAN "#define" CLR_RESET " %s " CLR_MAGENTA "%s" CLR_RESET "\n", body->value, val);
-                } else if (body->kind == NODE_RAW) {
-                    for (int i = 0; i < depth + 2; i++) fprintf(g_codegen_out, "%s", indent);
-                    fprintf(g_codegen_out, CLR_DIM "%.*s" CLR_RESET, (int)body->len, body->value);
-                } else if (body->kind == NODE_MESSAGE) {
-                    for (int i = 0; i < depth + 2; i++) fprintf(g_codegen_out, "%s", indent);
-                    fprintf(g_codegen_out, CLR_YELLOW "message: %s" CLR_RESET "\n", body->left ? body->left->value : "");
-                } else if (body->kind == NODE_ERROR) {
-                    for (int i = 0; i < depth + 2; i++) fprintf(g_codegen_out, "%s", indent);
-                    fprintf(g_codegen_out, CLR_RED "#error: %s" CLR_RESET "\n", body->left ? body->left->value : "");
-                }
-                body = body->next;
-            }
-            child = body;
+            child = emit_ir_body_sequence(child->next, depth + 2);
             continue;
         }
 
@@ -107,26 +168,7 @@ static void emit_ir_conditional_block(AstNode *n, int depth) {
         if (child->kind == NODE_ELSE) {
             for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
             fprintf(g_codegen_out, CLR_CYAN "#else" CLR_RESET "\n");
-            AstNode *body = child->next;
-            while (body && body->kind != NODE_ENDIF && body->kind != NODE_ELIF &&
-                   body->kind != NODE_IFDEF && body->kind != NODE_IFNDEF && body->kind != NODE_IF) {
-                if (body->kind == NODE_DEFINE) {
-                    for (int i = 0; i < depth + 2; i++) fprintf(g_codegen_out, "%s", indent);
-                    const char *val = body->left ? body->left->value : "";
-                    fprintf(g_codegen_out, CLR_CYAN "#define" CLR_RESET " %s " CLR_MAGENTA "%s" CLR_RESET "\n", body->value, val);
-                } else if (body->kind == NODE_RAW) {
-                    for (int i = 0; i < depth + 2; i++) fprintf(g_codegen_out, "%s", indent);
-                    fprintf(g_codegen_out, CLR_DIM "%.*s" CLR_RESET, (int)body->len, body->value);
-                } else if (body->kind == NODE_MESSAGE) {
-                    for (int i = 0; i < depth + 2; i++) fprintf(g_codegen_out, "%s", indent);
-                    fprintf(g_codegen_out, CLR_YELLOW "message: %s" CLR_RESET "\n", body->left ? body->left->value : "");
-                } else if (body->kind == NODE_ERROR) {
-                    for (int i = 0; i < depth + 2; i++) fprintf(g_codegen_out, "%s", indent);
-                    fprintf(g_codegen_out, CLR_RED "#error: %s" CLR_RESET "\n", body->left ? body->left->value : "");
-                }
-                body = body->next;
-            }
-            child = body;
+            child = emit_ir_body_sequence(child->next, depth + 2);
             continue;
         }
 
@@ -138,46 +180,7 @@ static void emit_ir_conditional_block(AstNode *n, int depth) {
         }
 
         /* body content */
-        if (child->kind == NODE_DEFINE) {
-            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
-            const char *val = child->left ? child->left->value : "";
-            fprintf(g_codegen_out, CLR_CYAN "#define" CLR_RESET " %s " CLR_MAGENTA "%s" CLR_RESET "\n", child->value, val);
-        } else if (child->kind == NODE_UNDEF) {
-            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
-            fprintf(g_codegen_out, CLR_CYAN "#undef" CLR_RESET " %s\n", child->value ? child->value : "");
-        } else if (child->kind == NODE_RAW) {
-            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
-            fprintf(g_codegen_out, CLR_DIM "%.*s" CLR_RESET, (int)child->len, child->value);
-        } else if (child->kind == NODE_MESSAGE) {
-            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
-            fprintf(g_codegen_out, CLR_YELLOW "message: %s" CLR_RESET "\n", child->left ? child->left->value : "");
-        } else if (child->kind == NODE_ERROR) {
-            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
-            fprintf(g_codegen_out, CLR_RED "#error: %s" CLR_RESET "\n", child->left ? child->left->value : "");
-        } else if (child->kind == NODE_DEBUG) {
-            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
-            fprintf(g_codegen_out, CLR_YELLOW "#debug" CLR_RESET "\n");
-        } else if (child->kind == NODE_PRAGMA) {
-            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
-            fprintf(g_codegen_out, CLR_YELLOW "#pragma %s" CLR_RESET "\n",
-                child->left && child->left->value ? child->left->value : "");
-        } else if (child->kind == NODE_EXTERN) {
-            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
-            const char *fn = child->left ? child->left->value : "?";
-            fprintf(g_codegen_out, CLR_CYAN "#extern %s" CLR_RESET "\n", fn);
-        } else if (child->kind == NODE_EXTERN_C_BLOCK) {
-            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
-            fprintf(g_codegen_out, CLR_YELLOW "extern \"c\" {" CLR_RESET "\n");
-            for (AstNode *inner = child->left; inner; inner = inner->next) {
-                if (inner->kind == NODE_DEFINE) {
-                    for (int i = 0; i < depth + 2; i++) fprintf(g_codegen_out, "%s", indent);
-                    fprintf(g_codegen_out, CLR_CYAN "#define" CLR_RESET " %s " CLR_MAGENTA "%s" CLR_RESET "\n",
-                        inner->value, inner->left ? inner->left->value : "");
-                }
-            }
-            for (int i = 0; i < depth + 1; i++) fprintf(g_codegen_out, "%s", indent);
-            fprintf(g_codegen_out, CLR_YELLOW "}" CLR_RESET "\n");
-        }
+        emit_ir_body_node(child, depth + 1);
         child = child->next;
     }
 }

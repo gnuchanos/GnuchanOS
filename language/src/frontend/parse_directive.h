@@ -31,8 +31,9 @@ AstNode *parse_endif(Parser *p);
 /* Raw line capture (fallback for non-directive content) */
 AstNode *parse_raw_line(Parser *p);
 
-/* Check if an identifier name matches a bare directive keyword */
-int bare_directive_dispatch(const char *s, size_t len);
+/* Check if an identifier name matches a bare directive keyword.
+   col = token column (1-based). Only dispatches if col == 1. */
+int bare_directive_dispatch(const char *s, size_t len, size_t col);
 
 /* Recursively free an AST node and all its children */
 void ast_free(AstNode *n);

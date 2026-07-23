@@ -31,7 +31,7 @@ static AstNode *parse_stmt(Parser *p) {
         case TOK_NEWLINE:      eat(p); return parse_stmt(p);
         case TOK_IDENT:
             /* bare directive keywords (without #) */
-            if (bare_directive_dispatch(p->lexer->current.text, p->lexer->current.len)) {
+            if (bare_directive_dispatch(p->lexer->current.text, p->lexer->current.len, p->lexer->current.col)) {
                 const char *s = p->lexer->current.text;
                 size_t len = p->lexer->current.len;
                 if (len == 7 && strncmp(s, "message", 7) == 0) return parse_message(p);
@@ -52,7 +52,19 @@ static AstNode *parse_stmt(Parser *p) {
             /* not a directive keyword — capture whole line as raw C code */
             return parse_raw_line(p);
         default:
-            /* any other token — capture whole line as raw C code */
+            /* Unknown hash directive — fatal error (e.g. #for, #endfor, etc.) */
+            /* Check if token is a #-prefixed directive not handled above */
+            switch (p->lexer->current.kind) {
+            case TOK_HASH_FOR:
+            case TOK_HASH_ENDFOR:
+                {
+                    Token t = p->lexer->current;
+                    error("E108", t.line, t.col, "unknown directive");
+                    return NULL;
+                }
+            default: break;
+            }
+            /* Non-directive token — raw C code */
             return parse_raw_line(p);
     }
 }

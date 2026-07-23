@@ -152,8 +152,14 @@ int export_project(AstNode *prog, const char *base_name, const char *lextend_dir
     snprintf(path, sizeof(path), "%s/main.c", out_dir);
     char exe[2048]; snprintf(exe, sizeof(exe), "%.1024s/%.256s.exe", out_dir, base_only);
     snprintf(cmd, sizeof(cmd), "gcc \"%s\"%s%s -o \"%s\"", path, all_sources, dll_list, exe);
-    printf(CLR_DIM "%s" CLR_RESET "\n", cmd);
-    if (system(cmd) == 0) printf(CLR_PURPLE "[gcl]" CLR_RESET " %s\n", exe);
+    printf("%s\n", cmd);
+    system(cmd);
+    /* Always check .exe existence — system() return value unreliable on Windows */
+    {
+        FILE *check = fopen(exe, "rb");
+        if (check) { fclose(check); printf(CLR_PURPLE "[gcl]" CLR_RESET " %s\n", exe); }
+        else fprintf(stderr, CLR_RED "[gcl]" CLR_RESET " error: %s not created\n", exe);
+    }
 
     return 0;
 }

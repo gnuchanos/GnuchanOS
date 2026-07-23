@@ -179,7 +179,19 @@ Token lexer_next(Lexer *l) {
                 for (int i = 0; i < 7 && !is_eof(l); i++) advance(l);
                 return make_tok(l, TOK_HASH_MESSAGE, "#message", 8);
             }
-            /* plain # comment */
+            if (strncmp(l->source + l->pos, "#for", 4) == 0 && !isalnum((unsigned char)peek(l, 4)) && peek(l, 4) != '_') {
+                advance(l);
+                for (int i = 0; i < 3 && !is_eof(l); i++) advance(l);
+                l->in_condition_context = 0;
+                return make_tok(l, TOK_HASH_FOR, "#for", 4);
+            }
+            if (strncmp(l->source + l->pos, "#endfor", 7) == 0 && !isalnum((unsigned char)peek(l, 7)) && peek(l, 7) != '_') {
+                advance(l);
+                for (int i = 0; i < 6 && !is_eof(l); i++) advance(l);
+                l->in_condition_context = 0;
+                return make_tok(l, TOK_HASH_ENDFOR, "#endfor", 7);
+            }
+            /* unknown # directive — skip line (parser will error) */
             while (!is_eof(l) && l->source[l->pos] != '\n') advance(l);
             continue;
         }

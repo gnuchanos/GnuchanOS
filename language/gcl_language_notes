@@ -126,6 +126,52 @@ gcl.exe .\main.gcsf -o out_test
 
     extern _name call_name
 
+
+#pragma once
+
+#undef MAX
+#define MAX 100
+#define name "string"
+#define number 31.690000
+#define numbers {1, 2, 3, 4, 5}
+
+#debug "Library: " and library._anan and " : " and library._baban
+#debug "math: " and PI and " : " and TAU and " : " and AUTHOR
+#debug "local define: " and your_mother
+
+#ifdef DEBUG
+    printf("Debug");
+#endif
+
+#ifndef DEBUG
+    #define DEBUG
+#endif
+
+# gnu, linux, gnu/linux, linux alternative keywords
+#if gnu/linux 
+    #debug "YES" and "it's gnu/linux"
+elif windows
+    #debug "YES" and "it's spyware"
+#else
+    debug "what is this ...."
+
+#if VERSION == 1
+    #define TEXT "v1"
+#elif VERSION == 2
+    #define TEXT "v2"
+#else
+    #error VERSION tanımlı değil veya geçersiz.
+#endif
+
+#for i in numbers
+    ...
+#endfor
+
+#for i and value in enumerate(numbers)
+    ...
+#endfor
+
+
 # yorum 
 #| yorumlar
 devam 
@@ -138,41 +184,4 @@ ediyorlar
 yorumu
 bu
 */
-
-#undef MAX
-#define MAX 100
-#define name "string"
-#define number 31.690000
-
-#debug "Library: " library._anan " : " library._baban
-#debug "math: " PI " : " TAU " : " AUTHOR
-#debug "local define: " your_mother
-
-#pragma once
-
-
-#ifdef DEBUG
-    #debug "Debug"
-#endif
-
-#ifndef DEBUG
-    #define DEBUG
-#endif
-
-# gnu, linux, gnu/linux, linux alternative keywords
-#if gnu/linux 
-    message("YES")
-elif windows
-    message("YES")
-#else
-    message("????")
-#endif
-
-#if VERSION == 1
-    #define TEXT "v1"
-#elif VERSION == 2
-    #define TEXT "v2"
-#else
-    #error VERSION tanımlı değil veya geçersiz.
-#endif
 

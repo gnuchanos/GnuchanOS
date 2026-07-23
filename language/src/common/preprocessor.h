@@ -13,8 +13,10 @@ AstNode *preprocess_inline_ex(AstNode *prog, int keep_all);
 static inline AstNode *preprocess_inline(AstNode *prog)   { return preprocess_inline_ex(prog, 0); }
 static inline AstNode *preprocess_codegen(AstNode *prog)  { return preprocess_inline_ex(prog, 1); }
 
-/* Load all #include / #lib files recursively into the include table. */
-void preprocess_load(AstNode *prog, const char *src_dir);
+/* Load all #include / #lib files recursively into the include table.
+   src_dir points to the input file's directory.
+   linclude_dir and llib_dir are optional -I / -L style search paths (can be NULL). */
+void preprocess_load(AstNode *prog, const char *src_dir, const char *linclude_dir, const char *llib_dir);
 
 /* Access the include table (for exporter). */
 int           preprocess_included_count(void);

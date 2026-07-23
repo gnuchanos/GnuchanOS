@@ -146,20 +146,41 @@ static void emit_node(AstNode *n, int indent, int inside_cond) {
         break;
     }
     case NODE_MESSAGE:
-        /* compile-time message via #pragma message (C standard) */
-        if (n->left && n->left->value) {
-            fprintf(g_codegen_out, "%s#pragma message \"", ind);
-            for (const char *c = n->left->value; *c; c++) {
-                if (*c == '\\') fputs("\\\\", g_codegen_out);
-                else if (*c == '"') fputs("\\\"", g_codegen_out);
-                else fputc(*c, g_codegen_out);
+        /* GCL already printed #message at compile time — emit as C comment */
+        if (n->left && n->left->value)
+            fprintf(g_codegen_out, "%s/* GCL message: %s */\n", ind, n->left->value);
+        break;
+    case NODE_RAW: {
+        if (n->value) {
+            /* Skip leading whitespace to check content */
+            const char *trimmed = n->value;
+            size_t trim_len = n->len;
+            while (trim_len > 0 && (*trimmed == ' ' || *trimmed == '\t')) { trimmed++; trim_len--; }
+            /* Skip #pragma once in .c output */
+            if (trim_len >= 12 && strncmp(trimmed, "#pragma once", 12) == 0) {
+                /* do nothing — #pragma once only belongs in headers */
+            } else if (trim_len > 8 && strncmp(trimmed, "message(", 8) == 0) {
+                /* Convert GCL message() to C #pragma message */
+                const char *start = trimmed + 8;  /* skip "message(" */
+                size_t remain = trim_len - 8;
+                while (remain > 0 && (*start == ' ' || *start == '\t')) { start++; remain--; }
+                if (remain > 0 && *start == '"') { start++; remain--; }
+                while (remain > 0 && (start[remain-1] == ')' || start[remain-1] == '"')) remain--;
+                fprintf(g_codegen_out, "%s#pragma message \"%.*s\"\n", ind, (int)remain, start);
+            } else if (trim_len > 5 && strncmp(trimmed, "debug", 5) == 0 && (trimmed[5] == ' ' || trimmed[5] == '\t')) {
+                /* Convert bare debug "..." to printf (for inside #if/#elif/#else branches) */
+                const char *start = trimmed + 5;
+                size_t remain = trim_len - 5;
+                while (remain > 0 && (*start == ' ' || *start == '\t')) { start++; remain--; }
+                if (remain > 0 && *start == '"') { start++; remain--; }
+                while (remain > 0 && (start[remain-1] == '"')) remain--;
+                fprintf(g_codegen_out, "%s    printf(\"%.*s\\n\");\n", ind, (int)remain, start);
+            } else {
+                fprintf(g_codegen_out, "%s%.*s", ind, (int)n->len, n->value);
             }
-            fprintf(g_codegen_out, "\"\n");
         }
         break;
-    case NODE_RAW:
-        if (n->value) fprintf(g_codegen_out, "%s%.*s", ind, (int)n->len, n->value);
-        break;
+    }
     case NODE_EXTERN_C_BLOCK:
         if (n->left)
             for (AstNode *inner = n->left; inner; inner = inner->next)
@@ -171,7 +192,7 @@ static void emit_node(AstNode *n, int indent, int inside_cond) {
 }
 
 static int is_runtime(NodeKind k) {
-    return k == NODE_DEBUG || k == NODE_RAW;
+    return k == NODE_DEBUG;
 }
 
 static int is_conditional(NodeKind k) {
@@ -264,26 +285,23 @@ void codegen_c_emit(AstNode *prog) {
     }
     if (has_ext) fprintf(g_codegen_out, "\n");
 
-    /* Top-level: everything except standalone runtime.
-       Defines, conditionals (#if/#elif/#else/#endif/#error), and
-       runtime code inside conditionals all stay at file scope.
-       Only standalone #debug/raw goes into main(). */
+    /* Top-level: file-scope directives only (defines, conditionals, messages, errors).
+       All #debug nodes go to main() — standalone or inside #if blocks. */
     n = prog->left;
     while (n) {
         int in_cond = inside_conditional(prog, n);
-        /* standalone runtime → skip for now, goes into main() */
-        if (is_runtime(n->kind) && !in_cond) { n = n->next; continue; }
+        if (is_runtime(n->kind)) { n = n->next; continue; }
         emit_node(n, 0, in_cond);
         n = n->next;
     }
 
-    /* main(): only standalone runtime code (not inside any #if block) */
+    /* main(): all #debug nodes: standalone AND inside conditionals */
     fprintf(g_codegen_out, "\nint main(void) {\n");
     n = prog->left;
     while (n) {
         int in_cond = inside_conditional(prog, n);
-        if (is_runtime(n->kind) && !in_cond)
-            emit_node(n, 1, 0);
+        if (is_runtime(n->kind))
+            emit_node(n, 1, in_cond);
         n = n->next;
     }
     fprintf(g_codegen_out, "    return 0;\n}\n");

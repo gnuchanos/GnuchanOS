@@ -8,6 +8,7 @@
 #include "io.h"
 #include "preprocessor.h"
 #include "exporter.h"
+#include "error.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,8 @@ int main(int argc, char **argv) {
     const char *input_file = NULL;
     const char *input_file_heap = NULL;  /* set when input_file points to heap-allocated auto_path */
     const char *lextend_dir = NULL;
+    const char *linclude_dir = NULL;
+    const char *llib_dir = NULL;
 
     #define NEXT_ARG_OR_ERR(flag) \
         do { if (i+1>=argc) { fprintf(stderr,CLR_RED "error:" CLR_RESET " %s requires a value\n",flag); return 1; } } while(0)
@@ -45,8 +48,8 @@ int main(int argc, char **argv) {
         if (strcmp(argv[i],"-codegen")==0) { opts.mode=MODE_CODEGEN; continue; }
         if (strcmp(argv[i],"-ir")==0)      { opts.mode=MODE_IR; continue; }
         if (strcmp(argv[i],"-debug")==0)   { opts.debug_flag=1; continue; }
-        if (strcmp(argv[i],"-linclude")==0){ NEXT_ARG_OR_ERR("-linclude"); (void)argv[++i]; continue; }
-        if (strcmp(argv[i],"-llib")==0)    { NEXT_ARG_OR_ERR("-llib");     (void)argv[++i]; continue; }
+        if (strcmp(argv[i],"-linclude")==0){ NEXT_ARG_OR_ERR("-linclude"); linclude_dir=argv[++i]; continue; }
+        if (strcmp(argv[i],"-llib")==0)    { NEXT_ARG_OR_ERR("-llib");     llib_dir=argv[++i]; continue; }
         if (strcmp(argv[i],"-lextend")==0) { NEXT_ARG_OR_ERR("-lextend");  lextend_dir=argv[++i]; continue; }
         if (strcmp(argv[i],"-o")==0)       { NEXT_ARG_OR_ERR("-o"); opts.base_name=argv[++i]; continue; }
         if (argv[i][0]=='-') { fprintf(stderr,CLR_RED "error:" CLR_RESET " unknown flag '%s'\n",argv[i]); return 1; }
@@ -80,8 +83,11 @@ int main(int argc, char **argv) {
     char src_dir[1024] = "";
     {
         const char *s=strrchr(input_file,'/'), *b=strrchr(input_file,'\\'), *l=s>b?s:b;
-        if (l) { size_t d=l-input_file+1; memcpy(src_dir,input_file,d); src_dir[d]='\0'; }
+        if (l) { size_t d=l-input_file+1; if (d>=sizeof(src_dir)) d=sizeof(src_dir)-1; memcpy(src_dir,input_file,d); src_dir[d]='\0'; }
     }
+
+    /* Set source for error line display */
+    error_set_source(source);
 
     /* --- parse --- */
     Lexer lexer; lexer_init(&lexer,source,input_file);
@@ -95,7 +101,7 @@ int main(int argc, char **argv) {
 
     Parser *parser = parser_new(&lexer);
     AstNode *prog = parser_parse(parser);
-    preprocess_load(prog, src_dir);
+    preprocess_load(prog, src_dir, linclude_dir, llib_dir);
 
     if (opts.mode == MODE_EXEC && !opts.base_name)
         prog->left = preprocess_inline(prog);

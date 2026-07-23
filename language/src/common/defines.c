@@ -12,9 +12,11 @@ typedef struct ExternEntry {
 static ExternEntry *extern_head = NULL;
 static ExternEntry *extern_iter = NULL;
 
+#define MAX_RECURSION_DEPTH 32
+#define MAX_VISITED 64
+
 /* built-in platform defines */
 static void add_builtin_defines(void) {
-    /* platform */
 #ifdef _WIN32
     defines_set("windows", "1");
 #elif defined(__linux__)
@@ -23,8 +25,6 @@ static void add_builtin_defines(void) {
 #elif defined(__APPLE__)
     defines_set("apple", "1");
 #endif
-
-    /* GCL version */
     defines_set("GCL_VERSION", "1");
 }
 
@@ -36,7 +36,6 @@ void defines_init(void) {
 }
 
 void defines_set(const char *name, const char *value) {
-    /* overwrite if exists */
     for (DefineEntry *e = head; e; e = e->next) {
         if (strcmp(e->name, name) == 0) {
             free((void*)e->value);
@@ -51,11 +50,53 @@ void defines_set(const char *name, const char *value) {
     head = e;
 }
 
-const char *defines_get(const char *name) {
-    for (DefineEntry *e = head; e; e = e->next)
-        if (strcmp(e->name, name) == 0)
-            return e->value;
+/* Recursive helper: expand value, up to depth limit.
+   visited/vcount track names seen in this resolution chain for cycle detection. */
+static const char *defines_get_r(const char *name, int depth, const char **visited, int *vcount) {
+    if (depth > MAX_RECURSION_DEPTH) return NULL;
+    /* Cycle detection: check if already visited in this chain */
+    for (int i = 0; i < *vcount; i++) {
+        if (strcmp(visited[i], name) == 0) return NULL;  /* cycle detected */
+    }
+    for (DefineEntry *e = head; e; e = e->next) {
+        if (strcmp(e->name, name) == 0) {
+            /* Try to expand the value itself — if value looks like an identifier, resolve it */
+            const char *val = e->value;
+            if (val && val[0] &&
+                ((val[0] >= 'a' && val[0] <= 'z') ||
+                 (val[0] >= 'A' && val[0] <= 'Z') ||
+                 val[0] == '_')) {
+                /* Check if it resolves to something different (avoid infinite loop A→A) */
+                int is_self = (strcmp(val, name) == 0);
+                if (!is_self) {
+                    /* Check if val is itself a defined name */
+                    int found = 0;
+                    for (DefineEntry *inner = head; inner; inner = inner->next) {
+                        if (strcmp(inner->name, val) == 0) { found = 1; break; }
+                    }
+                    if (found) {
+                        /* Push current name onto visited stack before recursing */
+                        if (*vcount < MAX_VISITED) {
+                            visited[*vcount] = name;
+                            (*vcount)++;
+                        }
+                        const char *expanded = defines_get_r(val, depth + 1, visited, vcount);
+                        if (*vcount > 0) (*vcount)--;
+                        else break;
+                        if (expanded) return expanded;
+                    }
+                }
+            }
+            return val;
+        }
+    }
     return NULL;
+}
+
+const char *defines_get(const char *name) {
+    const char *visited[MAX_VISITED];
+    int vcount = 0;
+    return defines_get_r(name, 0, visited, &vcount);
 }
 
 void defines_undef(const char *name) {

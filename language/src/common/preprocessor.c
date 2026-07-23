@@ -46,13 +46,17 @@ char *preprocess_resolve_path(const char *src_dir, const char *filename) {
     size_t dlen = strlen(src_dir);
     char full[2048];
 
-    snprintf(full, sizeof(full), "%.*s%.*s", (int)dlen, src_dir, (int)flen, f);
+    /* Ensure a '/' or '\\' separator between directory and filename */
+    int needs_sep = (dlen > 0 && src_dir[dlen - 1] != '/' && src_dir[dlen - 1] != '\\');
+    const char *sep = needs_sep ? "/" : "";
+
+    snprintf(full, sizeof(full), "%.*s%s%.*s", (int)dlen, src_dir, sep, (int)flen, f);
     char *content = file_read(full); if (content) return content;
-    snprintf(full, sizeof(full), "%.*s%.*s.gcsf", (int)dlen, src_dir, (int)flen, f);
+    snprintf(full, sizeof(full), "%.*s%s%.*s.gcsf", (int)dlen, src_dir, sep, (int)flen, f);
     content = file_read(full); if (content) return content;
-    snprintf(full, sizeof(full), "%.*s%.*s.gclib", (int)dlen, src_dir, (int)flen, f);
+    snprintf(full, sizeof(full), "%.*s%s%.*s.gclib", (int)dlen, src_dir, sep, (int)flen, f);
     content = file_read(full); if (content) return content;
-    snprintf(full, sizeof(full), "%.*s%.*s.h", (int)dlen, src_dir, (int)flen, f);
+    snprintf(full, sizeof(full), "%.*s%s%.*s.h", (int)dlen, src_dir, sep, (int)flen, f);
     content = file_read(full); if (content) return content;
     return NULL;
 }
@@ -130,7 +134,7 @@ static int eval_condition(AstNode *n) {
 AstNode *preprocess_inline_ex(AstNode *prog, int keep_all) {
     AstNode dummy = {0}; AstNode *tail = &dummy;
     AstNode *n = prog->left;
-    #define CSTACK_MAX 64
+    #define CSTACK_MAX 1024
     int cstack[CSTACK_MAX] = {0}; int csp = 0; cstack[0] = 1;
 
     while (n) {
@@ -150,7 +154,11 @@ AstNode *preprocess_inline_ex(AstNode *prog, int keep_all) {
             n = next; continue;
         }
         if (n->kind == NODE_ELIF) {
-            if (csp <= 0) { n->next = NULL; ast_free(n); n = next; continue; }
+            if (csp < 1) {
+                fprintf(stderr, CLR_RED "error[E112]:" CLR_RESET " #elif without matching #if\n");
+                fprintf(stderr, "  line=%zu col=%zu\n", n->line, n->col);
+                exit(1);
+            }
             if (cstack[csp] == 1 || cstack[csp] == 2) cstack[csp] = 2;
             else if (cstack[csp - 1] == 1) cstack[csp] = eval_condition(n) ? 1 : 0;
             if (keep_all) { n->next = NULL; tail->next = n; tail = n; }
@@ -158,7 +166,11 @@ AstNode *preprocess_inline_ex(AstNode *prog, int keep_all) {
             n = next; continue;
         }
         if (n->kind == NODE_ELSE) {
-            if (csp <= 0) { n->next = NULL; ast_free(n); n = next; continue; }
+            if (csp < 1) {
+                fprintf(stderr, CLR_RED "error[E113]:" CLR_RESET " #else without matching #if\n");
+                fprintf(stderr, "  line=%zu col=%zu\n", n->line, n->col);
+                exit(1);
+            }
             if (cstack[csp] == 1 || cstack[csp] == 2) cstack[csp] = 2;
             else if (cstack[csp] == 0 && cstack[csp - 1] == 1) cstack[csp] = 1;
             if (keep_all) { n->next = NULL; tail->next = n; tail = n; }
@@ -166,7 +178,12 @@ AstNode *preprocess_inline_ex(AstNode *prog, int keep_all) {
             n = next; continue;
         }
         if (n->kind == NODE_ENDIF) {
-            if (csp > 0) csp--;
+            if (csp < 1) {
+                fprintf(stderr, CLR_RED "error[E114]:" CLR_RESET " #endif without matching #if\n");
+                fprintf(stderr, "  line=%zu col=%zu\n", n->line, n->col);
+                exit(1);
+            }
+            csp--;
             if (keep_all) { n->next = NULL; tail->next = n; tail = n; }
             else { n->next = NULL; ast_free(n); }
             n = next; continue;
@@ -174,7 +191,7 @@ AstNode *preprocess_inline_ex(AstNode *prog, int keep_all) {
 
         int active = 1;
         for (int i = 0; i <= csp; i++) { if (cstack[i] != 1) { active = 0; break; } }
-        if (!active && !keep_all) { n = next; continue; }
+        if (!active && !keep_all) { n->next = NULL; ast_free(n); n = next; continue; }
 
         if (active) {
             if (n->kind == NODE_DEFINE) exec_define(n);
@@ -190,10 +207,14 @@ AstNode *preprocess_inline_ex(AstNode *prog, int keep_all) {
         if (n->kind == NODE_DEFINE || n->kind == NODE_UNDEF || n->kind == NODE_EXTERN_C_BLOCK ||
             n->kind == NODE_ERROR || n->kind == NODE_MESSAGE || n->kind == NODE_EXTERN ||
             n->kind == NODE_INCLUDE || n->kind == NODE_LIB || n->kind == NODE_PRAGMA ||
-            n->kind == NODE_DEBUG || n->kind == NODE_RAW || active) {
+            n->kind == NODE_DEBUG || n->kind == NODE_RAW || active || keep_all) {
             n->next = NULL; tail->next = n; tail = n;
         }
         n = next;
+    }
+    if (csp > 0) {
+        fprintf(stderr, CLR_RED "error[E114]:" CLR_RESET " unclosed #if/#ifdef/#ifndef (missing #endif)\n");
+        exit(1);
     }
     #undef CSTACK_MAX
     return dummy.next;
@@ -234,7 +255,7 @@ static void strip_gcl_extension(char *name) {
     }
 }
 
-void preprocess_load(AstNode *prog, const char *src_dir) {
+void preprocess_load(AstNode *prog, const char *src_dir, const char *linclude_dir, const char *llib_dir) {
     AstNode *n = prog->left;
     while (n) {
         if (n->kind == NODE_INCLUDE || n->kind == NODE_LIB) {
@@ -253,7 +274,20 @@ void preprocess_load(AstNode *prog, const char *src_dir) {
                 strip_gcl_extension(trimmed);
 
                 if (!already_included(trimmed)) {
-                    char *content = preprocess_resolve_path(src_dir, fname);
+                    char *content = NULL;
+                    /* Try source directory first */
+                    content = preprocess_resolve_path(src_dir, fname);
+                    /* Then -linclude directory for #include files */
+                    if (!content && n->kind == NODE_INCLUDE && linclude_dir && linclude_dir[0])
+                        content = preprocess_resolve_path(linclude_dir, fname);
+                    /* Then -llib directory for #lib files */
+                    if (!content && n->kind == NODE_LIB && llib_dir && llib_dir[0])
+                        content = preprocess_resolve_path(llib_dir, fname);
+                    /* Then the reverse (lib from include dir, include from lib dir) */
+                    if (!content && llib_dir && llib_dir[0])
+                        content = preprocess_resolve_path(llib_dir, fname);
+                    if (!content && linclude_dir && linclude_dir[0])
+                        content = preprocess_resolve_path(linclude_dir, fname);
                     if (content) {
                         Lexer il; lexer_init(&il, content, fname);
                         Parser *ip = parser_new(&il);

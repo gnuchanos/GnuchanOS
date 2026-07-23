@@ -5,10 +5,12 @@
 
 #define your_mother "my biggest WAIFU"
 
+#define VERSION_PRINT "1.0"
+#pragma message("Version: " VERSION_PRINT)
 
-#debug "Library: " library._anan " : " library._baban
-#debug "math: " PI " : " TAU " : " AUTHOR
-#debug "local define: " your_mother
+#debug "Library: " and library._anan and " : " and library._baban
+#debug "math: " and PI and " : " and TAU and " : " and AUTHOR
+#debug "local define: " and your_mother
 
 #ifdef DEBUG
     #debug "Debug"
@@ -20,11 +22,11 @@
 
 # gnu, linux, gnu/linux, linux alternative keywords
 #if gnu/linux 
-    message("YES")
+    #debug "YES and it's gnu/linux"
 #elif windows
-    message("YES")
+    #debug "YES and it's spyware"
 #else
-    message("????")
+    debug "what is this ...."
 #endif
 
 #define VERSION 1
@@ -38,3 +40,16 @@
 #else
     #error VERSION is not defined or is invalid.
 #endif
+
+#define numbers {1, 2, 3, 4, 5}
+
+
+# not finish yet!!
+
+#for i in numbers
+    #debug "NUMBERS: index - " and i
+#endfor
+
+#for i and value in enumerate(numbers)
+    #debug "NUMBERS:--| index: " and i and " - Value: " and value 
+#endfor

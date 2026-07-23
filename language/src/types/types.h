@@ -46,6 +46,8 @@ typedef enum {
     TOK_BRACE_OPEN,
     TOK_BRACE_CLOSE,
     TOK_NEWLINE,
+    TOK_HASH_FOR,
+    TOK_HASH_ENDFOR,
 } TokenKind;
 
 typedef struct {

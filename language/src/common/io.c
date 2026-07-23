@@ -37,7 +37,8 @@ int file_copy_to_dir(const char *src, const char *dst_dir) {
 
     const char *fname = strrchr(src, '/');
     const char *fname2 = strrchr(src, '\\');
-    if (fname2 > fname) fname = fname2;
+    if (!fname) fname = fname2;
+    else if (fname2 && fname2 > fname) fname = fname2;
     fname = fname ? fname + 1 : src;
 
     char dst[2048];
