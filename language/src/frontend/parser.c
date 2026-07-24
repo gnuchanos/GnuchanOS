@@ -27,6 +27,8 @@ static AstNode *parse_stmt(Parser *p) {
         case TOK_HASH_ENDIF:   return parse_endif(p);
         case TOK_HASH_ERROR:   return parse_error(p);
         case TOK_HASH_MESSAGE: return parse_message(p);
+        case TOK_HASH_FOR:     return parse_for(p);
+        case TOK_HASH_ENDFOR:  return parse_endfor(p);
         case TOK_EXTERN_C_OPEN:return parse_extern_c(p);
         case TOK_NEWLINE:      eat(p); return parse_stmt(p);
         case TOK_IDENT:
@@ -52,18 +54,6 @@ static AstNode *parse_stmt(Parser *p) {
             /* not a directive keyword — capture whole line as raw C code */
             return parse_raw_line(p);
         default:
-            /* Unknown hash directive — fatal error (e.g. #for, #endfor, etc.) */
-            /* Check if token is a #-prefixed directive not handled above */
-            switch (p->lexer->current.kind) {
-            case TOK_HASH_FOR:
-            case TOK_HASH_ENDFOR:
-                {
-                    Token t = p->lexer->current;
-                    error("E108", t.line, t.col, "unknown directive");
-                    return NULL;
-                }
-            default: break;
-            }
             /* Non-directive token — raw C code */
             return parse_raw_line(p);
     }

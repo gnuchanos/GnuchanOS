@@ -39,6 +39,17 @@ typedef enum {
     TOK_LE,
     TOK_GT,
     TOK_GE,
+    TOK_ASSIGN,
+    TOK_PLUS,
+    TOK_MINUS,
+    TOK_STAR,
+    TOK_SEMICOLON,
+    TOK_COLON,
+    TOK_AMPERSAND,
+    TOK_PIPE,
+    TOK_PERCENT,
+    TOK_LBRACKET,
+    TOK_RBRACKET,
     TOK_EXTERN_C_OPEN,
     TOK_DOT,
     TOK_LPAREN,
@@ -81,6 +92,8 @@ typedef enum {
     NODE_NUMBER,
     NODE_BINARY,
     NODE_RAW,
+    NODE_FOR,
+    NODE_ENDFOR,
 } NodeKind;
 
 typedef struct AstNode {

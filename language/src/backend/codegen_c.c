@@ -6,17 +6,21 @@
 
 /* ---------- helpers ---------- */
 
-/* GCL platform names → C preprocessor macros */
+/* GCL platform names → C preprocessor macros.
+   Sadece GCL'de kullanılan keyword'ler:
+     gnu / linux / gnu/linux → __linux__
+     windows  → _WIN32   (tüm Windows: 32+64 bit)
+     win64    → _WIN64   (sadece 64-bit Windows)
+     Bilinmeyen → aynen geç
+*/
 static const char *map_platform(const char *name) {
     if (!name) return "0";
-    if (strcmp(name, "gnu")    == 0) return "__gnu_linux__";
+    if (strcmp(name, "gnu/linux")== 0) return "__linux__";
+    if (strcmp(name, "gnu")    == 0) return "__linux__";
     if (strcmp(name, "linux")  == 0) return "__linux__";
     if (strcmp(name, "windows")== 0) return "_WIN32";
     if (strcmp(name, "win64")  == 0) return "_WIN64";
-    if (strcmp(name, "macos")  == 0 || strcmp(name, "mac")     == 0) return "__APPLE__";
-    if (strcmp(name, "apple")  == 0) return "__APPLE__";
-    if (strcmp(name, "bsd")    == 0) return "__FreeBSD__";
-    return name; /* unknown — pass through as-is */
+    return name;
 }
 
 static void emit_c_condition(AstNode *n) {
@@ -295,12 +299,12 @@ void codegen_c_emit(AstNode *prog) {
         n = n->next;
     }
 
-    /* main(): all #debug nodes: standalone AND inside conditionals */
+    /* main(): all #debug nodes + conditional wrappers */
     fprintf(g_codegen_out, "\nint main(void) {\n");
     n = prog->left;
     while (n) {
         int in_cond = inside_conditional(prog, n);
-        if (is_runtime(n->kind))
+        if (is_runtime(n->kind) || is_conditional(n->kind))
             emit_node(n, 1, in_cond);
         n = n->next;
     }

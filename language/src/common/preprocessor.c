@@ -129,6 +129,119 @@ static int eval_condition(AstNode *n) {
     return 0;
 }
 
+/* ---------- parse braced list values from define value ---------- */
+/* Given "#define numbers {1, 2, 3, 4, 5}", extract the individual items.
+   Returns a linked list of AstNode* (NODE_IDENT, NODE_NUMBER, NODE_STRING) via ->next. */
+static AstNode *parse_list_values(const char *value) {
+    if (!value || value[0] != '{') return NULL;
+    AstNode dummy = {0}; AstNode *tail = &dummy;
+    const char *p = value + 1; /* skip '{' */
+    while (*p && *p != '}') {
+        /* skip whitespace */
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+        if (*p == '}' || *p == '\0') break;
+        const char *start = p;
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"') {
+                if (*p == '\\') p++;
+                if (*p) p++;
+            }
+            if (*p == '"') p++;
+        } else {
+            while (*p && *p != ',' && *p != '}' && *p != ' ' && *p != '\t') p++;
+        }
+        size_t len = p - start;
+        if (len > 0) {
+            /* Determine node kind */
+            NodeKind k = NODE_IDENT;
+            if (len >= 2 && start[0] == '"') k = NODE_STRING;
+            else {
+                int all_digit = 1;
+                for (size_t i = 0; i < len; i++)
+                    if (!(start[i] >= '0' && start[i] <= '9') && start[i] != '.' && start[i] != '-')
+                        { all_digit = 0; break; }
+                if (all_digit && len > 0) k = NODE_NUMBER;
+            }
+            AstNode *item = make_node(k, start, len, 0, 0);
+            tail->next = item; tail = item;
+        }
+        /* skip comma */
+        while (*p == ',' || *p == ' ' || *p == '\t') p++;
+    }
+    return dummy.next;
+}
+
+/* ---------- #for loop expansion ---------- */
+
+/* Expand a #for loop: given the for_node and the body nodes (up to #endfor),
+   returns a linked list of unrolled body nodes with variable substitution.
+   
+   Supports two forms:
+     #for var in list         — single var, substitutes with each value
+     #for i and val in enumerate(list) — two vars: i (index 1-based) + val
+*/
+static AstNode *expand_for_loop(AstNode *for_node, AstNode *body_start) {
+    if (!for_node) return NULL;
+
+    int is_enumerate = 0;
+    const char *iter_name = NULL;
+
+    if (for_node->right && for_node->right->value &&
+        strcmp(for_node->right->value, "enumerate") == 0) {
+        /* enumerate(list_name): list name is in for_node->value */
+        is_enumerate = 1;
+        iter_name = for_node->value;
+    } else {
+        /* Normal #for: iterable name from for_node->right */
+        iter_name = for_node->right ? for_node->right->value : NULL;
+    }
+    if (!iter_name) return NULL;
+
+    /* Resolve iterable through defines */
+    const char *iter_value = defines_get(iter_name);
+    if (!iter_value) return NULL;
+
+    /* Parse the values list from the define value */
+    AstNode *values = parse_list_values(iter_value);
+    if (!values) return NULL;
+
+    /* Collect variable names from for_node->left linked list */
+    AstNode *first_var = for_node->left;
+    if (!first_var) { ast_free(values); return NULL; }
+    const char *var1 = first_var->value;
+    const char *var2 = first_var->next ? first_var->next->value : NULL;
+
+    /* For enumerate, we need two variables */
+    if (is_enumerate && !var2) { ast_free(values); return NULL; }
+
+    /* For each value, clone body and substitute variable(s) */
+    AstNode dummy = {0}; AstNode *tail = &dummy;
+    int index = 1;
+    AstNode *val = values;
+    while (val) {
+        for (AstNode *b = body_start; b && b->kind != NODE_ENDFOR; b = b->next) {
+            AstNode *clone = ast_clone(b);
+            if (is_enumerate) {
+                /* Generate index as string for substitution */
+                char idx_buf[32];
+                snprintf(idx_buf, sizeof(idx_buf), "%d", index);
+                ast_for_substitute(clone, var1, idx_buf);
+                ast_for_substitute(clone, var2, val->value);
+            } else {
+                ast_for_substitute(clone, var1, val->value);
+            }
+            if (!dummy.next) { dummy.next = clone; tail = clone; }
+            else { tail->next = clone; tail = clone; }
+        }
+        val = val->next;
+        index++;
+    }
+
+    ast_free(values);
+    return dummy.next;
+}
+
 /* ---------- inline preprocessor ---------- */
 
 AstNode *preprocess_inline_ex(AstNode *prog, int keep_all) {
@@ -139,8 +252,71 @@ AstNode *preprocess_inline_ex(AstNode *prog, int keep_all) {
 
     while (n) {
         AstNode *next = n->next;
+        
+        /* #for handling: expand loop, skip body up to #endfor */
+        if (n->kind == NODE_FOR) {
+            /* Collect body nodes until #endfor */
+            AstNode *body_start = n->next;
+            /* Find matching #endfor */
+            AstNode *endfor = NULL;
+            AstNode *scan = n->next;
+            while (scan) {
+                if (scan->kind == NODE_ENDFOR) { endfor = scan; break; }
+                scan = scan->next;
+            }
+            if (endfor && !keep_all) {
+                AstNode *expanded = expand_for_loop(n, body_start);
+                if (expanded) {
+                    /* Append expanded nodes directly */
+                    for (AstNode *e = expanded; e; ) {
+                        AstNode *enext = e->next;
+                        tail->next = e; tail = e;
+                        e = enext;
+                    }
+                    /* Skip for node, body, and endfor */
+                    AstNode *kill = n;
+                    while (kill != endfor) {
+                        AstNode *knext = kill->next;
+                        kill->next = NULL;
+                        ast_free(kill);
+                        kill = knext;
+                    }
+                    next = endfor->next;
+                    endfor->next = NULL;
+                    ast_free(endfor);
+                    n = next;
+                    continue;
+                } else {
+                    /* Failed to expand — emit #for node as-is so body isn't silently lost */
+                    fprintf(stderr, CLR_RED "error:" CLR_RESET " #for expansion failed\n");
+                    n->next = NULL; tail->next = n; tail = n;
+                    n = next;
+                    continue;
+                }
+            } else if (endfor && keep_all) {
+                /* keep_all mode: pass through for node + skip endfor */
+                n->next = NULL; tail->next = n; tail = n;
+                /* skip body and endfor */
+                while (next && next->kind != NODE_ENDFOR) {
+                    AstNode *tmp = next->next;
+                    next->next = NULL; ast_free(next);
+                    next = tmp;
+                }
+                if (next) { AstNode *tmp = next->next; next->next = NULL; ast_free(next); next = tmp; }
+                n = next;
+                continue;
+            } else {
+                /* no matching endfor — error, fall through */
+                fprintf(stderr, CLR_RED "error:" CLR_RESET " #for without matching #endfor\n");
+                n->next = NULL; tail->next = n; tail = n;
+                n = next;
+                continue;
+            }
+        }
+
         if (n->kind == NODE_IFDEF || n->kind == NODE_IFNDEF || n->kind == NODE_IF) {
-            csp++; if (csp >= CSTACK_MAX) break;
+            if (csp + 1 >= CSTACK_MAX) break;
+            csp++;
             if (cstack[csp - 1] != 1) cstack[csp] = 0;
             else {
                 int ok = 0;
@@ -207,7 +383,8 @@ AstNode *preprocess_inline_ex(AstNode *prog, int keep_all) {
         if (n->kind == NODE_DEFINE || n->kind == NODE_UNDEF || n->kind == NODE_EXTERN_C_BLOCK ||
             n->kind == NODE_ERROR || n->kind == NODE_MESSAGE || n->kind == NODE_EXTERN ||
             n->kind == NODE_INCLUDE || n->kind == NODE_LIB || n->kind == NODE_PRAGMA ||
-            n->kind == NODE_DEBUG || n->kind == NODE_RAW || active || keep_all) {
+            n->kind == NODE_DEBUG || n->kind == NODE_RAW || n->kind == NODE_FOR ||
+            n->kind == NODE_ENDFOR || active || keep_all) {
             n->next = NULL; tail->next = n; tail = n;
         }
         n = next;

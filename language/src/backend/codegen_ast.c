@@ -31,6 +31,10 @@ static void emit_node(AstNode *n, int depth) {
         case NODE_NUMBER:        fprintf(g_codegen_out, CLR_MAGENTA "NUMBER:" CLR_RESET " %s\n", V(n->value)); break;
         case NODE_RAW:           fprintf(g_codegen_out, CLR_DIM "RAW:" CLR_RESET " %.*s", (int)n->len, V(n->value)); break;
         case NODE_UNDEF:         fprintf(g_codegen_out, CLR_RED "UNDEF:" CLR_RESET " %s\n", V(n->value)); break;
+        case NODE_FOR:           fprintf(g_codegen_out, CLR_PURPLE "FOR:" CLR_RESET " %s %s\n",
+                                 V(n->left ? n->left->value : ""),
+                                 V(n->right ? n->right->value : "")); break;
+        case NODE_ENDFOR:        fprintf(g_codegen_out, CLR_PURPLE "ENDFOR" CLR_RESET "\n"); break;
         default:                 fprintf(g_codegen_out, CLR_DIM "?" CLR_RESET "\n"); break;
     }
     if (n->left)  emit_node(n->left, depth + 1);

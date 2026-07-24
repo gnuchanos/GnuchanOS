@@ -72,10 +72,28 @@ AstNode *parse_define(Parser *p) {
     Token name = expect(p, TOK_IDENT, "expected identifier after #define", ERR_EXPECTED_IDENT);
     AstNode *n = make_node(NODE_DEFINE, name.text, name.len, hash.line, hash.col);
 
-    /* Skip newline/comment whitespace to find value */
     while (p->lexer->current.kind == TOK_NEWLINE) eat(p);
     Token val = p->lexer->current;
-    if (val.kind == TOK_IDENT || val.kind == TOK_STRING || val.kind == TOK_NUMBER) {
+
+    if (val.kind == TOK_BRACE_OPEN) {
+        /* Record pos of '{' (lexer advanced past it when creating token) */
+        size_t start_pos = p->lexer->pos - 1;
+        eat(p); /* consume '{' */
+        int depth = 1;
+        while (depth > 0 && p->lexer->current.kind != TOK_EOF) {
+            if (p->lexer->current.kind == TOK_BRACE_OPEN) depth++;
+            else if (p->lexer->current.kind == TOK_BRACE_CLOSE) depth--;
+            eat(p);
+            if (depth == 0) break;
+        }
+        size_t end_pos = p->lexer->pos;
+        /* The brace loop above consumed everything including the closing '}',
+           and stop eats will have consumed separating whitespace before newline.
+           We already consumed everything needed - do NOT eat more. */
+        size_t capt_len = end_pos - start_pos;
+        const char *capt = p->lexer->source + start_pos;
+        n->left = make_node(NODE_STRING, capt, capt_len, val.line, val.col);
+    } else if (val.kind == TOK_IDENT || val.kind == TOK_STRING || val.kind == TOK_NUMBER) {
         eat(p);
         n->left = make_node(val.kind == TOK_STRING ? NODE_STRING :
                             val.kind == TOK_NUMBER ? NODE_NUMBER : NODE_IDENT,
@@ -107,31 +125,20 @@ AstNode *parse_debug(Parser *p) {
             eat(p);
             arg = make_node(NODE_NUMBER, t.text, t.len, t.line, t.col);
         } else if (t.kind == TOK_IDENT) {
-            /* "and" is a separator keyword — skip it, just concatenate */
             if (t.len == 3 && strncmp(t.text, "and", 3) == 0) {
-                eat(p);
-                continue;
+                eat(p); continue;
             }
             Token first = eat(p);
             if (p->lexer->current.kind == TOK_DOT) {
                 eat(p);
                 Token second = p->lexer->current;
-                if (second.kind == TOK_IDENT) {
-                    eat(p);
-                    arg = make_node(NODE_IDENT, second.text, second.len, second.line, second.col);
-                } else if (second.kind == TOK_NUMBER) {
-                    eat(p);
-                    arg = make_node(NODE_NUMBER, second.text, second.len, second.line, second.col);
-                } else {
-                    eat(p);
-                }
+                if (second.kind == TOK_IDENT) { eat(p); arg = make_node(NODE_IDENT, second.text, second.len, second.line, second.col); }
+                else if (second.kind == TOK_NUMBER) { eat(p); arg = make_node(NODE_NUMBER, second.text, second.len, second.line, second.col); }
+                else { eat(p); }
             } else {
                 arg = make_node(NODE_IDENT, first.text, first.len, first.line, first.col);
             }
-        } else {
-            eat(p);
-            continue;
-        }
+        } else { eat(p); continue; }
 
         if (arg) {
             if (!n->left) { n->left = arg; tail = arg; }
@@ -145,33 +152,23 @@ AstNode *parse_extern_c(Parser *p) {
     Token ext = eat(p);
     Token c = p->lexer->current;
     if (c.kind == TOK_STRING) {
-        if (c.len < 3 || (c.text[1] != 'c' && c.text[1] != 'C')) {
-            error(ERR_INVALID_EXTERN_C, c.line, c.col, "expected 'extern \"c\"' — only C ABI supported");
-        }
+        if (c.len < 3 || (c.text[1] != 'c' && c.text[1] != 'C'))
+            error(ERR_INVALID_EXTERN_C, c.line, c.col, "expected 'extern \"c\"'");
         eat(p);
     }
-
-    expect(p, TOK_BRACE_OPEN, "expected '{' after extern \"c\"", ERR_EXPECTED_BRACE_OPEN);
+    expect(p, TOK_BRACE_OPEN, "expected '{'", ERR_EXPECTED_BRACE_OPEN);
     AstNode *block = make_node(NODE_EXTERN_C_BLOCK, NULL, 0, ext.line, ext.col);
     AstNode *tail = NULL;
-
     skip_newlines(p);
-
     while (p->lexer->current.kind != TOK_BRACE_CLOSE && p->lexer->current.kind != TOK_EOF) {
         skip_newlines(p);
         if (p->lexer->current.kind == TOK_BRACE_CLOSE) break;
-
         AstNode *stmt = NULL;
-        if (p->lexer->current.kind == TOK_HASH_DEFINE)
-            stmt = parse_define(p);
-        else {
-            eat(p);
-            continue;
-        }
+        if (p->lexer->current.kind == TOK_HASH_DEFINE) stmt = parse_define(p);
+        else { eat(p); continue; }
         if (!block->left) { block->left = stmt; tail = stmt; }
         else { tail->next = stmt; tail = stmt; }
     }
-
     if (p->lexer->current.kind == TOK_BRACE_CLOSE) eat(p);
     return block;
 }
@@ -179,7 +176,6 @@ AstNode *parse_extern_c(Parser *p) {
 AstNode *parse_pragma(Parser *p) {
     Token hash = eat(p);
     AstNode *n = make_node(NODE_PRAGMA, NULL, 0, hash.line, hash.col);
-    /* Capture everything after #pragma until newline/EOF as the body */
     char body[4096] = "";
     while (p->lexer->current.kind != TOK_NEWLINE && p->lexer->current.kind != TOK_EOF) {
         Token t = p->lexer->current;
@@ -196,8 +192,7 @@ AstNode *parse_pragma(Parser *p) {
 AstNode *parse_error(Parser *p) {
     Token hash = eat(p);
     AstNode *n = make_node(NODE_ERROR, NULL, 0, hash.line, hash.col);
-    char msg[4096] = "";
-    int first = 1;
+    char msg[4096] = ""; int first = 1;
     while (p->lexer->current.kind != TOK_NEWLINE && p->lexer->current.kind != TOK_EOF) {
         Token t = p->lexer->current;
         size_t rem = sizeof(msg) - strlen(msg) - 1;
@@ -222,8 +217,7 @@ AstNode *parse_message(Parser *p) {
         if (t.kind == TOK_RPAREN) { eat(p); continue; }
         if (t.kind == TOK_COMMA) { eat(p); continue; }
         if (t.kind == TOK_STRING) {
-            const char *s = t.text;
-            size_t slen = t.len;
+            const char *s = t.text; size_t slen = t.len;
             if (slen >= 2 && s[0] == '"') { s++; slen -= 2; }
             size_t copy_len = slen < rem ? slen : rem;
             strncat(msg, s, copy_len);
@@ -253,55 +247,38 @@ AstNode *parse_if(Parser *p) {
     Token hash = eat(p);
     p->lexer->in_condition_context = 1;
     AstNode *n = make_node(NODE_IF, NULL, 0, hash.line, hash.col);
-
     Token t = p->lexer->current;
     if (t.kind == TOK_IDENT && t.len == 7 && strncmp(t.text, "defined", 7) == 0) {
         eat(p);
         if (p->lexer->current.kind == TOK_LPAREN) eat(p);
-        Token name = expect(p, TOK_IDENT, "expected identifier in defined()", ERR_EXPECTED_IDENT);
+        Token name = expect(p, TOK_IDENT, "expected identifier", ERR_EXPECTED_IDENT);
         if (p->lexer->current.kind == TOK_RPAREN) eat(p);
         n->value = strndup_safe(name.text, name.len);
         n->left = make_node(NODE_IDENT, "defined", 7, t.line, t.col);
         return n;
     }
-
     if (t.kind == TOK_IDENT) {
-        eat(p);
-        n->value = strndup_safe(t.text, t.len);
-
+        eat(p); n->value = strndup_safe(t.text, t.len);
         Token op = p->lexer->current;
-        if (op.kind == TOK_EQ || op.kind == TOK_NE ||
-            op.kind == TOK_LT || op.kind == TOK_LE ||
-            op.kind == TOK_GT || op.kind == TOK_GE) {
-            eat(p);
-            n->left = make_node(NODE_IDENT, op.text, op.len, op.line, op.col);
+        if (op.kind == TOK_EQ || op.kind == TOK_NE || op.kind == TOK_LT || op.kind == TOK_LE || op.kind == TOK_GT || op.kind == TOK_GE) {
+            eat(p); n->left = make_node(NODE_IDENT, op.text, op.len, op.line, op.col);
             Token val = p->lexer->current;
             if (val.kind == TOK_NUMBER || val.kind == TOK_STRING || val.kind == TOK_IDENT) {
                 eat(p);
-                n->right = make_node(val.kind == TOK_STRING ? NODE_STRING :
-                                     val.kind == TOK_NUMBER ? NODE_NUMBER : NODE_IDENT,
-                                     val.text, val.len, val.line, val.col);
+                n->right = make_node(val.kind == TOK_STRING ? NODE_STRING : val.kind == TOK_NUMBER ? NODE_NUMBER : NODE_IDENT, val.text, val.len, val.line, val.col);
             }
         } else {
             AstNode *tail = NULL;
             while (p->lexer->current.kind == TOK_SLASH || p->lexer->current.kind == TOK_COMMA) {
-                eat(p);
-                Token alt = p->lexer->current;
+                eat(p); Token alt = p->lexer->current;
                 if (alt.kind != TOK_IDENT) break;
-                eat(p);
-                AstNode *alt_node = make_node(NODE_IDENT, alt.text, alt.len, alt.line, alt.col);
-                if (!n->right) {
-                    n->right = alt_node;
-                    tail = alt_node;
-                } else {
-                    tail->next = alt_node;
-                    tail = alt_node;
-                }
+                eat(p); AstNode *alt_node = make_node(NODE_IDENT, alt.text, alt.len, alt.line, alt.col);
+                if (!n->right) { n->right = alt_node; tail = alt_node; }
+                else { tail->next = alt_node; tail = alt_node; }
             }
         }
         return n;
     }
-
     while (p->lexer->current.kind != TOK_NEWLINE && p->lexer->current.kind != TOK_EOF) eat(p);
     return n;
 }
@@ -310,54 +287,38 @@ AstNode *parse_elif(Parser *p) {
     Token hash = eat(p);
     p->lexer->in_condition_context = 1;
     AstNode *n = make_node(NODE_ELIF, NULL, 0, hash.line, hash.col);
-
     Token t = p->lexer->current;
     if (t.kind == TOK_IDENT && t.len == 7 && strncmp(t.text, "defined", 7) == 0) {
         eat(p);
         if (p->lexer->current.kind == TOK_LPAREN) eat(p);
-        Token name = expect(p, TOK_IDENT, "expected identifier in defined()", ERR_EXPECTED_IDENT);
+        Token name = expect(p, TOK_IDENT, "expected identifier", ERR_EXPECTED_IDENT);
         if (p->lexer->current.kind == TOK_RPAREN) eat(p);
         n->value = strndup_safe(name.text, name.len);
         n->left = make_node(NODE_IDENT, "defined", 7, t.line, t.col);
         return n;
     }
-
     if (t.kind == TOK_IDENT) {
-        eat(p);
-        n->value = strndup_safe(t.text, t.len);
+        eat(p); n->value = strndup_safe(t.text, t.len);
         Token op = p->lexer->current;
-        if (op.kind == TOK_EQ || op.kind == TOK_NE ||
-            op.kind == TOK_LT || op.kind == TOK_LE ||
-            op.kind == TOK_GT || op.kind == TOK_GE) {
-            eat(p);
-            n->left = make_node(NODE_IDENT, op.text, op.len, op.line, op.col);
+        if (op.kind == TOK_EQ || op.kind == TOK_NE || op.kind == TOK_LT || op.kind == TOK_LE || op.kind == TOK_GT || op.kind == TOK_GE) {
+            eat(p); n->left = make_node(NODE_IDENT, op.text, op.len, op.line, op.col);
             Token val = p->lexer->current;
             if (val.kind == TOK_NUMBER || val.kind == TOK_STRING || val.kind == TOK_IDENT) {
                 eat(p);
-                n->right = make_node(val.kind == TOK_STRING ? NODE_STRING :
-                                     val.kind == TOK_NUMBER ? NODE_NUMBER : NODE_IDENT,
-                                     val.text, val.len, val.line, val.col);
+                n->right = make_node(val.kind == TOK_STRING ? NODE_STRING : val.kind == TOK_NUMBER ? NODE_NUMBER : NODE_IDENT, val.text, val.len, val.line, val.col);
             }
         } else {
             AstNode *tail = NULL;
             while (p->lexer->current.kind == TOK_SLASH || p->lexer->current.kind == TOK_COMMA) {
-                eat(p);
-                Token alt = p->lexer->current;
+                eat(p); Token alt = p->lexer->current;
                 if (alt.kind != TOK_IDENT) break;
-                eat(p);
-                AstNode *alt_node = make_node(NODE_IDENT, alt.text, alt.len, alt.line, alt.col);
-                if (!n->right) {
-                    n->right = alt_node;
-                    tail = alt_node;
-                } else {
-                    tail->next = alt_node;
-                    tail = alt_node;
-                }
+                eat(p); AstNode *alt_node = make_node(NODE_IDENT, alt.text, alt.len, alt.line, alt.col);
+                if (!n->right) { n->right = alt_node; tail = alt_node; }
+                else { tail->next = alt_node; tail = alt_node; }
             }
         }
         return n;
     }
-
     while (p->lexer->current.kind != TOK_NEWLINE && p->lexer->current.kind != TOK_EOF) eat(p);
     return n;
 }
@@ -372,14 +333,87 @@ AstNode *parse_endif(Parser *p) {
     return make_node(NODE_ENDIF, NULL, 0, hash.line, hash.col);
 }
 
+/* ---------- #for / #endfor ---------- */
+
+AstNode *parse_for(Parser *p) {
+    Token hash = eat(p);
+    AstNode *n = make_node(NODE_FOR, NULL, 0, hash.line, hash.col);
+    AstNode *vars = NULL, *vars_tail = NULL;
+    if (p->lexer->current.kind == TOK_IDENT) {
+        Token t = eat(p);
+        vars = make_node(NODE_IDENT, t.text, t.len, t.line, t.col);
+        vars_tail = vars;
+        while (p->lexer->current.kind == TOK_IDENT && p->lexer->current.len == 3 && strncmp(p->lexer->current.text, "and", 3) == 0) {
+            eat(p);
+            if (p->lexer->current.kind == TOK_IDENT) {
+                Token v = eat(p);
+                AstNode *vn = make_node(NODE_IDENT, v.text, v.len, v.line, v.col);
+                vars_tail->next = vn; vars_tail = vn;
+            }
+        }
+    }
+    n->left = vars;
+    while (p->lexer->current.kind == TOK_IDENT && p->lexer->current.len == 2 && strncmp(p->lexer->current.text, "in", 2) == 0) eat(p);
+    /* Handle "enumerate(list)" pattern */
+    if (p->lexer->current.kind == TOK_IDENT && p->lexer->current.len == 9 && strncmp(p->lexer->current.text, "enumerate", 9) == 0) {
+        n->right = make_node(NODE_IDENT, "enumerate", 9, p->lexer->current.line, p->lexer->current.col);
+        eat(p);
+        if (p->lexer->current.kind == TOK_LPAREN) eat(p);
+        if (p->lexer->current.kind == TOK_IDENT) {
+            n->value = strndup_safe(p->lexer->current.text, p->lexer->current.len);
+            eat(p);
+        }
+        if (p->lexer->current.kind == TOK_RPAREN) eat(p);
+    } else if (p->lexer->current.kind == TOK_IDENT) {
+        Token it = eat(p);
+        n->right = make_node(NODE_IDENT, it.text, it.len, it.line, it.col);
+    } else if (p->lexer->current.kind == TOK_NUMBER) {
+        Token it = eat(p);
+        n->right = make_node(NODE_NUMBER, it.text, it.len, it.line, it.col);
+    }
+    return n;
+}
+
+AstNode *parse_endfor(Parser *p) {
+    Token hash = eat(p);
+    return make_node(NODE_ENDFOR, NULL, 0, hash.line, hash.col);
+}
+
+/* ---------- AST clone ---------- */
+
+AstNode *ast_clone(const AstNode *n) {
+    if (!n) return NULL;
+    AstNode *c = calloc(1, sizeof(AstNode));
+    c->kind = n->kind;
+    c->value = n->value ? strndup_safe(n->value, n->len) : NULL;
+    c->len = n->len;
+    c->line = n->line;
+    c->col = n->col;
+    c->left = ast_clone(n->left);
+    c->right = ast_clone(n->right);
+    c->next = ast_clone(n->next);
+    return c;
+}
+
+static void ast_substitute(AstNode *n, const char *var_name, const char *var_value) {
+    if (!n) return;
+    if (n->kind == NODE_IDENT && n->value && strcmp(n->value, var_name) == 0) {
+        free((void*)n->value);
+        n->value = strdup(var_value);
+        n->len = strlen(var_value);
+    }
+    ast_substitute(n->left, var_name, var_value);
+    ast_substitute(n->right, var_name, var_value);
+    ast_substitute(n->next, var_name, var_value);
+}
+
+void ast_for_substitute(AstNode *n, const char *var_name, const char *var_value) {
+    ast_substitute(n, var_name, var_value);
+}
+
 /* ---------- bare directive detection ---------- */
 
 int bare_directive_dispatch(const char *s, size_t len, size_t col) {
-    /* Only match at start of line (col == 1) to avoid keyword collision.
-       IMPORTANT: "if", "else", "elif", "include" are deliberately excluded
-       because they are C keywords / standard C preprocessor directives
-       that would collide with C code. Only GCL-specific bare directives
-       and #define-family macros are supported. */
     if (col != 1) return 0;
     if (len == 7 && strncmp(s, "message", 7) == 0) return 1;
     if (len == 6 && strncmp(s, "ifndef", 6) == 0) return 1;
@@ -398,15 +432,11 @@ int bare_directive_dispatch(const char *s, size_t len, size_t col) {
 
 /* ---------- raw line capture ---------- */
 
-/* Check if trimmed line starts with a bare directive pattern */
 static AstNode *try_parse_bare_directive_from_raw(const char *raw, size_t raw_len, size_t line, size_t col) {
-    const char *s = raw;
-    size_t len = raw_len;
+    const char *s = raw; size_t len = raw_len;
     while (len > 0 && (*s == ' ' || *s == '\t')) { s++; len--; }
-    /* message("...") */
     if (len > 9 && strncmp(s, "message(", 8) == 0 && s[len-1] == ')') {
-        const char *content = s + 8;
-        size_t clen = len - 9;
+        const char *content = s + 8; size_t clen = len - 9;
         if (*content == '"') { content++; clen--; }
         if (clen > 0 && content[clen-1] == '"') clen--;
         AstNode *n = make_node(NODE_MESSAGE, NULL, 0, line, col);
@@ -420,30 +450,19 @@ AstNode *parse_raw_line(Parser *p) {
     size_t line = p->lexer->current.line;
     const char *tok_start = p->lexer->current.text;
     const char *line_start = tok_start;
-    /* Walk back to start of line, but stop at source boundary */
-    while (line_start > p->lexer->source && line_start[-1] != '\n' && line_start[-1] != '\0')
-        line_start--;
+    while (line_start > p->lexer->source && line_start[-1] != '\n' && line_start[-1] != '\0') line_start--;
     size_t col = 1;
     for (const char *c = line_start; c < tok_start; c++) {
-        if (*c == '\t') col = ((col + 7) / 8) * 8 + 1;
-        else col++;
+        if (*c == '\t') col = ((col + 7) / 8) * 8 + 1; else col++;
     }
     const char *start = line_start;
-    while (p->lexer->current.kind != TOK_NEWLINE && p->lexer->current.kind != TOK_EOF) {
-        eat(p);
-    }
+    while (p->lexer->current.kind != TOK_NEWLINE && p->lexer->current.kind != TOK_EOF) eat(p);
     const char *end = p->lexer->source + p->lexer->pos;
-    if (p->lexer->current.kind == TOK_NEWLINE) {
-        eat(p);
-    }
+    if (p->lexer->current.kind == TOK_NEWLINE) eat(p);
     size_t len = end - start;
     if (len == 0) return NULL;
-    /* Strip trailing \r\n and whitespace */
     while (len > 0 && (start[len-1] == '\n' || start[len-1] == '\r' || start[len-1] == ' ' || start[len-1] == '\t')) len--;
-    /* Keep the newline if it was there */
-    if (start + len < p->lexer->source + p->lexer->pos && len > 0 && (start[len-1] == '\n' || (len > 1 && start[len-1] != '\n' && start[len-2] == '\n'))) { }
     if (len == 0) return NULL;
-    /* Check if this raw line is actually a bare directive (e.g. "    message("YES")") */
     AstNode *directive = try_parse_bare_directive_from_raw(start, len, line, col);
     if (directive) return directive;
     return make_node(NODE_RAW, start, len, line, col);

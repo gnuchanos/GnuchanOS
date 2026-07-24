@@ -27,6 +27,8 @@ AstNode *parse_if(Parser *p);
 AstNode *parse_elif(Parser *p);
 AstNode *parse_else(Parser *p);
 AstNode *parse_endif(Parser *p);
+AstNode *parse_for(Parser *p);
+AstNode *parse_endfor(Parser *p);
 
 /* Raw line capture (fallback for non-directive content) */
 AstNode *parse_raw_line(Parser *p);
@@ -37,5 +39,11 @@ int bare_directive_dispatch(const char *s, size_t len, size_t col);
 
 /* Recursively free an AST node and all its children */
 void ast_free(AstNode *n);
+
+/* Deep-clone an AST subtree (for #for loop unrolling) */
+AstNode *ast_clone(const AstNode *n);
+
+/* Substitute variable references in AST (for #for loop unrolling) */
+void ast_for_substitute(AstNode *n, const char *var_name, const char *var_value);
 
 #endif

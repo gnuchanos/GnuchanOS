@@ -82,7 +82,6 @@ static const char *defines_get_r(const char *name, int depth, const char **visit
                         }
                         const char *expanded = defines_get_r(val, depth + 1, visited, vcount);
                         if (*vcount > 0) (*vcount)--;
-                        else break;
                         if (expanded) return expanded;
                     }
                 }

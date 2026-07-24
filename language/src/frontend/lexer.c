@@ -250,10 +250,28 @@ Token lexer_next(Lexer *l) {
             return make_tok(l, TOK_NUMBER, start, l->source + l->pos - start);
         }
 
-        /* identifier */
+        /* identifier (plus compound keyword in condition context) */
         if (isalpha((unsigned char)c) || c == '_') {
             const char *start = l->source + l->pos;
             while (isalnum((unsigned char)l->source[l->pos]) || l->source[l->pos] == '_') advance(l);
+
+            /* In condition context: detect compound keywords like "gnu/linux" */
+            if (l->in_condition_context) {
+                const char *p = l->source + l->pos;
+                while (*p == ' ' || *p == '\t') p++;
+                if (*p == '/') {
+                    p++;
+                    while (*p == ' ' || *p == '\t') p++;
+                    if (isalpha((unsigned char)*p) || *p == '_') {
+                        /* yes — compound keyword: consume whitespace, /, whitespace, second ident */
+                        while (l->source[l->pos] == ' ' || l->source[l->pos] == '\t') advance(l);
+                        advance(l); /* consume / */
+                        while (l->source[l->pos] == ' ' || l->source[l->pos] == '\t') advance(l);
+                        while (isalnum((unsigned char)l->source[l->pos]) || l->source[l->pos] == '_') advance(l);
+                    }
+                }
+            }
+
             size_t len = l->source + l->pos - start;
 
             /* Check for extern "c" { pattern — peek at source ahead */
@@ -287,7 +305,43 @@ Token lexer_next(Lexer *l) {
         if (c == '{') { advance(l); return make_tok(l, TOK_BRACE_OPEN, "{", 1); }
         if (c == '}') { advance(l); return make_tok(l, TOK_BRACE_CLOSE, "}", 1); }
 
-        /* unknown — skip */
+        /* comma (also handled in condition context above, but needed globally for define values) */
+        if (c == ',') { advance(l); return make_tok(l, TOK_COMMA, ",", 1); }
+
+        /* = assignment (single =, not == which is TOK_EQ) */
+        if (c == '=') { advance(l); return make_tok(l, TOK_ASSIGN, "=", 1); }
+
+        /* + */
+        if (c == '+') { advance(l); return make_tok(l, TOK_PLUS, "+", 1); }
+
+        /* - */
+        if (c == '-') { advance(l); return make_tok(l, TOK_MINUS, "-", 1); }
+
+        /* * */
+        if (c == '*') { advance(l); return make_tok(l, TOK_STAR, "*", 1); }
+
+        /* ; */
+        if (c == ';') { advance(l); return make_tok(l, TOK_SEMICOLON, ";", 1); }
+
+        /* : */
+        if (c == ':') { advance(l); return make_tok(l, TOK_COLON, ":", 1); }
+
+        /* & */
+        if (c == '&') { advance(l); return make_tok(l, TOK_AMPERSAND, "&", 1); }
+
+        /* | */
+        if (c == '|') { advance(l); return make_tok(l, TOK_PIPE, "|", 1); }
+
+        /* % */
+        if (c == '%') { advance(l); return make_tok(l, TOK_PERCENT, "%", 1); }
+
+        /* [ */
+        if (c == '[') { advance(l); return make_tok(l, TOK_LBRACKET, "[", 1); }
+
+        /* ] */
+        if (c == ']') { advance(l); return make_tok(l, TOK_RBRACKET, "]", 1); }
+
+        /* unknown — skip but warn in debug mode */
         advance(l);
     }
     return make_tok(l, TOK_EOF, "", 0);

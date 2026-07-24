@@ -172,16 +172,18 @@ elif windows
 #endfor
 
 
-# yorum 
-#| yorumlar
-devam 
-ediyorlar
+# ... 
+#|
+...
+...
+...
 |#
 
-// c yorumu
+// ...
 
-/* c
-yorumu
-bu
+/* 
+...
+...
+...
 */
 

@@ -78,6 +78,14 @@ static int emit_ir_body_node(AstNode *body, int depth) {
     case NODE_DEBUG:
         fprintf(g_codegen_out, CLR_YELLOW "#debug" CLR_RESET "\n");
         return 1;
+    case NODE_FOR:
+        fprintf(g_codegen_out, CLR_YELLOW "#for %s in %s" CLR_RESET "\n",
+            body->left && body->left->value ? body->left->value : "?",
+            body->right && body->right->value ? body->right->value : "?");
+        return 1;
+    case NODE_ENDFOR:
+        fprintf(g_codegen_out, CLR_YELLOW "#endfor" CLR_RESET "\n");
+        return 1;
     case NODE_PRAGMA:
         fprintf(g_codegen_out, CLR_YELLOW "#pragma %s" CLR_RESET "\n",
             body->left && body->left->value ? body->left->value : "");
