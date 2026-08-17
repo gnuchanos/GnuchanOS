@@ -1,0 +1,112 @@
+name: GnuchanOS Build
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+    paths:
+      - 'language/**'
+      - '.github/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'language/**'
+      - '.github/**'
+  workflow_dispatch:      # elle tetikleme
+
+# Her platform TAM pipeline (full) build eder:
+#   gcl + gcl-lsp + Lua embed + Python embed + bridge + GnuChanIDE
+#   python makefile.py full   (Linux: python3, Windows: python)
+# Build ciktilari tek dosya zip/tar.gz olarak artifact'e yuklenir;
+# v* tag push'larinda ayrica otomatik GitHub Release olusturulur.
+jobs:
+  build:
+    name: full (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: gnulinux, builddir: gnuLinux, os: ubuntu-24.04, py: python3 }
+          - { platform: windows,  builddir: windows,  os: windows-2022, py: python }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc python3 python3-dev make git tar wget curl \
+            zlib1g-dev libffi-dev libssl-dev \
+            libx11-dev libgl1-mesa-dev libxi-dev libxcursor-dev \
+            libxrandr-dev libxinerama-dev
+
+      - name: Install MinGW (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install mingw -y --no-progress
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" |
+            Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build full pipeline
+        run: |
+          cd language
+          ${{ matrix.py }} makefile.py
+
+      - name: Package Linux build (tar.gz)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cd language/build/gnuLinux
+          chmod +x gcl gcl-lsp GnuChanIDE GnuChanIDE_JUNKS/GnuChanIDE 2>/dev/null || true
+          tar czf "$GITHUB_WORKSPACE/gcl-gnulinux-full.tar.gz" .
+
+      - name: Package Windows build (zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd language\build\windows
+          Compress-Archive -Path * -DestinationPath "$env:GITHUB_WORKSPACE\gcl-windows-full.zip" -Force
+
+      - name: Upload artifact (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcl-gnulinux-full
+          path: gcl-gnulinux-full.tar.gz
+          if-no-files-found: error
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcl-windows-full
+          path: gcl-windows-full.zip
+          if-no-files-found: error
+
+  # v* tag push'larinda: tüm platform build'lerinin paketlerini
+  # GitHub Release'e ekler (otomatik release + asset'ler).
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" --generate-notes || true
+          gh release upload "$GITHUB_REF_NAME" \
+            artifacts/*/*.tar.gz artifacts/*/*.zip \
+            --repo "$GITHUB_REPOSITORY" --clobber

@@ -1,0 +1,168 @@
+# Lua Documentation
+
+A short, beginner-friendly guide to Lua 5.4 as embedded in GCL.
+It only covers what you need to start writing games and scripts in GnuChanIDE.
+
+---
+
+## 1. Your first script
+
+Lua is dynamic: no types, no `main`. The file runs top to bottom.
+
+```lua
+print("Hello Lua!")
+local name = "Gnuchan"
+print("Welcome, " .. name) -- string concat is ..
+```
+
+Run it in GCL:
+
+```
+gcl -luarun my_script.lua
+```
+
+## 2. Values and types
+
+Lua has 8 types. You will use these 6:
+
+| type     | example                         |
+|----------|---------------------------------|
+| nil      | `local x = nil`                 |
+| boolean  | `local ok = true`               |
+| number   | `local hp = 100` (float or int) |
+| string   | `local name = "GCL"`            |
+| table    | `local p = {}`                  |
+| function | `local f = function() end`      |
+
+`local` creates a variable. Everything not a table is a value (like Java primitives).
+
+## 3. Tables: arrays and maps
+
+Tables are Lua's only container.
+
+```lua
+-- array (1-based!)
+local items = { "sword", "shield", "potion" }
+print(items[1]) --> sword
+
+-- map / dictionary
+local player = { name = "Gnuchan", hp = 100 }
+print(player.name) -- dot access
+print(player["hp"]) -- same as above
+
+-- mixed + length
+print(#items) -- number of elements (3)
+```
+
+## 4. Functions
+
+```lua
+function makeBall(x, y, radius)
+    return { x = x, y = y, radius = radius }
+end
+
+local ball = makeBall(30, 30, 12)
+print(ball.x)
+```
+
+Multiple return values and optional `...` are idiomatic but not needed for the basics.
+
+## 5. Control flow
+
+```lua
+local hp = 42
+
+if hp <= 0 then
+    print("dead")
+elseif hp < 30 then
+    print("low")
+else
+    print("healthy")
+end
+
+local i = 0
+while i < 10 do
+    i = i + 1
+end
+
+for k = 1, 10 do
+    print(k)
+end
+
+for i, item in ipairs(items) do
+    print(i, item)
+end
+```
+
+## 6. Errors
+
+```lua
+local ok, err = pcall(function()
+    error("boom")
+end)
+if not ok then
+    print(err)
+end
+```
+
+## 7. raylib games (gcl.raylib)
+
+`gcl.raylib` is exposed as the global table `gcl.raylib`. Use `rl` as a short alias.
+
+```lua
+local rl = gcl.raylib
+
+local W, H = 640, 480
+rl.InitWindow(W, H, "My Game")
+
+rl.SetTargetFPS(60)
+
+while not rl.WindowShouldClose() do
+    -- input
+    if rl.IsKeyDown(rl.KEY_SPACE) then
+        -- ...
+    end
+
+    -- draw
+    rl.BeginDrawing()
+    rl.ClearBackground(rl.SKYBLUE)
+    rl.DrawCircle(320, 240, 50, rl.RED)
+    rl.DrawText("Lua", 10, 10, 24, rl.WHITE)
+    rl.EndDrawing()
+end
+
+rl.CloseWindow()
+```
+
+### Coordinates and colors
+
+- `x, y` are integers, origin top-left.
+- Colors are tables `{r, g, b, a}`. Named colors exist: `rl.RED`, `rl.SKYBLUE`, `rl.BLACK`, `rl.WHITE`, ...
+- Shapes: `rl.DrawRectangle(x, y, w, h, rl.RED)`, `rl.DrawCircle(cx, cy, r, rl.GREEN)`, `rl.DrawLine(x1, y1, x2, y2, rl.WHITE)`.
+- `Vector2`: `local p = rl.Vector2(100, 100)` — a table `{x=, y=}`.
+
+## 8. Talking to Python (gcl.bridge)
+
+The global `gcl.bridge` shares data with Python through GCL.
+
+```lua
+local b = gcl.bridge
+b.open("my_session")            -- pick a shared folder
+b.set("player", "100")          -- write a key (store JSON for structures)
+local hp = b.get("player")      -- read a key (nil if missing)
+b.delete("player")              -- remove it
+b.list()                        -- comma separated keys
+```
+
+Python sees the same data with `gcl_bridge` (`import gcl_bridge as b`, same API).
+
+## 9. Tips
+
+- The editor shows `Lua 5.4.7` in the status bar when a `.lua` file is open.
+- Every GCL project has `Library/Lua/luaLibrary/` for your `.lua` helper files.
+- Check `lua_raylib.gcReference` in the Explorer for the full function list with signatures.
+
+---
+
+_This local doc is bundled with GCL. More: `gcl_doc.md` in the repo root._
+</｜｜DSML｜｜>

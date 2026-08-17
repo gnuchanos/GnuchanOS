@@ -1,0 +1,154 @@
+# Python Documentation
+
+A short, beginner-friendly guide to Python 3.14 as embedded in GCL.
+It only covers what you need to start writing games and scripts in GnuChanIDE.
+
+---
+
+## 1. Your first script
+
+Python is dynamic: no types, no `main`. The file runs top to bottom.
+
+```python
+print("Hello Python!")
+
+name = "Gnuchan"
+print(f"Welcome, {name}!")
+```
+
+Run it in GCL:
+
+```
+gcl -pyrun my_script.py
+```
+
+## 2. Values and types
+
+Python has 4 core types you will use constantly:
+
+| type   | example             |
+|--------|---------------------|
+| int    | `hp = 100`          |
+| float  | `speed = 2.5`       |
+| str    | `name = "GCL"`      |
+| bool   | `alive = True`      |
+| list   | `items = [1, 2, 3]` |
+| dict   | `player = {"hp": 100}` |
+
+You do not declare types — Python infers them. Helpers (functions, classes, modules) are easy to create.
+
+## 3. Lists and dicts
+
+```python
+# list (0-based!)
+items = ["sword", "shield", "potion"]
+print(items[0])  # sword
+
+# dict (map)
+player = {"name": "Gnuchan", "hp": 100}
+print(player["name"])
+print(len(items))  # 3
+```
+
+## 4. Functions
+
+```python
+def make_ball(x, y, radius):
+    return {"x": x, "y": y, "radius": radius}
+
+
+ball = make_ball(30, 30, 12)
+print(ball["x"])
+```
+
+## 5. Control flow
+
+```python
+hp = 42
+
+if hp <= 0:
+    print("dead")
+elif hp < 30:
+    print("low")
+else:
+    print("healthy")
+
+i = 0
+while i < 10:
+    i += 1
+
+for k in range(1, 11):
+    print(k)
+
+for item in items:
+    print(item)
+```
+
+## 6. Errors
+
+```python
+try:
+    raise ValueError("boom")
+except ValueError as e:
+    print(e)
+```
+
+## 7. raylib games (pyRaylib)
+
+`pyRaylib` is a Python wrapper around raylib. Import it as `rl`:
+
+```python
+import pyRaylib as rl
+
+W, H = 640, 480
+rl.InitWindow(W, H, "My Game")
+
+rl.SetTargetFPS(60)
+
+while not rl.WindowShouldClose():
+    # input
+    if rl.IsKeyDown(rl.KEY_SPACE):
+        ...
+
+    # draw
+    rl.BeginDrawing()
+    rl.ClearBackground((14, 20, 34, 255))  # colors are (r, g, b, a) tuples
+    rl.DrawCircle(320, 240, 50, rl.RED)
+    rl.DrawText("Python", 10, 10, 24, rl.WHITE)
+    rl.EndDrawing()
+
+rl.CloseWindow()
+```
+
+### Coordinates and colors
+
+- `x, y` are integers, origin top-left.
+- Colors are tuples `(r, g, b, a)`. Named colors: `rl.RED`, `rl.SKYBLUE`, `rl.BLACK`, `rl.WHITE`, ...
+- Shapes: `rl.DrawRectangle(x, y, w, h, rl.RED)`, `rl.DrawCircle(cx, cy, r, rl.GREEN)`, `rl.DrawLine(x1, y1, x2, y2, rl.WHITE)`.
+- `Vector2`: `p = rl.Vector2(100, 100)`.
+
+## 8. Talking to Lua (gcl_bridge)
+
+The module `gcl_bridge` shares data with Lua through GCL:
+
+```python
+import gcl_bridge as b
+
+b.open("my_session")          # pick a shared folder
+b.set("player", "100")        # write a key (store JSON for structures)
+hp = b.get("player")          # read a key (None if missing)
+b.delete("player")            # remove it
+print(b.list())               # comma separated keys
+```
+
+Lua sees the same data with `gcl.bridge` (same API).
+
+## 9. Tips
+
+- The editor shows `Python 3.14` in the status bar when a `.py` file is open.
+- Every GCL project has `Library/Python/pyLibrary/` for your `.py` helper files.
+- Check `pyRaylib.gcReference` in the Explorer for the full function list with signatures.
+
+---
+
+_This local doc is bundled with GCL. More: `gcl_doc.md` in the repo root._

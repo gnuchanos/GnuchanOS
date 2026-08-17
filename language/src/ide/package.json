@@ -1,0 +1,77 @@
+{
+  "name": "gnuchanide",
+  "productName": "GnuChanIDE",
+  "version": "0.1.0",
+  "description": "GCL + embed (Lua/Python) development environment - minimal Electron IDE",
+  "main": "dist-electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "npm run build:electron && electron .",
+    "build:electron": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --external:electron --outdir=dist-electron --format=cjs --target=node20 --out-extension:.js=.cjs",
+    "build:renderer": "vite build",
+    "build": "npm run build:renderer && npm run build:electron",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "chokidar": "^4.0.1",
+    "lucide-react": "^0.454.0",
+    "monaco-editor": "^0.52.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "simple-git": "^3.27.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0",
+    "xterm-addon-webgl": "^0.16.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.9"
+  },
+  "build": {
+    "appId": "org.gnuchan.ide",
+    "productName": "GnuChanIDE",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../../assets/logo.ico",
+        "to": "logo.ico"
+      },
+      {
+        "from": "../../../assets/logo.png",
+        "to": "logo.png"
+      },
+      {
+        "from": "../../../assets/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "../../../assets/logo.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "../../../assets/icon.png",
+      "category": "Development",
+      "executableName": "GnuChanIDE"
+    }
+  }
+}

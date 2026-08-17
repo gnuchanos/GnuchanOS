@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GnuChanIDE</title>
+    <style>
+      /* Beyaz ekran onleyici: React + Monaco (3.8MB) yuklenene kadar body'de
+         tema degiskenleri yok -> beyaz gorunuyordu. Dark purple splash bunu
+         orter; avatar + basit spinner loading hissi verir. */
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #160f24;
+      }
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: radial-gradient(circle at 50% 35%, #261a3d 0%, #160f24 65%);
+        color: #c9c3d6;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        z-index: 9999;
+      }
+      #boot-splash img#avatar {
+        width: 92px;
+        height: 92px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid #7c5cff;
+        box-shadow: 0 0 28px rgba(124, 92, 255, 0.55);
+      }
+      #boot-splash .brand {
+        font-size: 21px;
+        font-weight: 700;
+        color: #b79fff;
+        letter-spacing: 1px;
+      }
+      /* basit loading: dondurme animasyonlu halka */
+      #boot-splash .loader {
+        width: 30px;
+        height: 30px;
+        border: 3px solid rgba(183, 159, 255, 0.25);
+        border-top-color: #7c5cff;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      #boot-splash.done {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot-splash">
+      <img id="avatar" src="/icon.png" alt="avatar" />
+      <span class="brand">GnuChanIDE</span>
+      <div class="loader"></div>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

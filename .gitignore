@@ -1,0 +1,63 @@
+# ── Build outputs ──────────────────────────────────────────
+*.exe
+*.o
+*.obj
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.out
+nul
+todo.md
+_temp/
+build/
+
+
+# ── GCL build output (language/build/) ─────────────────────
+language/build/gcl.exe
+language/build/obj/
+language/build/*.c
+language/build/*.out
+
+# ── GCL test temp files (_NOTES/) ──────────────────────────
+language/_NOTES/t_*.gcsf
+language/_NOTES/t_*.gcsf.c
+
+# ── Old test area (empty dirs) ─────────────────────────────
+language/output_test_area/
+
+# ── Python embeddable (downloaded, not source) ─────────────
+*.pyd
+*.zip
+*.cat
+*.pth
+
+# ── Lua raylib binding build ──────────────────────────────
+fun_things/lua_raylib_binding/_build/
+
+# ── OS / IDE garbage ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vs/
+.vscode/
+.idea/
+
+# ── Python cache ──────────────────────────────────────────
+__pycache__/
+*.pyc
+
+# ── GnuChanIDE: VS Code fork (nested repo) ────────────────
+# language/src/ide kendi .git'ini tasir (microsoft/vscode fork'u).
+# Ana repoya yanlislikla takip eklenmesin.
+language/_ide_backup_gclstudio/
+language/src/ide/release/*
+language/src/ide/release2/*
+language/src/ide/release_build/*
+language/src/ide/node_modules/*
+language/src/ide/dist/*
+language/src/ide/dist-electron/*
+language/build/*
