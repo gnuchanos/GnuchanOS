@@ -1,25 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-pyRaylib — Gnuchan gcl raylib Python wrapper (raylib.h karsiligi)
+pyRaylib — Gnuchan GCL raylib Python wrapper (corresponds to raylib.h)
 
-main.py icinde:
+Usage in main.py:
     import pyRaylib as rl
-    rl.InitWindow(800, 450, "baslik")
+    rl.InitWindow(800, 450, "title")
     pos = rl.Vector2(400, 200)
     rl.DrawCircleV(pos, 50, rl.RED)
 
-YAPI (dosya icerigi bolumlere ayrilmistir):
-    1. Sabitler        (renkler, tuslar, fare, bayraklar, log seviyeleri)
-    2. Deger tipleri   (Vector2/3/4, Quaternion, Color, Rectangle, Matrix,
-                        Ray, RayCollision, BoundingBox) -> sekans olarak C'ye gider
-    3. Kayit tipleri   (Texture, Image, Font, Sound, Music, Wave, Camera2D/3D,
-                        NPatchInfo, ...) -> dict olarak C'ye gider
-    4. Fonksiyonlar    (Pencere, cizim, metin, texture, kamera, carpisma, ses)
-                        -> her biri tam imzasiyla tanimli, govdede gcl_raylib
-                        C modulune yonlendirir. Boylece editorde rl. yazinca
-                        TUM API otomatik tamamlanir.
+LAYOUT (file content is split into sections):
+    1. Constants     (colors, keys, mouse, flags, log levels)
+    2. Value types   (Vector2/3/4, Quaternion, Color, Rectangle, Matrix,
+                      Ray, RayCollision, BoundingBox) -> passed to C as sequences
+    3. Record types  (Texture, Image, Font, Sound, Music, Wave, Camera2D/3D,
+                      NPatchInfo, ...) -> passed to C as dicts
+    4. Functions     (window, drawing, text, texture, camera, collision, audio)
+                      -> each one fully typed, delegates to the gcl_raylib
+                      C module. That way typing "rl." in the editor
+                      auto-completes the WHOLE API.
 
-Calisma: gcl -pyrun script.py → python.gcDL → gcl_raylib C modulu → bu wrapper
+Runtime: gcl -pyrun script.py → python.gcDL → gcl_raylib C module → this wrapper
 """
 
 import gcl_raylib as _rl

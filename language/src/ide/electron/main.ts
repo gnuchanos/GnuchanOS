@@ -8,6 +8,7 @@ import type { FSWatcher } from "chokidar";
 import type {
   DocsEntry,
   LspCompletionItem,
+  ProjectFileInfo,
   ProjectInfo,
   WatchEvent,
 } from "../src/types";
@@ -362,6 +363,166 @@ function ensureProjectDocs(dir: string) {
   }
 }
 
+/* Proje metadata okuma: Project.gcDATA JSON'u veya null. */
+async function readProjectInfo(dir: string): Promise<ProjectInfo | null> {
+  try {
+    const raw = await fs.promises.readFile(
+      path.join(dir, "Project.gcDATA"),
+      "utf-8",
+    );
+    return JSON.parse(raw) as ProjectInfo;
+  } catch {
+    return null;
+  }
+}
+
+/* Export icin izlenen script/native dosya tipleri. Embed runtime govdeleri
+ * (pyLibrary/Lua Lib) HARIC tutulur — onlar paketin kendisidir. */
+const SCRIPT_EXTS = [
+  ".gcsf", ".gclib", ".gcl", ".lua", ".py", ".dll", ".so", ".gcdl",
+];
+
+const SCAN_SKIP_DIRS = new Set([
+  "node_modules", ".git", "dist", "build", "__pycache__",
+  "pyLibrary", "luaLibrary", "Lib", "site-packages", "bin",
+]);
+
+/* Eksik embed alanlarini varsayilana tamamlar ve proje kokunu tarayarak
+ * info dump olusturur: tum .gcsf/.gclib/.lua/.py/.dll/.so dosyalarinin
+ * yolu, turu, runtime'i, import adi + kullanici klasor listesi. */
+function normalizeProjectInfo(
+  info: ProjectInfo | null,
+  dir: string,
+): ProjectInfo | null {
+  if (!info) return null;
+  return {
+    name: info.name || path.basename(dir),
+    developer: info.developer ?? "",
+    useLua: !!info.useLua,
+    usePython: !!info.usePython,
+    version: info.version || "0.1.0",
+    createdAt: info.createdAt ?? "",
+    updatedAt: info.updatedAt ?? "",
+    files: info.files ?? [],
+    dirs: info.dirs ?? [],
+  };
+}
+
+/* Dosya uzantisindan embed runtime'i bulur (export bundle + info dump icin). */
+function runtimeOfExt(ext: string): ProjectFileInfo["runtime"] {
+  if (ext === ".lua") return "lua";
+  if (ext === ".py") return "python";
+  if (ext === ".dll" || ext === ".so" || ext === ".gcdl") return "native";
+  return "gcl"; /* .gcsf / .gclib / .gcl */
+}
+
+/* Proje kokunu dolaşir; script/native dosyalari ve kullanici klasorlerini
+ * "info dump" olarak listeler.
+ *   import adi kurali:
+ *     src/ alti : src/pyFiles/test.py -> "pyFiles.test" (src/ on eki atilir)
+ *     kok       : kokteki test.py     -> "test"          (dosya adi)
+ *     src disi  : Library/bridge/bridge.gcDL -> "bridge" (dosya adi)
+ * gcdl_loader nativeleri de dosya adiyla bulur (bridge, lua_raylib). */
+async function scanProjectFiles(
+  root: string,
+): Promise<{ files: ProjectFileInfo[]; dirs: string[] }> {
+  const files: ProjectFileInfo[] = [];
+  const dirs = new Set<string>();
+  const walk = async (dir: string) => {
+    let entries;
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (SCAN_SKIP_DIRS.has(e.name)) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        await walk(full);
+      } else {
+        const extFrom = path.extname(e.name).toLowerCase();
+        if (!SCRIPT_EXTS.includes(extFrom)) continue;
+        const rel = path.relative(root, full).split(path.sep).join("/");
+        const dirRel = rel.includes("/")
+          ? rel.slice(0, rel.lastIndexOf("/"))
+          : "";
+        const base = e.name.slice(0, e.name.length - path.extname(e.name).length);
+        const isSrcChild = dirRel === "src" || dirRel.startsWith("src/");
+        let importName: string;
+        if (isSrcChild) {
+          const rest = dirRel === "src" ? "" : dirRel.slice(4);
+          importName = (rest ? rest + "." : "") + base;
+        } else {
+          importName = base;
+        }
+        /* dosyanin klasorunu kullanici klasoru olarak kaydet (kok disinda) */
+        if (dirRel) dirs.add(dirRel);
+        files.push({
+          path: rel,
+          name: e.name,
+          ext: extFrom,
+          dir: dirRel,
+          importName,
+          kind: (extFrom === ".gcdl" ? "gcdl" : extFrom.slice(1)) as ProjectFileInfo["kind"],
+          runtime: runtimeOfExt(extFrom),
+        });
+      }
+    }
+  };
+  await walk(root);
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  const sortedDirs = [...dirs].sort((a, b) => a.localeCompare(b));
+  return { files, dirs: sortedDirs };
+}
+
+/* Info'ya taranmis dosya haritasini + klasor listesini baglar (info dump). */
+async function withScannedFiles(info: ProjectInfo, dir: string): Promise<ProjectInfo> {
+  let files: ProjectFileInfo[] = [];
+  let dirs: string[] = [];
+  try {
+    const scanned = await scanProjectFiles(dir);
+    files = scanned.files;
+    dirs = scanned.dirs;
+  } catch {
+    files = [];
+    dirs = [];
+  }
+  return { ...info, files, dirs };
+}
+
+/* Project.gcDATA'daki info dump'i diske gore yeniler: Meta okunur, disk
+ * taze taranir (dosya konumu + import adi + runtime + klasor listesi) ve
+ * guncel (updatedAt) olarak geri yazilir. Proje acilisinda, kayitta ve
+ * watcher olaylarinda cagrilir — dosyalar eklense/silinse bile dump her
+ * zaman diski yansitir. Yazilamazsa sessiz gecer (okuma tarafi tekrar
+ * taranir). */
+async function refreshProjectFileMap(dir: string): Promise<void> {
+  if (!dir) return;
+  const info = await readProjectInfo(dir);
+  if (!info) return;
+  const scanned = await withScannedFiles(info, dir);
+  await fs.promises.writeFile(
+    path.join(dir, "Project.gcDATA"),
+    JSON.stringify({ ...scanned, updatedAt: new Date().toISOString() }, null, 2) + "\n",
+    "utf-8",
+  );
+}
+
+/* Watcher olaylarini debounce eder: ardisik ekle/sil patlamalarinda (bir
+ * klasor tasinirken 10+ dosya) her seferinde disk taramak yerine 400ms
+ * sonra TEK tarama yapar. */
+let refreshTimer: NodeJS.Timeout | null = null;
+function scheduleProjectRefresh(dir: string) {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    refreshProjectFileMap(dir).catch(() => {
+      /* yazilamazsa sessiz gec */
+    });
+  }, 400);
+}
+
 async function collectFiles(root: string, exts: string[]): Promise<string[]> {
   const out: string[] = [];
   const walk = async (dir: string) => {
@@ -709,14 +870,50 @@ function attachWatcher() {
   watcher?.close();
   watcher = null;
   if (!workspaceRoot) return;
+  /* src/ altindaki dosya olusturma/silme (Exporer yenilemesi) dahil tum
+   * degisiklikleri izle. depth:0 iken src/test.py olusturulunca Explorer
+   * HICBIR event almiyordu ("test.py gozukmuyor" hatasi). Devasa embed
+   * runtime govdeleri (pyLibrary/binlerce dosya) yok sayilir; zaten
+   * Explorer'da gizli. */
   watcher = chokidar.watch(workspaceRoot, {
-    ignored: [/node_modules/, /\.git/, /dist/, /build/],
-    depth: 0,
+    ignored: [
+      /node_modules/,
+      /\.git/,
+      /dist/,
+      /build/,
+      /__pycache__/,
+      /[\\/]pyLibrary[\\/]/,
+      /[\\/]luaLibrary[\\/]/,
+      /[\\/]Lib[\\/]/,
+      /[\\/]site-packages[\\/]/,
+    ],
     ignoreInitial: true,
   });
   watcher.on("all", (event: string, filePath: string) => {
     const ev: WatchEvent = { event, path: filePath };
     send("workspace:event", ev);
+    /* Script/native dosya eklenip silindiginde Project.gcDATA'daki info
+     * dump (files + import adlari + dirs) debounce'lu yenilenir. Boylece
+     * dosya haritasi her zaman diskle esit kalir. */
+    if (
+      (event === "add" || event === "unlink") &&
+      SCRIPT_EXTS.includes(path.extname(filePath).toLowerCase())
+    ) {
+      scheduleProjectRefresh(workspaceRoot);
+    }
+    /* LSP workspace'ini CANLI tut: dosya ekle/sil/kaydet oldugunda
+     * gcl-lsp.exe'ye textDocument/didChange gonderilir ve LSP diski
+     * yeniden indexler. IDE acikken eklenen yeni klasor + .py dosyalari
+     * boylece otomatik tamamlamaya girer — "yeni script gorunmuyor"
+     * sorununun kok kaynagi bu eksikti. */
+    if (
+      SCRIPT_EXTS.includes(path.extname(filePath).toLowerCase()) &&
+      (event === "add" || event === "unlink" || event === "change")
+    ) {
+      lspDidChange(filePath).catch(() => {
+        /* gcl-lsp yoksa sessiz gec */
+      });
+    }
   });
 }
 
@@ -837,6 +1034,13 @@ function setupIpc() {
     workspaceRoot = dir;
     /* eksik dokumanlari otomatik tamamla (lua.doc/py.doc) */
     ensureProjectDocs(dir);
+    /* Proje acilisinda disk taranir: tum script/native dosyalarin
+     * konumu + import adi + runtime bilgisi (info dump) Project.gcDATA'ya
+     * yazilir. Boylece "test.py nerede, nasil import edilir" her zaman
+     * guncel. */
+    await refreshProjectFileMap(dir).catch(() => {
+      /* yazilamazsa sessiz gec (read tarafi tekrar taranir) */
+    });
     attachWatcher();
     /* Eski LSP index'ini duser, yeni root ile yeniden baslatir. */
     lspProc?.kill();
@@ -946,6 +1150,22 @@ function setupIpc() {
     else send("output:line", `[GnuChanIDE] No runner for (.${ext})\n`);
   });
 
+  /* Calisan gcl/embed surecini durdurur (Run/Build & Run'un yanindaki
+   * Stop butonu). child zaten runGcl'de eski sureci olduruyor; bu handler
+   * kullanici istedigi anda ayni kill'i tetikler. */
+  ipcMain.handle("stop:run", () => {
+    if (!child) {
+      send("output:line", "[GnuChanIDE] No running process\n");
+      return;
+    }
+    const pid = child.pid;
+    child.kill();
+    send(
+      "output:line",
+      `[GnuChanIDE] process stopped (pid ${pid ?? "?"})\n`,
+    );
+  });
+
   ipcMain.handle(
     "build:file",
     async (_e, file: string, mode: "build" | "buildRun") => {
@@ -965,22 +1185,29 @@ function setupIpc() {
   );
 
   /* ---- GCL project system (Project.gcDATA) ---- */
+  /* "Open Project": kullanici bir KLASOR (proje kokune) veya dogrudan
+   * Project.gcDATA dosyasini secer. Klasor secilirse icindeki
+   * Project.gcDATA otomatik okunur; dosya secilirse parent'i klasor
+   * kabul edilir. Eski projeler eksik alanlarla (createdAt gerekmez)
+   * normalize edilerek doner — info null olsa bile workspace yine acilir. */
   ipcMain.handle("project:selectProjectData", async () => {
     const r = await dialog.showOpenDialog(mainWindow!, {
-      title: "Select Project.gcDATA (open project)",
-      properties: ["openFile"],
-      filters: [{ name: "GCL Project Meta", extensions: ["gcDATA"] }],
+      title: "Open project folder (Project.gcDATA auto-detected)",
+      properties: ["openDirectory", "createDirectory", "openFile"],
     });
     if (r.canceled || r.filePaths.length === 0) return null;
-    const file = r.filePaths[0];
-    const dir = path.dirname(file);
-    let info: ProjectInfo | null = null;
+    const picked = r.filePaths[0];
+    let st: fs.Stats;
     try {
-      const raw = await fs.promises.readFile(file, "utf-8");
-      info = JSON.parse(raw) as ProjectInfo;
+      st = await fs.promises.stat(picked);
     } catch {
-      info = null;
+      return null;
     }
+    const dir = st.isFile() ? path.dirname(picked) : picked;
+    let info: ProjectInfo | null = normalizeProjectInfo(
+      await readProjectInfo(dir),
+      dir,
+    );
     return { dir, info };
   });
 
@@ -998,11 +1225,9 @@ function setupIpc() {
           };
         }
         const now = new Date().toISOString();
-        const meta: ProjectInfo = {
-          ...info,
-          createdAt: now,
-          updatedAt: now,
-        };
+        const meta: ProjectInfo = normalizeProjectInfo(info, dir) ?? info;
+        meta.createdAt = now;
+        meta.updatedAt = now;
         await fs.promises.writeFile(
           metaPath,
           JSON.stringify(meta, null, 2) + "\n",
@@ -1039,32 +1264,37 @@ function setupIpc() {
     },
   );
 
+  /* Proje acildiginda src/ icindeki script dosyalarini dondurur (main.gcsf
+   * dahil). App.tsx bunlari acik tab olarak geri yukler — "acik kalan
+   * scriptler gene acilir". */
+  ipcMain.handle("project:srcFiles", async (_e, dir: string) => {
+    if (!dir) return [];
+    return collectFiles(path.join(dir, "src"), [
+      ".gcsf", ".gclib", ".gcl", ".lua", ".py",
+    ]);
+  });
+
   ipcMain.handle("project:read", async (_e, dir: string) => {
-    try {
-      const raw = await fs.promises.readFile(
-        path.join(dir, "Project.gcDATA"),
-        "utf-8",
-      );
-      return JSON.parse(raw) as ProjectInfo;
-    } catch {
-      return null;
-    }
+    return normalizeProjectInfo(await readProjectInfo(dir), dir);
   });
 
   ipcMain.handle(
     "project:write",
     async (_e, dir: string, info: ProjectInfo) => {
       try {
+        /* Renderer'dan gelen 'files' STALE OLABILIR (kullanici diskin
+         * icindeki dosyalari IDE disinda degistirmis olabilir). Kayit
+         * oncesi disk YENIDEN taranir; info dump (dosya konumu + import
+         * adi + runtime + klasor listesi) her zaman guncel diski yansitir. */
         const meta: ProjectInfo = {
           ...info,
-          updatedAt: new Date().toISOString(),
+          files: info.files ?? [],
         };
-        await fs.promises.writeFile(
-          path.join(dir, "Project.gcDATA"),
-          JSON.stringify(meta, null, 2) + "\n",
-          "utf-8",
-        );
-        return { ok: true, message: "Project updated" };
+        await refreshProjectFileMap(dir);
+        return {
+          ok: true,
+          message: `Project updated (${meta.files?.length ?? 0} files in map)`,
+        };
       } catch (err) {
         return {
           ok: false,
@@ -1115,12 +1345,30 @@ function setupIpc() {
         };
         await copyDir(sourceDir, targetRoot);
 
+        /* Export manifesti = embed'lere INFO DUMP. Lua/Python embed sistemleri
+         * ayri bir butundur; gelen proje hangi dosyanin nerede oldugunu ve
+         * nasil import edilecegini bu dosyadan ogrenir:
+         *   - project.files : tum .gcsf/.gclib/.lua/.py/.dll/.so dosyalari
+         *                     (goreli yol + importName + kind + runtime)
+         *   - importMap    : yol -> import adi (hizli arama)
+         *   - dirs         : .gcBundle icine gomulecek kullanici klasorleri
+         *   - embedRuntime : hangi embed runtime'lari pakette tasinir */
+        const scanned = await withScannedFiles(info, sourceDir);
+        const importMap: Record<string, string> = {};
+        for (const f of scanned.files ?? []) importMap[f.path] = f.importName;
         const manifest = {
-          project: info,
+          project: scanned,
           exportedAt: new Date().toISOString(),
+          importMap,
+          dirs: scanned.dirs ?? [],
+          embedRuntime: {
+            lua: info.useLua ? "Library/Lua/luaLibrary" : null,
+            python: info.usePython ? "Library/Python/pyLibrary" : null,
+          },
           note:
-            "GCL project export. Project.gcDATA + source files. " +
-            "Run with: gcl -run src/main.gcsf",
+            "GCL project export. project.files (path/importName/kind/runtime) " +
+            "+ dirs, lua/python embed'lerinin dosyalari nerede bulacagini " +
+            "ve nasil import edecegini gosterir.",
         };
         await fs.promises.writeFile(
           path.join(targetRoot, "EXPORT_INFO.json"),

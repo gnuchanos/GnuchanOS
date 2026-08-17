@@ -22,6 +22,7 @@ const api: IdeApi = {
   terminalWrite: (data) => ipcRenderer.invoke("terminal:write", data),
   startShell: () => ipcRenderer.invoke("shell:start"),
   runFile: (file) => ipcRenderer.invoke("run:file", file),
+  stopRun: () => ipcRenderer.invoke("stop:run"),
   buildFile: (file, mode) => ipcRenderer.invoke("build:file", file, mode),
 
   /* dosya açma / uygulama */
@@ -33,6 +34,7 @@ const api: IdeApi = {
 
   /* proje sistemi */
   selectProjectData: () => ipcRenderer.invoke("project:selectProjectData"),
+  projectSrcFiles: (dir) => ipcRenderer.invoke("project:srcFiles", dir),
   createProject: (dir, info) => ipcRenderer.invoke("project:create", dir, info),
   readProject: (dir) => ipcRenderer.invoke("project:read", dir),
   writeProject: (dir, info) => ipcRenderer.invoke("project:write", dir, info),

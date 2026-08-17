@@ -6,13 +6,7 @@ makefile.py - GCL + GnuChanIDE build
     python makefile.py           -> FULL BUILD (varsayilan, parametre gerekmez):
                                      gcl + gcl-lsp + Lua embed + Python embed
                                      + bridge + GnuChanIDE (hepsi)
-    python makefile.py gcl       -> yalnizca gcl[.exe]
-    python makefile.py lua       -> gcl + Lua modulleri
-    python makefile.py python    -> gcl + Python modulleri
-    python makefile.py ide       -> yalnizca GnuChanIDE
 
-    NOT: "full" parametresi yazmaniza GEREK YOK — hicbir arguman verilmezse
-    full build calisir (varsayilan mod "full" dur).
 
 Organize cikti (Windows ornegi) - gnuchanos.md FILE TREE:
     build/windows/
@@ -83,7 +77,39 @@ def build_icon_obj():
     # (D:\...\logo.ico -> \G gecersiz). Path'i forward slash'a cevir.
     ico_rc = ICO.replace("\\", "/")
     with open(rc, "w", encoding="utf-8") as f:
+        # VERSIONINFO: SmartScreen "Publisher: Unknown" yerine dogru
+        # metadata gosterir (uye uyarisini hafifletir; kod imzasi olmadan
+        # uyari tamamen kaybolmaz). Yalnizca Windows exe'lerine gomulur.
+        f.write('#include <winver.h>\n')
         f.write('IDI_ICON1 ICON "' + ico_rc + '"\n')
+        f.write('VS_VERSION_INFO VERSIONINFO\n')
+        f.write(' FILEVERSION 1,0,0,0\n')
+        f.write(' PRODUCTVERSION 1,0,0,0\n')
+        f.write(' FILEFLAGSMASK 0x3fL\n')
+        f.write(' FILEFLAGS 0x0L\n')
+        f.write(' FILEOS 0x40004L\n')
+        f.write(' FILETYPE 0x1L\n')
+        f.write(' FILESUBTYPE 0x0L\n')
+        f.write('BEGIN\n')
+        f.write('    BLOCK "StringFileInfo"\n')
+        f.write('    BEGIN\n')
+        f.write('        BLOCK "040904b0"\n')
+        f.write('        BEGIN\n')
+        f.write('            VALUE "CompanyName", "GnuchanOS"\n')
+        f.write('            VALUE "FileDescription", "GCL Scripting Runtime"\n')
+        f.write('            VALUE "FileVersion", "1.0.0"\n')
+        f.write('            VALUE "InternalName", "gcl"\n')
+        f.write('            VALUE "LegalCopyright", "Copyright (C) GnuchanOS"\n')
+        f.write('            VALUE "OriginalFilename", "gcl.exe"\n')
+        f.write('            VALUE "ProductName", "GCL"\n')
+        f.write('            VALUE "ProductVersion", "1.0.0"\n')
+        f.write('        END\n')
+        f.write('    END\n')
+        f.write('    BLOCK "VarFileInfo"\n')
+        f.write('    BEGIN\n')
+        f.write('        VALUE "Translation", 0x409, 1200\n')
+        f.write('    END\n')
+        f.write('END\n')
     if subprocess.call(["windres", rc, "-o", obj]) != 0:
         print("makefile.py: warning: windres basarisiz, ikon gomulemedi",
               file=sys.stderr)
@@ -228,8 +254,23 @@ def python_dev_url():
 def _download_py(url, dst):
     os.makedirs(TEMP, exist_ok=True)
     print("makefile.py: indiriliyor -> " + url)
-    if subprocess.call(["curl", "-L", "-o", dst, url]) != 0:
-        print("makefile.py: error: python embed indirilemedi", file=sys.stderr)
+    # curl bagimliligi kaldirildi: WSL/minimal dagitimlarda curl kurulu
+    # olmayabilir ve subprocess "PermissionError: [Errno 13] Permission
+    # denied: 'curl'" ile coker. urllib her Python kurulumunda mevcuttur.
+    # User-Agent acikca verilir: github release sunucusu varsayilan
+    # Python-urllib ajanina bazi ortamlarda HTTP 403 donebilir.
+    from urllib.request import Request, urlopen
+    req = Request(url, headers={"User-Agent": "GnuchanOS-build/1.0"})
+    try:
+        with urlopen(req, timeout=300) as resp, open(dst, "wb") as f:
+            while True:
+                chunk = resp.read(1 << 16)
+                if not chunk:
+                    break
+                f.write(chunk)
+    except Exception as e:
+        print("makefile.py: error: python embed indirilemedi: " + str(e),
+              file=sys.stderr)
         sys.exit(1)
 
 
@@ -536,25 +577,21 @@ class windows:
 
     # -- orkestrasyon -----------------------------------------------------
     def RUN(self):
-        """Windows RUN: gcl + lua/python modulleri + bridge + ide."""
-        mode = argv[1] if len(argv) > 1 else "full"
+        """Windows RUN: gcl + gcl-lsp + lua/python modulleri + bridge + IDE (hep birlikte)."""
         self.lsp_BUILD()
         self.gcl_BUILD()
-        if mode in ("full", "lua"):
-            self.lua_gcDL_BUILD()
-            self.lua_raylib_BUILD()
-        if mode in ("full", "python"):
-            ensure_python_dev("windows")
-            self.python_gcDL_BUILD()
-            self.python_runtime_COPY()
-            self.pyraylib_py_COPY()
-            self.python_raylib_BUILD()
+        self.lua_gcDL_BUILD()
+        self.lua_raylib_BUILD()
+        ensure_python_dev("windows")
+        self.python_gcDL_BUILD()
+        self.python_runtime_COPY()
+        self.pyraylib_py_COPY()
+        self.python_raylib_BUILD()
         self.bridge_gcDL_BUILD()
         self.gen_reference()
-        if mode in ("full", "ide"):
-            self.IDE_build()
+        self.IDE_build()
         print("makefile.py: build tamam -> " + self.out)
-        if len(argv) > 2 and argv[2] == "run":
+        if len(argv) > 1 and argv[1] == "run":
             exe = os.path.join(self.out, IDE_EXE)
             need(exe, "GnuChanIDE.exe")
             subprocess.Popen([exe], cwd=self.out)
@@ -725,24 +762,25 @@ class gnuLinux(windows):
         print("makefile.py: python embed runtime -> Library/Python/pyLibrary")
 
     def RUN(self):
-        """Linux RUN: gcl + lua/python modulleri + bridge + ide."""
-        mode = argv[1] if len(argv) > 1 else "full"
+        """Linux RUN: gcl + gcl-lsp + lua/python modulleri + bridge + IDE (hep birlikte)."""
         self.lsp_BUILD()
         self.gcl_BUILD()
-        if mode in ("full", "lua"):
-            self.lua_gcDL_BUILD()
-            self.lua_raylib_BUILD()
-        if mode in ("full", "python"):
-            ensure_python_dev("linux")
-            self.python_gcDL_BUILD()
-            self.python_runtime_COPY()
-            self.pyraylib_py_COPY()
-            self.python_raylib_BUILD()
+        self.lua_gcDL_BUILD()
+        self.lua_raylib_BUILD()
+        ensure_python_dev("linux")
+        self.python_gcDL_BUILD()
+        self.python_runtime_COPY()
+        self.pyraylib_py_COPY()
+        self.python_raylib_BUILD()
         self.bridge_gcDL_BUILD()
-        if mode in ("full", "ide"):
-            self.IDE_build()
+        # Windows'tan FARKLI OLARAK onceden cagrilmiyordu: Linux build'inde
+        # lua.doc / py.doc / *.gcReference HICBIR zaman uretilmiyor, DOCS
+        # paneli bos kaliyordu ("Linux'ta doc/referanslar gozukmuyor").
+        # Windows ile birebir ayni cikti icin her platformda uretilir.
+        self.gen_reference()
+        self.IDE_build()
         print("makefile.py: build tamam -> " + self.out)
-        if len(argv) > 2 and argv[2] == "run":
+        if len(argv) > 1 and argv[1] == "run":
             exe = os.path.join(self.out, IDE_EXE)
             need(exe, "GnuChanIDE")
             os.spawnv(os.P_NOWAIT, exe, [exe])

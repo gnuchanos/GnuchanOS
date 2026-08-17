@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   ChevronDown,
@@ -6,6 +6,7 @@ import {
   Play,
   Save,
   Settings,
+  Square,
 } from "lucide-react";
 import DocViewer from "./components/DocViewer";
 import DocsPanel from "./components/DocsPanel";
@@ -22,6 +23,7 @@ import {
   loadSettings,
   palettesOf,
   saveSettings,
+  t,
 } from "./ideSettings";
 import type { ProjectInfo } from "./types";
 
@@ -259,9 +261,16 @@ export default function App() {
   }, []);
 
   /* ---- tabs ---- */
+  /* openFile'i tablardan bagimsiz tutar: ardisik openFile cagrilarinda
+   * (proje acarken tum scriptler) stale tabs yakalanmaz. */
+  const tabsRef = useRef<TabFile[]>([]);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
   const openFile = useCallback(
     async (path: string) => {
-      const existing = tabs.findIndex((t) => t.path === path);
+      const existing = tabsRef.current.findIndex((t) => t.path === path);
       if (existing >= 0) {
         setActive(existing);
         return;
@@ -269,8 +278,8 @@ export default function App() {
       try {
         const content = await window.ide.readFile(path);
         const name = path.split(/[\\/]/).pop() ?? path;
-        setTabs((prev) => [
-          ...prev,
+        tabsRef.current = [
+          ...tabsRef.current,
           {
             path,
             name,
@@ -279,13 +288,14 @@ export default function App() {
             savedContent: content,
             modified: false,
           },
-        ]);
-        setActive(tabs.length);
+        ];
+        setTabs(tabsRef.current);
+        setActive(tabsRef.current.length - 1);
       } catch {
         pushOutput(`[IDE] cannot open file: ${path}`);
       }
     },
-    [tabs, pushOutput],
+    [pushOutput],
   );
 
   const closeTab = useCallback((idx: number) => {
@@ -344,7 +354,40 @@ export default function App() {
     setBuildMenuOpen(false);
   }, [tabs, active]);
 
+  /* Calisan gcl/embed surecini durdurur (Run'un yanindaki Stop). */
+  const stopActive = useCallback(async () => {
+    setBottomTab("output");
+    await window.ide.stopRun();
+    setBuildMenuOpen(false);
+  }, []);
+
   /* ---- project system ---- */
+  /* Proje acildiginda src/ icindeki TUM script dosyalarini acik tab olarak
+   * geri yukler ("acik kalan scriptler gene acilir"). Siralama: once
+   * main.gcsf, sonra digerleri (dosya adi sirasina gore). */
+  const openProjectScripts = useCallback(
+    async (dir: string) => {
+      let files: string[] = [];
+      try {
+        files = await window.ide.projectSrcFiles(dir);
+      } catch {
+        files = [];
+      }
+      files.sort((a, b) => {
+        const ka = a.toLowerCase().replace(/[\\/]/g, "/").endsWith("/main.gcsf")
+          ? 0
+          : 1;
+        const kb = b.toLowerCase().replace(/[\\/]/g, "/").endsWith("/main.gcsf")
+          ? 0
+          : 1;
+        if (ka !== kb) return ka - kb;
+        return a.localeCompare(b);
+      });
+      for (const f of files) await openFile(f);
+    },
+    [openFile],
+  );
+
   const handleCreateProject = useCallback(
     async (info: ProjectInfo, projectPath?: string) => {
       const dir = projectPath ?? "";
@@ -359,16 +402,10 @@ export default function App() {
         await window.ide.setWorkspace(dir);
         setRoot(dir);
         setRefreshKey((k) => k + 1);
-        const sep = dir.includes("\\") ? "\\" : "/";
-        const mainEntry = dir.replace(/[\\/]+$/, "") + sep + "src" + sep + "main.gcsf";
-        try {
-          if (await window.ide.fileExists(mainEntry)) await openFile(mainEntry);
-        } catch {
-          /* ignore */
-        }
+        await openProjectScripts(dir);
       }
     },
-    [pushOutput, openFile],
+    [pushOutput, openProjectScripts],
   );
 
   const handleOpenProject = useCallback(async () => {
@@ -379,6 +416,7 @@ export default function App() {
     await window.ide.setWorkspace(dir);
     setRoot(dir);
     setRefreshKey((k) => k + 1);
+    await openProjectScripts(dir);
     setProjectMenuOpen(false);
     setFileMenuOpen(false);
     pushOutput(
@@ -386,7 +424,7 @@ export default function App() {
         ? `[Project] ${info.name} opened (${dir})`
         : `[Project] Folder opened: ${dir} (no Project.gcDATA)`,
     );
-  }, [pushOutput]);
+  }, [pushOutput, openProjectScripts]);
 
   const handleOpenFile = useCallback(async () => {
     const file = await window.ide.openFileDialog();
@@ -396,22 +434,8 @@ export default function App() {
     }
   }, [openFile]);
 
-  const handleOpenFolder = useCallback(async () => {
-    const folder = await window.ide.openFolderDialog();
-    if (!folder) return;
-    const info = await window.ide.readProject(folder);
-    setProjectInfo(info);
-    await window.ide.setWorkspace(folder);
-    setRoot(folder);
-    setRefreshKey((k) => k + 1);
-    setProjectMenuOpen(false);
-    setFileMenuOpen(false);
-    pushOutput(
-      info
-        ? `[Project] ${info.name} opened (${folder})`
-        : `[Folder] Opened: ${folder}`,
-    );
-  }, [pushOutput]);
+  /* "Open Project" (handleOpenProject) klasor ve Project.gcDATA dosyasini
+   * birlikte seciyor — ayri "Open Folder" gereksiz, kaldirildi. */
 
   const handleSaveProject = useCallback(
     async (info: ProjectInfo) => {
@@ -463,27 +487,24 @@ export default function App() {
         {/* File */}
         <div className="dropdown">
           <button className="menu-btn" onClick={() => setFileMenuOpen((o) => !o)}>
-            File <ChevronDown size={11} />
+            {t("menu.file", settings.language)} <ChevronDown size={11} />
           </button>
           {fileMenuOpen && (
             <div className="dropdown-menu">
               <button className="menu-btn" onClick={handleOpenFile}>
-                Open File
-              </button>
-              <button className="menu-btn" onClick={handleOpenFolder}>
-                Open Folder
+                {t("menu.openFile", settings.language)}
               </button>
               <button className="menu-btn" onClick={saveActive}>
-                Save
+                {t("menu.save", settings.language)}
               </button>
               <button className="menu-btn" onClick={() => setProjectModal({ mode: "save" })}>
-                Save Project
+                {t("menu.saveProject", settings.language)}
               </button>
               <button className="menu-btn" onClick={() => setProjectModal({ mode: "export" })}>
-                Export Project
+                {t("menu.exportProject", settings.language)}
               </button>
               <button className="menu-btn" onClick={handleQuit}>
-                Exit
+                {t("menu.exit", settings.language)}
               </button>
             </div>
           )}
@@ -492,15 +513,15 @@ export default function App() {
         {/* Project */}
         <div className="dropdown">
           <button className="menu-btn" onClick={() => setProjectMenuOpen((o) => !o)}>
-            Project <ChevronDown size={11} />
+            {t("menu.project", settings.language)} <ChevronDown size={11} />
           </button>
           {projectMenuOpen && (
             <div className="dropdown-menu">
               <button className="menu-btn" onClick={handleOpenProject}>
-                Open Project
+                {t("menu.openProject", settings.language)}
               </button>
               <button className="menu-btn" onClick={() => setProjectModal({ mode: "create" })}>
-                New Project
+                {t("menu.newProject", settings.language)}
               </button>
             </div>
           )}
@@ -511,18 +532,18 @@ export default function App() {
         {/* Build */}
         <div className="dropdown">
           <button className="menu-btn" onClick={() => setBuildMenuOpen((o) => !o)}>
-            Build <ChevronDown size={11} />
+            {t("menu.build", settings.language)} <ChevronDown size={11} />
           </button>
           {buildMenuOpen && (
             <div className="dropdown-menu">
               <button className="menu-btn" onClick={buildActive}>
-                Build
+                {t("menu.build", settings.language)}
               </button>
               <button className="menu-btn" onClick={buildRunActive}>
-                Build & Run
+                {t("menu.buildRun", settings.language)}
               </button>
               <button className="menu-btn" onClick={runActive}>
-                Run
+                {t("menu.run", settings.language)}
               </button>
             </div>
           )}
@@ -532,10 +553,13 @@ export default function App() {
 
         {/* toolbar actions */}
         <button className="menu-btn run" onClick={runActive} title="Run (F5)">
-          <Play size={13} /> Run
+          <Play size={13} /> {t("menu.run", settings.language)}
+        </button>
+        <button className="menu-btn danger" onClick={stopActive} title="Stop">
+          <Square size={13} /> {t("menu.stop", settings.language)}
         </button>
         <button className="menu-btn" onClick={saveActive} title="Save (Ctrl+S)">
-          <Save size={13} /> Save
+          <Save size={13} /> {t("menu.save", settings.language)}
         </button>
       </div>
 
@@ -547,16 +571,13 @@ export default function App() {
         >
           <img className="welcome-logo" src={logoUrl} alt="GnuChanIDE" />
           <h1>GnuChanIDE</h1>
-          <p>Create or open a GCL project — the file tree appears here.</p>
+          <p>{t("welcome.title", settings.language)}</p>
           <div className="welcome-actions">
             <button className="menu-btn" onClick={() => setProjectModal({ mode: "create" })}>
-              New Project
-            </button>
-            <button className="menu-btn" onClick={handleOpenFolder}>
-              Open Folder
+              {t("menu.newProject", settings.language)}
             </button>
             <button className="menu-btn run" onClick={handleOpenProject}>
-              Open Project
+              {t("menu.openProject", settings.language)}
             </button>
           </div>
         </div>
@@ -603,7 +624,12 @@ export default function App() {
               </div>
               <div className={`panel-tab-wrap ${sidebarTab === "docs" ? "active" : ""}`}>
                 <ErrorBoundary label="Docs">
-                  <DocsPanel root={root} onOpen={openFile} refreshKey={refreshKey} />
+                  <DocsPanel
+                    root={root}
+                    onOpen={openFile}
+                    refreshKey={refreshKey}
+                    language={settings.language}
+                  />
                 </ErrorBoundary>
               </div>
             </div>

@@ -139,17 +139,32 @@ export interface Palette {
   badgeFg: string;
 }
 
+export type UiLanguage = "en" | "tr";
+
 export interface IdeSettings {
   theme: ThemeName;
   fontFamily: string;
   fontSize: number;
   textSize: number; // UI base font size (px)
   scale: number; // UI scale multiplier 0.8 .. 1.5
+  /* Arayuz dili: "en" (varsayilan) veya "tr". Tüm UI string'leri
+   * ideSettings.ts icindeki t() sozlugunden gelir; bu deger degisince
+   * arayuz aninda guncellenir. */
+  language: UiLanguage;
   /* Manuel renk override'lari — tema paletinin ustune biner.
    * Bos obje = tema varsayilani. Opsiyoneldir; eski localStorage
    * degerleri (customColors'suz) tip hatasi vermez. */
   customColors?: Partial<Palette>;
 }
+export const DEFAULT_SETTINGS: IdeSettings = {
+  theme: "purple",
+  fontFamily: "'Cascadia Code', Consolas, monospace",
+  fontSize: 14,
+  textSize: 13,
+  scale: 1,
+  language: "en",
+  customColors: {},
+};
 
 const KEY = "gcl-ide-settings";
 
@@ -167,14 +182,6 @@ export const THEME_NAMES: { name: ThemeName; label: string; color: string }[] = 
   { name: "white", label: "White", color: "#f5f5f5" },
 ];
 
-export const DEFAULT_SETTINGS: IdeSettings = {
-  theme: "purple",
-  fontFamily: "'Cascadia Code', Consolas, monospace",
-  fontSize: 14,
-  textSize: 13,
-  scale: 1,
-  customColors: {},
-};
 
 /* Renk turetme: Monaco `defineTheme` token renkleri YALNIZCA hex kabul eder.
  * Ayrica Monaco bazi alfalari (#RRGGBBAA) reddeder -> yazi kaybolur. Bu
@@ -424,6 +431,62 @@ export function palettesOf(settings: IdeSettings): Palette {
   return { ...base, ...settings.customColors };
 }
 
+/* UI dil sozlugu: t("key", lang). Varsayilan "en"; "tr" desteklenir.
+ * IDE'de kullaniciya gorunen metinlerin tek dogruluk kaynagi burasidir. */
+const STRINGS: Record<string, { en: string; tr: string }> = {
+  "menu.file": { en: "File", tr: "Dosya" },
+  "menu.project": { en: "Project", tr: "Proje" },
+  "menu.build": { en: "Build", tr: "Derle" },
+  "menu.openFile": { en: "Open File", tr: "Dosya Aç" },
+  "menu.openFolder": { en: "Open Folder", tr: "Klasör Aç" },
+  "menu.save": { en: "Save", tr: "Kaydet" },
+  "menu.saveProject": { en: "Save Project", tr: "Projeyi Kaydet" },
+  "menu.exportProject": { en: "Export Project", tr: "Projeyi Dışa Aktar" },
+  "menu.exit": { en: "Exit", tr: "Çıkış" },
+  "menu.newProject": { en: "New Project", tr: "Yeni Proje" },
+  "menu.openProject": { en: "Open Project", tr: "Proje Aç" },
+  "menu.buildRun": { en: "Build & Run", tr: "Derle ve Çalıştır" },
+  "menu.run": { en: "Run", tr: "Çalıştır" },
+  "menu.stop": { en: "Stop", tr: "Durdur" },
+  "welcome.title": {
+    en: "Create or open a GCL project — the file tree appears here.",
+    tr: "Bir GCL projesi oluşturun veya açın — dosya ağacı burada görünür.",
+  },
+  "welcome.editor": {
+    en: "Pick a file from the Explorer to start editing.",
+    tr: "Düzenlemek için Explorer'dan bir dosya seçin.",
+  },
+  "status.gcl": { en: "GCL ✓", tr: "GCL ✓" },
+  "status.noGcl": { en: "gcl not found", tr: "gcl bulunamadı" },
+  "status.noFile": { en: "no file", tr: "dosya yok" },
+  "docs.guides": { en: "Guides", tr: "Rehberler" },
+  "docs.api": { en: "API Reference", tr: "İmzalı API" },
+  "docs.helpers": { en: "Helpers", tr: "Yardımcılar" },
+  "docs.title": { en: "Docs", tr: "Dokümanlar" },
+  "docs.empty": {
+    en: "No docs found in Library/.",
+    tr: "Library/ içinde doküman bulunamadı.",
+  },
+  "docs.open": {
+    en: "Open a project to see docs.",
+    tr: "Dokümanları görmek için bir proje açın.",
+  },
+  "settings.title": { en: "Settings", tr: "Ayarlar" },
+  "settings.language": { en: "Language", tr: "Dil" },
+  "tab.empty": {
+    en: "click a file in Explorer",
+    tr: "Explorer'da bir dosyaya tıklayın",
+  },
+  "output.empty": { en: "Waiting for output...", tr: "Çıktı bekleniyor..." },
+  "explorer.empty": { en: "Folder is empty.", tr: "Klasör boş." },
+};
+
+export function t(key: string, lang: UiLanguage): string {
+  const s = STRINGS[key];
+  if (!s) return key;
+  return s[lang] ?? s.en;
+}
+
 export function loadSettings(): IdeSettings {
   try {
     const raw = localStorage.getItem(KEY);
@@ -435,6 +498,7 @@ export function loadSettings(): IdeSettings {
       fontSize: parsed.fontSize ?? DEFAULT_SETTINGS.fontSize,
       textSize: parsed.textSize ?? DEFAULT_SETTINGS.textSize,
       scale: parsed.scale ?? DEFAULT_SETTINGS.scale,
+      language: (parsed.language as UiLanguage) ?? DEFAULT_SETTINGS.language,
       customColors: parsed.customColors ?? {},
     };
   } catch {

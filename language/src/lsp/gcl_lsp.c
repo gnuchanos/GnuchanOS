@@ -103,11 +103,20 @@ typedef struct {
   int file_count;
   Symbol syms[GCL_SYMS_MAX];
   int sym_count;
-  /* fridge cache: gcl -pyrun -resolve ciktilari (modul adi -> satirlar) */
-  char fridge_mods[GCL_FRIDGE_CACHE][GCL_NAME_MAX];
-  char fridge_outs[GCL_FRIDGE_CACHE][GCL_FRIDGE_BUF];
-  int fridge_count;
 } Workspace;
+
+/* BUZDOLABI cache — workspace YENIDEN INDEXLENSE DE (didChange: dosya
+ * eklendi/silindi) KORUNUR. Workspace struct'indan ayri tutulur cunku
+ * index_workspace memset ile ws'i sifirlar; cache sifirlanirsa her
+ * completion'da gcl -pyrun -resolve yeniden spawn olur (saniyeler surer).
+ * Ayri global yapi: "import os" -> os. tamamlamalari her didChange'te
+ * surekli tekrar calismaz, cache kalici kalir. */
+typedef struct {
+  char mods[GCL_FRIDGE_CACHE][GCL_NAME_MAX];
+  char outs[GCL_FRIDGE_CACHE][GCL_FRIDGE_BUF];
+  int count;
+} FridgeCache;
+static FridgeCache g_fridge;
 
 /* ------------------------------------------------------------------ */
 /* Dosya / yol yardimcilari                                            */
@@ -125,14 +134,48 @@ static const char *path_base(const char *p) {
   return s ? s + 1 : p;
 }
 
-/* Windows'ta yollar case-insensitive'dir ("D:/x" == "d:/x"): LSP'ye gelen
- * dosya yollari ile index edilen yollar farkli case'te olabilir. */
+/* Windows'ta yollar case-insensitive'dir ("D:/x" == "d:/x") ve \ ile /
+ * denktir. Index yollari her zaman / ile normalize edilir (path_join); ancak
+ * Electron dosya yolunu Windows'ta \ ile gonderir. path_eq ikisini de denk
+ * sayar — find_file, resolve_module ve paket karsilastirmalari ayrac/case
+ * farkindan etkilenmez. */
 static int path_eq(const char *a, const char *b) {
+  if (a == NULL || b == NULL) return a == b;
+  while (*a && *b) {
+    unsigned char ca = (unsigned char)*a;
+    unsigned char cb = (unsigned char)*b;
+    if (ca == '\\') ca = '/';
+    if (cb == '\\') cb = '/';
 #ifdef _WIN32
-  return _stricmp(a, b) == 0;
-#else
-  return strcmp(a, b) == 0;
+    if (ca >= 'A' && ca <= 'Z') ca += (unsigned char)32;
+    if (cb >= 'A' && cb <= 'Z') cb += (unsigned char)32;
 #endif
+    if (ca != cb) return 0;
+    a++;
+    b++;
+  }
+  return *a == *b;
+}
+
+/* path_starts_with: `a`, `b` ile mi basliyor? (ayrac + case normalize).
+ * file_dir_base'de gelen dosya yolu ile workspace root'u karsilastirmak icin:
+ * root "c:/Users/x", gelen yol "c:\\Users\\x\\src\\main.py" olabilir. */
+static int path_starts_with(const char *a, const char *b) {
+  if (a == NULL || b == NULL) return 0;
+  while (*a && *b) {
+    unsigned char ca = (unsigned char)*a;
+    unsigned char cb = (unsigned char)*b;
+    if (ca == '\\') ca = '/';
+    if (cb == '\\') cb = '/';
+#ifdef _WIN32
+    if (ca >= 'A' && ca <= 'Z') ca += (unsigned char)32;
+    if (cb >= 'A' && cb <= 'Z') cb += (unsigned char)32;
+#endif
+    if (ca != cb) return 0;
+    a++;
+    b++;
+  }
+  return *b == 0;
 }
 
 static void strip_ext(char *out, size_t cap, const char *name) {
@@ -142,6 +185,40 @@ static void strip_ext(char *out, size_t cap, const char *name) {
   if (n >= cap) n = cap - 1;
   memcpy(out, base, n);
   out[n] = '\0';
+}
+
+/* Dosyanin workspace root'a goreli dizininin SON SEGMENTI:
+ *   root/src/pyFiles/test.py -> "pyFiles"
+ *   root/src/main.py         -> "src"   (import kokudur, onerilmez)
+ *   root/test.py             -> ""      (kok dosya: dizin yok)
+ * "from pyFiles import test" cozumlemesi + klasor adi tamamlamasi icin.
+ * Yollar hep '/' ayracildir (path_join normalleştirir). */
+static void file_dir_base(Workspace *ws, const char *path, char *out, size_t cap) {
+  out[0] = 0;
+  if (!ws || !path || !ws->root[0]) return;
+  /* Windows'ta gelen yol \ ayracli olabilir (Electron path.join): root ile
+   * ayrac + case normalize ederek karsilastir, aksi halde paket klasoru
+   * hic bulunamaz ("from testFolder import helloworld" cozulemez). */
+  if (!path_starts_with(path, ws->root)) return;
+  size_t rlen = strlen(ws->root);
+  const char *rel = path + rlen;
+  while (*rel == '/' || *rel == '\\') rel++;
+  /* goreli yoldaki son ayraci bul (hem / hem \ kabul et) */
+  const char *sl = rel;
+  {
+    const char *p = rel;
+    for (; *p; p++)
+      if (*p == '/' || *p == '\\') sl = p;
+  }
+  if (*sl == '\0') return; /* kok dosya: dizin yok */
+  if (sl == rel) return;   /* kokteki dosya */
+  const char *seg = rel;
+  for (const char *q = rel; q < sl; q++)
+    if (*q == '/' || *q == '\\') seg = q + 1;
+  size_t n = (size_t)(sl - seg);
+  if (n >= cap) n = cap - 1;
+  memcpy(out, seg, n);
+  out[n] = 0;
 }
 
 /* isimlendirilebilir mi: harf/_ ile baslar, sonra harf/rakam/_ */
@@ -319,22 +396,32 @@ static void index_python_line(Workspace *ws, FileIndex *f, const char *raw) {
     while (*s && !isspace((unsigned char)*s) && *s != ',' && k < GCL_NAME_MAX - 1)
       mod[k++] = *s++;
     mod[k] = 0;
-    /* submodule: import a.b -> ana modul a */
-    char *dot = strchr(mod, '.');
-    if (dot) *dot = 0;
+    /* alias: import X as Y -> alias da tutulur.
+     * Boylece "import numpy as np" yazildiginda np. => numpy cozulur. */
+    char alias[GCL_NAME_MAX] = {0};
+    char *as = strstr(s, "as");
+    if (as) {
+      const char *a = as + 2;
+      while (*a == ' ') a++;
+      if (is_ident(a)) {
+        int k2 = 0;
+        while (isalnum((unsigned char)*a) || *a == '_') alias[k2++] = *a++;
+        alias[k2] = 0;
+      }
+    }
     if (is_ident(mod)) {
-      /* alias: import X as Y -> alias da tutulur.
-       * Boylece "import numpy as np" yazildiginda np. => numpy cozulur. */
-      char alias[GCL_NAME_MAX] = {0};
-      char *as = strstr(s, "as");
-      if (as) {
-        const char *a = as + 2;
-        while (*a == ' ') a++;
-        if (is_ident(a)) {
-          int k2 = 0;
-          while (isalnum((unsigned char)*a) || *a == '_') alias[k2++] = *a++;
-          alias[k2] = 0;
-        }
+      /* import a.b: alias VARSA SON segment (dosya modulu) alinir:
+       *   import testFolder.helloworld as hw  ->  hw = helloworld dosya modulu.
+       *   Boylece "hw." => helloworld.py uyeleri cozulur (onceki kod ilk
+       *   segmente kripiyor, alias hicbir seye baglanmiyordu).
+       * Alias YOKSA ILK segment kalir (paket koku):
+       *   import os.path -> os. => os cozulur, path os uyesidir. */
+      if (alias[0]) {
+        char *dot = strrchr(mod, '.');
+        if (dot) memmove(mod, dot + 1, strlen(dot + 1) + 1);
+      } else {
+        char *dot = strchr(mod, '.');
+        if (dot) *dot = 0;
       }
       add_import_ex(f, mod, alias);
     }
@@ -529,14 +616,30 @@ static int index_workspace(Workspace *ws, const char *root) {
 /* import -> dosya cozumleme (GCL kurali: kardes dosya)                */
 /* ------------------------------------------------------------------ */
 
+/* Alt dizin karsilastirmasi: ayrac ve (Windows'ta) case normalize ederek
+ * iki yolun AYNI dizin oldugunu denetler. `cand` index yolu (normalize), 
+ * `dir` Electron'dan gelen \ ayracli yol olabilir. */
+static int same_dir(const char *cand, const char *dir) {
+  if (cand == NULL || dir == NULL) return 0;
+  return path_eq(cand, dir);
+}
+
 /* Modul adi ver; once acik dosyanin dizininde, sonra workspace'te ara. */
 static FileIndex *resolve_module(Workspace *ws, const char *file, const char *mod) {
   char dir[GCL_PATH_MAX];
   snprintf(dir, sizeof dir, "%s", file ? file : ws->root);
-  /* acik dosyanin dizini */
-  char *slash = strrchr(dir, '/');
-  if (slash) *slash = 0;
-  else snprintf(dir, sizeof dir, "%s", ws->root);
+  /* acik dosyanin dizini: SON ayraci bul — Windows'ta \ ile / ayni anlamda. */
+  {
+    char *last = NULL;
+    for (char *p = dir; *p; p++) {
+      if (*p == '/' || *p == '\\') last = p;
+    }
+    if (last != NULL) *last = 0;
+    else {
+      /* ayrac yoksa root'u dene */
+      snprintf(dir, sizeof dir, "%s", ws->root);
+    }
+  }
 
   /* 1) kardes dosya: acik dosyanin yanindaki mod.py */
   for (int i = 0; i < ws->file_count; i++) {
@@ -554,6 +657,54 @@ static FileIndex *resolve_module(Workspace *ws, const char *file, const char *mo
     if (strcmp(ws->files[i].name, mod) == 0) return &ws->files[i];
   }
   return NULL;
+}
+
+/* out_item, emit_package_members'tan SONRA tanimli (JSON yazma blogu);
+ * ileri bildirim gerekli. */
+static void out_item(const char *label, const char *kind, const char *detail);
+
+/* Ayni ada sahip dosyalar farkli klasorlerdeyse karismasin: acik dosyanin
+ * "from X import ..." yaptigi X paket dizinindeki eslesen modul ONCELIKLI.
+ *   from beta import util ; util.  ->  beta/util.py (alpha'da da util varsa
+ *   bile yanlis dosya secilmez). cur == NULL ise ilk eslesen fallback. */
+static FileIndex *resolve_module_pkg(Workspace *ws, const char *file,
+                                     const char *mod, FileIndex *cur) {
+  FileIndex *first = NULL;
+  for (int i = 0; i < ws->file_count; i++) {
+    if (strcmp(ws->files[i].name, mod) != 0) continue;
+    if (!first) first = &ws->files[i];
+    if (cur && cur->import_count > 0) {
+      char dbase[GCL_NAME_MAX];
+      file_dir_base(ws, ws->files[i].path, dbase, sizeof dbase);
+      for (int k = 0; k < cur->import_count; k++) {
+        if (dbase[0] && strcmp(dbase, cur->imports[k]) == 0)
+          return &ws->files[i];
+      }
+    }
+  }
+  return first;
+}
+
+/* member_mod bir KLASOR (paket) adiysa icindeki .py dosyalarini onerir.
+ *   alpha.  ->  alpha/ icindeki util modulu. Bu, paket member tamamlamayi
+ *   (dokuman 2-4) ve "import alpha." ara segment onerilerini (2-3) birlikte
+ *   cozer. Bulunduysa 1, yoksa 0 doner. */
+static int emit_package_members(Workspace *ws, const char *pkg,
+                                const char *prefix) {
+  int got = 0;
+  for (int i = 0; i < ws->file_count; i++) {
+    char dbase[GCL_NAME_MAX];
+    file_dir_base(ws, ws->files[i].path, dbase, sizeof dbase);
+    if (!dbase[0] || strcmp(dbase, pkg) != 0) continue;
+    if (strcmp(ws->files[i].name, pkg) == 0) continue; /* paketle ayni adli dosya */
+    if (prefix[0] && strncmp(ws->files[i].name, prefix, strlen(prefix)) != 0)
+      continue;
+    char detail[GCL_PATH_MAX + 64];
+    snprintf(detail, sizeof detail, "module %s (pkg %s)", ws->files[i].name, pkg);
+    out_item(ws->files[i].name, "module", detail);
+    got = 1;
+  }
+  return got;
 }
 
 /* ------------------------------------------------------------------ */
@@ -694,20 +845,23 @@ static int fridge_query(Workspace *ws, const char *mod, const char *prefix,
   return out[0] ? 0 : 1;
 }
 
-/* fridge cache'e eris: modul icin onceden toplanmis NDJSON satirlari. */
+/* fridge cache'e eris: modul icin onceden toplanmis NDJSON satirlari.
+ * Workspace'in disindaki global g_fridge'de tutulur — didChange yeniden
+ * indexleme yaptiginda cache korunur ve gcl -pyrun -resolve her seferinde
+ * yeniden spawn olmaz. */
 static const char *fridge_get(Workspace *ws, const char *mod) {
-  for (int i = 0; i < ws->fridge_count; i++)
-    if (strcmp(ws->fridge_mods[i], mod) == 0)
-      return ws->fridge_outs[i];
-  if (ws->fridge_count >= GCL_FRIDGE_CACHE) return NULL;
-  snprintf(ws->fridge_mods[ws->fridge_count], GCL_NAME_MAX, "%s", mod);
-  if (fridge_query(ws, mod, "", ws->fridge_outs[ws->fridge_count],
+  for (int i = 0; i < g_fridge.count; i++)
+    if (strcmp(g_fridge.mods[i], mod) == 0)
+      return g_fridge.outs[i];
+  if (g_fridge.count >= GCL_FRIDGE_CACHE) return NULL;
+  snprintf(g_fridge.mods[g_fridge.count], GCL_NAME_MAX, "%s", mod);
+  if (fridge_query(ws, mod, "", g_fridge.outs[g_fridge.count],
                    GCL_FRIDGE_BUF) != 0) {
-    ws->fridge_outs[ws->fridge_count][0] = 0;
+    g_fridge.outs[g_fridge.count][0] = 0;
   }
   {
-    const char *r = ws->fridge_outs[ws->fridge_count];
-    ws->fridge_count++;
+    const char *r = g_fridge.outs[g_fridge.count];
+    g_fridge.count++;
     return r;
   }
 }
@@ -947,6 +1101,95 @@ static const char *alias_to_mod(FileIndex *cur, const char *name) {
   return name;
 }
 
+/* CANLI TEXT alias cozumleme: disk index (cur) yalnizca KAYDEDILMIS satirlari
+ * gorur; IDE her tus vurusunda text'i gonderir. "import testFolder.helloworld
+ * as hw" yazilip henuz kaydedilmeden "hw." yazildiginda disk listesinde yoktur.
+ * Burada imlece kadar olan kismi satir satir tarar:
+ *   import <a.b.c> as <name>  ->  name = c (son segment — dosya modulu)
+ *   from <pkg> import <X> as <name> -> name = <pkg>
+ * Bulunamazsa name aynen doner (eski davranis). */
+static const char *live_alias_to_mod(FileIndex *cur, const char *text,
+                                     const char *until, const char *name,
+                                     char *out, size_t cap) {
+  const char *mapped;
+  if (name == NULL || name[0] == '\0') return name;
+  mapped = alias_to_mod(cur, name);
+  if (mapped != name) return mapped;
+  if (text == NULL || until == NULL || until <= text) return name;
+  out[0] = 0;
+
+  {
+    const char *q = text;
+    while (q < until && *q) {
+      const char *line_start = q;
+      /* "import X as Y" */
+      if (strncmp(q, "import ", 7) == 0) {
+        const char *imp = q + 7;
+        const char *as = strstr(imp, " as ");
+        if (as && as < until) {
+          const char *a = as + 4;
+          while (a < until && *a == ' ') a++;
+          {
+            size_t nl = strlen(name);
+            if (strncmp(a, name, nl) == 0 &&
+                (a[nl] == '\0' || a[nl] == '\n' || a[nl] == '\r' ||
+                 isspace((unsigned char)a[nl]))) {
+              size_t mlen = (size_t)(as - imp);
+              while (mlen > 0 && (imp[mlen - 1] == ' ' || imp[mlen - 1] == '\t'))
+                mlen--;
+              if (mlen > 0 && mlen < cap) {
+                memcpy(out, imp, mlen);
+                out[mlen] = 0;
+                {
+                  char *dot = strrchr(out, '.');
+                  if (dot && dot[1]) {
+                    size_t rem = strlen(dot + 1);
+                    memmove(out, dot + 1, rem + 1);
+                  }
+                }
+                return out;
+              }
+            }
+          }
+        }
+      }
+      /* "from P import X as Y" -> Y alias'i P paketine bagla */
+      if (strncmp(q, "from ", 5) == 0) {
+        const char *fimp = strstr(q, " import ");
+        if (fimp && fimp < until) {
+          const char *n = fimp + 8;
+          while (n < until && *n == ' ') n++;
+          {
+            const char *as = strstr(n, " as ");
+            if (as && as < until) {
+              const char *a = as + 4;
+              while (a < until && *a == ' ') a++;
+              {
+                size_t nl = strlen(name);
+                if (strncmp(a, name, nl) == 0 &&
+                    (a[nl] == '\0' || a[nl] == '\n' || a[nl] == '\r' ||
+                     isspace((unsigned char)a[nl]))) {
+                  size_t mlen = (size_t)(fimp - (q + 5));
+                  while (mlen > 0 && (q + 5)[mlen - 1] == ' ') mlen--;
+                  if (mlen > 0 && mlen < cap) {
+                    memcpy(out, q + 5, mlen);
+                    out[mlen] = 0;
+                    return out;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      while (q < until && *q && *q != '\n') q++;
+      if (q < until && *q == '\n') q++;
+      (void)line_start;
+    }
+  }
+  return name;
+}
+
 /* open file'in import listesini baslangic dosyasindan bulur.
  * Windows'ta buyuk/kucuk harf farkini yok say: disk yollari
  * case-insensitive'dir. */
@@ -992,22 +1235,35 @@ static void complete(Workspace *ws, const char *file, const char *text,
   const char *cur_name = cur ? cur->name : NULL;
 
   out_begin();
-  out_append("[");
+  /* stdio yanit bicimi {"id":N,"result":[...]} olmali (VALID JSON).
+   * "result:" sarmalayicisi olmadan {"id":2,[...]} GECERSIZ JSON uretilir;
+   * Electron main.ts JSON.parse'e takilir, lspPending asili kalir ve
+   * renderer her tus vurusunda 400ms bekleyip fallback'e duserdi —
+   * "from folder import file calismiyor + tamamlama yavasladi" nin
+   * dogrudan kaynagi buydu. */
+  out_append("\"result\":[");
 
   if (is_member) {
     const char *mod = member_mod;
-    /* alias? "import numpy as np" -> np. => numpy */
-    mod = alias_to_mod(cur, mod);
-    /* 1) statik: workspace'teki kardes dosya */
-    FileIndex *modf = resolve_module(ws, file, mod);
-    if (!modf) {
-      /* import edilmis modulun kendisi (pyRaylib = rl) */
-      for (int i = 0; i < ws->file_count; i++) {
-        char base[GCL_NAME_MAX];
-        strip_ext(base, sizeof base, ws->files[i].path);
-        if (strcmp(base, mod) == 0) { modf = &ws->files[i]; break; }
-      }
+    /* alias? "import numpy as np" -> np. => numpy.
+     * ONCE disk listesi (kaydedilmis dosya), yoksa CANLI TEXT'teki
+     * "import X as Y" / "from P import Y as Z" satirlarina bakariz:
+     * IDE her tus vurusunda text'i gonderdigi icin henuz kaydedilmemis
+     * importlar da cozulur. */
+    {
+      static char live_mod[GCL_NAME_MAX];
+      mod = live_alias_to_mod(cur, text, p, mod, live_mod, sizeof live_mod);
     }
+    /* 0) mod bir PAKET (klasor) adiysa icindeki .py modullerini oner:
+     *    "alpha." -> alpha/ icindeki util ; "import alpha." -> ayni akis.
+     *    Bu, paket member tamamlamayi ve noktali import segment onerilerini
+     *    tek noktada cozer. Bulunduysa fridge/hata yolu atlanir. */
+    if (emit_package_members(ws, mod, prefix)) goto member_done;
+    /* 1) statik: workspace'teki kardes dosya — PAKET-BILINCLI: ayni ada
+     *    sahip dosyalar farkli klasorlerdeyse (alpha/util.py + beta/util.py)
+     *    acik dosyanin import ettigi paket oncelik alir; basename yalnizca
+     *    son care olur. (dokuman 2-1 cozumu) */
+    FileIndex *modf = resolve_module_pkg(ws, file, mod, cur);
     if (modf) {
       for (int s = modf->sym_start; s < modf->sym_start + modf->sym_count; s++) {
         const Symbol *sym = &ws->syms[s];
@@ -1034,10 +1290,9 @@ static void complete(Workspace *ws, const char *file, const char *text,
           nl = end + 1;
         }
       } else {
-        /* gorunmeyen modul: yine de import adini oner */
-        char detail[GCL_NAME_MAX + 64];
-        snprintf(detail, sizeof detail, "module %s (fridge: gorunmedi)", mod);
-        out_item(mod, "module", detail);
+        /* gorunmeyen modul: kullaniciya HATA MESAJI gonderilmez. Fridge
+         * bulamadiysa (ornegin alpha bir paket adi ama stdlib'de yok) sessiz
+         * gec — popup'a "import error" / "resolve error" sizintisi olmaz. */
       }
     }
   } else {
@@ -1057,7 +1312,7 @@ static void complete(Workspace *ws, const char *file, const char *text,
           const char *gel = strstr(ln, ">=");
           if (ne != eq && cel != eq && gel != eq) {
             size_t ln_ = (size_t)(eq - ln);
-            while (ln_ > 0 && (ln[ln_ - 1] == ' ' || ln[ln_ - 1] == '\t')) ln_--;
+            while (ln_ > 0 && (ln[ln_ - 1] == ' ' || ln[ln_ - 1] == '\t')) ln--;
             if (ln_ > 0 && ln_ < GCL_NAME_MAX) {
               char nm[GCL_NAME_MAX];
               memcpy(nm, ln, ln_);
@@ -1106,6 +1361,27 @@ static void complete(Workspace *ws, const char *file, const char *text,
             fmod[mlen] = 0;
           }
           if (fmod[0]) {
+            /* KISAYOL: "from pydir import test" — pydir bir KLASOR
+             * (paket), modul degil. Icine bak: adi prefix ile eslesen
+             * .py dosyalari modul olarak onerilir. */
+            {
+              char dbase[GCL_NAME_MAX];
+              int found_dir = 0;
+              for (int i = 0; i < ws->file_count; i++) {
+                file_dir_base(ws, ws->files[i].path, dbase, sizeof dbase);
+                if (!dbase[0] || strcmp(dbase, fmod) != 0) continue;
+                found_dir = 1;
+                if (!prefix[0] ||
+                    strncmp(ws->files[i].name, prefix, strlen(prefix)) == 0) {
+                  char detail[GCL_PATH_MAX + 64];
+                  snprintf(detail, sizeof detail, "module %s (%s)",
+                           ws->files[i].name, ws->files[i].path);
+                  out_item(ws->files[i].name, "module", detail);
+                  from_done = 1;
+                }
+              }
+              if (found_dir) goto from_ctx_done;
+            }
             FileIndex *fmodf = resolve_module(ws, file, fmod);
             if (fmodf) {
               from_done = 1;
@@ -1228,6 +1504,22 @@ static void complete(Workspace *ws, const char *file, const char *text,
      *    modul adi onermek "statik trash" olarak algilanir. */
     if (strncmp(before, "import ", 7) == 0 ||
         strncmp(before, "from ", 5) == 0) {
+      /* Klasor paketleri: "from pyF" -> pyFiles (veya pydir) onerilir.
+       * Ayni klasorun her dosyasi icin ad tekrar etse de out_item tekil
+       * gozetmen (seen_add) sayesinde BIR kez yazar. */
+      {
+        char dbase[GCL_NAME_MAX];
+        for (int i = 0; i < ws->file_count; i++) {
+          file_dir_base(ws, ws->files[i].path, dbase, sizeof dbase);
+          if (!dbase[0]) continue;
+          if (!prefix[0] ||
+              strncmp(dbase, prefix, strlen(prefix)) == 0) {
+            char detail[GCL_PATH_MAX + 64];
+            snprintf(detail, sizeof detail, "package %s (folder)", dbase);
+            out_item(dbase, "module", detail);
+          }
+        }
+      }
       for (int i = 0; i < ws->file_count; i++) {
         if (!prefix[0] ||
             strncmp(ws->files[i].name, prefix, strlen(prefix)) == 0) {
@@ -1260,6 +1552,7 @@ static void complete(Workspace *ws, const char *file, const char *text,
     }
   }
 
+member_done:
 from_ctx_done:
   /* son virgullu kapatma ortak nokta: from-import ciktisiyla da calisir */
 
@@ -1335,6 +1628,17 @@ int main(void) {
     } else if (strcmp(method, "shutdown") == 0) {
       send_response(id, "\"result\":null");
       break;
+    } else if (strcmp(method, "textDocument/didChange") == 0) {
+      /* Dosya eklendi / silindi / degisti -> workspace'i YENIDEN INDEXLE.
+       * IDE acikken yeni klasor + py script eklenince LSP bunu gorur;
+       * aksi halde yalnizca proje acilisindaki eski index kalir ve
+       * "from yeniKlasor import ..." asla cozulemezdi. Fridge cache
+       * (g_fridge) ayri tutuldugu icin burada korunur. */
+      int n = index_workspace(&ws, ws.root);
+      char resp[128];
+      snprintf(resp, sizeof resp,
+               "\"result\":{\"ok\":true,\"files\":%d}", n);
+      send_response(id, resp);
     } else if (strcmp(method, "textDocument/completion") == 0) {
       static char file[GCL_PATH_MAX];
       static char text[GCL_LINE_MAX]; /* 1MB — stack'i asar, static olmali */
@@ -1357,263 +1661,8 @@ int main(void) {
         if (root[0]) index_workspace(&ws, root);
       }
       complete(&ws, file, text, ln, col);
-      /* 1MB+ body stack'i asar: static buffer + dogrudan printf */
-      static char resp[OUT_MAX + 64];
-      size_t rn = (size_t)snprintf(resp, sizeof resp, "\"result\":%.*s",
-                                   (int)g_n, g_out);
-      if (rn >= sizeof resp) rn = sizeof resp - 1;
-      resp[rn] = 0;
-      send_response(id, resp);
-    } else if (strcmp(method, "textDocument/signatureHelp") == 0) {
-      /* PARAMS PENCERESI: "InitWindow(" yazildiginda fonksiyonun imzasini
-       * dondurur (tek item). Modul on eki ("pr.InitWindow(") ve
-       * "from X import *" wildcard'i dahil; statik index yetmezse
-       * BUZDOLABI (gercek Python) devreye girer. */
-      static char sfile[GCL_PATH_MAX];
-      static char stext[GCL_LINE_MAX];
-      static char sbefore[GCL_LINE_MAX];
-      sfile[0] = 0;
-      stext[0] = 0;
-      json_str(line, "file", sfile, sizeof sfile);
-      json_str(line, "text", stext, sizeof stext);
-      int sln = json_num(line, "line");
-      int scol = json_num(line, "col");
-      /* imlece kadar olan metin */
-      const char *pp = stext;
-      for (int i = 1; i < sln && pp && *pp; i++) {
-        pp = strchr(pp, '\n');
-        if (!pp) break;
-        pp++;
-      }
-      if (!pp) pp = stext;
-      for (int i = 0; i < scol - 1 && *pp; i++) pp++;
-      {
-        const char *ls = pp;
-        while (ls > stext && ls[-1] != '\n') ls--;
-        size_t llen = (size_t)(pp - ls);
-        if (llen >= sizeof sbefore) llen = sizeof sbefore - 1;
-        memcpy(sbefore, ls, llen);
-        sbefore[llen] = 0;
-      }
-      out_begin();
-      out_append("[");
-      /* kapanmamis son '(': fonksiyon adi + opsiyonel modul on eki */
-      {
-        const char *open = NULL;
-        int depth = 0;
-        for (const char *c = sbefore; *c; c++) {
-          if (*c == '(') {
-            depth++;
-            open = c;
-          } else if (*c == ')') {
-            if (depth > 0) {
-              depth--;
-              if (depth == 0) open = NULL;
-            }
-          }
-        }
-        if (open && open > sbefore) {
-          const char *nend = open;
-          const char *ns = nend;
-          while (ns > sbefore &&
-                 (isalnum((unsigned char)ns[-1]) || ns[-1] == '_'))
-            ns--;
-          if (ns < nend) {
-            char func[GCL_NAME_MAX];
-            size_t fn = (size_t)(nend - ns);
-            if (fn >= sizeof func) fn = sizeof func - 1;
-            memcpy(func, ns, fn);
-            func[fn] = 0;
-            char modbuf[GCL_NAME_MAX] = {0};
-            if (ns > sbefore && ns[-1] == '.') {
-              const char *me = ns - 1;
-              const char *ms = me;
-              while (ms > sbefore &&
-                     (isalnum((unsigned char)ms[-1]) || ms[-1] == '_'))
-                ms--;
-              if (ms < me) {
-                size_t ml = (size_t)(me - ms);
-                if (ml < sizeof modbuf) {
-                  memcpy(modbuf, ms, ml);
-                  modbuf[ml] = 0;
-                }
-              }
-            }
-            FileIndex *scur = find_file(&ws, sfile);
-            const char *realmod = NULL;
-            if (modbuf[0]) {
-              const char *alias = alias_to_mod(scur, modbuf);
-              snprintf(modbuf, sizeof modbuf, "%s", alias);
-              realmod = modbuf;
-            }
-            int found = 0;
-            if (realmod) {
-              FileIndex *mf = resolve_module(&ws, sfile, realmod);
-              if (!mf) {
-                for (int i = 0; i < ws.file_count && !mf; i++) {
-                  char base[GCL_NAME_MAX];
-                  strip_ext(base, sizeof base, ws.files[i].path);
-                  if (strcmp(base, realmod) == 0) mf = &ws.files[i];
-                }
-              }
-              if (mf) {
-                for (int s = mf->sym_start;
-                     s < mf->sym_start + mf->sym_count && !found; s++) {
-                  const Symbol *sym = &ws.syms[s];
-                  if (sym->kind == SYM_FN && strcmp(sym->name, func) == 0) {
-                    char detail[GCL_PARAM_MAX + 256];
-                    snprintf(detail, sizeof detail, "%s(%s)",
-                             sym->name, sym->params);
-                    out_item(func, "fn", detail);
-                    found = 1;
-                  }
-                }
-              } else {
-                const char *cached = fridge_get(&ws, realmod);
-                if (cached && cached[0]) {
-                  char lb[4096];
-                  const char *nl = cached;
-                  while (*nl && !found) {
-                    const char *end = strchr(nl, '\n');
-                    size_t ln2 = end ? (size_t)(end - nl) : strlen(nl);
-                    if (ln2 == 0) break;
-                    if (ln2 >= sizeof lb) ln2 = sizeof lb - 1;
-                    memcpy(lb, nl, ln2);
-                    lb[ln2] = 0;
-                    {
-                      char lbl[GCL_NAME_MAX] = {0};
-                      json_str(lb, "label", lbl, sizeof lbl);
-                      if (strcmp(lbl, func) == 0) {
-                        emit_fridge_line(lb, "");
-                        found = 1;
-                      }
-                    }
-                    if (!end) break;
-                    nl = end + 1;
-                  }
-                }
-              }
-            } else {
-              /* kendi dosyasi */
-              if (scur) {
-                for (int s = 0; s < ws.sym_count && !found; s++) {
-                  const Symbol *sym = &ws.syms[s];
-                  if (sym->kind == SYM_FN &&
-                      strcmp(sym->mod, scur->name) == 0 &&
-                      strcmp(sym->name, func) == 0) {
-                    char detail[GCL_PARAM_MAX + 256];
-                    snprintf(detail, sizeof detail, "%s.%s(%s)", sym->mod,
-                             sym->name, sym->params);
-                    out_item(func, "fn", detail);
-                    found = 1;
-                  }
-                }
-              }
-              /* "from X import *" — disk + canli text */
-              if (!found) {
-                const char *wc =
-                    scur && scur->wildcard[0] ? scur->wildcard : NULL;
-                char wcbuf[GCL_NAME_MAX] = {0};
-                if (!wc) {
-                  const char *qq = stext;
-                  while (qq < pp && *qq) {
-                    if (strncmp(qq, "from ", 5) == 0) {
-                      const char *imp = strstr(qq, "import");
-                      const char *star = strstr(qq, "*");
-                      if (imp && star && imp < star && star < pp) {
-                        size_t ml2 = (size_t)(imp - (qq + 5));
-                        while (ml2 > 0 && (qq + 5)[ml2 - 1] == ' ') ml2--;
-                        if (ml2 > 0 && ml2 < sizeof wcbuf) {
-                          memcpy(wcbuf, qq + 5, ml2);
-                          wcbuf[ml2] = 0;
-                          wc = wcbuf;
-                        }
-                      }
-                    }
-                    while (*qq && *qq != '\n') qq++;
-                    if (*qq == '\n') qq++;
-                  }
-                }
-                if (wc) {
-                  FileIndex *wm = resolve_module(&ws, sfile, wc);
-                  if (!wm) {
-                    for (int i = 0; i < ws.file_count && !wm; i++) {
-                      char base[GCL_NAME_MAX];
-                      strip_ext(base, sizeof base, ws.files[i].path);
-                      if (strcmp(base, wc) == 0) wm = &ws.files[i];
-                    }
-                  }
-                  if (wm) {
-                    for (int s = wm->sym_start;
-                         s < wm->sym_start + wm->sym_count && !found; s++) {
-                      const Symbol *sym = &ws.syms[s];
-                      if (sym->kind == SYM_FN &&
-                          strcmp(sym->name, func) == 0) {
-                        char detail[GCL_PARAM_MAX + 256];
-                        snprintf(detail, sizeof detail, "%s.%s(%s)", wm->name,
-                                 sym->name, sym->params);
-                        out_item(func, "fn", detail);
-                        found = 1;
-                      }
-                    }
-                  } else {
-                    const char *cached = fridge_get(&ws, wc);
-                    if (cached && cached[0]) {
-                      char lb[4096];
-                      const char *nl = cached;
-                      while (*nl && !found) {
-                        const char *end = strchr(nl, '\n');
-                        size_t ln2 = end ? (size_t)(end - nl) : strlen(nl);
-                        if (ln2 == 0) break;
-                        if (ln2 >= sizeof lb) ln2 = sizeof lb - 1;
-                        memcpy(lb, nl, ln2);
-                        lb[ln2] = 0;
-                        {
-                          char lbl[GCL_NAME_MAX] = {0};
-                          json_str(lb, "label", lbl, sizeof lbl);
-                          if (strcmp(lbl, func) == 0) {
-                            emit_fridge_line(lb, "");
-                            found = 1;
-                          }
-                        }
-                        if (!end) break;
-                        nl = end + 1;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-      if (g_n > 1 && g_out[g_n - 1] == ',') {
-        g_out[g_n - 1] = ']';
-        g_out[g_n] = 0;
-      } else {
-        out_append("]");
-      }
-      static char sresp[OUT_MAX + 64];
-      size_t srn = (size_t)snprintf(sresp, sizeof sresp, "\"result\":%.*s",
-                                    (int)g_n, g_out);
-      if (srn >= sizeof sresp) srn = sizeof sresp - 1;
-      sresp[srn] = 0;
-      send_response(id, sresp);
-    } else if (strcmp(method, "textDocument/didChange") == 0) {
-      /* Dosya degisti (kaydedildi) -> workspace'i TAMAMEN yeniden indexle.
-       * Boylece "ossuruk.py'ye zamber ekledim, görünmüyor" senaryosu
-       * ortadan kalkar: kaydedilen her degisiklik bir sonraki completion'da
-       * aninda gorunur. (Kucuk embedded projeler icin tam yeniden index
-       * milisaniye duzeyinde; guvenli ve basit.) */
-      if (ws.root[0]) index_workspace(&ws, ws.root);
-      {
-        char resp[512];
-        snprintf(resp, sizeof resp,
-                 "\"result\":{\"ok\":true,\"files\":%d}", ws.file_count);
-        send_response(id, resp);
-      }
-    } else if (strcmp(method, "exit") == 0) {
-      break;
+      /* 1MB+ body static g_out'dan: son virgul temizlendi, yanit yaz */
+      send_response(id, (const char *)g_out);
     }
   }
   return 0;

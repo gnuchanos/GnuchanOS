@@ -633,20 +633,46 @@ GCL_MODULE_EXPORT int gcdl_python_run(const char *script, char *err, size_t err_
 
     /* Script dizinini sys.path'a ekle: `import <src-modul>` calissin.
      * Normal Python, script'in dizinini otomatik sys.path[0] yapar;
-     * embed (PyRun_StringFlags) bunu yapmaz. Ayrac yoksa cwd (".") eklenir. */
+     * embed (PyRun_StringFlags) bunu yapmaz. Ayrac yoksa cwd (".") eklenir.
+     *
+     * EXTRA: script dizininin PARENT'i da sys.path'a eklenir. Boylece
+     * src/ icinde klasor paketleri (src/pyFiles/helpers.py) `import
+     * pyFiles.helpers` ile cozumlenir — kullanici src/ icinde pyFiles
+     * klasoru actiginda python embeded importlari gorur. */
     {
         const char *slash = strrchr(script, '/');
         const char *back = strrchr(script, '\\');
         const char *last = slash == NULL ? back
                           : (back == NULL ? slash : (slash > back ? slash : back));
         char dir_buf[4200];
+        char parent_buf[4200];
         const char *dir = NULL;
+        const char *parent = NULL;
         if (last != NULL) {
             size_t dlen = (size_t)(last - script);
             if (dlen >= sizeof dir_buf) dlen = sizeof dir_buf - 1;
             memcpy(dir_buf, script, dlen);
             dir_buf[dlen] = '\0';
             dir = dir_buf;
+
+            /* parent: dir icindeki son ayiriciya kadar (src/pyFiles -> src) */
+            {
+                const char *s2 = strrchr(dir, '/');
+                const char *b2 = strrchr(dir, '\\');
+                const char *l2 = s2 == NULL ? b2
+                                : (b2 == NULL ? s2 : (s2 > b2 ? s2 : b2));
+                if (l2 != NULL) {
+                    size_t plen = (size_t)(l2 - dir);
+                    if (plen == 0) {
+                        parent = "/";  /* kok dizin */
+                    } else {
+                        if (plen >= sizeof parent_buf) plen = sizeof parent_buf - 1;
+                        memcpy(parent_buf, dir, plen);
+                        parent_buf[plen] = '\0';
+                        parent = parent_buf;
+                    }
+                }
+            }
         } else {
             dir = ".";
         }
@@ -655,11 +681,22 @@ GCL_MODULE_EXPORT int gcdl_python_run(const char *script, char *err, size_t err_
             if (sys != NULL) {
                 PyObject *path = PyObject_GetAttrString(sys, "path");
                 if (path != NULL) {
-                    PyObject *dir_obj = PyUnicode_FromString(dir);
-                    if (dir_obj != NULL) {
-                        if (PyList_Insert(path, 0, dir_obj) != 0)
-                            PyErr_Clear(); /* path'e eklenemese de devam */
-                        Py_DECREF(dir_obj);
+                    /* once parent (klasor paketlerinin tabani), sonra dir */
+                    if (parent != NULL) {
+                        PyObject *par_obj = PyUnicode_FromString(parent);
+                        if (par_obj != NULL) {
+                            if (PyList_Insert(path, 0, par_obj) != 0)
+                                PyErr_Clear();
+                            Py_DECREF(par_obj);
+                        }
+                    }
+                    {
+                        PyObject *dir_obj = PyUnicode_FromString(dir);
+                        if (dir_obj != NULL) {
+                            if (PyList_Insert(path, 0, dir_obj) != 0)
+                                PyErr_Clear(); /* path'e eklenemese de devam */
+                            Py_DECREF(dir_obj);
+                        }
                     }
                     Py_DECREF(path);
                 }

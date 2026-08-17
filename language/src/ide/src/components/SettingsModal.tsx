@@ -30,7 +30,7 @@ export default function SettingsModal({ initial, onClose, onSave }: Props) {
   };
 
   const handleSave = () => {
-    apply({ theme, fontFamily, fontSize, textSize, scale });
+    apply({ theme, fontFamily, fontSize, textSize, scale, language: initial.language });
     onClose();
   };
 
@@ -60,7 +60,7 @@ export default function SettingsModal({ initial, onClose, onSave }: Props) {
                       title={t.label}
                       onClick={() => {
                         setTheme(t.name);
-                        apply({ theme: t.name, fontFamily, fontSize, textSize, scale });
+                        apply({ theme: t.name, fontFamily, fontSize, textSize, scale, language: initial.language });
                       }}
                     >
                       {theme === t.name ? "✓" : ""}

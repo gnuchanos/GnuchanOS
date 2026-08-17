@@ -6,6 +6,7 @@ import {
   Palette,
   THEME_NAMES,
   ThemeName,
+  UiLanguage,
 } from "../ideSettings";
 
 interface Props {
@@ -191,6 +192,7 @@ export default function SettingsPanel({ initial, onClose, onSave }: Props) {
   const [fontSize, setFontSize] = useState(initial.fontSize);
   const [textSize, setTextSize] = useState(initial.textSize);
   const [scale, setScale] = useState(initial.scale);
+  const [language, setLanguage] = useState<UiLanguage>(initial.language);
   const [custom, setCustom] = useState<Partial<Palette>>(initial.customColors ?? {});
   const [width, setWidth] = useState(DEFAULT_W);
 
@@ -202,6 +204,7 @@ export default function SettingsPanel({ initial, onClose, onSave }: Props) {
     fontSize,
     textSize,
     scale,
+    language,
     customColors: custom,
   });
 
@@ -211,6 +214,7 @@ export default function SettingsPanel({ initial, onClose, onSave }: Props) {
     fontSize?: number;
     textSize?: number;
     scale?: number;
+    language?: UiLanguage;
     customColors?: Partial<Palette>;
   }) => {
     const s: IdeSettings = {
@@ -219,6 +223,7 @@ export default function SettingsPanel({ initial, onClose, onSave }: Props) {
       fontSize: next.fontSize ?? fontSize,
       textSize: next.textSize ?? textSize,
       scale: next.scale ?? scale,
+      language: next.language ?? language,
       customColors: next.customColors ?? custom,
     };
     onSave(s);
@@ -307,6 +312,21 @@ export default function SettingsPanel({ initial, onClose, onSave }: Props) {
 
         {/* INTERFACE */}
         <div className="settings-category">Interface</div>
+        <div className="settings-group">
+          <div className="settings-title">Language / Dil</div>
+          <select
+            className="modal-select"
+            value={language}
+            onChange={(e) => {
+              const v = e.target.value as UiLanguage;
+              setLanguage(v);
+              commit({ language: v });
+            }}
+          >
+            <option value="en">English</option>
+            <option value="tr">Türkçe</option>
+          </select>
+        </div>
         <div className="settings-group">
           <div className="settings-title">UI Text Size</div>
           <select

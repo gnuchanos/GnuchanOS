@@ -405,6 +405,80 @@ GCL_MODULE_EXPORT int gcdl_lua_run(const char *script, int debug,
             fprintf(stderr, "gcl: error: gcl.bridge setup failed — %s\n", bridge_err);
     }
 
+    /* Script dizinini ve PARENT dizinini package.path'a ekle: src/ icinde
+     * klasor paketleri (src/luaFiles/helper.lua) `require "luaFiles.helper"`
+     * ile cozumlenir. luaL_dofile script'in dizinini package.path'a EKLEMEZ. */
+    {
+        const char *slash = strrchr(script, '/');
+        const char *back = strrchr(script, '\\');
+        const char *last = slash == NULL ? back
+                          : (back == NULL ? slash : (slash > back ? slash : back));
+        char dir_buf[4200];
+        char parent_buf[4200];
+        const char *dir = NULL;
+        const char *parent = NULL;
+        if (last != NULL) {
+            size_t dlen = (size_t)(last - script);
+            if (dlen >= sizeof dir_buf) dlen = sizeof dir_buf - 1;
+            memcpy(dir_buf, script, dlen);
+            dir_buf[dlen] = '\0';
+            dir = dir_buf;
+
+            /* parent: dir icindeki son ayiriciya kadar (src/luaFiles -> src) */
+            {
+                const char *s2 = strrchr(dir, '/');
+                const char *b2 = strrchr(dir, '\\');
+                const char *l2 = s2 == NULL ? b2
+                                : (b2 == NULL ? s2 : (s2 > b2 ? s2 : b2));
+                if (l2 != NULL) {
+                    size_t plen = (size_t)(l2 - dir);
+                    if (plen == 0) {
+                        parent = "/";  /* kok dizin */
+                    } else {
+                        if (plen >= sizeof parent_buf) plen = sizeof parent_buf - 1;
+                        memcpy(parent_buf, dir, plen);
+                        parent_buf[plen] = '\0';
+                        parent = parent_buf;
+                    }
+                }
+            }
+        } else {
+            dir = ".";
+        }
+        if (dir != NULL) {
+            lua_getglobal(L, "package");
+            lua_getfield(L, -1, "path");
+            {
+                const char *old = lua_tostring(L, -1);
+                if (old == NULL) old = "";
+                {
+                    /* yeni path = dir/?.lua;dir/?/init.lua;
+                     *            parent/?.lua;parent/?/init.lua; eski-path */
+                    char new_path[16384];
+                    size_t used = 0;
+                    size_t cap = sizeof new_path;
+                    int w;
+
+                    new_path[0] = '\0';
+                    w = snprintf(new_path + used, cap - used,
+                                 "%s/?.lua;%s/?/init.lua;", dir, dir);
+                    if (w > 0 && (size_t)w < cap - used) used += (size_t)w;
+                    if (parent != NULL) {
+                        w = snprintf(new_path + used, cap - used,
+                                     "%s/?.lua;%s/?/init.lua;", parent, parent);
+                        if (w > 0 && (size_t)w < cap - used) used += (size_t)w;
+                    }
+                    w = snprintf(new_path + used, cap - used, "%s", old);
+                    if (w > 0 && (size_t)w < cap - used) used += (size_t)w;
+
+                    lua_pushstring(L, new_path);
+                    lua_setfield(L, -3, "path");   /* package.path = yeni */
+                }
+            }
+            lua_pop(L, 2);   /* package, path */
+        }
+    }
+
     if (luaL_dofile(L, script) != LUA_OK) {
         const char *msg = lua_tostring(L, -1);
         if (msg == NULL)

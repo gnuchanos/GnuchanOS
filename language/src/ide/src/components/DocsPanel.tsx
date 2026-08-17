@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { BookOpen, FileText, FolderTree, RefreshCw } from "lucide-react";
 import type { DocsEntry } from "../types";
+import { t } from "../ideSettings";
 
 interface Props {
   root: string;
   onOpen: (path: string) => void;
   refreshKey: number;
+  language: "en" | "tr";
 }
 
 /* Sol panelin DOCS sekmesi: projedeki Library klasorlerindeki .doc
@@ -28,7 +30,7 @@ interface Props {
  *     ...
  *
  * Kopyalar art? gorunmez: ayni (dil, tur, dosya-adi) tek kez listelenir. */
-export default function DocsPanel({ root, onOpen, refreshKey }: Props) {
+export default function DocsPanel({ root, onOpen, refreshKey, language }: Props) {
   const [entries, setEntries] = useState<DocsEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -84,10 +86,10 @@ export default function DocsPanel({ root, onOpen, refreshKey }: Props) {
           kind,
           title:
             kind === "doc"
-              ? "Rehberler"
+              ? t("docs.guides", language)
               : kind === "ref"
-                ? "Imzali API"
-                : "Yardimcilar",
+                ? t("docs.api", language)
+                : t("docs.helpers", language),
           items: items
             .filter((e) => e.kind === kind)
             .sort((a, b) => a.name.localeCompare(b.name)),
@@ -129,11 +131,11 @@ export default function DocsPanel({ root, onOpen, refreshKey }: Props) {
       </div>
 
       {!root ? (
-        <div className="panel-empty">Open a project to see docs.</div>
+        <div className="panel-empty">{t("docs.open", language)}</div>
       ) : loading ? (
         <div className="panel-empty">Loading...</div>
       ) : entries.length === 0 ? (
-        <div className="panel-empty">No docs found in Library/.</div>
+        <div className="panel-empty">{t("docs.empty", language)}</div>
       ) : (
         <div className="docs-list">
           {groups.map((g) => (

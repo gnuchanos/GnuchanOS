@@ -123,6 +123,18 @@ body {
   filter: brightness(1.15);
 }
 
+/* Durdur (Stop) butonu: Run'un yaninda, kirmizi vurgulu. */
+.menu-btn.danger {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+
+.menu-btn.danger:hover {
+  background: rgba(255, 107, 107, 0.28);
+  filter: brightness(1.05);
+}
+
 /* ---- body ---- */
 .body {
   display: flex;
@@ -705,7 +717,7 @@ body .monaco-editor .suggest-widget .monaco-list .monaco-list-row .description-l
 }
 
 .modal {
-  width: 460px;
+  width: 640px;
   max-width: 92vw;
   background: var(--c-bg1);
   border: 1px solid var(--c-border);
@@ -772,6 +784,256 @@ body .monaco-editor .suggest-widget .monaco-list .monaco-list-row .description-l
   color: var(--c-fg2);
   font-size: 11px;
   line-height: 1.4;
+}
+
+/* ---- modal: folder-picker (Browse ile klasor secimi) ----
+ * Input yerine tüm kart tıklanabilir: ikon + secilen yol + Browse dugmesi.
+ * Kullanici yolu elle yazmaz; dialog tek dogruluk kaynagidir. */
+.folder-picker-label {
+  color: var(--c-fg1);
+  font-size: 12px;
+}
+
+.folder-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: var(--c-bg0);
+  border: 1px dashed var(--c-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  cursor: pointer;
+  color: var(--c-fg0);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.folder-picker:hover {
+  border-color: var(--c-acc);
+  background: var(--c-bg2);
+  box-shadow: 0 0 0 1px var(--c-acc-dim);
+}
+
+.folder-picker.has-path {
+  border-style: solid;
+  border-color: var(--c-acc);
+  box-shadow: 0 0 0 1px var(--c-acc-dim);
+}
+
+.folder-picker-icon {
+  flex: 0 0 auto;
+  color: var(--c-acc);
+  opacity: 0.9;
+}
+
+.folder-picker-path {
+  flex: 1;
+  min-width: 0;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  color: var(--c-fg1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-picker.has-path .folder-picker-path {
+  color: var(--c-alt);
+}
+
+.folder-picker-btn {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  background: var(--c-btn-bg);
+  color: var(--c-btn-fg);
+  border-radius: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--c-border);
+}
+
+.folder-picker:hover .folder-picker-btn {
+  background: var(--c-btn-hover);
+}
+
+/* ---- modal: proje klasoru + topoloji semasi ---- */
+.modal-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--c-fg0);
+  cursor: pointer;
+  user-select: none;
+}
+
+.modal-check input[type="checkbox"] {
+  accent-color: var(--c-acc);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.project-folder-row {
+  gap: 6px;
+}
+
+.project-path-preview {
+  display: block;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  color: var(--c-alt);
+  background: var(--c-bg0);
+  border: 1px dashed var(--c-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  word-break: break-all;
+}
+
+/* export/olusturma onizlemesi: hangi klasorler embed'lere gidiyor */
+.project-schema {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--c-bg0);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.project-schema-title {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--c-acc);
+  border-bottom: 1px solid var(--c-border);
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+.project-schema-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.project-schema-line .schema-dir {
+  color: var(--c-fg0);
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-schema-line .schema-note {
+  color: var(--c-fg2);
+  font-size: 10px;
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- modal: embed dil kartlari (Lua / Python) ----
+ * Genisligi 180 px'e dusurur; iki kart yanyana iki sutuna gecer. */
+.embed-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.embed-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 2px solid var(--c-border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--c-bg0);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.embed-card.active {
+  border-color: var(--c-acc);
+  box-shadow: 0 0 0 1px var(--c-acc-dim);
+}
+
+.embed-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  width: 100%;
+  text-align: left;
+  color: var(--c-fg0);
+}
+
+.embed-logo {
+  flex: 0 0 auto;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 3px 6px;
+  color: #fff;
+}
+
+.embed-logo.lua {
+  background: #1c1c4a;
+  border: 1px solid #4169e1;
+}
+
+.embed-logo.py {
+  background: #306998;
+  border: 1px solid #ffd343;
+}
+
+.embed-card-title {
+  flex: 1;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.embed-toggle {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  border-radius: 10px;
+  padding: 2px 8px;
+  background: var(--c-bg3);
+  color: var(--c-fg2);
+}
+
+.embed-card.active .embed-toggle {
+  background: var(--c-acc-dim);
+  color: var(--c-acc);
+}
+
+.embed-path .modal-input {
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.embed-off-hint {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--c-fg2);
+  margin: 0;
 }
 
 .modal-footer {

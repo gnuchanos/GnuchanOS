@@ -50,6 +50,22 @@ export interface LspCompletionItem {
 
 /* ---- GCL proje sistemi (Project.gcDATA) ---- */
 
+/* Otomatik taranan proje dosyası (info dump öğesi): dosyanın konumu,
+ * türü ve embed'lerin onu nasıl import edeceği. Proje açılışında/kayıtta
+ * diskten tarandığı için 300 tane klasör adı olsa bile hepsi bu listede. */
+export interface ProjectFileInfo {
+  path: string;        /* proje köküne göreli, "/" ayraçlı (örn. src/pyFiles/test.py) */
+  name: string;        /* test.py */
+  ext: string;         /* .py */
+  dir: string;         /* göreli klasör (örn. src/pyFiles); kök ise "" */
+  importName: string;  /* embed'in çözeceği ad (pyFiles.test | luaFiles.helper | test) */
+  kind: "gcsf" | "gclib" | "gcl" | "lua" | "py" | "dll" | "so" | "gcdl";
+  /* Dosyanın gideceği embed runtime: .gcsf/.gclib/.gcl -> gcl,
+   * .lua -> lua (luaLibrary), .py -> python (pyLibrary),
+   * .dll/.so/.gcdl -> native (bridge/gcdl, dosya adıyla yüklenir). */
+  runtime: "gcl" | "lua" | "python" | "native";
+}
+
 export interface ProjectInfo {
   name: string;
   developer: string;
@@ -58,6 +74,13 @@ export interface ProjectInfo {
   version: string;
   createdAt: string;
   updatedAt: string;
+  /* Otomatik taranmış dosya haritası: tüm script/native dosyaların
+   * konumu + import adı. Embed'lere export'ta bu info dump gider. */
+  files?: ProjectFileInfo[];
+  /* Tarama sonucu projede bulunan kullanıcı klasörleri (göreli, "/" ayraçlı;
+   * runtime gövdeleri — pyLibrary/luaLibrary/Lib/site-packages — hariç).
+   * Export'ta .gcBundle içine gömülecek klasör yapısını tanımlar. */
+  dirs?: string[];
 }
 
 export interface ExportResult {
@@ -98,6 +121,7 @@ export interface IdeApi {
   terminalWrite: (data: string) => Promise<void>;
   startShell: () => Promise<void>;
   runFile: (file: string) => Promise<void>;
+  stopRun: () => Promise<void>;
   buildFile: (file: string, mode: "build" | "buildRun") => Promise<void>;
 
   /* dosya açma / uygulama */
@@ -110,6 +134,8 @@ export interface IdeApi {
     dir: string;
     info: ProjectInfo | null;
   } | null>;
+  /* Proje kokundeki src/ icindeki script dosyalarinin tam yollarini dondurur */
+  projectSrcFiles: (dir: string) => Promise<string[]>;
   createProject: (
     dir: string,
     info: ProjectInfo,

@@ -3,7 +3,8 @@ import Editor, { OnMount } from "@monaco-editor/react";
 import { monaco } from "../monacoSetup";
 import type { editor as MonacoEditor } from "monaco-editor";
 import type { Palette } from "../ideSettings";
-import { fromLsp, type CompletionItem } from "../completions";
+import { fromLsp, pythonFallback, type CompletionItem } from "../completions";
+import type { LspCompletionItem } from "../types";
 import AutocompletePopup from "./AutocompletePopup";
 
 export interface OpenFile {
@@ -39,6 +40,24 @@ interface PopupState {
 /* Async popup yenileme icin race guard: eski istek donsa bile yeni bir
  * istek varsa eski sonuc yok sayilir. */
 let refreshSeq = 0;
+
+/* LSP istegini 400ms timeout ile sarmalar. gcl-lsp.exe spawn edilemezse
+ * veya IPC yaniti asili kalirsa (lspSend promise'i cozumlemez) popup akisi
+ * hicbir zaman sorun yasamaz: timeout'ta [] doner, cagiran taraf fallback'e
+ * gecer. Bu, "Ctrl+Space basiyorum hicbir sey olmuyor" sikayetinin kok
+ * nedeni olan asili-await durumunu kokten kapatir. */
+async function lspCompleteSafe(
+  filePath: string,
+  line: number,
+  col: number,
+  docText: string,
+): Promise<LspCompletionItem[]> {
+  const task = window.ide.lspComplete(filePath, line, col, docText);
+  const timeout = new Promise<LspCompletionItem[]>((resolve) => {
+    setTimeout(() => resolve([]), 400);
+  });
+  return Promise.race([task, timeout]);
+}
 
 /* gcl-theme tanimi (onMount + useEffect icin). Native suggest kullanilmasa
  * da editor bg/fg/token renkleri buradan gelir. */
@@ -157,7 +176,7 @@ export default function EditorView({
         const inside = callMatch[3] ?? "";
         const innerPrefix = inside.match(/[A-Za-z_]\w*$/)?.at(0) ?? "";
 
-        const lspCall = await window.ide.lspComplete(
+        const lspCall = await lspCompleteSafe(
           file.path,
           pos.lineNumber,
           pos.column,
@@ -216,18 +235,36 @@ export default function EditorView({
 
       /* LSP'den tamamlama: gcl-lsp.exe dosyayi (import + member) cozer ve
        * dosya sembollerini prefix'e gore filtreler. Sadece LSP kullanilir;
-       * eski JSON kutuphane sistemi (completions.json) devre disi. */
-      const lspItems = await window.ide.lspComplete(
-        file.path,
-        pos.lineNumber,
-        pos.column,
-        docText,
-      );
+       * eski JSON kutuphane sistemi (completions.json) devre disi.
+       *
+       * LSP basarisiz olursa (gcl-lsp.exe bulunamadi, spawn hatasi, zaman
+       * asimi vb.) Ctrl+Space YINE DE acilsin: Python'un kendi kelimelerine
+       * fallback yapilir — popup asla bos kalip "acilmiyor" hissi vermez. */
+      let lspItems: LspCompletionItem[];
+      try {
+        lspItems = await lspCompleteSafe(
+          file.path,
+          pos.lineNumber,
+          pos.column,
+          docText,
+        );
+      } catch {
+        lspItems = [];
+      }
       if (seq !== refreshSeq) return; /* daha yeni bir istek geldi */
-      const items = lspItems.map((it) => fromLsp(it.kind, it.label, it.detail));
+      let items = lspItems.map((it) => fromLsp(it.kind, it.label, it.detail));
       if (items.length === 0) {
-        setPopupBoth(null);
-        return;
+        /* LSP yanit vermezse (gcl-lsp.exe yok / IPC asili / henuz index
+         * yok) popup YINE DE acilir: yerel Python kelime havuzuna dusulur.
+         * Eskiden fallback yalnizca Ctrl+Space'te (force) calisiyordu;
+         * normal yazimda LSP gecikirse popup aninda kapanip "hicbir sey
+         * acilmiyor" hissi veriyordu. Artik her durumda ya LSP ya fallback
+         * mutlaka item uretir. */
+        items = pythonFallback(prefix);
+        if (items.length === 0) {
+          setPopupBoth(null);
+          return;
+        }
       }
 
       const xy = computePos(editor, pos);
@@ -276,6 +313,13 @@ export default function EditorView({
       () => saveRef.current(),
     );
     editor.addCommand(monacoInstance.KeyCode.F5, () => runRef.current());
+    /* Ctrl+Space -> zorla tamamlama. DOM capture birincil yol; Monaco
+     * addCommand yedek yol (cogu klavyede bu ikisi celismaz, cift acilim
+     * doRefresh'in race guard'i sayesinde zararsizdir). */
+    editor.addCommand(
+      monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Space,
+      () => refreshRef.current(true),
+    );
 
     /* imlec takibi -> StatusBar + popup yenileme */
     const pos = editor.getPosition();
@@ -292,8 +336,17 @@ export default function EditorView({
      * ile tus Monaco'ya hic ulasmadan popup navigasyonu yapilir. */
     const dom = editor.getDomNode();
     const onDomKeyDown = (e: globalThis.KeyboardEvent) => {
-      /* Ctrl+Space -> zorla tamamlama */
-      if (e.ctrlKey && e.code === "Space") {
+      /* Ctrl+Space -> zorla tamamlama. e.code "Space"; bazi klavyelerde
+       * / IME durumlarinda e.code "Space" yerine " " gibi gelmez ama
+       * e.key " " olabilir — ikisini de dene. */
+      const isCtrlSpace =
+        e.key === " " && (e.ctrlKey || e.metaKey) &&
+        (e.code === "Space" ||
+          e.code === "Spacebar" ||
+          e.code === "" ||
+          e.code === "Numpad0" ||
+          !e.code);
+      if (isCtrlSpace) {
         e.preventDefault();
         e.stopImmediatePropagation();
         refreshRef.current(true);
