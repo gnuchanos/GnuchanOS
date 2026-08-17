@@ -140,8 +140,14 @@ static void gcdl_setup_raylib(lua_State *L, char *err, size_t err_cap) {
             snprintf(err, err_cap, "failed to load lua_raylib.gcDL: %s (code %lu)", full,
                      (unsigned long)GetLastError());
 #else
-            snprintf(err, err_cap, "failed to load lua_raylib.gcDL: %s (%s)", full,
-                     dlerror() ? dlerror() : "unknown error");
+            {
+                /* dlerror() cagri basina YALNIZCA bir kez gecerlidir;
+                 * iki kez cagirmak ikinci cagrida NULL verir (CI'da
+                 * "((null))" olarak gorunuyordu). Once al, hemen kopyala. */
+                const char *dlmsg = dlerror();
+                snprintf(err, err_cap, "failed to load lua_raylib.gcDL: %s (%s)",
+                         full, dlmsg ? dlmsg : "unknown error");
+            }
 #endif
         }
         /* gcl = {} — a script that uses gcl.raylib gets a clear Lua error */

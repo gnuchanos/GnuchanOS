@@ -127,6 +127,11 @@ BRIDGE_C = os.path.join(GCS, "gcdl_bridge.c")
 
 def sh(cmd, what, cwd=None, env=None):
     print("makefile.py: building " + what)
+    # CI logunu bulandiran -Wformat-truncation uyarilari (snprintf'in
+    # "may be truncated" analizi) kapatilir; derlemeyi durdurmuyordu ama
+    # temiz log icin bekleniyor. Yalnizca gcc/g++/clang cagrilarinda eklenir.
+    if cmd and (str(cmd[0]).find("gcc") >= 0 or str(cmd[0]).find("clang") >= 0):
+        cmd = list(cmd) + [NO_TRUNC]
     if subprocess.call(cmd, cwd=cwd, env=env) != 0:
         print("makefile.py: error: " + what + " derlenemedi", file=sys.stderr)
         sys.exit(1)
@@ -157,6 +162,14 @@ RAYLIB_GLFW_INC = os.path.join(RAYLIB_SRC, "external", "glfw", "include")
 RAYLIB_BIND_C = os.path.join(LUA_RAYLIB, "gcl_raylib_bind.c")
 RAYLIB_CORE_SRCS = ["rcore.c", "rshapes.c", "rtext.c", "rtextures.c",
                     "rmodels.c", "raudio.c"]
+# Linux: raylib PLATFORM_DESKTOP (X11/GLFW) kullandigi icin sistem GLFW'sine
+# baglanilir (-lglfw3; CI workflow'unda libglfw3-dev kurulur). GLFW
+# kaynaklarini tek tek derlemek "undefined symbol: glfwGetProcAddress"
+# ile sonuclaniyordu (CI hatasi: "failed to load lua_raylib.gcDL: ((null))").
+# Windows GLFW kullanmaz — Win32 backend'i dogrudan -lopengl32 ile gelir.
+# CI logunu bulandiran -Wformat-truncation uyarilari derlemeyi durdurmaz;
+# temiz log icin tüm GCC cagrilarinda kapatilir (gcc/mingw ikisinde gecerli).
+NO_TRUNC = "-Wno-format-truncation"
 RAYLIB_SUPPORT_FLAGS = [
     "-DGRAPHICS_API_OPENGL_33",
     "-DSUPPORT_MODULE_RTEXT", "-DSUPPORT_MODULE_RSHAPES",
@@ -610,6 +623,11 @@ class gnuLinux(windows):
         # Linux Makefile'i de yalnizca "-Isrc -Isrc/external/glfw/include"
         # kullanir (external dosyalari "external/miniaudio.h" gibi alt yol
         # ile zaten cagrilir; yalin <dirent.h> sistemden gelir).
+        # GLFW: raylib PLATFORM_DESKTOP (Linux) sistem GLFW'sine bağlanir
+        # (-lglfw3); glfw.h başliklari raylib external/glfw/include altinda.
+        # CI workflow'u libglfw3-dev kurar; local WSL'de
+        #   sudo apt-get install -y libglfw3-dev
+        # ile hazir edilir.
         return [CC, "-std=c11", "-O2", "-fPIC", "-shared",
                 "-DPLATFORM_DESKTOP",
                 "-DGRAPHICS_API_OPENGL_33",
@@ -619,10 +637,15 @@ class gnuLinux(windows):
                 "-DSUPPORT_GESTURES_SYSTEM", "-DSUPPORT_MOUSE_GESTURES",
                 "-I" + RAYLIB_SRC, "-I" + RAYLIB_GLFW_INC] + \
             [os.path.join(RAYLIB_SRC, n) for n in RAYLIB_CORE_SRCS]
-
     def raylib_link(self):
+        # GLFW: "-lglfw3" CI Ubuntu'da calisir ama WSL/Debian'da libglfw3-dev
+        # gelistirme symlink'i (libglfw.so) kurmaz -> "cannot find -lglfw3".
+        # "-l:libglfw.so.3" linker'a TAM dosya adi verir ve her iki dagitimda
+        # da mevcuttur (runtime lib). --no-as-needed: DT_NEEDED'a girip
+        # dlopen'da otomatik cozulur -> "undefined symbol: glfwGetProcAddress"
+        # kokten kalkar.
         return ["-Wl,--no-as-needed", "-lm", "-ldl", "-lpthread", "-lGL",
-                "-lX11", "-lXrandr", "-lXi", "-lXcursor"]
+                "-l:libglfw.so.3", "-lX11", "-lXrandr", "-lXi", "-lXcursor"]
 
     def lua_raylib_BUILD(self):
         need(RAYLIB_BIND_C, "gcl_raylib_bind.c")
