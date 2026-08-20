@@ -71,7 +71,8 @@ typedef enum {
     STAGE_PYTHON,     /* gcl -pyrun script.py */
     STAGE_PYVER,      /* gcl -pyrun -version — embedded python version */
     STAGE_PYRESOLVE,  /* gcl -pyrun -resolve <module>|<prefix> — introspection */
-    STAGE_PYMOD       /* gcl -m <module> [args...] — run python module */
+    STAGE_PYMOD,      /* gcl -m <module> [args...] — run python module */
+    STAGE_CHECK       /* gcl -check file.gcsf — semantic + typecheck */
 } Stage;
 
 /* ── Config ─────────────────────────────────────────────── */
@@ -216,12 +217,13 @@ static int check_extension(const char *path) {
     const char *dot = strrchr(path, '.');
     if (dot == NULL) {
         gcl_error("input file has no extension: '%s'", path);
-        gcl_error("expected extensions: .gcsf or .gclib");
+        gcl_error("expected extensions: .gcsf, .gclib, .gctf, .gcdata");
         return -1;
     }
-    if (strcmp(dot, ".gcsf") == 0 || strcmp(dot, ".gclib") == 0)
+    if (strcmp(dot, ".gcsf") == 0 || strcmp(dot, ".gclib") == 0 ||
+        strcmp(dot, ".gctf") == 0 || strcmp(dot, ".gcdata") == 0)
         return 0;
-    gcl_error("unsupported extension '%s' (expected: .gcsf or .gclib)", dot);
+    gcl_error("unsupported extension '%s' (expected: .gcsf, .gclib, .gctf, .gcdata)", dot);
     return -1;
 }
 
@@ -330,31 +332,38 @@ static int load_source(const char *path, Source *src) {
 
 /* ── Stages (modules to be wired) ───────────────────────── */
 
+#include "src/SharedPipeline/gcl.h"
+
 static int stage_dump(const Config *cfg, const Source *src) {
-    const char *module = NULL;
-    const char *label = NULL;
-
-    switch (cfg->stage) {
-        case STAGE_LEXER:  module = "Lexer";  label = "Lexer";  break;
-        case STAGE_PARSER: module = "Parser"; label = "Parser"; break;
-        case STAGE_AST:    module = "AST";    label = "AST";    break;
-        case STAGE_IR:     module = "Ir";     label = "IR";     break;
-        default:
-            gcl_error("unknown stage");
-            return -1;
-    }
-
-    printf(GCL_COLOR_MAGENTA_BRIGHT "-- %s --\n" GCL_COLOR_RESET, label);
-    printf(GCL_COLOR_MAGENTA "  input : %s\n" GCL_COLOR_RESET, cfg->input_file);
-    printf(GCL_COLOR_MAGENTA "  size  : %zu bytes / %zu lines\n" GCL_COLOR_RESET, src->size, src->lines);
     if (cfg->debug) {
-        printf(GCL_COLOR_MAGENTA_DIM "  stage : src/SharedPipeline/%s\n" GCL_COLOR_RESET, module);
-        printf(GCL_COLOR_MAGENTA_DIM "  paths : include=%zu lib=%zu extern=%zu\n" GCL_COLOR_RESET,
-               cfg->include_count, cfg->lib_count, cfg->extern_count);
+        const char *label = cfg->stage == STAGE_LEXER ? "Lexer" :
+                             cfg->stage == STAGE_PARSER ? "Parser" :
+                             cfg->stage == STAGE_AST ? "AST" :
+                             cfg->stage == STAGE_IR ? "IR" :
+                             cfg->stage == STAGE_CHECK ? "Check" : "Unknown";
+        printf(GCL_COLOR_MAGENTA_BRIGHT "-- %s --\n" GCL_COLOR_RESET, label);
+        printf(GCL_COLOR_MAGENTA "  input : %s\n" GCL_COLOR_RESET, cfg->input_file);
+        printf(GCL_COLOR_MAGENTA "  size  : %zu bytes / %zu lines\n" GCL_COLOR_RESET, src->size, src->lines);
     }
-    gcl_error("pipeline stage '%s' not implemented yet (src/SharedPipeline/%s)",
-              label, module);
-    return 1;
+
+    if (cfg->stage == STAGE_LEXER)
+        return gcl_dump_tokens(src->data);
+
+    if (cfg->stage == STAGE_IR)
+        return gcl_dump_ir(src->data);
+
+    if (cfg->stage == STAGE_CHECK) {
+        GclDiagBag diag;
+        gcl_diag_bag_init(&diag);
+        int errors = gcl_full_pipeline(src->data, &diag);
+        if (errors == 0 && diag.warning_count == 0) {
+            printf(GCL_COLOR_MAGENTA "gcl: check passed (no errors, no warnings)\n" GCL_COLOR_RESET);
+        }
+        return errors;
+    }
+
+    /* parser / AST */
+    return gcl_dump_ast(src->data);
 }
 
 static int stage_backend(const Config *cfg, const Source *src) {
@@ -364,18 +373,8 @@ static int stage_backend(const Config *cfg, const Source *src) {
         printf(GCL_COLOR_MAGENTA "  input  : %s\n" GCL_COLOR_RESET, cfg->input_file);
         printf(GCL_COLOR_MAGENTA "  output : %s\n" GCL_COLOR_RESET, cfg->output_path);
         printf(GCL_COLOR_MAGENTA "  size   : %zu bytes / %zu lines\n" GCL_COLOR_RESET, src->size, src->lines);
-        printf(GCL_COLOR_MAGENTA_DIM "  include: %zu paths\n" GCL_COLOR_RESET, cfg->include_count);
-        for (size_t i = 0; i < cfg->include_count; i++)
-            printf(GCL_COLOR_MAGENTA_DIM "    %s\n" GCL_COLOR_RESET, cfg->include_paths[i]);
-        printf(GCL_COLOR_MAGENTA_DIM "  lib    : %zu paths\n" GCL_COLOR_RESET, cfg->lib_count);
-        for (size_t i = 0; i < cfg->lib_count; i++)
-            printf(GCL_COLOR_MAGENTA_DIM "    %s\n" GCL_COLOR_RESET, cfg->lib_paths[i]);
-        printf(GCL_COLOR_MAGENTA_DIM "  extern : %zu paths\n" GCL_COLOR_RESET, cfg->extern_count);
-        for (size_t i = 0; i < cfg->extern_count; i++)
-            printf(GCL_COLOR_MAGENTA_DIM "    %s\n" GCL_COLOR_RESET, cfg->extern_paths[i]);
     }
-    gcl_error("backend pipeline not implemented yet (SharedPipeline -> FastIR)");
-    return 1;
+    return gcl_run_file(src->data, cfg->input_file);
 }
 
 /* ── Entry point ────────────────────────────────────────── */
@@ -413,6 +412,8 @@ int main(int argc, const char **argv) {
                 cfg.stage = STAGE_AST;
             } else if (strcmp(arg, "-ir") == 0) {
                 cfg.stage = STAGE_IR;
+            } else if (strcmp(arg, "-check") == 0) {
+                cfg.stage = STAGE_CHECK;
             } else if (strcmp(arg, "-run") == 0) {
                 cfg.stage = STAGE_RUN;
             } else if (strcmp(arg, "-luarun") == 0 || strcmp(arg, "--luarun") == 0) {

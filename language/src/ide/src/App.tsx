@@ -57,7 +57,6 @@ function isDocLang(lang: string): boolean {
   return lang === "doc" || lang === "ref";
 }
 
-let outputCounter = 0;
 
 export default function App() {
   const [root, setRoot] = useState<string>("");
@@ -251,8 +250,7 @@ export default function App() {
   /* ---- output ---- */
   useEffect(() => {
     return window.ide.onOutput((line) => {
-      const id = outputCounter++;
-      setOutput((o) => [...o.slice(-1999), `[${id}] ${line.trimEnd()}`]);
+      setOutput((o) => [...o.slice(-1999), line.trimEnd()]);
     });
   }, []);
 

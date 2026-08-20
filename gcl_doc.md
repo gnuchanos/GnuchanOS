@@ -1,5 +1,10 @@
 # GCL is HUB LANGUAGE
 
+# Part Part System -> Part 1, Part 2
+
+
+# Part 1
+
 ## Giriş (Intro)
 
 -flags yerine her turlu flaglar gelebilir fark etmiyor
@@ -62,35 +67,6 @@ src/
 SharedPipeline -> FastIR
 ```
 
-# gcl -run
-İlk 1000 çağrı
-       │
-       ▼
-Simple Interpreter
-       │
-       ▼
-JIT
-       │
-       ▼
-Çalışan Kod
-
-# gcl -frun
-Program
-  │
-  ▼
-Bytecode + VM
-  │
-  ▼
-Çok kullanılan fonksiyon
-  │
-  ▼
-JIT
-  │
-  ▼
-Makine Kodu
-
-
-
 ## memory management
 
 ```
@@ -126,12 +102,14 @@ comment |#
 
 ```
 #include "script.gcsf" yada <script.gcsf>
+    how to call: member
 ```
 
 ### for moduler system
 
 ```
 #lib "library.gclib" yada <library.gclib>
+    how to call: library.member
 ```
 
 ### .so, .dll, .a
@@ -140,6 +118,9 @@ comment |#
 #extern "raylib.dll" yada <raylib.so>
     #register void InitWindow(int width, int height, const char *title);
     #register void CloseWindow(void);
+
+
+    how to call: InitWindow(300, 300, "uwu");
 ```
 
 ### macros
@@ -171,9 +152,9 @@ you can use in main.gcsf, include .gcsf and .gclib
 ### output
 
 ```
-#debug #// mavi
-#warning #// sari
-#error #// kirmizi
+#debug ..., ... #// mavi
+#warning ..., ... #// sari
+#error ..., ... #// kirmizi
 ```
 
 ### main girişi (main())
@@ -200,6 +181,9 @@ int main() {
 }
 ```
 
+# Part 2
+
+
 ## GCL Temelleri (GCL 101)
 
 ```
@@ -217,7 +201,7 @@ type identifier1, identifier1, identifier1 = variable;
 void print_this_global() {
     global gx;
 
-    printf("Global GX: %s \n", gx);
+    printf("Global GX: %d \n", gx);
 }
 
 void print_this_local() {
@@ -225,7 +209,7 @@ void print_this_local() {
 
     int gx = 31;
 
-    printf("local GX: %s \n", gx);
+    printf("local GX: %d \n", gx);
 }
 
 int gx = 10;
@@ -235,6 +219,8 @@ print_this_local();
 type a = var;
 pointer ->, &
 ```
+
+# Part 3
 
 ## Veri Tipleri (Types)
 
@@ -383,6 +369,8 @@ uint64  number4 = 10000;
 uint128 number5 = 100000;
 ```
 
+# Part 4
+
 ### this is not vanilla char
 
 ```
@@ -452,6 +440,7 @@ char ***games = malloc(sizeof(char ***) * 4); #// 3D malloc
 ```
 gcChar a = 'a';                      #// utf-8 char
 gcChar game[] = "Half Life 3";
+gcChar *game = "Half Life 3";
 
 # type identifier[] @dimension_size = {}
 
@@ -489,6 +478,8 @@ gcChar *gamesgames[] @3 = { #// : number means dimension size
 };
     #// no need to malloc
 ```
+
+# Part 5
 
 #### numbers
 
@@ -533,6 +524,8 @@ Player *Player_List = gcMalloc(reserve=MAX_PLAYER, extra=10);
 # - If you don't, GCL automatically frees the memory before the program exits.
 ```
 
+# Part 6
+
 ### typedef
 
 ```
@@ -560,6 +553,8 @@ typedef << leftShift;
 typedef >> rightShift;
 ```
 
+# Part 7
+
 ### enum
 
 ```
@@ -571,6 +566,8 @@ enum Color {
 
 enum Color _RED = RED;
 ```
+
+# Part 8
 
 ### struct
 
@@ -610,6 +607,8 @@ typedef enum Color {
 Color _RED = RED;
 ```
 
+# Part 9
+
 ### tuple
 
 ```
@@ -638,6 +637,8 @@ dict player = {
 };
 ```
 
+# Part 10
+
 ## Akış Kontrolü (Control Flow)
 
 ### boolean
@@ -665,6 +666,8 @@ switch() {
 }
 ```
 
+# Part 11
+
 ### for
 
 ```
@@ -674,6 +677,8 @@ for(int i = 0; i < siz; i++) {
 ```
 
 break, continue, return
+
+# Part 12
 
 ### while
 
@@ -691,12 +696,16 @@ do {
 
 break, continue, return
 
+# Part 13
+
 ### functions
 
 ```
 void function(..., ...);
 type function(..., ...);
 ```
+
+# Part 14
 
 ## class
 
@@ -753,12 +762,12 @@ class CHILD(FATHER) {
 }
 
 
-FATHER ThisFather = FATHER #// no head means ()
-CHILD  ThisChild  = CHILD(ThisFather)
+FATHER ThisFather = FATHER(); #// no head means ()
+CHILD  ThisChild  = CHILD(ThisFather);
 
-printf("FATHER CALL: %s", ThisFather.Call);
+printf("FATHER CALL: %s", ThisFather.Call());
 
 printf("Child Name: %s \n", ThisChild.name);
-printf("Child Name: %d \n", ThisChild.age);
-printf("FATHER CALL From Child No Header: %s \n", ThisChild.Call);
+printf("Child Age: %d \n", ThisChild.age());
+printf("FATHER CALL From Child No Header: %s \n", ThisChild.Call());
 printf("FATHER CALL From Child With Header: %s \n", ThisChild.talk());

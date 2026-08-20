@@ -59,8 +59,41 @@ async function lspCompleteSafe(
   return Promise.race([task, timeout]);
 }
 
+/* Monaco find widget (Ctrl+F arama penceresi) renkleri: tema paletinden
+ * turetir. `editorWidget`/`input`/`button`/`list` alanlari arama kutusu,
+ * sonuc listesi ve toggle butonlarini (regex, duyarlilik) boyar; aksi
+ * halde widget vs-dark varsayilaninda kalip temaya uymazdi. */
+function findWidgetColors(palette: Palette): Record<string, string> {
+  return {
+    "editorWidget.background": palette.editorWidget,
+    "editorWidget.border": palette.editorWidgetBorder,
+    "editorWidget.foreground": palette.suggestFg,
+    "input.background": palette.inputBg,
+    "input.foreground": palette.inputFg,
+    "input.border": palette.inputBorder,
+    "input.placeholderForeground": palette.inputPlaceholder,
+    "inputOption.activeBackground": palette.editorWidgetSel,
+    "inputOption.activeBorder": palette.focusBorder,
+    "inputOption.activeForeground": palette.suggestSelectedFg,
+    "focusBorder": palette.focusBorder,
+    "button.background": palette.buttonBg,
+    "button.foreground": palette.buttonFg,
+    "button.hoverBackground": palette.buttonHoverBg,
+    "list.hoverBackground": palette.listHoverBg,
+    "list.hoverForeground": palette.listHoverFg,
+    "list.activeSelectionBackground": palette.listActiveBg,
+    "list.activeSelectionForeground": palette.listActiveFg,
+    "editor.findMatchBackground": palette.selectionBg,
+    "editor.findMatchHighlightBackground": palette.selectionBg,
+    "editor.findRangeHighlightBackground": palette.selectionBg,
+    "editor.findMatchBorder": palette.acc,
+    "editor.findMatchHighlightBorder": palette.acc,
+  };
+}
+
 /* gcl-theme tanimi (onMount + useEffect icin). Native suggest kullanilmasa
- * da editor bg/fg/token renkleri buradan gelir. */
+ * da editor bg/fg/token renkleri buradan gelir; find widget renkleri de
+ * buraya bindirilir. */
 function defineGclTheme(monacoInstance: typeof monaco, palette: Palette) {
   monacoInstance.editor.defineTheme("gcl-theme", {
     base: "vs-dark",
@@ -81,6 +114,7 @@ function defineGclTheme(monacoInstance: typeof monaco, palette: Palette) {
       "editorLineNumber.foreground": palette.editorLineNum,
       "editorCursor.foreground": palette.editorCursor,
       "editor.selectionBackground": palette.editorSelection,
+      ...findWidgetColors(palette),
     },
   });
   monacoInstance.editor.setTheme("gcl-theme");
@@ -415,6 +449,7 @@ export default function EditorView({
         "editorLineNumber.foreground": palette.editorLineNum,
         "editorCursor.foreground": palette.editorCursor,
         "editor.selectionBackground": palette.editorSelection,
+        ...findWidgetColors(palette),
       },
     });
     monaco.editor.setTheme("gcl-theme");

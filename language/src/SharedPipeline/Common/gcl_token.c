@@ -1,0 +1,135 @@
+#include <string.h>
+#include "gcl_common.h"
+#include "gcl_token.h"
+
+const char *gcl_token_kind_name(GclTokenKind kind) {
+    switch (kind) {
+    case TOK_INT_LIT:       return "INT_LIT";
+    case TOK_FLOAT_LIT:     return "FLOAT_LIT";
+    case TOK_STRING_LIT:    return "STRING_LIT";
+    case TOK_CHAR_LIT:      return "CHAR_LIT";
+    case TOK_IDENT:         return "IDENT";
+    case TOK_KW_INT:        return "int";
+    case TOK_KW_INT8:       return "int8";
+    case TOK_KW_INT16:      return "int16";
+    case TOK_KW_INT32:      return "int32";
+    case TOK_KW_INT64:      return "int64";
+    case TOK_KW_INT128:     return "int128";
+    case TOK_KW_UINT8:      return "uint8";
+    case TOK_KW_UINT16:     return "uint16";
+    case TOK_KW_UINT32:     return "uint32";
+    case TOK_KW_UINT64:     return "uint64";
+    case TOK_KW_UINT128:    return "uint128";
+    case TOK_KW_FLOAT:      return "float";
+    case TOK_KW_FLOAT16:    return "float16";
+    case TOK_KW_FLOAT32:    return "float32";
+    case TOK_KW_FLOAT64:    return "float64";
+    case TOK_KW_FLOAT128:   return "float128";
+    case TOK_KW_DOUBLE:     return "double";
+    case TOK_KW_LONG:       return "long";
+    case TOK_KW_SHORT:      return "short";
+    case TOK_KW_UNSIGNED:   return "unsigned";
+    case TOK_KW_CHAR:       return "char";
+    case TOK_KW_GCCHAR:     return "gcChar";
+    case TOK_KW_BOOL:       return "bool";
+    case TOK_KW_VOID:       return "void";
+    case TOK_KW_NULL:       return "null";
+    case TOK_KW_CONST:      return "const";
+    case TOK_KW_INLINE:     return "inline";
+    case TOK_KW_GLOBAL:     return "global";
+    case TOK_KW_PUBLIC:     return "public";
+    case TOK_KW_PRIVATE:    return "private";
+    case TOK_KW_IF:         return "if";
+    case TOK_KW_ELSE:       return "else";
+    case TOK_KW_ELIF:       return "elif";
+    case TOK_KW_FOR:        return "for";
+    case TOK_KW_WHILE:      return "while";
+    case TOK_KW_DO:         return "do";
+    case TOK_KW_SWITCH:     return "switch";
+    case TOK_KW_CASE:       return "case";
+    case TOK_KW_DEFAULT:    return "default";
+    case TOK_KW_BREAK:      return "break";
+    case TOK_KW_CONTINUE:   return "continue";
+    case TOK_KW_RETURN:     return "return";
+    case TOK_KW_STRUCT:     return "struct";
+    case TOK_KW_ENUM:       return "enum";
+    case TOK_KW_TYPEDEF:    return "typedef";
+    case TOK_KW_CLASS:      return "class";
+    case TOK_KW_TUPLE:      return "tuple";
+    case TOK_KW_DICT:       return "dict";
+    case TOK_KW_SIZEOF:     return "sizeof";
+    case TOK_KW_MALLOC:     return "malloc";
+    case TOK_KW_FREE:       return "free";
+    case TOK_KW_GCMALLOC:   return "gcMalloc";
+    case TOK_KW_PRINTF:     return "printf";
+    case TOK_KW_SCANF:      return "scanf";
+    case TOK_KW_EXTERN:     return "extern";
+    case TOK_PP_INCLUDE:    return "#include";
+    case TOK_PP_LIB:        return "#lib";
+    case TOK_PP_EXTERN:     return "#extern";
+    case TOK_PP_REGISTER:   return "#register";
+    case TOK_PP_DEFINE:     return "#define";
+    case TOK_PP_UNDEF:      return "#undef";
+    case TOK_PP_IFDEF:      return "#ifdef";
+    case TOK_PP_IFNDEF:     return "#ifndef";
+    case TOK_PP_IF:         return "#if";
+    case TOK_PP_ELIF_PP:    return "#elif";
+    case TOK_PP_ELSE:       return "#else";
+    case TOK_PP_ENDIF:      return "#endif";
+    case TOK_PP_WARNING:    return "#warning";
+    case TOK_PP_ERROR:      return "#error";
+    case TOK_PP_DEBUG:      return "#debug";
+    case TOK_PLUS:          return "+";
+    case TOK_MINUS:         return "-";
+    case TOK_STAR:          return "*";
+    case TOK_SLASH:         return "/";
+    case TOK_PERCENT:       return "%";
+    case TOK_PLUSPLUS:      return "++";
+    case TOK_MINUSMINUS:   return "--";
+    case TOK_PLUS_EQ:      return "+=";
+    case TOK_MINUS_EQ:     return "-=";
+    case TOK_STAR_EQ:      return "*=";
+    case TOK_SLASH_EQ:     return "/=";
+    case TOK_EQ:            return "=";
+    case TOK_EQEQ:         return "==";
+    case TOK_BANGEQ:       return "!=";
+    case TOK_LT:            return "<";
+    case TOK_GT:            return ">";
+    case TOK_LTEQ:          return "<=";
+    case TOK_GTEQ:          return ">=";
+    case TOK_AMP:           return "&";
+    case TOK_PIPE:          return "|";
+    case TOK_CARET:         return "^";
+    case TOK_TILDE:         return "~";
+    case TOK_AMPAMP:        return "&&";
+    case TOK_PIPEPIPE:     return "||";
+    case TOK_BANG:          return "!";
+    case TOK_LSHIFT:        return "<<";
+    case TOK_RSHIFT:        return ">>";
+    case TOK_ARROW:         return "->";
+    case TOK_DOT:           return ".";
+    case TOK_LPAREN:        return "(";
+    case TOK_RPAREN:        return ")";
+    case TOK_LBRACE:        return "{";
+    case TOK_RBRACE:        return "}";
+    case TOK_LBRACKET:      return "[";
+    case TOK_RBRACKET:      return "]";
+    case TOK_SEMICOLON:     return ";";
+    case TOK_COMMA:         return ",";
+    case TOK_COLON:         return ":";
+    case TOK_AT:            return "@";
+    case TOK_EOF:           return "EOF";
+    case TOK_NEWLINE:       return "NEWLINE";
+    case TOK_UNKNOWN:       return "UNKNOWN";
+    }
+    return "???";
+}
+
+void gcl_token_init(GclToken *tok, GclTokenKind kind,
+                    const char *start, size_t length, int line, int col) {
+    tok->kind = kind;
+    tok->start = start;
+    tok->length = length;
+    tok->line = line;
+    tok->col = col;
+}

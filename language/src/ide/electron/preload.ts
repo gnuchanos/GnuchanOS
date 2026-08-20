@@ -9,6 +9,7 @@ const api: IdeApi = {
   createDir: (dir) => ipcRenderer.invoke("fs:createDir", dir),
   deleteFs: (p) => ipcRenderer.invoke("fs:delete", p),
   copyFile: (src, dst) => ipcRenderer.invoke("fs:copy", src, dst),
+  renameFs: (src, dst) => ipcRenderer.invoke("fs:rename", src, dst),
   setWorkspace: (dir) => ipcRenderer.invoke("workspace:set", dir),
   dirTree: (dir) => ipcRenderer.invoke("dir:tree", dir),
   docsList: (dir) => ipcRenderer.invoke("docs:list", dir),

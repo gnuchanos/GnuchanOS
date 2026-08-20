@@ -543,7 +543,17 @@ async function collectFiles(root: string, exts: string[]): Promise<string[]> {
   return out;
 }
 
+/* Rekürsif kopya: dosya -> tek kopya, klasor -> icini gezerek kopyala.
+ * Explorer'daki "Copy" klasorler dahil kopyalayabilmeli (VS Code gibi). */
 async function copyRel(src: string, dst: string) {
+  const st = await fs.promises.stat(src);
+  if (st.isDirectory()) {
+    await fs.promises.mkdir(dst, { recursive: true });
+    const items = await fs.promises.readdir(src);
+    for (const it of items)
+      await copyRel(path.join(src, it), path.join(dst, it));
+    return;
+  }
   await fs.promises.mkdir(path.dirname(dst), { recursive: true });
   await fs.promises.copyFile(src, dst);
 }
@@ -670,6 +680,9 @@ function send(channel: string, payload: unknown) {
  * yazar — prompt "silinir". Hepsi "\n"e indirgenirse convertEol:true
  * satirlari dogru yonetir, cift satir boslugu da olusmaz. */
 function sendOutput(s: string) {
+  /* Don't strip ANSI — OutputPanel parses ANSI for colored output,
+   * TerminalPanel (xterm) also handles ANSI natively.
+   * Just normalize line endings. */
   send("output:line", s.replace(/\r\n/g, "\n").replace(/\r/g, "\n"));
 }
 
@@ -682,8 +695,8 @@ function runGcl(args: string[], cwd: string, label: string) {
   send("output:line", `[GnuChanIDE] $ ${gcl} ${args.join(" ")}\n`);
   child?.kill();
   child = spawn(gcl, args, { cwd });
-  child.stdout?.on("data", (d) => sendOutput(stripAnsi(d.toString())));
-  child.stderr?.on("data", (d) => sendOutput(stripAnsi(d.toString())));
+  child.stdout?.on("data", (d) => sendOutput(d.toString()));
+  child.stderr?.on("data", (d) => sendOutput(d.toString()));
   child.on("close", (code) => {
     send("output:line", `[GnuChanIDE] ${label} exit code: ${code ?? "?"}\n`);
     child = null;
@@ -699,8 +712,8 @@ function spawnSystemShell() {
     : process.env.SHELL || "/bin/bash";
   child?.kill();
   child = spawn(shell, [], { cwd: workspaceRoot || process.cwd() });
-  child.stdout?.on("data", (d) => sendOutput(stripAnsi(d.toString())));
-  child.stderr?.on("data", (d) => sendOutput(stripAnsi(d.toString())));
+  child.stdout?.on("data", (d) => sendOutput(d.toString()));
+  child.stderr?.on("data", (d) => sendOutput(d.toString()));
   child.on("close", (code) => {
     send(
       "output:line",
@@ -843,8 +856,30 @@ function listDocs(root: string): DocsEntry[] {
   return out;
 }
 
+/* Explorer'da korumalı (sabit) görünecek kök öğeler: src/, Library/ ve
+ * Project.gcDATA. Silinemez, taşınamaz, yeniden adlandırılamaz. */
+function isProtectedEntry(dir: string, name: string): boolean {
+  if (!workspaceRoot) return false;
+  const root = path.normalize(workspaceRoot);
+  const full = path.join(dir, name);
+  /* src/ ve Library/ klasörleri hicbir yerden silinemez; Project.gcDATA
+   * dosyası da kök metadata'dır. Bunların dışındaki her şey serbest. */
+  if (name === "src" || name === "Library") {
+    return path.normalize(path.dirname(full)) === root;
+  }
+  if (name === "Project.gcDATA") {
+    return path.normalize(path.dirname(full)) === root;
+  }
+  return false;
+}
+
 function listTree(dir: string): Record<string, unknown>[] {
-  const entries: { name: string; path: string; dir: boolean }[] = [];
+  const entries: {
+    name: string;
+    path: string;
+    dir: boolean;
+    protected: boolean;
+  }[] = [];
   try {
     const items = fs.readdirSync(dir, { withFileTypes: true });
     items.sort((a, b) => {
@@ -858,6 +893,7 @@ function listTree(dir: string): Record<string, unknown>[] {
         name: it.name,
         path: path.join(dir, it.name),
         dir: it.isDirectory(),
+        protected: isProtectedEntry(dir, it.name),
       });
     }
   } catch {
@@ -998,37 +1034,102 @@ function setupIpc() {
     }
   });
   /* ---- fs/dir CRUD (Explorer context menu) ----
-   * Dosya/klasor olusturmak yalnizca projenin src/ altinda serbest. */
-  const isInSrc = (p: string) => {
+   * Cekirdek dizinler (src/, Library/, Project.gcDATA) tasarim geregi
+   * SABITTIR: isimleri degistirilemez, silinemez, tasinamaz ve src'den
+   * disari cikarilamaz. Diger her sey (src altindaki klasorler/dosyalar,
+   * LIBRARY DISINDAKI kok ogeleri) tam CRUD'a aciktir. */
+  const isProtectedRoot = (p: string) => {
     if (!workspaceRoot) return false;
     const norm = path.normalize(p);
     const root = path.normalize(workspaceRoot);
     const src = path.join(root, "src");
-    return norm.startsWith(src + path.sep) || norm === src;
+    const lib = path.join(root, "Library");
+    const meta = path.join(root, "Project.gcDATA");
+    return norm === src || norm === lib || norm === meta ||
+      isInside(lib, norm); /* Library'nin KENDISI ve icindeki her sey korumali */
+  };
+  const isInside = (parent: string, child: string) => {
+    const p = path.normalize(parent);
+    const c = path.normalize(child);
+    return c === p || c.startsWith(p + path.sep);
+  };
+  /* Hedef icinde korumali bir alan var mi? (tasi/kopyala hedef kontrolu) */
+  const dstInsideProtected = (dst: string) => {
+    if (!workspaceRoot) return true;
+    const norm = path.normalize(dst);
+    const root = path.normalize(workspaceRoot);
+    const lib = path.join(root, "Library");
+    return isInside(lib, norm);
   };
   ipcMain.handle("fs:createFile", async (_e, file: string, content?: string) => {
-    if (!isInSrc(file)) {
-      return { ok: false, message: "Only create files inside the project src/" };
+    if (dstInsideProtected(file)) {
+      return { ok: false, message: "Cannot create inside the protected Library/" };
     }
-    await fs.promises.mkdir(path.dirname(file), { recursive: true });
-    await fs.promises.writeFile(file, content ?? "", "utf-8");
-    return { ok: true };
+    try {
+      await fs.promises.mkdir(path.dirname(file), { recursive: true });
+      await fs.promises.writeFile(file, content ?? "", "utf-8");
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message };
+    }
   });
   ipcMain.handle("fs:createDir", async (_e, dir: string) => {
-    if (!isInSrc(dir)) {
-      return { ok: false, message: "Only create folders inside the project src/" };
+    if (dstInsideProtected(dir)) {
+      return { ok: false, message: "Cannot create inside the protected Library/" };
     }
-    await fs.promises.mkdir(dir, { recursive: true });
-    return { ok: true };
+    try {
+      await fs.promises.mkdir(dir, { recursive: true });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message };
+    }
   });
   ipcMain.handle("fs:delete", async (_e, p: string) => {
-    const st = await fs.promises.stat(p);
-    if (st.isDirectory())
-      await fs.promises.rm(p, { recursive: true, force: true });
-    else await fs.promises.unlink(p);
+    if (isProtectedRoot(p)) {
+      return {
+        ok: false,
+        message: "Protected: src/, Library/ and Project.gcDATA cannot be deleted",
+      };
+    }
+    try {
+      const st = await fs.promises.stat(p);
+      if (st.isDirectory())
+        await fs.promises.rm(p, { recursive: true, force: true });
+      else await fs.promises.unlink(p);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message };
+    }
   });
+  /* Ayni dizin = rename; farkli dizin = move (cut+paste). Kaynak korumali
+   * veya Library icindeyse reddedilir; hedef Library icindeyse reddedilir. */
+  ipcMain.handle("fs:rename", async (_e, src: string, dst: string) => {
+    if (isProtectedRoot(src) || isInside(path.join(workspaceRoot, "Library"), src))
+      return {
+        ok: false,
+        message: "Protected: src/, Library/ and Project.gcDATA cannot be renamed or moved",
+      };
+    if (dstInsideProtected(dst))
+      return { ok: false, message: "Cannot move into the protected Library/" };
+    try {
+      await fs.promises.rename(src, dst);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message };
+    }
+  });
+  /* Kopya: kaynak Library icinden OKUNABILIR (wrapper'lar), hedef yalnizca
+   * Library DISINA olabilir. Basit dosya kopyasi: klasorler icin copyRel
+   * recursive degildir, tek dosyadir. */
   ipcMain.handle("fs:copy", async (_e, src: string, dst: string) => {
-    await copyRel(src, dst);
+    if (dstInsideProtected(dst))
+      return { ok: false, message: "Cannot copy into the protected Library/" };
+    try {
+      await copyRel(src, dst);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message };
+    }
   });
   ipcMain.handle("workspace:set", async (_e, dir: string) => {
     workspaceRoot = dir;
@@ -1245,12 +1346,14 @@ function setupIpc() {
         );
         /* Library template: refs + wrappers + docs (never empty) */
         templateLibrary(dir);
-        /* skeleton main file */
+        /* skeleton main file: tam C tabanli GCL girisi — yorum satiri yok,
+         * yalnizca int main(void) + printf ("test2/test2dev" gibi baslik
+         * satirlari artik uretilmez). */
         const mainEntry = path.join(dir, "src", "main.gcsf");
         if (!fs.existsSync(mainEntry)) {
           await fs.promises.writeFile(
             mainEntry,
-            `#// ${info.name}\n#// ${info.developer}\n\nint main(void) {\n    printf("Hello GCL!\\n");\n    return 0;\n}\n`,
+            `int main(void) {\n    printf("Hello GCL!\\n");\n    return 0;\n}\n`,
             "utf-8",
           );
         }

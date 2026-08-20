@@ -42,6 +42,9 @@
 /* Python dilinin kendi kelimeleri (keywords + builtins):
  * "impo" -> import, "pri" -> print gibi tamamlama bu tablodan gelir. */
 #include "python_syntax.h"
+/* Lua + GCL dillerinin kendi kelimeleri (Lua 5.4 + gcl_doc.md). */
+#include "lua_syntax.h"
+#include "gcl_syntax.h"
 
 #ifdef _WIN32
 #include <io.h>
@@ -89,6 +92,7 @@ typedef struct {
 typedef struct {
   char path[GCL_PATH_MAX];
   char name[GCL_NAME_MAX];     /* basename uzantisiz */
+  char lang[16];               /* "py" | "lua" | "gcl" */
   char imports[GCL_IMPORTS_MAX][GCL_NAME_MAX];
   char import_aliases[GCL_IMPORTS_MAX][GCL_NAME_MAX]; /* "import x as y" -> y */
   char wildcard[GCL_NAME_MAX]; /* "from X import *" -> X; bos = yok */
@@ -249,8 +253,12 @@ static int is_junk_dir(const char *name) {
 /* workspace taramasi                                                  */
 /* ------------------------------------------------------------------ */
 
-/* Bir klasordeki .py dosyalarini (derinlik sinirli) toplar */
-static void collect_python(Workspace *ws, const char *dir, int depth) {
+/* Bir klasordeki `ext` uzantili dosyalari (derinlik sinirli) toplar.
+ * Her dosyaya dil etiketi verilir: ".py" -> "py", ".lua" -> "lua",
+ * ".gcsf"/".gclib" -> "gcl". Lua + GCL, Python kolektorunun uzanti
+ * parametreli geneli — tek gövde uc dil icin. */
+static void collect_ext(Workspace *ws, const char *dir, int depth,
+                        const char *ext, const char *lang) {
   if (depth > 6) return;
 
 #ifdef _WIN32
@@ -264,14 +272,16 @@ static void collect_python(Workspace *ws, const char *dir, int depth) {
     char full[GCL_PATH_MAX];
     path_join(full, sizeof full, dir, fd.name);
     if (fd.attrib & _A_SUBDIR) {
-      if (!is_junk_dir(fd.name)) collect_python(ws, full, depth + 1);
+      if (!is_junk_dir(fd.name)) collect_ext(ws, full, depth + 1, ext, lang);
     } else {
       size_t n = strlen(fd.name);
-      if (n > 3 && strcmp(fd.name + n - 3, ".py") == 0) {
+      size_t el = strlen(ext);
+      if (n > el && strcmp(fd.name + n - el, ext) == 0) {
         if (ws->file_count < GCL_FILES_MAX) {
           FileIndex *f = &ws->files[ws->file_count++];
           snprintf(f->path, sizeof f->path, "%s", full);
           strip_ext(f->name, sizeof f->name, fd.name);
+          snprintf(f->lang, sizeof f->lang, "%s", lang);
           f->import_count = 0;
           f->sym_start = ws->sym_count;
           f->sym_count = 0;
@@ -289,14 +299,16 @@ static void collect_python(Workspace *ws, const char *dir, int depth) {
     char full[GCL_PATH_MAX];
     path_join(full, sizeof full, dir, e->d_name);
     if (e->d_type == DT_DIR) {
-      if (!is_junk_dir(e->d_name)) collect_python(ws, full, depth + 1);
+      if (!is_junk_dir(e->d_name)) collect_ext(ws, full, depth + 1, ext, lang);
     } else {
       size_t n = strlen(e->d_name);
-      if (n > 3 && strcmp(e->d_name + n - 3, ".py") == 0) {
+      size_t el = strlen(ext);
+      if (n > el && strcmp(e->d_name + n - el, ext) == 0) {
         if (ws->file_count < GCL_FILES_MAX) {
           FileIndex *f = &ws->files[ws->file_count++];
           snprintf(f->path, sizeof f->path, "%s", full);
           strip_ext(f->name, sizeof f->name, e->d_name);
+          snprintf(f->lang, sizeof f->lang, "%s", lang);
           f->import_count = 0;
           f->sym_start = ws->sym_count;
           f->sym_count = 0;
@@ -564,7 +576,433 @@ static void index_python_line(Workspace *ws, FileIndex *f, const char *raw) {
   }
 }
 
-/* Bir dosyayi indexle (dosya zaten Workspace.files'da kayitli) */
+/* Lua satiri isle: require + function/local/return-tablo sembolleri. */
+static void index_lua_line(Workspace *ws, FileIndex *f, const char *raw) {
+  char line[GCL_INDEX_LINE];
+  snprintf(line, sizeof line, "%s", raw);
+  trim(line);
+  if (!*line) return;
+
+  const char *s = line;
+
+  /* yorum: -- ...  veya --[[ ]] (tek satirlik kiyas) */
+  if (strncmp(s, "--", 2) == 0) return;
+
+  /* require("mod") / require "mod" / local m = require("mod") */
+  {
+    const char *rq = strstr(s, "require");
+    if (rq) {
+      /* modul adini tirnak icinden al */
+      const char *q1 = strchr(rq, '"');
+      const char *q2 = strchr(rq, '\'');
+      const char *q = NULL;
+      if (q1 && (!q2 || q1 < q2)) q = q1;
+      else q = q2;
+      if (q) {
+        const char *end = strchr(q + 1, *q);
+        if (end) {
+          char mod[GCL_NAME_MAX] = {0};
+          size_t mlen = (size_t)(end - q - 1);
+          if (mlen >= sizeof mod) mlen = sizeof mod - 1;
+          memcpy(mod, q + 1, mlen);
+          mod[mlen] = 0;
+          /* sonda kalan ")" karakterini kirp (email gibi) */
+          {
+            size_t m2 = strlen(mod);
+            while (m2 > 0 && (mod[m2 - 1] == ')' || mod[m2 - 1] == ' '))
+              mod[--m2] = 0;
+          }
+          /* "pkg/mod" -> son segment dosya modulu; kok gerekiyorsa pkg */
+          if (mod[0]) {
+            /* local m = require -> alias m */
+            char alias[GCL_NAME_MAX] = {0};
+            const char *loc = strstr(s, "local ");
+            if (loc && loc < rq) {
+              const char *n = loc + 6;
+              while (*n == ' ') n++;
+              int k = 0;
+              while (isalnum((unsigned char)*n) || *n == '_') alias[k++] = *n++;
+              alias[k] = 0;
+              /* "local m, _ = require" gibi: virgul varsa ilk ad */
+              if (alias[0] && strncmp(alias, "local", 5) != 0) {
+                /* alias bagla: pkg/mod -> son segment */
+                char res[GCL_NAME_MAX] = {0};
+                snprintf(res, sizeof res, "%s", mod);
+                char *dot = strchr(res, '/');
+                if (dot) {
+                  /* "pkg/mod" -> "mod" (dosya modulu) */
+                  memmove(res, dot + 1, strlen(dot + 1) + 1);
+                }
+                add_import_ex(f, res, alias);
+                return;
+              }
+            }
+            /* alias yoksa dogrudan mod adi import */
+            char res[GCL_NAME_MAX] = {0};
+            snprintf(res, sizeof res, "%s", mod);
+            char *dot = strchr(res, '/');
+            if (dot) memmove(res, dot + 1, strlen(dot + 1) + 1);
+            add_import_ex(f, res, "");
+          }
+        }
+      }
+      return;
+    }
+  }
+
+  /* function ad(...)  — ust seviye fonksiyon.
+   * Noktali yazimda (function M.zemberek()) SON segment uye olur:
+   * modul tablosu uyeleri "M.zemberek" yerine "zemberek" olarak indexlenir;
+   * util.zem tamamlamasinda kaynak dosyanin M. on eki cikarilmis uyeleri
+   * dogrudan eslesir (main.lua: local util = require("util") -> util.). */
+  {
+    const char *fn = strstr(s, "function ");
+    if (fn && fn == s) {
+      const char *n = fn + 9;
+      while (*n == ' ') n++;
+      const char *name_start = n; /* ilk segment basi */
+      while (isalnum((unsigned char)*n) || *n == '_') n++;
+      {
+        const char *seg = name_start;
+        while (*n == '.') {
+          n++;
+          while (*n == ' ') n++;
+          seg = n;
+          while (isalnum((unsigned char)*n) || *n == '_') n++;
+          if (n == seg) break;
+        }
+        name_start = seg; /* SON segment (uye adi) */
+      }
+      char name[GCL_NAME_MAX] = {0};
+      int k = 0;
+      while (isalnum((unsigned char)*name_start) || *name_start == '_')
+        name[k++] = *name_start++;
+      if (!*name) return;
+      n = name_start;
+      /* params: ( ile ) arasi */
+      char rawp[GCL_PARAM_MAX] = {0};
+      const char *op = strchr(n, '(');
+      if (op) {
+        const char *cl = strchr(op + 1, ')');
+        size_t plen = cl ? (size_t)(cl - op - 1) : 0;
+        if (plen >= sizeof rawp) plen = sizeof rawp - 1;
+        memcpy(rawp, op + 1, plen);
+        rawp[plen] = 0;
+      }
+      char params[GCL_PARAM_MAX] = {0};
+      clean_params(rawp, params, sizeof params);
+      if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX) return;
+      Symbol *sym = &ws->syms[ws->sym_count];
+      snprintf(sym->name, sizeof sym->name, "%s", name);
+      sym->kind = SYM_FN;
+      snprintf(sym->params, sizeof sym->params, "%s", params);
+      snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
+      snprintf(sym->file, sizeof sym->file, "%s", f->path);
+      ws->sym_count++;
+      f->sym_count++;
+      return;
+    }
+  }
+
+  /* MOD.NAME = value  /  MOD.NAME = function... — modul tablosu uyesi.
+   * "M.KEY_ENTER = 257" -> KEY_ENTER const; "M.selam = function()" -> uye. */
+  {
+    const char *eq = strchr(s, '=');
+    const char *ne = strstr(s, "!=");
+    if (eq && ne != eq) {
+      /* solda "ident.ident" kalibi var mi? */
+      const char *dot = strchr(s, '.');
+      if (dot && dot < eq) {
+        const char *name_start = dot + 1;
+        while (*name_start == ' ') name_start++;
+        const char *se = name_start;
+        while (isalnum((unsigned char)*se) || *se == '_') se++;
+        if (se > name_start) {
+          char name[GCL_NAME_MAX] = {0};
+          size_t nl = (size_t)(se - name_start);
+          if (nl < sizeof name) {
+            memcpy(name, name_start, nl);
+            name[nl] = 0;
+            if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX)
+              return;
+            Symbol *sym = &ws->syms[ws->sym_count];
+            snprintf(sym->name, sizeof sym->name, "%s", name);
+            sym->kind = SYM_FN; /* tablo uyesi: fonksiyon veya sabit */
+            char val[GCL_NAME_MAX] = {0};
+            const char *v = eq + 1;
+            while (*v == ' ') v++;
+            size_t vl = strlen(v);
+            if (vl >= sizeof val) vl = sizeof val - 1;
+            memcpy(val, v, vl);
+            val[vl] = 0;
+            if (strncmp(val, "function", 8) == 0) {
+              snprintf(sym->params, sizeof sym->params, "%s", name);
+            } else {
+              sym->kind = SYM_CONST;
+              snprintf(sym->params, sizeof sym->params, "%s = %s", name, val);
+            }
+            snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
+            snprintf(sym->file, sizeof sym->file, "%s", f->path);
+            ws->sym_count++;
+            f->sym_count++;
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  /* local NAME = value  — yerel degisken (sembol olarak onerilir) */
+  {
+    const char *loc = strstr(s, "local ");
+    if (loc && loc == s) {
+      const char *n = loc + 6;
+      while (*n == ' ') n++;
+      char name[GCL_NAME_MAX] = {0};
+      int k = 0;
+      while (isalnum((unsigned char)*n) || *n == '_') name[k++] = *n++;
+      if (!*name || strcmp(name, "function") == 0) return;
+      /* deger: = sonrasi */
+      char val[GCL_NAME_MAX] = {0};
+      const char *eq = strchr(n, '=');
+      if (eq) {
+        const char *v = eq + 1;
+        while (*v == ' ') v++;
+        size_t vl = strlen(v);
+        if (vl >= sizeof val) vl = sizeof val - 1;
+        memcpy(val, v, vl);
+        val[vl] = 0;
+        trim(val);
+      }
+      if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX) return;
+      Symbol *sym = &ws->syms[ws->sym_count];
+      snprintf(sym->name, sizeof sym->name, "%s", name);
+      sym->kind = SYM_CONST;
+      snprintf(sym->params, sizeof sym->params, "%s = %s", name, val);
+      snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
+      snprintf(sym->file, sizeof sym->file, "%s", f->path);
+      ws->sym_count++;
+      f->sym_count++;
+      return;
+    }
+  }
+
+  /* return { key = value, ... } — modul tablosu uyelerini toplar.
+   * Yalnizca "return {" ile baslayan son satirda calisir; anahtarlar
+   * "name = fn" / "name = function" / "name = value" olarak ayrilir. */
+  if (strncmp(s, "return", 6) == 0 && strstr(s, "{") != NULL) {
+    const char *p = s + 6;
+    while (*p == ' ') p++;
+    if (*p == '{') {
+      /* anahtarlari virgul ayracinda tara */
+      const char *cur = p + 1;
+      int depth = 1;
+      while (*cur && depth > 0) {
+        if (*cur == '{') depth++;
+        else if (*cur == '}') { depth--; if (depth <= 0) break; }
+        else if (*cur == ',' || *cur == '\n') {
+          /* anahtar: baştan al */
+          const char *key_start = cur;
+          if (*cur == ',') key_start++;
+          while (*key_start == ' ' || *key_start == '\t' || *key_start == '\n')
+            key_start++;
+          char key[GCL_NAME_MAX] = {0};
+          int k = 0;
+          while (isalnum((unsigned char)*key_start) || *key_start == '_')
+            key[k++] = *key_start++;
+          if (k > 0) {
+            if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX)
+              return;
+            Symbol *sym = &ws->syms[ws->sym_count];
+            snprintf(sym->name, sizeof sym->name, "%s", key);
+            sym->kind = SYM_FN;
+            snprintf(sym->params, sizeof sym->params, "%s", key);
+            snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
+            snprintf(sym->file, sizeof sym->file, "%s", f->path);
+            ws->sym_count++;
+            f->sym_count++;
+          }
+        }
+        cur++;
+      }
+    }
+    return;
+  }
+}
+
+/* GCL satiri isle: #include/#lib/#extern/#register + fonksiyon + global. */
+static void index_gcl_line(Workspace *ws, FileIndex *f, const char *raw) {
+  char line[GCL_INDEX_LINE];
+  snprintf(line, sizeof line, "%s", raw);
+  trim(line);
+  if (!*line) return;
+
+  const char *s = line;
+
+  /* yorum: #// ...  (gcl_doc.md: #// comment) */
+  if (strncmp(s, "#//", 3) == 0) return;
+
+  /* #include "name.gcsf"  ->  script modul import */
+  if (strncmp(s, "#include", 8) == 0) {
+    const char *q = strchr(s, '"');
+    if (!q) q = strchr(s, '<');
+    if (q) {
+      char close = (q[0] == '<') ? '>' : '"';
+      const char *end = strchr(q + 1, close);
+      if (end) {
+        char mod[GCL_NAME_MAX] = {0};
+        size_t mlen = (size_t)(end - q - 1);
+        if (mlen >= sizeof mod) mlen = sizeof mod - 1;
+        memcpy(mod, q + 1, mlen);
+        mod[mlen] = 0;
+        char *dot = strchr(mod, '.');
+        if (dot) *dot = 0;
+        if (mod[0]) add_import_ex(f, mod, "");
+      }
+    }
+    return;
+  }
+
+  /* #lib "name.gclib"  ->  kutuphane import */
+  if (strncmp(s, "#lib", 4) == 0) {
+    const char *q = strchr(s, '"');
+    if (!q) q = strchr(s, '<');
+    if (q) {
+      char close = (q[0] == '<') ? '>' : '"';
+      const char *end = strchr(q + 1, close);
+      if (end) {
+        char mod[GCL_NAME_MAX] = {0};
+        size_t mlen = (size_t)(end - q - 1);
+        if (mlen >= sizeof mod) mlen = sizeof mod - 1;
+        memcpy(mod, q + 1, mlen);
+        mod[mlen] = 0;
+        char *dot = strchr(mod, '.');
+        if (dot) *dot = 0;
+        if (mod[0]) add_import_ex(f, mod, "");
+      }
+    }
+    return;
+  }
+
+  /* #extern "dll" + #register T name(...) ;  ->  dis API sembolleri */
+  if (strncmp(s, "#register", 9) == 0) {
+    const char *p = s + 9;
+    while (*p == ' ') p++;
+    /* tip atla */
+    while (*p && *p != ' ' && *p != '*') p++;
+    while (*p == ' ' || *p == '*') p++;
+    char name[GCL_NAME_MAX] = {0};
+    int k = 0;
+    while (isalnum((unsigned char)*p) || *p == '_') name[k++] = *p++;
+    if (name[0]) {
+      if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX)
+        return;
+      Symbol *sym = &ws->syms[ws->sym_count];
+      snprintf(sym->name, sizeof sym->name, "%s", name);
+      sym->kind = SYM_FN;
+      snprintf(sym->params, sizeof sym->params, "(external)");
+      snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
+      snprintf(sym->file, sizeof sym->file, "%s", f->path);
+      ws->sym_count++;
+      f->sym_count++;
+    }
+    return;
+  }
+
+  /* public T name(...)  /  T name(...)  — fonksiyon (ust seviye) */
+  {
+    const char *sp = s;
+    const char *pub = strstr(s, "public ");
+    if (pub && pub == s) sp = pub + 7;
+    const char *fp = strstr(sp, "(");
+    if (fp && fp[1] == ')') {
+      /* ad: tip + ad + ( )  ->  "void merhaba()" */
+      const char *end = fp;
+      const char *name_start = end;
+      while (name_start > sp && (isalnum((unsigned char)name_start[-1]) ||
+                                 name_start[-1] == '_'))
+        name_start--;
+      if (name_start < end) {
+        char name[GCL_NAME_MAX] = {0};
+        size_t nl = (size_t)(end - name_start);
+        if (nl < sizeof name) {
+          memcpy(name, name_start, nl);
+          name[nl] = 0;
+          /* tip degil ad oldugundan emin ol: onunde tip sozcugu var mi */
+          const char *before = name_start;
+          while (before > sp && (isspace((unsigned char)before[-1]) ||
+                                 isalnum((unsigned char)before[-1]) ||
+                                 before[-1] == '*'))
+            before--;
+          char before_copy[128];
+          size_t bl = (size_t)(name_start - before);
+          if (bl >= sizeof before_copy) bl = sizeof before_copy - 1;
+          memcpy(before_copy, before, bl);
+          before_copy[bl] = 0;
+          /* bl>0 demek tip+ad var demek: "void merhaba" -> merhaba */
+          if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX)
+            return;
+          Symbol *sym = &ws->syms[ws->sym_count];
+          snprintf(sym->name, sizeof sym->name, "%s", name);
+          sym->kind = SYM_FN;
+          /* emit_symbol "%s(%s)" ile sardiği icin params ici BOŞ tutulur;
+           * aksi halde "void main()" -> "main(())" cift parantez cikar. */
+          sym->params[0] = 0;
+          snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
+          snprintf(sym->file, sizeof sym->file, "%s", f->path);
+          ws->sym_count++;
+          f->sym_count++;
+        }
+      }
+    }
+    return;
+  }
+
+  /* T name = value;  — global const (ust seviye) */
+  {
+    const char *eq = strchr(s, '=');
+    const char *ne = strstr(s, "!=");
+    const char *cel = strstr(s, "<=");
+    const char *gel = strstr(s, ">=");
+    if (eq && ne != eq && cel != eq && gel != eq) {
+      /* ad = "=" oncesi son kelime */
+      const char *name_end = eq;
+      const char *name_start = name_end;
+      while (name_start > s && (isalnum((unsigned char)name_start[-1]) ||
+                                name_start[-1] == '_'))
+        name_start--;
+      if (name_start < name_end) {
+        char name[GCL_NAME_MAX] = {0};
+        size_t nl = (size_t)(name_end - name_start);
+        if (nl < sizeof name) {
+          memcpy(name, name_start, nl);
+          name[nl] = 0;
+          if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX)
+            return;
+          Symbol *sym = &ws->syms[ws->sym_count];
+          snprintf(sym->name, sizeof sym->name, "%s", name);
+          sym->kind = SYM_CONST;
+          char val[GCL_NAME_MAX] = {0};
+          const char *v = eq + 1;
+          while (*v == ' ') v++;
+          size_t vl = strlen(v);
+          while (vl > 0 && (v[vl - 1] == ';' || v[vl - 1] == ' ')) vl--;
+          if (vl >= sizeof val) vl = sizeof val - 1;
+          memcpy(val, v, vl);
+          val[vl] = 0;
+          snprintf(sym->params, sizeof sym->params, "%s = %s", name, val);
+          snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
+          snprintf(sym->file, sizeof sym->file, "%s", f->path);
+          ws->sym_count++;
+          f->sym_count++;
+        }
+      }
+    }
+  }
+}
+
+/* Bir dosyayi indexle (dosya zaten Workspace.files'da kayitli).
+ * Dil etiketine gore dogru satir isleyicisi secilir — "py" varsayilandir. */
 static void index_file(Workspace *ws, FileIndex *f) {
   f->import_count = 0;
   f->sym_count = 0;
@@ -574,8 +1012,15 @@ static void index_file(Workspace *ws, FileIndex *f) {
   FILE *fp = fopen(f->path, "r");
   if (!fp) return;
   static char line[GCL_INDEX_LINE];
+  int is_lua = (strcmp(f->lang, "lua") == 0);
+  int is_gcl = (strcmp(f->lang, "gcl") == 0);
   while (fgets(line, sizeof line, fp)) {
-    index_python_line(ws, f, line);
+    if (is_lua)
+      index_lua_line(ws, f, line);
+    else if (is_gcl)
+      index_gcl_line(ws, f, line);
+    else
+      index_python_line(ws, f, line);
   }
   fclose(fp);
 }
@@ -596,14 +1041,22 @@ static int index_workspace(Workspace *ws, const char *root) {
   for (char *p = ws->root; *p; p++)
     if (*p == '\\') *p = '/';
 
-  /* .py dosyalarini topla (src/ + root + Library/Python) */
+  /* .py + .lua + .gcsf/.gclib dosyalarini topla (src/ + root + Library) */
   char src_dir[GCL_PATH_MAX];
   path_join(src_dir, sizeof src_dir, ws->root, "src");
-  collect_python(ws, src_dir, 0);
-  collect_python(ws, ws->root, 0);
+  collect_ext(ws, src_dir, 0, ".py", "py");
+  collect_ext(ws, src_dir, 0, ".lua", "lua");
+  collect_ext(ws, src_dir, 0, ".gcsf", "gcl");
+  collect_ext(ws, src_dir, 0, ".gclib", "gcl");
+  collect_ext(ws, ws->root, 0, ".py", "py");
+  collect_ext(ws, ws->root, 0, ".lua", "lua");
+  collect_ext(ws, ws->root, 0, ".gcsf", "gcl");
+  collect_ext(ws, ws->root, 0, ".gclib", "gcl");
   char lib_dir[GCL_PATH_MAX];
   path_join(lib_dir, sizeof lib_dir, ws->root, "Library/Python");
-  collect_python(ws, lib_dir, 0);
+  collect_ext(ws, lib_dir, 0, ".py", "py");
+  path_join(lib_dir, sizeof lib_dir, ws->root, "Library/Lua");
+  collect_ext(ws, lib_dir, 0, ".lua", "lua");
 
   /* hepsini indexle */
   for (int i = 0; i < ws->file_count; i++)
@@ -666,12 +1119,21 @@ static void out_item(const char *label, const char *kind, const char *detail);
 /* Ayni ada sahip dosyalar farkli klasorlerdeyse karismasin: acik dosyanin
  * "from X import ..." yaptigi X paket dizinindeki eslesen modul ONCELIKLI.
  *   from beta import util ; util.  ->  beta/util.py (alpha'da da util varsa
- *   bile yanlis dosya secilmez). cur == NULL ise ilk eslesen fallback. */
+ *   bile yanlis dosya secilmez). Ayrica DIL eşleştirmesi: main.gcsf'deki
+ *   #include "helloworld" sadece helloworld.gcsf/.gclib'yi cozer; ayni adli
+ *   .py'yi degil (GCL include -> GCL dosyasi). Lua require -> .lua. 
+ *   cur == NULL ise ilk eslesen fallback. */
 static FileIndex *resolve_module_pkg(Workspace *ws, const char *file,
                                      const char *mod, FileIndex *cur) {
   FileIndex *first = NULL;
   for (int i = 0; i < ws->file_count; i++) {
     if (strcmp(ws->files[i].name, mod) != 0) continue;
+    /* dil eslesmesi: acik dosyanin dili neyse onunla ayni olmali.
+     *   gcl dosyasi -> .gcsf/.gclib; lua -> .lua; py -> .py (ikisi de ayni
+     *   klasorde "util.py" + "util.lua" varsa py dosyasi .py'yi alir). */
+    if (cur && cur->lang[0] && ws->files[i].lang[0] &&
+        strcmp(cur->lang, ws->files[i].lang) != 0)
+      continue;
     if (!first) first = &ws->files[i];
     if (cur && cur->import_count > 0) {
       char dbase[GCL_NAME_MAX];
@@ -1271,9 +1733,10 @@ static void complete(Workspace *ws, const char *file, const char *text,
           emit_symbol(sym, prefix, file);
       }
     }
-    /* 2) BUZDOLABI: statik yetmedi -> gercek Python'a sor.
-     *    "import os" => os. => os|prefix gercek stdlib sembolleri. */
-    if (!modf) {
+    /* 2) BUZDOLABI: statik yetmedi -> gercek Python'a sor. YALNIZCA .py
+     *    dosyalarinda — lua/gcl'de "gcl -pyrun" gereksiz spawn olur,
+     *    hata mesajlari da popup'a sizabilir. */
+    if (!modf && (!cur || strcmp(cur->lang, "py") == 0)) {
       const char *cached = fridge_get(ws, mod);
       if (cached && cached[0]) {
         char linebuf[4096];
@@ -1392,7 +1855,7 @@ static void complete(Workspace *ws, const char *file, const char *text,
                     strncmp(sym->name, prefix, strlen(prefix)) == 0)
                   emit_symbol(sym, prefix, file);
               }
-            } else {
+            } else if (!cur || strcmp(cur->lang, "py") == 0) {
               const char *cached = fridge_get(ws, fmod);
               if (cached && cached[0]) {
                 from_done = 1;
@@ -1464,8 +1927,8 @@ static void complete(Workspace *ws, const char *file, const char *text,
             if (!prefix[0] || strncmp(sym->name, prefix, strlen(prefix)) == 0)
               emit_symbol(sym, prefix, file);
           }
-        } else {
-          /* workspace'te yoksa: BUZDOLABI — gercek Python modulu */
+        } else if (!cur || strcmp(cur->lang, "py") == 0) {
+          /* workspace'te yoksa + .py ise: BUZDOLABI — gercek Python modulu */
           const char *cached = fridge_get(ws, wc_mod);
           if (cached && cached[0]) {
             char linebuf[4096];
@@ -1540,14 +2003,32 @@ static void complete(Workspace *ws, const char *file, const char *text,
           emit_symbol(sym, prefix, file);
       }
     }
-    /* 3) Python'un KENDI dili: keywords + builtins ("pri" -> print).
-     *    python_syntax.c tablosu, prefix ile eslesenleri doldurur. */
+    /* 3) Dilin KENDI tablosu: dosyanin diline gore secilir.
+     *    py -> python_syntax.c, lua -> lua_syntax.c, gcl -> gcl_syntax.c.
+     *    "pri" -> print (py), print (lua), printf (gcl) gibi. */
     {
-      const int pn = py_syntax_count(prefix);
-      for (int i = 0; i < pn; i++) {
-        char lbl[GCL_NAME_MAX], knd[64], det[GCL_NAME_MAX + 64];
-        py_syntax_at(i, prefix, lbl, sizeof lbl, knd, sizeof knd, det, sizeof det);
-        if (lbl[0]) out_item(lbl, knd[0] ? knd : "keyword", det);
+      const char *dlang = cur ? cur->lang : "py";
+      if (strcmp(dlang, "lua") == 0) {
+        const int ln = lua_syntax_count(prefix);
+        for (int i = 0; i < ln; i++) {
+          char lbl[GCL_NAME_MAX], knd[64], det[GCL_NAME_MAX + 64];
+          lua_syntax_at(i, prefix, lbl, sizeof lbl, knd, sizeof knd, det, sizeof det);
+          if (lbl[0]) out_item(lbl, knd[0] ? knd : "keyword", det);
+        }
+      } else if (strcmp(dlang, "gcl") == 0) {
+        const int gn = gcl_syntax_count(prefix);
+        for (int i = 0; i < gn; i++) {
+          char lbl[GCL_NAME_MAX], knd[64], det[GCL_NAME_MAX + 64];
+          gcl_syntax_at(i, prefix, lbl, sizeof lbl, knd, sizeof knd, det, sizeof det);
+          if (lbl[0]) out_item(lbl, knd[0] ? knd : "keyword", det);
+        }
+      } else {
+        const int pn = py_syntax_count(prefix);
+        for (int i = 0; i < pn; i++) {
+          char lbl[GCL_NAME_MAX], knd[64], det[GCL_NAME_MAX + 64];
+          py_syntax_at(i, prefix, lbl, sizeof lbl, knd, sizeof knd, det, sizeof det);
+          if (lbl[0]) out_item(lbl, knd[0] ? knd : "keyword", det);
+        }
       }
     }
   }

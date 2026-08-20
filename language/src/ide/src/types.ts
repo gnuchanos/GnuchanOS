@@ -2,6 +2,9 @@ export interface FsEntry {
   name: string;
   path: string;
   dir: boolean;
+  /* Proje çekirdeği (src, Library, Project.gcDATA): silinemez, taşınamaz,
+   * başka ada getirilemez. Explorer bunu rozet + devre dışı menü ile gösterir. */
+  protected: boolean;
 }
 
 /* DOCS panelinde listelenen dokuman girisleri (build Library'den gelen
@@ -89,8 +92,8 @@ export interface ExportResult {
   message: string;
 }
 
-/* Dosya/klasor CRUD islemlerinden donebilecek sonuc (src disinda izinsiz
- * create denemesi gibi hatalar mesaj olarak doner, uygulama cokmez). */
+/* Dosya/klasor CRUD islemlerinden donebilecek sonuc (korumali alan denemesi
+ * veya basarisiz rename gibi hatalar mesaj olarak doner, uygulama cokmez). */
 export interface CmdResult {
   ok: boolean;
   message: string;
@@ -102,8 +105,12 @@ export interface IdeApi {
   fileExists: (p: string) => Promise<boolean>;
   createFile: (file: string, content?: string) => Promise<CmdResult | void>;
   createDir: (dir: string) => Promise<CmdResult | void>;
-  deleteFs: (p: string) => Promise<void>;
-  copyFile: (src: string, dst: string) => Promise<void>;
+  deleteFs: (p: string) => Promise<CmdResult | void>;
+  copyFile: (src: string, dst: string) => Promise<CmdResult | void>;
+  /* Yeniden adlandırma veya taşıma (cut+paste): src -> dst tam yol.
+   * Aynı dizinde = rename, farklı dizinde = move. src'yi (src, Library,
+   * Project.gcDATA) ve Library içi hedefleri reddeder. */
+  renameFs: (src: string, dst: string) => Promise<CmdResult | void>;
   setWorkspace: (dir: string) => Promise<string>;
   dirTree: (dir: string) => Promise<FsEntry[]>;
   docsList: (dir: string) => Promise<DocsEntry[]>;

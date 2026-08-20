@@ -638,6 +638,235 @@ body .monaco-editor .suggest-widget .monaco-list .monaco-list-row .description-l
   gap: 8px;
 }
 
+/* ---- EXPLORER 2.0: secim + inline edit + kes/yapistir + koruma ---- */
+.ex-sel-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--c-border);
+  margin: 0 4px;
+  flex: 0 0 auto;
+}
+
+/* secili satir vurgusu */
+.tree-row.selected {
+  background: var(--c-list-active-bg, var(--c-bg3));
+}
+.tree-row.selected .tree-name {
+  color: var(--c-list-active-fg, var(--c-fg0));
+}
+
+/* surukle-birak: hedef klasor vurgusu */
+.tree-row.drop-target {
+  outline: 1.5px dashed var(--c-acc);
+  outline-offset: -1px;
+  background: var(--c-acc-dim, var(--c-bg2));
+}
+.tree-row.drop-target .tree-name {
+  color: var(--c-acc);
+}
+
+/* korumali (sabit) oge: kilit rozeti + soluk stil */
+.tree-row.protected .tree-name {
+  opacity: 0.75;
+}
+.tree-lock {
+  margin-left: auto;
+  color: var(--c-fg2);
+  opacity: 0.8;
+  display: inline-flex;
+  align-items: center;
+  padding-right: 4px;
+}
+
+/* temel butonlar (kes/kopyala, sil) */
+.icon-btn.danger {
+  color: #ff6b6b;
+}
+.icon-btn.danger:hover {
+  color: #ff9c9c;
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  color: var(--c-fg2);
+}
+.icon-btn:disabled:hover {
+  color: var(--c-fg2);
+}
+
+/* hata / islem ipucu (toast) */
+.ex-toast {
+  margin: 6px 10px 0;
+  padding: 6px 10px;
+  background: rgba(255, 107, 107, 0.12);
+  border: 1px solid #ff6b6b;
+  color: #ff6b6b;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+/* kes/yapistir cubugu */
+.ex-selbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 10px 0;
+  padding: 5px 10px;
+  background: var(--c-acc-dim, var(--c-bg2));
+  border: 1px solid var(--c-acc, var(--c-border));
+  color: var(--c-acc, var(--c-fg1));
+  border-radius: 6px;
+  font-size: 11.5px;
+  flex: 0 0 auto;
+}
+.ex-selbar span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ex-selbar button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+}
+
+/* secim + hedef bilgi satiri */
+.ex-statusrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--c-border);
+  font-size: 11px;
+  color: var(--c-fg2);
+  flex: 0 0 auto;
+}
+.ex-sel-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ex-sel-info b {
+  color: var(--c-acc);
+  font-weight: 600;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ex-sel-empty {
+  font-style: italic;
+  opacity: 0.8;
+}
+.ex-dir-hint {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10.5px;
+}
+.ex-prot-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--c-bg3);
+  color: var(--c-fg2);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* inline rename/create inputu */
+.tree-inline {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tree-inline-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--c-input-bg, var(--c-bg0));
+  color: var(--c-input-fg, var(--c-fg0));
+  border: 1px solid var(--c-acc, var(--c-border));
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+}
+.tree-inline-input:focus {
+  border-color: var(--c-focus, var(--c-acc));
+  box-shadow: 0 0 0 1px var(--c-focus, var(--c-acc));
+}
+.tree-inline-error {
+  font-size: 10.5px;
+  color: #ff6b6b;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* context menu ayraç + kisa yol + korumali not */
+.ctx-sep {
+  height: 1px;
+  background: var(--c-border);
+  margin: 3px 6px;
+}
+.ctx-short {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--c-fg2);
+  padding-left: 14px;
+}
+.ctx-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 10.5px;
+  color: var(--c-fg2);
+  border-top: 1px dashed var(--c-border);
+  margin-top: 3px;
+}
+.ctx-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ctx-item:disabled:hover {
+  background: transparent;
+}
+
+/* dosya ikon renkleri */
+.ix-gcl {
+  color: var(--c-acc);
+  font-weight: 700;
+}
+.ix-py {
+  color: #ffd343;
+}
+.ix-lua {
+  color: #4169e1;
+}
+.ix-data {
+  color: var(--c-alt);
+}
+
 /* ---- welcome screen ---- */
 .welcome-screen {
   flex: 1;

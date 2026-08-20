@@ -359,6 +359,8 @@ class windows:
         cmd = [CC, "-std=c11", "-O2",
                os.path.join(LSP_DIR, "gcl_lsp.c"),
                os.path.join(LSP_DIR, "python_syntax.c"),
+               os.path.join(LSP_DIR, "lua_syntax.c"),
+               os.path.join(LSP_DIR, "gcl_syntax.c"),
                "-o", os.path.join(self.out, LSP_EXE)]
         if IS_WINDOWS:
             # gcl-lsp.exe de GnuChanIDE ikonunu tasir (build kokundeki
@@ -371,11 +373,38 @@ class windows:
     # -- gcl --------------------------------------------------------------
     def gcl_BUILD(self):
         icon_obj = build_icon_obj()
+        sp = os.path.join(SRC, "SharedPipeline")
         cmd = [CC, "-std=c11", "-Wall", "-Wextra", "-O2",
-               "-I" + SRC, "-I" + GCS,
+               "-I" + SRC, "-I" + GCS, "-I" + sp,
                os.path.join(ROOT, "main.c"),
                os.path.join(GCS, "gcdl_loader.c"),
                os.path.join(GCS, "gclib_utils.c"),
+               os.path.join(SRC, "SharedPipeline", "Common", "gcl_memory_utils.c"),
+               os.path.join(SRC, "SharedPipeline", "Common", "gcl_arena.c"),
+               os.path.join(SRC, "SharedPipeline", "Common", "gcl_string_intern.c"),
+               os.path.join(SRC, "SharedPipeline", "Common", "gcl_token.c"),
+               os.path.join(SRC, "SharedPipeline", "Lexer", "gcl_lexer_init.c"),
+               os.path.join(SRC, "SharedPipeline", "Lexer", "gcl_lexer_scan.c"),
+               os.path.join(SRC, "SharedPipeline", "AST", "gcl_ast_node.c"),
+               os.path.join(SRC, "SharedPipeline", "AST", "gcl_ast_kind.c"),
+               os.path.join(SRC, "SharedPipeline", "AST", "gcl_ast_dump.c"),
+               os.path.join(SRC, "SharedPipeline", "Parser", "gcl_parser.c"),
+               os.path.join(SRC, "SharedPipeline", "Diagnostics", "gcl_diag_bag.c"),
+               os.path.join(SRC, "SharedPipeline", "Diagnostics", "gcl_diag_print.c"),
+               os.path.join(SRC, "SharedPipeline", "Memory", "gcl_mem_init.c"),
+               os.path.join(SRC, "SharedPipeline", "Memory", "gcl_mem_alloc.c"),
+               os.path.join(SRC, "SharedPipeline", "Semantic", "gcl_semantic_init.c"),
+               os.path.join(SRC, "SharedPipeline", "Semantic", "gcl_semantic_check.c"),
+               os.path.join(SRC, "SharedPipeline", "TypeChecker", "gcl_typecheck_init.c"),
+               os.path.join(SRC, "SharedPipeline", "TypeChecker", "gcl_typecheck_walk.c"),
+               os.path.join(SRC, "SharedPipeline", "Ir", "gcl_ir_core.c"),
+               os.path.join(SRC, "SharedPipeline", "Ir", "gcl_ir_gen.c"),
+               os.path.join(SRC, "SharedPipeline", "Ir", "gcl_ir_dump.c"),
+               os.path.join(SRC, "SharedPipeline", "Linker", "gcl_linker_init.c"),
+               os.path.join(SRC, "SharedPipeline", "GarbageCollector", "gcl_gc_init.c"),
+               os.path.join(SRC, "SharedPipeline", "GarbageCollector", "gcl_gc_ops.c"),
+               os.path.join(SRC, "SharedPipeline", "gcl.c"),
+               os.path.join(SRC, "FastIR", "gcl_interp.c"),
                "-o", os.path.join(self.out, "gcl.exe"), "-lm", "-lws2_32"]
         if icon_obj:
             cmd.append(icon_obj)
@@ -634,11 +663,38 @@ class gnuLinux(windows):
 
     # -- gcl ---------------------------------------------------------------
     def gcl_BUILD(self):
+        sp = os.path.join(SRC, "SharedPipeline")
         sh([CC, "-std=c11", "-Wall", "-Wextra", "-O2",
-            "-I" + SRC, "-I" + GCS,
+            "-I" + SRC, "-I" + GCS, "-I" + sp,
             os.path.join(ROOT, "main.c"),
             os.path.join(GCS, "gcdl_loader.c"),
             os.path.join(GCS, "gclib_utils.c"),
+            os.path.join(SRC, "SharedPipeline", "Common", "gcl_memory_utils.c"),
+            os.path.join(SRC, "SharedPipeline", "Common", "gcl_arena.c"),
+            os.path.join(SRC, "SharedPipeline", "Common", "gcl_string_intern.c"),
+            os.path.join(SRC, "SharedPipeline", "Common", "gcl_token.c"),
+            os.path.join(SRC, "SharedPipeline", "Lexer", "gcl_lexer_init.c"),
+            os.path.join(SRC, "SharedPipeline", "Lexer", "gcl_lexer_scan.c"),
+            os.path.join(SRC, "SharedPipeline", "AST", "gcl_ast_node.c"),
+            os.path.join(SRC, "SharedPipeline", "AST", "gcl_ast_kind.c"),
+            os.path.join(SRC, "SharedPipeline", "AST", "gcl_ast_dump.c"),
+            os.path.join(SRC, "SharedPipeline", "Parser", "gcl_parser.c"),
+            os.path.join(SRC, "SharedPipeline", "Diagnostics", "gcl_diag_bag.c"),
+            os.path.join(SRC, "SharedPipeline", "Diagnostics", "gcl_diag_print.c"),
+            os.path.join(SRC, "SharedPipeline", "Memory", "gcl_mem_init.c"),
+            os.path.join(SRC, "SharedPipeline", "Memory", "gcl_mem_alloc.c"),
+            os.path.join(SRC, "SharedPipeline", "Semantic", "gcl_semantic_init.c"),
+            os.path.join(SRC, "SharedPipeline", "Semantic", "gcl_semantic_check.c"),
+            os.path.join(SRC, "SharedPipeline", "TypeChecker", "gcl_typecheck_init.c"),
+            os.path.join(SRC, "SharedPipeline", "TypeChecker", "gcl_typecheck_walk.c"),
+            os.path.join(SRC, "SharedPipeline", "Ir", "gcl_ir_core.c"),
+            os.path.join(SRC, "SharedPipeline", "Ir", "gcl_ir_gen.c"),
+            os.path.join(SRC, "SharedPipeline", "Ir", "gcl_ir_dump.c"),
+            os.path.join(SRC, "SharedPipeline", "Linker", "gcl_linker_init.c"),
+            os.path.join(SRC, "SharedPipeline", "GarbageCollector", "gcl_gc_init.c"),
+            os.path.join(SRC, "SharedPipeline", "GarbageCollector", "gcl_gc_ops.c"),
+            os.path.join(SRC, "SharedPipeline", "gcl.c"),
+            os.path.join(SRC, "FastIR", "gcl_interp.c"),
             "-o", os.path.join(self.out, "gcl"), "-lm", "-ldl"], "gcl")
 
     # -- lua ---------------------------------------------------------------
