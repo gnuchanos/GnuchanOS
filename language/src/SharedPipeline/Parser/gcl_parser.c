@@ -630,16 +630,13 @@ static GclAstNode *parse_primary_expr(GclParser *p) {
         }
         GclMacro *macro = parser_find_macro(p, id);
         if (macro && macro->value[0]) {
-            fprintf(stderr, "[parser_debug] Found macro '%s' with value '%s'\n", id, macro->value);
             const char *mv = macro->value;
             char *endp = NULL;
             long long v = strtoll(mv, &endp, 10);
-            fprintf(stderr, "[parser_debug] Parsed as: %lld (endp='%s')\n", v, endp ? endp : "NULL");
             if (endp != mv && *endp == '\0') {
                 GclAstNode *n = gcl_ast_new(p->arena, AST_INT_LIT, line, col);
                 n->int_value = v;
                 n->str_value = gcl_intern(p->intern, mv, strlen(mv));
-                fprintf(stderr, "[parser_debug] Created INT_LIT with value %lld\n", v);
                 parser_advance(p);
                 return n;
             }
@@ -649,8 +646,6 @@ static GclAstNode *parse_primary_expr(GclParser *p) {
                 parser_advance(p);
                 return n;
             }
-        } else {
-            fprintf(stderr, "[parser_debug] Identifier '%s' - macro=%p\n", id, macro);
         }
         GclAstNode *n = gcl_ast_new(p->arena, AST_IDENT_EXPR, line, col);
         n->str_value = id;

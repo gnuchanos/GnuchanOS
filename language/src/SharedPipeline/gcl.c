@@ -117,7 +117,6 @@ static int gcl_merge_includes(const char *source, const char *filepath,
                         /* Process merged content: make all #define directives public by
                          * putting "public" on its own line before #define */
                         const char *src = candidate;
-                        fprintf(stderr, "[gcl_merge] Processing include file: %s\n", full);
                         while (*src && pos + 1 < cap) {
                             const char *line_start = src;
                             const char *nl = strchr(src, '\n');
@@ -137,13 +136,9 @@ static int gcl_merge_includes(const char *source, const char *filepath,
                                     bool has_qualifier = (strncmp(prefix_check, "public", 6) == 0 || 
                                                          strncmp(prefix_check, "private", 7) == 0);
                                     
-                                    fprintf(stderr, "[gcl_merge] Found #define line, has_qualifier=%d: %.*s\n", 
-                                            has_qualifier, (int)line_len, line_start);
-                                    
                                     if (!has_qualifier) {
                                         /* Insert "public" on its own line before #define */
                                         if (pos + 8 >= cap) return -1; /* "public\n" = 7 + \n */
-                                        fprintf(stderr, "[gcl_merge] Adding public prefix\n");
                                         memcpy(out + pos, "public\n", 7);
                                         pos += 7;
                                     }
@@ -159,7 +154,6 @@ static int gcl_merge_includes(const char *source, const char *filepath,
                             if (!nl) break;
                             src = nl + 1;
                         }
-                        fprintf(stderr, "[gcl_merge] Include file processed\n");
                         found = 1;
                         break;
                     }
