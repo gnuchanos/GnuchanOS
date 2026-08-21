@@ -305,6 +305,25 @@ export default function ExplorerPanel({ root, onOpen, refreshKey }: Props) {
     }
   };
 
+  /* Dosya/klasor olusturma hedefi uygun mu? src/ ve diger kok ogelerine
+   * olusturma SERBEST; yalnizca Library/ ve icindekilere engellidir
+   * (backend de dstInsideProtected ile ayni kurali uygular). */
+  const canCreateAt = (dir: string): boolean => {
+    if (!root) return false;
+    const lib = joinPath(root, "Library");
+    return !pathStartsWith(dir, lib);
+  };
+
+  /* Context menü hedefi: New File/New Folder disabled durumu icin.
+   * src/ gibi korumali kok klasorlerinde olusturma SERBEST, yalnizca
+   * Library/ icinde engellidir. */
+  const ctxCreateTarget = ctx
+    ? ctx.isDir
+      ? ctx.path
+      : parentOf(ctx.path)
+    : root;
+  const ctxCreateOk = ctx ? canCreateAt(ctxCreateTarget) : true;
+
   if (!entries) return <div className="panel-empty">...</div>;
 
   const activeDir = targetDirOf();
@@ -480,7 +499,7 @@ export default function ExplorerPanel({ root, onOpen, refreshKey }: Props) {
         >
           <button
             className="ctx-item"
-            disabled={ctx.protected}
+            disabled={!ctxCreateOk}
             onClick={() =>
               openCreate(ctx.isDir ? ctx.path : parentOf(ctx.path), false)
             }
@@ -489,7 +508,7 @@ export default function ExplorerPanel({ root, onOpen, refreshKey }: Props) {
           </button>
           <button
             className="ctx-item"
-            disabled={ctx.protected}
+            disabled={!ctxCreateOk}
             onClick={() =>
               openCreate(ctx.isDir ? ctx.path : parentOf(ctx.path), true)
             }

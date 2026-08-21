@@ -114,12 +114,52 @@ static int gcl_merge_includes(const char *source, const char *filepath,
                         if (gcl_read_file(full, candidate, sizeof candidate) < 0) {
                             return -1; /* exists but unreadable */
                         }
-                        /* Append merged content */
-                        size_t clen = strlen(candidate);
-                        if (pos + clen + 2 >= cap) return -1;
-                        memcpy(out + pos, candidate, clen);
-                        pos += clen;
-                        out[pos++] = '\n';
+                        /* Process merged content: make all #define directives public by
+                         * putting "public" on its own line before #define */
+                        const char *src = candidate;
+                        fprintf(stderr, "[gcl_merge] Processing include file: %s\n", full);
+                        while (*src && pos + 1 < cap) {
+                            const char *line_start = src;
+                            const char *nl = strchr(src, '\n');
+                            size_t line_len = nl ? (size_t)(nl - src) : strlen(src);
+                            
+                            /* Check if line is a #define without public/private prefix */
+                            const char *t = line_start;
+                            while (*t && (*t == ' ' || *t == '\t')) t++;
+                            if (*t == '#') {
+                                const char *k = t + 1;
+                                while (*k && (*k == ' ' || *k == '\t')) k++;
+                                if (strncmp(k, "define", 6) == 0 && 
+                                    (k[6] == ' ' || k[6] == '\t' || k[6] == '\n' || k[6] == '\0')) {
+                                    /* Check if already has public/private prefix in previous context */
+                                    const char *prefix_check = line_start;
+                                    while (*prefix_check && (*prefix_check == ' ' || *prefix_check == '\t')) prefix_check++;
+                                    bool has_qualifier = (strncmp(prefix_check, "public", 6) == 0 || 
+                                                         strncmp(prefix_check, "private", 7) == 0);
+                                    
+                                    fprintf(stderr, "[gcl_merge] Found #define line, has_qualifier=%d: %.*s\n", 
+                                            has_qualifier, (int)line_len, line_start);
+                                    
+                                    if (!has_qualifier) {
+                                        /* Insert "public" on its own line before #define */
+                                        if (pos + 8 >= cap) return -1; /* "public\n" = 7 + \n */
+                                        fprintf(stderr, "[gcl_merge] Adding public prefix\n");
+                                        memcpy(out + pos, "public\n", 7);
+                                        pos += 7;
+                                    }
+                                }
+                            }
+                            
+                            /* Copy the line */
+                            if (pos + line_len + 1 >= cap) return -1;
+                            memcpy(out + pos, line_start, line_len);
+                            pos += line_len;
+                            out[pos++] = '\n';
+                            
+                            if (!nl) break;
+                            src = nl + 1;
+                        }
+                        fprintf(stderr, "[gcl_merge] Include file processed\n");
                         found = 1;
                         break;
                     }
@@ -354,10 +394,10 @@ int gcl_run_file(const char *source, const char *filepath) {
     if (gcl_merge_includes(source, filepath, merged, sizeof merged) == 0) {
         if (merged[0] != '\0') parse_src = merged;
     }
-    printf("gcl: stage 2/6 — parsing (%zu bytes)\n", strlen(parse_src));
+    printf("gcl: stage 2/6 - parsing (%zu bytes)\n", strlen(parse_src));
     gcl_parser_init(&parser, parse_src, &arena, &intern, &diag, filepath);
     GclAstNode *ast = gcl_parser_parse(&parser);
-    printf("gcl: stage 2/6 — parse OK (%d decls)\n", ast ? ast->child_count : 0);
+    printf("gcl: stage 2/6 - parse OK (%d decls)\n", ast ? ast->child_count : 0);
 
     /* Part 1: #warning (yellow) / #debug (blue) / #error (red, stops build) */
     gcl_emit_pp_directives(ast, &diag, filepath);
@@ -370,7 +410,7 @@ int gcl_run_file(const char *source, const char *filepath) {
     }
 
     /* Stage 3: Semantic */
-    printf("gcl: stage 3/6 — semantic check\n");
+    printf("gcl: stage 3/6 - semantic check\n");
     gcl_semantic_init(&diag, filepath);
     gcl_semantic_check(ast);
 
@@ -382,10 +422,10 @@ int gcl_run_file(const char *source, const char *filepath) {
     }
 
     /* Stage 4: Type check */
-    printf("gcl: stage 4/6 — type check\n");
+    printf("gcl: stage 4/6 - type check\n");
     gcl_typecheck_init(&diag, filepath);
     gcl_typecheck_walk(ast);
-    printf("gcl: stage 4/6 — check OK\n");
+    printf("gcl: stage 4/6 - check OK\n");
 
     if (diag.error_count > 0) {
         gcl_diag_print_all(&diag);
@@ -395,10 +435,10 @@ int gcl_run_file(const char *source, const char *filepath) {
     }
 
     /* Stage 5: IR Generation */
-    printf("gcl: stage 5/6 — IR generation\n");
+    printf("gcl: stage 5/6 - IR generation\n");
     gcl_ir_init(&ir, &arena, &diag);
     gcl_ir_gen(&ir, ast);
-    printf("gcl: stage 5/6 — IR OK (%d instructions)\n", ir.count);
+    printf("gcl: stage 5/6 - IR OK (%d instructions)\n", ir.count);
 
     if (diag.error_count > 0) {
         gcl_diag_print_all(&diag);
@@ -408,7 +448,7 @@ int gcl_run_file(const char *source, const char *filepath) {
     }
 
     /* Stage 6: Interpreter */
-    printf("gcl: stage 6/6 — interpreter run\n");
+    printf("gcl: stage 6/6 - interpreter run\n");
     int result = gcl_interp_run_with_path(&ir, filepath);
 
     /* Cleanup */

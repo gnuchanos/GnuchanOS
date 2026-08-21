@@ -310,8 +310,21 @@ body {
   background: var(--c-sugg-bg);
 }
 
-/* Fonksiyon parametre gostergesi: AYRI pencere — imlecin USTUNE konumlanir,
- * otomatik tamamlama popup'ından bagimsizdir ("func(" icinde kalici durur). */
+/* Fonksiyon parametre gostergesi: otomatik tamamlama popup'inin ICINDE,
+ * listenin ALTINDA duran alt blok (ayri pencere degil). Ayrac + tema
+ * arkaplani ile listeden ayrilir. */
+.ac-popup-sig {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--c-sugg-border);
+  background: var(--c-sugg-bg);
+  min-width: 240px;
+  max-width: 480px;
+}
+
+/* eski ayri-pencere stili (artik kullanilmiyor, uyumluluk icin duruyor) */
 .ac-sig-popup {
   position: absolute;
   z-index: 49;

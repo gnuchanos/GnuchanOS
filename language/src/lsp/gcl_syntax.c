@@ -38,7 +38,6 @@ static const GclEntry g_gcl[] = {
     {"tuple", "keyword", "tuple name = ('a', 10, 300.0);"},
     {"dict", "keyword", "dict name = { gcChar key : value };"},
     {"#include", "keyword", "#include \"script.gcsf\" or <script.gcsf>"},
-    {"#lib", "keyword", "#lib \"kutuphane.gclib\" or <kutuphane.gclib>"},
     {"#extern", "keyword", "#extern \"raylib.dll\" or <raylib.so>"},
     {"#register", "keyword", "#register void InitWindow(int w, int h, const char *t);"},
     {"#define", "keyword", "#define NAME value"},

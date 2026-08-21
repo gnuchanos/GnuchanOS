@@ -51,12 +51,6 @@ export default function AutocompletePopup({
       style={{ top, left, "--ac-row-height": `${rowHeight}px` } as React.CSSProperties}
       onMouseDown={(e) => e.preventDefault() /* editor imlecini kacirma */}
     >
-      {signature && (
-        <div className="ac-popup-sig">
-          <span className="ac-sig-label">params</span>
-          <code className="ac-sig-code">{signature}</code>
-        </div>
-      )}
       {items.length > 0 && (
         <>
           <div className="ac-popup-list" ref={listRef}>
@@ -80,6 +74,16 @@ export default function AutocompletePopup({
             insert, Esc close
           </div>
         </>
+      )}
+      {/* Fonksiyon parametre gostergesi: tamamlama listesinin ALTINDA. Ayri
+       * pencere degil — popup'in kendi akisinda durur, boylece ne yazilan
+       * satiri ne de listeyi orter. "func(" icinde (")" / yeni satir / Esc
+       * olmadigi surece kalici durur. */}
+      {signature && (
+        <div className="ac-popup-sig">
+          <span className="ac-sig-label">params</span>
+          <code className="ac-sig-code">{signature}</code>
+        </div>
       )}
     </div>
   );

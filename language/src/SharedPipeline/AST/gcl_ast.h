@@ -35,7 +35,6 @@ typedef enum {
     AST_BOOL_LIT,
     AST_NULL_LIT,
     AST_PP_INCLUDE,
-    AST_PP_LIB,
     AST_PP_EXTERN,
     AST_PP_REGISTER,
     AST_PP_DEFINE,

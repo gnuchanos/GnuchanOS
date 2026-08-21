@@ -65,7 +65,7 @@ export default function DocsPanel({ root, onOpen, refreshKey, language }: Props)
      * tespitiyle doğru gruba düşer (main.ts listDocs); geriye "other"
      * kalırsa bu gerçek bir "sınıflandırılamayan" dosyadır ve DOCS
      * panelinde yeri yoktur — tekrar/karışıklık hissi yaratır. */
-    const langOrder: DocsEntry["lang"][] = ["lua", "python", "bridge"];
+    const langOrder: DocsEntry["lang"][] = ["gcl", "lua", "python", "bridge"];
     const kindOrder: DocsEntry["kind"][] = ["doc", "ref", "lib"];
     const byLang = new Map<DocsEntry["lang"], DocsEntry[]>();
     for (const e of entries) {
@@ -99,13 +99,15 @@ export default function DocsPanel({ root, onOpen, refreshKey, language }: Props)
       out.push({
         lang,
         group:
-          lang === "lua"
-            ? "Lua"
-            : lang === "python"
-              ? "Python"
-              : lang === "bridge"
-                ? "Bridge"
-                : "Other",
+          lang === "gcl"
+            ? "GCL"
+            : lang === "lua"
+              ? "Lua"
+              : lang === "python"
+                ? "Python"
+                : lang === "bridge"
+                  ? "Bridge"
+                  : "Other",
         sections,
       });
     }

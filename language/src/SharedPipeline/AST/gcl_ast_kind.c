@@ -26,7 +26,6 @@ const char *gcl_ast_kind_name(GclAstKind kind) {
     case AST_BOOL_LIT:       return "BoolLit";
     case AST_NULL_LIT:       return "NullLit";
     case AST_PP_INCLUDE:     return "PPInclude";
-    case AST_PP_LIB:         return "PPLib";
     case AST_PP_EXTERN:      return "PPExtern";
     case AST_PP_REGISTER:    return "PPRegister";
     case AST_PP_DEFINE:      return "PPDefine";

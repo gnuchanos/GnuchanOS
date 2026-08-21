@@ -327,6 +327,13 @@ static void gen_expr(GclIrProgram *prog, const GclAstNode *node) {
                 break;
             }
         }
+        /* Part 5: free(target);  — function-call form of var.free(). */
+        if (argc == 1 && callee_name && strcmp(callee_name, "free") == 0 &&
+            node->children[1] && node->children[1]->kind == AST_IDENT_EXPR &&
+            node->children[1]->str_value) {
+            gcl_ir_emit(prog, IR_FREE, 0, 0, node->children[1]->str_value, 0);
+            break;
+        }
         /* Part 3: scanf("%type", target); → IR_SCANF */
         if (argc == 2 && callee_name && strcmp(callee_name, "scanf") == 0) {
             const GclAstNode *fmt = node->children[1];
@@ -600,7 +607,6 @@ static void gen_stmt(GclIrProgram *prog, const GclAstNode *node) {
         }
         break;
     case AST_PP_INCLUDE:
-    case AST_PP_LIB:
     case AST_PP_EXTERN:
     case AST_PP_ERROR:
     case AST_PP_WARNING:

@@ -31,6 +31,7 @@ import sys
 
 LUA_DOC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lua_doc.txt")
 PY_DOC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "python_doc.txt")
+GCL_DOC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gcl_doc.txt")
 
 LUA_RAYLIB_BIND = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -486,6 +487,52 @@ CONSTANTS = [
 ]
 
 # ---------------------------------------------------------------------------
+# GCL dilinin kendi fonksiyonlari ve on-islemci direktifleri (built-in):
+# (name, signature, aciklama, ornek)
+# ---------------------------------------------------------------------------
+GCL_FUNCS = [
+    ("printf", "(fmt:str, args...) -> int",
+     "Format output: %d %s %c %f.",
+     'printf("ADD: %d\\n", 7)'),
+    ("scanf", "(\"%type\", var) -> int",
+     "Safe stdin read: %s %d %f %c.",
+     'scanf("%d", x)'),
+    ("malloc", "(reserve:count) -> int*",
+     "Fixed-capacity int list (no auto-grow).",
+     'int *Fixed = malloc(reserve=2);'),
+    ("gcMalloc", "(reserve:count, extra:n) -> int*",
+     "Auto-growing int list (grows when full).",
+     'int *List = gcMalloc(reserve=2, extra=3);'),
+    ("free", "(ptr) or var.free()",
+     "Release a heap value (double-free warns).",
+     'free(List);'),
+    ("sizeof", "(type) or (variable) -> size",
+     "Size in bytes of a type or value.",
+     'sizeof(int)'),
+    ("#include", "<name> or \"name\"",
+     "Merge another .gcsf file into this script.",
+     '#include <test_include>'),
+    ("#lib", "<name> or \"name\"",
+     "Merge a .gclib library file.",
+     '#lib <test_library>'),
+    ("#extern", "<dll> or \"dll\"",
+     "Load a native shared library.",
+     '#extern <raylib.dll>'),
+    ("#register", "ret name(params);",
+     "Declare a native function from #extern.",
+     '#register void InitWindow(int w, int h, const char *t);'),
+    ("#define", "NAME value",
+     "Define a macro constant.",
+     '#define MY_MACRO 42'),
+    ("#warning", "\"text\"",
+     "Print a yellow warning (does not stop the build).",
+     '#warning "check this"'),
+    ("#error", "\"text\"",
+     "Print a red error and stop the build.",
+     '#error "raylib.dll is not exist"'),
+]
+
+# ---------------------------------------------------------------------------
 # yazicilar
 # ---------------------------------------------------------------------------
 
@@ -581,9 +628,10 @@ def write_ref(path, title, intro, func_cats, constants):
 
 
 def write_docs(out):
-    """lua.doc ve py.doc'u Library/ klasorlerine kopyalar."""
+    """lua.doc, py.doc ve gcl.doc'u Library/ klasorlerine kopyalar."""
     for src, dst_rel in [(LUA_DOC, os.path.join("Lua", "lua.doc")),
-                         (PY_DOC, os.path.join("Python", "py.doc"))]:
+                         (PY_DOC, os.path.join("Python", "py.doc")),
+                         (GCL_DOC, os.path.join("GCL", "gcl.doc"))]:
         if os.path.isfile(src):
             dst = os.path.join(out, "Library", dst_rel)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -599,14 +647,31 @@ def main():
     out = sys.argv[1]
     lua_dir = os.path.join(out, "Library", "Lua")
     py_dir = os.path.join(out, "Library", "Python")
+    gcl_dir = os.path.join(out, "Library", "GCL")
     bridge_dir = os.path.join(out, "Library", "bridge")
     os.makedirs(lua_dir, exist_ok=True)
     os.makedirs(py_dir, exist_ok=True)
+    os.makedirs(gcl_dir, exist_ok=True)
     os.makedirs(bridge_dir, exist_ok=True)
 
     write_docs(out)
 
-    # 1) modul export'lari (sabit)
+    # 1) GCL built-in fonksiyonlar + direktifler
+    write_ref(os.path.join(gcl_dir, "gcl.gcReference"),
+              "GCL built-ins",
+              "printf/scanf, malloc/gcMalloc/free, #include/#lib/#extern "
+              "and preprocessor directives",
+              [("Built-ins", [
+                  f for f in GCL_FUNCS
+                  if not f[0].startswith("#")
+              ]),
+               ("Preprocessor", [
+                  f for f in GCL_FUNCS
+                  if f[0].startswith("#")
+              ])],
+              [])
+
+    # 2) modul export'lari (sabit)
     write_ref(os.path.join(lua_dir, "lua.gcReference"),
               "Lua Embed (gcdl_loader)", "direct .gcDL exports",
               [("Module", [

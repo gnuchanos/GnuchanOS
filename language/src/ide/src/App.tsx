@@ -304,6 +304,25 @@ export default function App() {
     });
   }, []);
 
+  /* Tab siralamasini degistir (drag & drop): suruklenen sekmeyi hedef
+   * sekmenin ONUNE tasir; aktif sekme ayni kalir. */
+  const moveTab = useCallback((from: number, to: number) => {
+    setTabs((prev) => {
+      if (from === to || from < 0 || to < 0 || from >= prev.length || to >= prev.length)
+        return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+    setActive((cur) => {
+      if (cur === from) return to;
+      if (cur > from && cur <= to) return cur - 1;
+      if (cur < from && cur >= to) return cur + 1;
+      return cur;
+    });
+  }, []);
+
   const saveActive = useCallback(async () => {
     const t = tabs[active];
     if (!t) return;
@@ -664,7 +683,21 @@ export default function App() {
                 <div
                   key={t.path}
                   className={`tab ${i === active ? "active" : ""}`}
+                  draggable
                   onClick={() => setActive(i)}
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", String(i));
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = Number(e.dataTransfer.getData("text/plain"));
+                    if (!Number.isNaN(from)) moveTab(from, i);
+                  }}
                 >
                   <span>{t.name}</span>
                   {t.modified && <span className="tab-dot">●</span>}

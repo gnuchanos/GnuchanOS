@@ -582,10 +582,18 @@ static void interp_index_value(InterpState *st, const char *s, int64_t i) {
     if (slen >= 2 && sp[0] == 'M' && sp[1] == ';') {
         const char *q = sp + 2;
         const char *end = sp + slen;
-        /* skip cap, extra, count */
-        for (int seg = 0; seg < 3 && q < end; seg++) {
-            while (q < end && *q != ';') q++;
-            if (q < end) q++;
+        /* parse header: cap;extra;count; (count is the element count) */
+        int64_t list_cap = 0, list_extra = 0, list_count = 0;
+        q = interp_parse_num(q, end, &list_cap);
+        if (q < end && *q == ';') q++;
+        q = interp_parse_num(q, end, &list_extra);
+        if (q < end && *q == ';') q++;
+        q = interp_parse_num(q, end, &list_count);
+        if (q < end && *q == ';') q++;
+        /* out-of-bounds read → null */
+        if (i < 0 || i >= list_count) {
+            push(st, val_null());
+            return;
         }
         int64_t cur = 0;
         for (;;) {
@@ -739,11 +747,10 @@ static void interp_scanf(InterpState *st, const char *name, int64_t kind) {
             if (sl >= 2 && sp[0] == '"' && sp[sl-1] == '"') sl -= 2;
             cap = sl > 0 ? sl : 127;
         }
-        if (len >= cap) {
+        if (len >= cap && cap > 0) {
             fprintf(stdout, "\x1b[33mgcl: warning: scanf input exceeds buffer size (%d), truncated\x1b[0m\n",
                     (int)cap);
             len = cap - 1;
-            if (len < 0) len = 0;
             line[len] = '\0';
         }
         char qbuf[520];
@@ -939,10 +946,15 @@ static void interp_assign_index(InterpState *st, const char *name, int argc) {
                           (long long)cap, (long long)extra, (long long)count);
         if (wn > 0) n += (size_t)wn;
 
-        /* copy elements; replace the target one */
+        /* copy existing elements; the slot that matches `target` is replaced
+         * with the new value (append when target == old count). The last
+         * element is NOT followed by ';' after a malloc write, so use `sep`
+         * only to advance; never stop before emitting the target. */
         int64_t cur = 0;
         const char *r = q;
-        for (;;) {
+        int old_count = count;
+        if (target == count) old_count = count - 1; /* appended slot: not in old data */
+        while (cur < old_count && n + 2 < sizeof(out)) {
             const char *sep = strchr(r, ';');
             const char *elem_end = sep ? sep : end;
             if (cur == target) {
@@ -959,14 +971,11 @@ static void interp_assign_index(InterpState *st, const char *name, int argc) {
             cur++;
             if (!sep) break;
             r = sep + 1;
-            if (target == count - 1 && cur >= count) break; /* appended: stop after old elems */
-            if (cur >= count && target < count) break;
         }
+        /* append case: new value goes after all old elements */
         if (target == count - 1) {
-            /* appended element already emitted by the replace branch above;
-             * ensure it is followed by exactly one terminator */
-            if (n > 0 && out[n-1] == ';') n--;
-            out[n++] = ';';
+            int written = snprintf(out + n, sizeof(out) - n, "%lld;", (long long)val_to_int(val));
+            if (written > 0) n += (size_t)written;
         }
         if (n > 0 && out[n-1] == ';') n--; /* trailing ; trimmed (read parse-tolerant) */
         out[n] = '\0';

@@ -9,12 +9,12 @@ export interface FsEntry {
 
 /* DOCS panelinde listelenen dokuman girisleri (build Library'den gelen
  * .doc / .gcReference / wrapper dosyalari + kullanici Library'si).
- * lang: dil grubu (Lua / Python / bridge). group: kategori basligi. */
+ * lang: dil grubu (GCL / Lua / Python / bridge). group: kategori basligi. */
 export interface DocsEntry {
   path: string;
   name: string;
   kind: "doc" | "ref" | "lib";
-  lang: "lua" | "python" | "bridge" | "other";
+  lang: "gcl" | "lua" | "python" | "bridge" | "other";
   group: string;
 }
 

@@ -65,7 +65,6 @@ const char *gcl_token_kind_name(GclTokenKind kind) {
     case TOK_KW_SCANF:      return "scanf";
     case TOK_KW_EXTERN:     return "extern";
     case TOK_PP_INCLUDE:    return "#include";
-    case TOK_PP_LIB:        return "#lib";
     case TOK_PP_EXTERN:     return "#extern";
     case TOK_PP_REGISTER:   return "#register";
     case TOK_PP_DEFINE:     return "#define";

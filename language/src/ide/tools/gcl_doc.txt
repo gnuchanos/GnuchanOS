@@ -1,0 +1,776 @@
+# GCL Documentation
+
+A complete, beginner-friendly guide to GCL — the Gnuchan C-Like Language.
+It covers the CLI, types, memory, structs, classes and every Part of the
+GCL language as bundled with GnuChanIDE.
+
+---
+
+## 1. GCL is HUB LANGUAGE
+
+GCL is the hub language of GnuchanOS: every module (`.gcsf`, `.gclib`,
+`.so`, `.dll`, `.a`) comes together here. It is linux/focus by design but
+it can support Windows too (no macOS, no Android).
+
+### Running a script
+
+```text
+gcl -flags main.gcsf -o path/output        # or just: -o output
+gcl -flags -run path/main.gcsf             # or just: -run main.gcsf
+```
+
+### CLI flags
+
+```text
+gcl -lexer  file.gcsf | file.gclib
+gcl -parser file.gcsf | file.gclib
+gcl -ast    file.gcsf | file.gclib
+gcl -ir     file.gcsf | file.gclib
+gcl -debug -run file.gcsf
+
+gcl -linclude path -llib path -lextern path -run main.gcsf
+```
+
+### File types
+
+```text
+.gcsf    # script file
+.gclib   # library/module
+.gctf    # text file
+.gcdata  # json with file + "#//" comment line support
+```
+
+> `D:\GnuchanOS\language\BUILD` is where the output `gcl`, `.gcsf`,
+> `.gclib`, `.so`, `.dll`, `.a` files live. Keep compiler trash out of it.
+
+## 2. Language Algorithm (pipeline)
+
+```
+GCL Source #// .gclib/extern -> .gcsf/extern -> main.gcsf
+     │
+     ▼
+src/
+├── FastIR/                      # interpreter
+│
+├── SharedPipeline/
+│   ├── Linker/
+│   ├── Lexer/
+│   ├── Parser/
+│   ├── Semantic/
+│   ├── TypeChecker/
+│   ├── Memory/
+│   ├── GarbageCollector/
+│   ├── AST/
+│   ├── Diagnostics/
+│   ├── Ir/
+│   └── Common/
+
+# .gclib/extern -> include .gcsf/extern -> main.gcsf
+# SharedPipeline -> FastIR
+```
+
+The source is merged (`#lib` / `#include` / `#extern`) first, then pushed
+through the SharedPipeline (lexer -> parser -> semantic -> typecheck ->
+IR) and finally executed by FastIR.
+
+## 3. Memory management
+
+```text
+            Program
+                │
+    ┌───────────┼───────────┐
+    │           │           │
+    Stack       Heap      Static Data
+    │           │
+    │      ┌────┼─────┐
+    │      │    │     │
+    Local  Arena Pool Custom
+```
+
+Every allocation checks OOM + null + bounds + overflow.
+
+## 4. Error reporting
+
+Python-like error reporting system.
+
+## 5. Comments
+
+```gcsf
+# comment
+#| multi
+line
+comment |#
+
+#// also a line comment
+```
+
+## 6. Module system
+
+### Including a script (classic C-like)
+
+```gcsf
+#include "script.gcsf"      // or <script.gcsf>
+// how to call: member
+```
+
+### Module / library system
+
+```gcsf
+#lib "library.gclib"        // or <library.gclib>
+// how to call: library.member
+```
+
+### Native libraries (.so, .dll, .a)
+
+```gcsf
+#extern "raylib.dll"        // or <raylib.so>
+    #register void InitWindow(int width, int height, const char *title);
+    #register void CloseWindow(void);
+
+// how to call: InitWindow(300, 300, "uwu");
+```
+
+## 7. Preprocessor / macros
+
+These macros are for `.gclib` and included `.gcsf` files — not for
+`main.gcsf`:
+
+```gcsf
+#register    // from #extern <raylib.dll> -> .so, .dll -> #register type function()
+#ifdef
+#ifndef
+#if
+#elif
+#else
+#endif
+```
+
+`#if` supports: `gnuLinux`, `gnu_linux`, `gnu`, `linux`, `windows`.
+You can use it in `main.gcsf`, included `.gcsf` and `.gclib`.
+
+```gcsf
+#define           // normal macro
+#undef
+#warning "text", "text", variable, variable   // yellow text
+#error   "ERROR!!"                            // red text, stops build
+#debug   "error message"                      // blue text after error
+```
+
+Output colors:
+
+```text
+#debug ..., ...   // blue
+#warning ..., ... // yellow
+#error ..., ...   // red
+```
+
+## 8. main() entry
+
+`main()` is only required for `main.gcsf` — an included `.gcsf` does not
+need one. All of these forms are accepted:
+
+```gcsf
+int main(void) { return 0; }
+int main() { return 0; }
+int main(int argc, char *argv[]) { return 0; }
+int main(int argc, char **argv) { return 0; }
+int main(int argc, char *argv[argc]) { return 0; }
+```
+
+## 9. Variables and visibility
+
+```gcsf
+// in main.gcsf: global variable
+int global_variable = 10;
+
+int main() {
+    // in main.gcsf: file local variable
+    int local = 10;
+}
+```
+
+```gcsf
+public  type identifier = value;   // accessible everywhere
+private type identifier = value;   // only inside the folder
+
+const type identifier = var;
+inline identifier
+global identifier
+
+type identifier = variable;
+type identifier1, identifier1, identifier1 = variable;
+
+void print_this_global() {
+    global gx;
+
+    printf("Global GX: %d \n", gx);
+}
+
+void print_this_local() {
+    inline gx;
+
+    int gx = 31;
+
+    printf("local GX: %d \n", gx);
+}
+
+int gx = 10;
+print_this_global();
+print_this_local();
+
+type a = var;
+pointer ->, &
+```
+
+## 10. Types
+
+### Vanilla C standard
+
+```gcsf
+short, int, float, double
+long long int
+long double
+
+unsigned
+unsigned long int
+
+char != gcChar  // not the same: char keeps backwards C compatibility
+    char    is regular vanilla 1 byte char
+    gcChar  is UTF-8
+
+bool
+
+char *text = null;
+
+sizeof(type) or sizeof(variable)
+```
+
+### GCL standard types
+
+```gcsf
+int8   number1 = 10;
+int16  number2 = 100;
+int32  number3 = 1000;
+int64  number4 = 10000;
+int128 number5 = 100000;
+
+float16  number6 = 10.30;
+float32  number7 = 10.300;
+float64  number8 = 10.3000;
+float128 number9 = 10.30000;
+
+uint8   number1 = 10;
+uint16  number2 = 100;
+uint32  number3 = 1000;
+uint64  number4 = 10000;
+uint128 number5 = 100000;
+```
+
+### Operators
+
+```gcsf
++ - * / %
+
+++ --
++= -=
+
+== !=
+
+>, <, >=, <=
+
+&&, ||, !, &, |, ^, ~, <<, >>
+
+pointer  &, *
+```
+
+### Escape sequences
+
+```text
+\n
+\t
+\r
+\\
+\"
+\'
+```
+
+## 11. printf
+
+```gcsf
+printf("format", arguments...);
+```
+
+Signed integers:
+
+```gcsf
+printf("int8:        %d\n",   number1);
+printf("int16:       %d\n",   number2);
+printf("int32:       %d\n",   number3);
+printf("int64:       %lld\n", number4);
+printf("int128:      %lld\n", number5);
+
+printf("short:       %hd\n",  number6);
+printf("int:         %d\n",   number7);
+printf("long:        %ld\n",  number8);
+printf("long long:   %lld\n", number9);
+```
+
+Unsigned integers:
+
+```gcsf
+printf("uint8:             %u\n",   unumber1);
+printf("uint16:            %u\n",   unumber2);
+printf("uint32:            %u\n",   unumber3);
+printf("uint64:            %llu\n", unumber4);
+printf("uint128:           %llu\n", unumber5);
+
+printf("unsigned short:    %hu\n",  unumber6);
+printf("unsigned int:      %u\n",   unumber7);
+printf("unsigned long:     %lu\n",  unumber8);
+printf("unsigned long long:%llu\n", unumber9);
+```
+
+Floating point:
+
+```gcsf
+printf("float16:       %f\n",  fnumber1);
+printf("float32:       %f\n",  fnumber2);
+printf("float64:       %f\n",  fnumber3);
+printf("float128:      %Lf\n", fnumber4);
+
+printf("float:         %f\n",  fnumber5);
+printf("double:        %f\n",  fnumber6);
+printf("long double:   %Lf\n", fnumber7);
+```
+
+Length modifiers:
+
+```text
+hh    char
+h     short
+l     long
+ll    long long
+z     size_t
+```
+
+Width & precision:
+
+```text
+%5d    Minimum width
+%-5d   Left align
+%05d   Zero padding
+%.2f   Precision
+%8.2f  Width + Precision
+```
+
+## 12. scanf — safer than vanilla C
+
+```gcsf
+scanf("%type", text);
+```
+
+Runtime checks:
+
+- Detect buffer overflow.
+- Prevent writing past the buffer.
+- Emit a `#warning` if the input exceeds the buffer size.
+- Truncate the input safely.
+- Always null-terminate the string.
+
+## 13. char and gcChar (strings)
+
+`char` is not vanilla char in GCL:
+
+```gcsf
+char TEXT = 'a';   // 1 utf-8 char
+```
+
+### Stack UTF-8 string (immutable)
+
+```gcsf
+gcChar TEXT[] = "this is lenght + UTF-8 based char system focus more safe stack use with const";
+```
+
+- UTF-8 encoded
+- Length-aware
+- Stack allocated
+- Immutable
+- Fixed size
+
+### Heap UTF-8 string (mutable)
+
+```gcsf
+gcChar *TEXT = "this in heap UTF-8 string real strings";
+```
+
+- UTF-8 encoded
+- Length-aware
+- Heap allocated
+- Mutable
+- Dynamic size
+
+The heap string is freed automatically at program exit, or you can call
+`TEXT.free()` manually — after that `TEXT` becomes null and cannot be used
+until it gets a new value:
+
+```gcsf
+if (TEXT != null) {
+    // safe to use
+}
+```
+
+## 14. Arrays
+
+### Vanilla C arrays
+
+```gcsf
+char alphabet[] = {'a', 'b', 'c'};
+char game[]     = "Half Life 3";
+char games[][32]  = {
+    "half life 3",
+    "left 4 dead 3",
+    "team fortress 3"
+};
+
+char ***games = malloc(sizeof(char ***) * 4);   // 3D malloc
+```
+
+Runtime checks:
+
+- Check allocation size.
+- If the requested size exceeds the maximum limit, automatically allocate
+  a larger block and emit a `#warning`.
+- Detect allocation failure.
+
+Memory management:
+
+- Call `free(games);` before program exit.
+- If `free()` is called twice, emit a `#warning`.
+- After `free()`, automatically set `games -> null`.
+
+### Vanilla GCL arrays
+
+```gcsf
+gcChar a = 'a';                      // utf-8 char
+gcChar game[] = "Half Life 3";
+gcChar *game = "Half Life 3";
+
+// type identifier[] @dimension_size = {}
+
+gcChar alphabet[] @1 = {'a', 'b', 'c'};   // utf-8 char array/list
+```
+
+The `@N` syntax sets the maximum dimension level (`@1` = 1D, `@2` = 2D,
+...). There is no `[][][][]` — you write `@4` instead.
+
+```gcsf
+type identifier[] @2 = {
+    {           // 0D dimension
+        {       // 1D dimension
+            {   // 2D dimension
+            }
+        }
+    },
+}
+
+gcChar gamesgames[container size][inside container char size] @3 = {
+    { "game 0", { "info", { "Half-Life",      1998, 10 } } },
+    { "game 1", { "info", { "Portal",         2007, 10 } } },
+    { "game 2", { "info", { "Counter-Strike", 2000,  9 } } },
+    { "game 3", { "info", { "Left 4 Dead 2",  2009, 10 } } }
+};
+    // : number means dimension size
+
+gcChar *gamesgames[] @3 = {   // : number means dimension size
+    { "game 0", { "info", { "Half-Life",      1998, 10 } } },
+    { "game 1", { "info", { "Portal",         2007, 10 } } },
+    { "game 2", { "info", { "Counter-Strike", 2000,  9 } } },
+    { "game 3", { "info", { "Left 4 Dead 2",  2009, 10 } } }
+};
+    // no need to malloc
+```
+
+### Number arrays
+
+```gcsf
+type identifier[] @1 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 0};
+```
+
+## 15. Memory: malloc / gcMalloc / free
+
+```gcsf
+#define MAX_PLAYER 10
+typedef struct Players {
+    gcChar *name;   // regular string size, more runtime safe
+    int8    age;
+} Player;
+```
+
+There are 2 ways to build the array.
+
+### First way: regular malloc
+
+```gcsf
+Players *Player_List = malloc(reserve=sizeof(Player*) * MAX_PLAYER);
+
+Player[index].Name
+Player[index].age
+
+free(Player_List);   // frees and sets it to null
+```
+
+### Second way: easy and safe (gcMalloc)
+
+```gcsf
+Player *Player_List = gcMalloc(reserve=MAX_PLAYER, extra=10);
+```
+
+- Creates an array with `MAX_PLAYER` capacity.
+- If the array becomes full, automatically expands by `+10` elements.
+- Example growth: `10 -> 20 -> 30 -> 40 -> ...`
+
+Memory management:
+
+- You may call `free(Player_List)` manually.
+- If you don't, GCL automatically frees the memory before program exit.
+
+## 16. typedef
+
+```gcsf
+typedef int32_t int32;
+typedef unsigned int uint;
+typedef char* string;
+```
+
+Operator aliases (only for GCL):
+
+```gcsf
+typedef == equals;
+typedef != notEquals;
+
+typedef && and;
+typedef || or;
+typedef !  not;
+
+typedef &  bitAnd;
+typedef |  bitOr;
+typedef ^  bitXor;
+typedef ~  bitNot;
+
+typedef << leftShift;
+typedef >> rightShift;
+```
+
+## 17. enum
+
+```gcsf
+enum Color {
+    RED,
+    GREEN,
+    BLUE
+};
+
+enum Color _RED = RED;
+```
+
+## 18. struct
+
+```gcsf
+struct Player {
+    char name[32];
+    int health;
+    float speed;
+};
+
+struct Player thisPlayer = {
+    .name   = "GnuChanOS",
+    .health = 100,
+    .speed  = 20
+};
+
+// call> thisPlayer.name
+```
+
+### typedef struct and enum together
+
+```gcsf
+typedef struct Player {
+    char name[32];
+    int health;
+    float speed;
+} Player;
+
+Player thisPlayer = { ... };
+
+typedef enum Color {
+    RED,
+    GREEN,
+    BLUE
+} Color;
+
+Color _RED = RED;
+```
+
+## 19. tuple
+
+```gcsf
+tuple mix = ('a', "half life 3", 10, 300.2000, 33);
+```
+
+## 20. dict — fast object creation
+
+```gcsf
+typedef struct Vector2 {
+    float x;
+    float y;
+} Vector2;
+```
+
+Create the object directly and use it immediately:
+
+```gcsf
+dict player = {
+    gcChar name : "gnuchanos",
+    Vector2 position: {300, 300},
+    int8 scale: 30,
+    gcChar *favGame[]: {"half life 3", "left 4 dead 3", "team fotress 3"}
+};
+```
+
+## 21. Control flow
+
+```gcsf
+if (...) {
+    ...
+} else if (...) {
+    ...
+} elif () {
+
+} else {
+
+}
+
+switch() {
+    case:
+
+        break;
+
+    default:
+
+        break;
+
+}
+```
+
+## 22. Loops
+
+### for
+
+```gcsf
+for (int i = 0; i < siz; i++) {
+    ...
+}
+```
+
+`break`, `continue`, `return`
+
+### while / do-while
+
+```gcsf
+while (...) {
+
+}
+
+do {
+
+} while(...) {
+
+}
+```
+
+`break`, `continue`, `return`
+
+## 23. Functions
+
+```gcsf
+void function(..., ...);
+type function(..., ...);
+```
+
+## 24. Classes
+
+### 101
+
+```gcsf
+class no_head() {
+    void call() {}
+}   //# no_head.call()
+
+class with_head() {
+    void head() {
+        int age = 30;
+
+        return 0;
+    }
+
+    void call() { }
+}   //# with_head().call(), .age
+```
+
+### Real example with inheritance
+
+```gcsf
+class FATHER() {
+    @return
+    gcChar Call() {
+        return "where are you";
+    }
+}
+
+class CHILD(FATHER) {
+    void head(gcChar name, int8 age) {
+        gcChar name = name;
+        int8   age  = age;
+
+        return 0;
+    }
+
+    void talk() {
+        // # @return -> no need () only return
+        gcChar what = FATHER.Call;
+
+        if (what == "where are you") {
+            printf("i'm coming father!! \n");
+        }
+
+    }
+
+    int age() {
+        return age;
+    }
+}
+
+FATHER ThisFather = FATHER();   // no head means ()
+CHILD  ThisChild  = CHILD(ThisFather);
+
+printf("FATHER CALL: %s", ThisFather.Call());
+
+printf("Child Name: %s \n", ThisChild.name);
+printf("Child Age: %d \n", ThisChild.age());
+printf("FATHER CALL From Child No Header: %s \n", ThisChild.Call());
+printf("FATHER CALL From Child With Header: %s \n", ThisChild.talk());
+```
+
+## 25. Tips
+
+- Files use `.gcsf` (script) and `.gclib` (library) extensions.
+- GCL keywords autocomplete in the editor: `#include`, `#lib`, `#extern`,
+  `#register`, `struct`, `class`, `tuple`, `dict`, `enum`, `printf`,
+  `scanf`, `gcMalloc`, ...
+- Pipeline: lexer -> parser -> semantic -> typecheck -> IR -> interpreter.
+  Run `gcl -lexer / -parser / -ast / -ir <file>` to inspect each stage.
+- This doc is bundled with GCL. More: `gcl_doc.md` in the repo root.
+
+---
+
+_This local doc is bundled with GCL. More: `gcl_doc.md` in the repo root._

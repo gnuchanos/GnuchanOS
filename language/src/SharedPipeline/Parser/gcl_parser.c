@@ -278,7 +278,15 @@ static GclAstNode *parse_typedef_decl(GclParser *p) {
                 strcmp(first,"<<")==0 || strcmp(first,">>")==0) {
                 if (p->op_alias_count < GCL_ALIAS_MAX) {
                     snprintf(p->op_alias_name[p->op_alias_count], 128, "%s", alias);
-                    snprintf(p->op_alias_op[p->op_alias_count], 16, "%s", first);
+                    /* op buffer is 16 bytes; truncate safely (max 15 chars + NUL)
+                     * instead of letting GCC warn about truncation. */
+                    {
+                        size_t olen = strlen(first);
+                        if (olen >= sizeof p->op_alias_op[0])
+                            olen = sizeof p->op_alias_op[0] - 1;
+                        memcpy(p->op_alias_op[p->op_alias_count], first, olen);
+                        p->op_alias_op[p->op_alias_count][olen] = '\0';
+                    }
                     p->op_alias_count++;
                 }
             } else {
@@ -297,7 +305,16 @@ static GclAstNode *parse_typedef_decl(GclParser *p) {
                     }
                     tbuf[tn] = '\0';
                     snprintf(p->type_aliases[p->type_alias_count].name, 128, "%s", alias);
-                    snprintf(p->type_aliases[p->type_alias_count].type, 128, "%s", tn ? tbuf : "int");
+                    /* type buffer is 128 bytes; truncate safely instead of
+                     * letting GCC warn about truncation. */
+                    {
+                        const char *tsrc = tn ? tbuf : "int";
+                        size_t tlen = strlen(tsrc);
+                        if (tlen >= sizeof p->type_aliases[0].type)
+                            tlen = sizeof p->type_aliases[0].type - 1;
+                        memcpy(p->type_aliases[p->type_alias_count].type, tsrc, tlen);
+                        p->type_aliases[p->type_alias_count].type[tlen] = '\0';
+                    }
                     p->type_aliases[p->type_alias_count].ptr = ptr;
                     p->type_alias_count++;
                 }
@@ -356,15 +373,6 @@ static GclAstNode *parse_pp_include(GclParser *p) {
     int line = p->current.line, col = p->current.col;
     parser_advance(p);
     GclAstNode *node = gcl_ast_new(p->arena, AST_PP_INCLUDE, line, col);
-    GclAstNode *path = parse_pp_path(p);
-    if (path) gcl_ast_add_child(node, path);
-    return node;
-}
-
-static GclAstNode *parse_pp_lib(GclParser *p) {
-    int line = p->current.line, col = p->current.col;
-    parser_advance(p);
-    GclAstNode *node = gcl_ast_new(p->arena, AST_PP_LIB, line, col);
     GclAstNode *path = parse_pp_path(p);
     if (path) gcl_ast_add_child(node, path);
     return node;
@@ -453,15 +461,48 @@ static GclAstNode *parse_pp_if(GclParser *p) {
             if (parser_check(p, TOK_GT)) parser_advance(p);
         }
         condition = file_exists_relative(p->filepath, filename);
+    } else if (parser_check(p, TOK_IDENT)) {
+        /* Part 1: platform kosullari — gcl_doc.md:
+         *   #if gnuLinux / gnu_linux / gnu / linux / windows
+         * "windows" -> 1, digerleri (Linux tabanli) -> 0.
+         * Bilinmeyen ad -> "exist" olmadiysa ve isimli makro uyumu yoksa 0. */
+        const char *plat = tok_str(p, &p->current);
+        condition = strcmp(plat, "windows") == 0;
+        parser_advance(p);
+    } else if (parser_check(p, TOK_STRING_LIT) || parser_check(p, TOK_CHAR_LIT)) {
+        /* #if "text" — dolu string dogru, bos yanlis */
+        GclToken t = p->current;
+        condition = t.length > 2;
+        parser_advance(p);
     } else {
+        /* #if (makro) veya #if 1 / #if 0 veya opsiyonel parantez */
+        GclMacro *m = NULL;
+        int cond_set = 0;
+        if (parser_check(p, TOK_LPAREN)) parser_advance(p);
+        if (parser_check(p, TOK_IDENT)) {
+            const char *name = tok_str(p, &p->current);
+            m = parser_find_macro(p, name);
+            if (m) { condition = m->value[0] != '\0'; cond_set = 1; }
+            parser_advance(p);
+        } else if (parser_check(p, TOK_INT_LIT)) {
+            /* sayi: 0 yanlis, sifir olmayan dogru */
+            char buf[64];
+            size_t l = p->current.length < 63 ? p->current.length : 63;
+            memcpy(buf, p->current.start, l); buf[l] = '\0';
+            int64_t v = atoll(buf);
+            condition = v != 0;
+            cond_set = 1;
+            parser_advance(p);
+        }
+        if (parser_check(p, TOK_RPAREN)) parser_advance(p);
         while (!parser_check(p, TOK_EOF) && !parser_check(p, TOK_PP_ELSE) &&
                !parser_check(p, TOK_PP_ENDIF) && !parser_check(p, TOK_PP_ELIF_PP) &&
                !parser_check(p, TOK_PP_EXTERN) && !parser_check(p, TOK_PP_INCLUDE) &&
-               !parser_check(p, TOK_PP_LIB) && !parser_check(p, TOK_PP_ERROR) &&
+               !parser_check(p, TOK_PP_ERROR) &&
                !parser_check(p, TOK_PP_WARNING) && !parser_check(p, TOK_PP_REGISTER)) {
             parser_advance(p);
         }
-        condition = 1;
+        if (!cond_set) condition = 1;
     }
 
     (void)pp_kind;
@@ -589,13 +630,16 @@ static GclAstNode *parse_primary_expr(GclParser *p) {
         }
         GclMacro *macro = parser_find_macro(p, id);
         if (macro && macro->value[0]) {
+            fprintf(stderr, "[parser_debug] Found macro '%s' with value '%s'\n", id, macro->value);
             const char *mv = macro->value;
             char *endp = NULL;
             long long v = strtoll(mv, &endp, 10);
+            fprintf(stderr, "[parser_debug] Parsed as: %lld (endp='%s')\n", v, endp ? endp : "NULL");
             if (endp != mv && *endp == '\0') {
                 GclAstNode *n = gcl_ast_new(p->arena, AST_INT_LIT, line, col);
                 n->int_value = v;
                 n->str_value = gcl_intern(p->intern, mv, strlen(mv));
+                fprintf(stderr, "[parser_debug] Created INT_LIT with value %lld\n", v);
                 parser_advance(p);
                 return n;
             }
@@ -605,6 +649,8 @@ static GclAstNode *parse_primary_expr(GclParser *p) {
                 parser_advance(p);
                 return n;
             }
+        } else {
+            fprintf(stderr, "[parser_debug] Identifier '%s' - macro=%p\n", id, macro);
         }
         GclAstNode *n = gcl_ast_new(p->arena, AST_IDENT_EXPR, line, col);
         n->str_value = id;
@@ -1549,7 +1595,6 @@ static bool looks_like_func(GclParser *p) {
 static GclAstNode *parse_stmt(GclParser *p) {
     switch (p->current.kind) {
     case TOK_PP_INCLUDE: return parse_pp_include(p);
-    case TOK_PP_LIB:     return parse_pp_lib(p);
     case TOK_PP_EXTERN:  return parse_pp_extern(p);
     case TOK_PP_IF:
     case TOK_PP_IFDEF:
@@ -1579,7 +1624,9 @@ static GclAstNode *parse_stmt(GclParser *p) {
                 }
                 if (p->current.kind >= TOK_PP_INCLUDE && p->current.kind <= TOK_PP_DEBUG) break;
                 if (depth == 0 && p->current.line > def_line) {
-                    if (is_type_token(p->current.kind) || parser_check(p, TOK_KW_IF) ||
+                    if (is_type_token(p->current.kind) || 
+                        parser_check(p, TOK_KW_PUBLIC) || parser_check(p, TOK_KW_PRIVATE) ||
+                        parser_check(p, TOK_KW_IF) ||
                         parser_check(p, TOK_KW_WHILE) || parser_check(p, TOK_KW_FOR) ||
                         parser_check(p, TOK_KW_RETURN) || parser_check(p, TOK_KW_TYPEDEF) ||
                         parser_check(p, TOK_IDENT))

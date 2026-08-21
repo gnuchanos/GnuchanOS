@@ -55,6 +55,7 @@ static void skip_block_comment(GclLexer *lex) {
 }
 
 static GclToken make_token(GclLexer *lex, GclTokenKind kind, const char *start, size_t len, int line, int col) {
+    (void)lex;
     GclToken t;
     gcl_token_init(&t, kind, start, len, line, col);
     return t;
@@ -142,7 +143,6 @@ typedef struct { const char *name; GclTokenKind kind; } PpEntry;
 
 static const PpEntry pp_directives[] = {
     {"include",  TOK_PP_INCLUDE},
-    {"lib",      TOK_PP_LIB},
     {"extern",   TOK_PP_EXTERN},
     {"register", TOK_PP_REGISTER},
     {"define",   TOK_PP_DEFINE},

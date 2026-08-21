@@ -150,8 +150,13 @@ async function lspComplete(
   text: string,
 ): Promise<LspCompletionItem[]> {
   await lspEnsure();
+  /* Dil türünü file extension'ından belirle */
+  let lang = "py"; /* default */
+  if (file.endsWith(".lua")) lang = "lua";
+  else if (file.endsWith(".gcsf") || file.endsWith(".gclib")) lang = "gcl";
   return lspSend(
     `{"id":"$ID$","method":"textDocument/completion","params":{` +
+      `"lang":${JSON.stringify(lang)},` +
       `"file":${JSON.stringify(file)},` +
       `"line":${line},"col":${col},` +
       `"text":${JSON.stringify(text)}}}\n`,
@@ -279,7 +284,7 @@ function ensureProjectDocs(dir: string) {
     const build = findBuildRoot();
     if (!build || !dir) return;
     const buildLib = path.join(build, "Library");
-    const langs = ["Lua", "Python", "bridge"];
+    const langs = ["GCL", "Lua", "Python", "bridge"];
     for (const lang of langs) {
       const srcDir = path.join(buildLib, lang);
       let files: string[];
@@ -565,7 +570,7 @@ function templateLibrary(dir: string) {
   const build = findBuildRoot();
   if (!build) return;
   const buildLib = path.join(build, "Library");
-  const langs = ["Lua", "Python", "bridge"];
+  const langs = ["GCL", "Lua", "Python", "bridge"];
   for (const lang of langs) {
     const srcDir = path.join(buildLib, lang);
     let files: string[];
@@ -771,6 +776,7 @@ function listDocs(root: string): DocsEntry[] {
 
   const langOfDir = (rel: string): DocsEntry["lang"] => {
     const head = rel.split("/")[0]?.toLowerCase() ?? "";
+    if (head === "gcl") return "gcl";
     if (head === "lua") return "lua";
     if (head === "python") return "python";
     if (head === "bridge") return "bridge";
@@ -779,6 +785,7 @@ function listDocs(root: string): DocsEntry[] {
 
   const groupOfLang = (lang: DocsEntry["lang"]): string => {
     switch (lang) {
+      case "gcl": return "GCL";
       case "lua": return "Lua";
       case "python": return "Python";
       case "bridge": return "Bridge";
@@ -792,6 +799,7 @@ function listDocs(root: string): DocsEntry[] {
    * dil grubuna duser ve ayni (kind,name) dedupe onlari eler. */
   const langOfName = (n: string): DocsEntry["lang"] => {
     const lower = n.toLowerCase();
+    if (lower.startsWith("gcl")) return "gcl";
     if (lower.startsWith("lua")) return "lua";
     if (lower.startsWith("py") || lower.startsWith("python")) return "python";
     if (lower.startsWith("bridge")) return "bridge";
@@ -818,7 +826,7 @@ function listDocs(root: string): DocsEntry[] {
     /* lang: once klasor basligi; kok dosyasiysa (klasor yok) ADINDAN. */
     const head = rel.split("/")[0]?.toLowerCase() ?? "";
     const lang: DocsEntry["lang"] =
-      head === "lua" || head === "python" || head === "bridge"
+      head === "gcl" || head === "lua" || head === "python" || head === "bridge"
         ? head
         : langOfName(n);
     out.push({

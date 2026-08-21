@@ -863,27 +863,6 @@ static void index_gcl_line(Workspace *ws, FileIndex *f, const char *raw) {
     return;
   }
 
-  /* #lib "name.gclib"  ->  kutuphane import */
-  if (strncmp(s, "#lib", 4) == 0) {
-    const char *q = strchr(s, '"');
-    if (!q) q = strchr(s, '<');
-    if (q) {
-      char close = (q[0] == '<') ? '>' : '"';
-      const char *end = strchr(q + 1, close);
-      if (end) {
-        char mod[GCL_NAME_MAX] = {0};
-        size_t mlen = (size_t)(end - q - 1);
-        if (mlen >= sizeof mod) mlen = sizeof mod - 1;
-        memcpy(mod, q + 1, mlen);
-        mod[mlen] = 0;
-        char *dot = strchr(mod, '.');
-        if (dot) *dot = 0;
-        if (mod[0]) add_import_ex(f, mod, "");
-      }
-    }
-    return;
-  }
-
   /* #extern "dll" + #register T name(...) ;  ->  dis API sembolleri */
   if (strncmp(s, "#register", 9) == 0) {
     const char *p = s + 9;
@@ -1077,7 +1056,14 @@ static int same_dir(const char *cand, const char *dir) {
   return path_eq(cand, dir);
 }
 
-/* Modul adi ver; once acik dosyanin dizininde, sonra workspace'te ara. */
+/* Forward declaration: find_file - resolve_module tarafindan kullanilir */
+static FileIndex *find_file(Workspace *ws, const char *file);
+
+/* Modul adi ver; dosya yolu ve import listesiyle ara (basename SONRASI).
+ * SIRALAMA:
+ *   1) kardes dosya: acik dosyanin yanindaki mod.py
+ *   2) import listesindeki dosya: acik dosyanin importladigi paket icerisinde
+ *   3) ayni adli dosya (basename fallback — sadece SON ÇARE) */
 static FileIndex *resolve_module(Workspace *ws, const char *file, const char *mod) {
   char dir[GCL_PATH_MAX];
   snprintf(dir, sizeof dir, "%s", file ? file : ws->root);
@@ -1094,6 +1080,9 @@ static FileIndex *resolve_module(Workspace *ws, const char *file, const char *mo
     }
   }
 
+  /* Acik dosyanin import listesini al (dil + import onceliği) */
+  FileIndex *cur = find_file(ws, file);
+
   /* 1) kardes dosya: acik dosyanin yanindaki mod.py */
   for (int i = 0; i < ws->file_count; i++) {
     if (strcmp(ws->files[i].name, mod) == 0) {
@@ -1101,13 +1090,41 @@ static FileIndex *resolve_module(Workspace *ws, const char *file, const char *mo
       snprintf(cand, sizeof cand, "%s", ws->files[i].path);
       char *sl = strrchr(cand, '/');
       if (sl) *sl = 0;
-      if (path_eq(cand, dir)) return &ws->files[i];
+      if (path_eq(cand, dir)) {
+        /* Dil eslesmesi: acik dosya py ise .py modulunü sec. */
+        if (!cur || !cur->lang[0] || strcmp(cur->lang, ws->files[i].lang) == 0)
+          return &ws->files[i];
+      }
     }
   }
 
-  /* 2) herhangi bir konumdaki mod.py (basename eslesmesi) */
+  /* 2) acik dosyanin import listesindeki klasor icerisindeki mod.py */
+  if (cur && cur->import_count > 0) {
+    for (int i = 0; i < ws->file_count; i++) {
+      if (strcmp(ws->files[i].name, mod) != 0) continue;
+      /* Dil eslesmesi */
+      if (cur->lang[0] && ws->files[i].lang[0] &&
+          strcmp(cur->lang, ws->files[i].lang) != 0)
+        continue;
+      /* Modülün klasor adı cur->imports içinde mi? */
+      char dbase[GCL_NAME_MAX];
+      file_dir_base(ws, ws->files[i].path, dbase, sizeof dbase);
+      for (int k = 0; k < cur->import_count; k++) {
+        if (dbase[0] && strcmp(dbase, cur->imports[k]) == 0)
+          return &ws->files[i];
+      }
+    }
+  }
+
+  /* 3) herhangi bir konumdaki mod.py (basename eslesmesi — SADECE SONRASI) */
   for (int i = 0; i < ws->file_count; i++) {
-    if (strcmp(ws->files[i].name, mod) == 0) return &ws->files[i];
+    if (strcmp(ws->files[i].name, mod) == 0) {
+      /* Dil eslesmesi */
+      if (cur && cur->lang[0] && ws->files[i].lang[0] &&
+          strcmp(cur->lang, ws->files[i].lang) != 0)
+        continue;
+      return &ws->files[i];
+    }
   }
   return NULL;
 }
@@ -1225,7 +1242,7 @@ static int fridge_query(Workspace *ws, const char *mod, const char *prefix,
     SECURITY_ATTRIBUTES sa;
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
-    HANDLE r = NULL, w = NULL;
+    HANDLE r = NULL, w = NULL, nul = NULL;
 
     ZeroMemory(&sa, sizeof sa);
     sa.nLength = sizeof sa;
@@ -1236,7 +1253,9 @@ static int fridge_query(Workspace *ws, const char *mod, const char *prefix,
     ZeroMemory(&si, sizeof si);
     si.cb = sizeof si;
     si.hStdOutput = w;
-    si.hStdError = w;
+    /* stderr -> NUL: fridge hata mesajlari popup'a gelmez */
+    nul = CreateFileA("NUL", GENERIC_WRITE, 0, &sa, OPEN_EXISTING, 0, NULL);
+    si.hStdError = nul ? nul : w;
     si.dwFlags |= STARTF_USESTDHANDLES;
     ZeroMemory(&pi, sizeof pi);
 
@@ -1248,6 +1267,7 @@ static int fridge_query(Workspace *ws, const char *mod, const char *prefix,
     }
     /* Ebeveynde yazma ucu kapatilir; yalnizca cocuk yazar. */
     CloseHandle(w);
+    if (nul) CloseHandle(nul);
 
     /* DEADLOCK ONLEME: pipe'i beklemeden ONCE bosalt. GCL -pyrun -resolve
      * "os|" gibi buyuk modullerde yuzlerce NDJSON satiri basar; pipe tamponu
@@ -1284,7 +1304,9 @@ static int fridge_query(Workspace *ws, const char *mod, const char *prefix,
   }
 #endif
 
-  /* NDJSON item satirlarini kopyala: {"label":... satirlari */
+  /* NDJSON item satirlarini kopyala: SADECE geçerli JSON satislari
+   * {"label":"...","kind":"...","detail":"..."} formatinda olan satirlar. 
+   * Hata mesajlari / warning'ler gozardı edilir. */
   {
     char *save = NULL;
     char *tok = strtok_r(dump, "\n", &save);
@@ -1292,8 +1314,11 @@ static int fridge_query(Workspace *ws, const char *mod, const char *prefix,
     while (tok && o + 1 < out_cap) {
       char *t = tok;
       while (*t == ' ' || *t == '\r') t++;
-      if (strncmp(t, "{\"label\":", 9) == 0 ||
-          strncmp(t, "{\"label\" :", 10) == 0) {
+      /* Geçerli completion item satiri: {"label": ile baslayan JSON */
+      if ((strncmp(t, "{\"label\":", 9) == 0 ||
+           strncmp(t, "{\"label\" :", 10) == 0) &&
+          /* ve kind + detail icerdiginden emin ol */
+          strstr(t, "\"kind\":") && strstr(t, "\"detail\":")) {
         size_t n = strlen(t);
         if (o + n + 2 >= out_cap) n = out_cap - o - 2;
         memcpy(out + o, t, n);
@@ -1716,6 +1741,26 @@ static void complete(Workspace *ws, const char *file, const char *text,
       static char live_mod[GCL_NAME_MAX];
       mod = live_alias_to_mod(cur, text, p, mod, live_mod, sizeof live_mod);
     }
+
+    /* GCL: #include/#lib icinde mod varsa resolve et */
+    if (cur && strcmp(cur->lang, "gcl") == 0) {
+      for (int i = 0; i < cur->import_count; i++) {
+        if (strcmp(cur->imports[i], mod) == 0) {
+          FileIndex *gcl_file = resolve_module(ws, file, mod);
+          if (gcl_file) {
+            for (int s = gcl_file->sym_start;
+                 s < gcl_file->sym_start + gcl_file->sym_count; s++) {
+              const Symbol *sym = &ws->syms[s];
+              if (!prefix[0] ||
+                  strncmp(sym->name, prefix, strlen(prefix)) == 0)
+                emit_symbol(sym, prefix, file);
+            }
+            goto member_done;
+          }
+        }
+      }
+    }
+
     /* 0) mod bir PAKET (klasor) adiysa icindeki .py modullerini oner:
      *    "alpha." -> alpha/ icindeki util ; "import alpha." -> ayni akis.
      *    Bu, paket member tamamlamayi ve noktali import segment onerilerini
@@ -2001,6 +2046,21 @@ static void complete(Workspace *ws, const char *file, const char *text,
       if (cur_name && strcmp(sym->mod, cur_name) == 0) {
         if (!prefix[0] || strncmp(sym->name, prefix, strlen(prefix)) == 0)
           emit_symbol(sym, prefix, file);
+      }
+    }
+    /* 2b) GCL: #include/#lib sembollerini ekle */
+    if (cur && strcmp(cur->lang, "gcl") == 0) {
+      for (int i = 0; i < cur->import_count; i++) {
+        FileIndex *imp_file = resolve_module(ws, file, cur->imports[i]);
+        if (imp_file) {
+          for (int s = imp_file->sym_start;
+               s < imp_file->sym_start + imp_file->sym_count; s++) {
+            const Symbol *sym = &ws->syms[s];
+            if (!prefix[0] ||
+                strncmp(sym->name, prefix, strlen(prefix)) == 0)
+              emit_symbol(sym, prefix, file);
+          }
+        }
       }
     }
     /* 3) Dilin KENDI tablosu: dosyanin diline gore secilir.
