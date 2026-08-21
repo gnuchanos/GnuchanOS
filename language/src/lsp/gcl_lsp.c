@@ -45,6 +45,10 @@
 /* Lua + GCL dillerinin kendi kelimeleri (Lua 5.4 + gcl_doc.md). */
 #include "lua_syntax.h"
 #include "gcl_syntax.h"
+/* raylib binding uyeleri (rl.): lua_raylib.gcDL / python_raylib.gcDL
+ * native modullerdir; workspace taramasi iclerini goremaz. "rl."
+ * tamamlamasi bu statik tablodan gelir (todo #3). */
+#include "raylib_syntax.h"
 
 #ifdef _WIN32
 #include <io.h>
@@ -888,53 +892,69 @@ static void index_gcl_line(Workspace *ws, FileIndex *f, const char *raw) {
     return;
   }
 
-  /* public T name(...)  /  T name(...)  — fonksiyon (ust seviye) */
+  /* public T name(...)  /  T name(...)  — fonksiyon (ust seviye).
+   * PARAMETRELİ tanimlar da yakalanir (todo #4): eski kod yalnizca
+   * "fp[1] == ')'" (bos parametreli) eslesiyordu; "int topla(int a,
+   * int b)" gibi fonksiyonlar indexlenmiyor, ayni dosyadaki tamamlama
+   * listesinde hicbir yerde gorunmuyordu. Ayrica blok kosulsuz
+   * return YAPMAYARAK alttaki global-const tarayicisinin calismasi
+   * saglanir ("int x = 5;" satirlari artik kaybolmaz). */
   {
     const char *sp = s;
     const char *pub = strstr(s, "public ");
     if (pub && pub == s) sp = pub + 7;
-    const char *fp = strstr(sp, "(");
-    if (fp && fp[1] == ')') {
-      /* ad: tip + ad + ( )  ->  "void merhaba()" */
-      const char *end = fp;
-      const char *name_start = end;
-      while (name_start > sp && (isalnum((unsigned char)name_start[-1]) ||
-                                 name_start[-1] == '_'))
-        name_start--;
-      if (name_start < end) {
-        char name[GCL_NAME_MAX] = {0};
-        size_t nl = (size_t)(end - name_start);
-        if (nl < sizeof name) {
-          memcpy(name, name_start, nl);
-          name[nl] = 0;
-          /* tip degil ad oldugundan emin ol: onunde tip sozcugu var mi */
-          const char *before = name_start;
-          while (before > sp && (isspace((unsigned char)before[-1]) ||
-                                 isalnum((unsigned char)before[-1]) ||
-                                 before[-1] == '*'))
-            before--;
-          char before_copy[128];
-          size_t bl = (size_t)(name_start - before);
-          if (bl >= sizeof before_copy) bl = sizeof before_copy - 1;
-          memcpy(before_copy, before, bl);
-          before_copy[bl] = 0;
-          /* bl>0 demek tip+ad var demek: "void merhaba" -> merhaba */
-          if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX)
-            return;
-          Symbol *sym = &ws->syms[ws->sym_count];
-          snprintf(sym->name, sizeof sym->name, "%s", name);
-          sym->kind = SYM_FN;
-          /* emit_symbol "%s(%s)" ile sardiği icin params ici BOŞ tutulur;
-           * aksi halde "void main()" -> "main(())" cift parantez cikar. */
-          sym->params[0] = 0;
-          snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
-          snprintf(sym->file, sizeof sym->file, "%s", f->path);
-          ws->sym_count++;
-          f->sym_count++;
+    const char *fp = strchr(sp, '(');
+    if (fp) {
+      const char *cl = strchr(fp + 1, ')');
+      if (cl) {
+        /* ad: "(" oncesi son kelime */
+        const char *end = fp;
+        const char *name_start = end;
+        while (name_start > sp && (isalnum((unsigned char)name_start[-1]) ||
+                                   name_start[-1] == '_'))
+          name_start--;
+        if (name_start < end) {
+          char name[GCL_NAME_MAX] = {0};
+          size_t nl = (size_t)(end - name_start);
+          if (nl < sizeof name) {
+            memcpy(name, name_start, nl);
+            name[nl] = 0;
+            /* kontrol kelimesi degil mi: if/for/while/switch/return
+             * "if (" / "for (" / "while (" / "return f(" gibi satirlar
+             * fonksiyon tanimi DEGILDIR. */
+            static const char *ctrl[] = {"if",     "for",   "while",
+                                         "switch", "return", NULL};
+            int is_ctrl = 0;
+            for (int ci = 0; ctrl[ci]; ci++)
+              if (strcmp(name, ctrl[ci]) == 0) { is_ctrl = 1; break; }
+            if (!is_ctrl) {
+              /* params: ( ... ) arasi */
+              char rawp[GCL_PARAM_MAX] = {0};
+              size_t plen = (size_t)(cl - fp - 1);
+              if (plen >= sizeof rawp) plen = sizeof rawp - 1;
+              memcpy(rawp, fp + 1, plen);
+              rawp[plen] = 0;
+              char params[GCL_PARAM_MAX] = {0};
+              clean_params(rawp, params, sizeof params);
+              if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX)
+                return;
+              Symbol *sym = &ws->syms[ws->sym_count];
+              snprintf(sym->name, sizeof sym->name, "%s", name);
+              sym->kind = SYM_FN;
+              /* emit_symbol "%s(%s)" ile sardigi icin params ici BOŞ
+               * tutulur; aksi halde "void main()" -> "main(())" cift
+               * parantez cikar. */
+              sym->params[0] = 0;
+              snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
+              snprintf(sym->file, sizeof sym->file, "%s", f->path);
+              ws->sym_count++;
+              f->sym_count++;
+            }
+          }
         }
       }
     }
-    return;
+    /* return YOK: global const tarayici da calisir */
   }
 
   /* T name = value;  — global const (ust seviye) */
@@ -1778,6 +1798,22 @@ static void complete(Workspace *ws, const char *file, const char *text,
           emit_symbol(sym, prefix, file);
       }
     }
+    /* 1b) RAYLIB BINDING (todo #3): "rl." — lua_raylib.gcDL ve
+     *     python_raylib.gcDL NATIVE modullerdir; workspace taramasi
+     *     iclerini goremaz. "local rl = gcl.raylib" / "import pyRaylib
+     *     as rl" yazildiginda rl uyeleri bu statik tablodan gelir.
+     *     Statik tablo her zaman prefix filtresiyle eklenir; modf
+     *     bulunsa bile (kullanici kendi rl.lua'sini yazmis olabilir)
+     *     tablo uyeleri listeye katilir. */
+    {
+      const int rn = raylib_syntax_count(prefix);
+      for (int i = 0; i < rn; i++) {
+        char lbl[GCL_NAME_MAX], knd[64], det[GCL_NAME_MAX + 64];
+        raylib_syntax_at(i, prefix, lbl, sizeof lbl, knd, sizeof knd,
+                         det, sizeof det);
+        if (lbl[0]) out_item(lbl, knd[0] ? knd : "fn", det);
+      }
+    }
     /* 2) BUZDOLABI: statik yetmedi -> gercek Python'a sor. YALNIZCA .py
      *    dosyalarinda — lua/gcl'de "gcl -pyrun" gereksiz spawn olur,
      *    hata mesajlari da popup'a sizabilir. */
@@ -1804,52 +1840,62 @@ static void complete(Workspace *ws, const char *file, const char *text,
       }
     }
   } else {
-    /* 0x) CANLI YEREL DEGISKENLER: "screenWidth = 1600" gibi henuz
-     *      KAYDEDILMEMIS satirlar imlece kadar taranir ve const olarak
-     *      onerilir. "InitWindow(scre" yazildiginda screenWidth/screenHeight
-     *      gibi degiskenler prefix ile eslesir (disk index'i beklemeden). */
+    /* 0x) CANLI YEREL DEGISKENLER: "screenWidth = 1600" / "int x = 5" /
+     *      "local hp = 100" gibi henuz KAYDEDILMEMIS satirlar imlece kadar
+     *      taranir ve const olarak onerilir (todo #2). ESKI KODDA IKI HATA:
+     *      a) "while (...) ln--;" uzunluk degil ISARETCI azaltiyordu; adin
+     *         basi kayiyor, isimler cop karakterlerle cikiyordu.
+     *      b) GCL'de "int x = 5" yazilir; "=" oncesi SON kelime x'tir ama
+     *         eski kod satir BASINDAN itibaren aliyordu.
+     *      Simdi: her satirda "=" bulunur, ad = "=" oncesi son kelime,
+     *      deger = "=" sonrasi satir sonuna kadar. */
     {
       const char *q = text;
       while (q < p && *q) {
-        /* satir basi: NAME = value (tek satirlik, ust seviye) */
-        const char *ln = q;
-        const char *eq = strchr(ln, '=');
-        if (eq && eq < p) {
-          const char *ne = strstr(ln, "!=");
-          const char *cel = strstr(ln, "<=");
-          const char *gel = strstr(ln, ">=");
-          if (ne != eq && cel != eq && gel != eq) {
-            size_t ln_ = (size_t)(eq - ln);
-            while (ln_ > 0 && (ln[ln_ - 1] == ' ' || ln[ln_ - 1] == '\t')) ln--;
-            if (ln_ > 0 && ln_ < GCL_NAME_MAX) {
-              char nm[GCL_NAME_MAX];
-              memcpy(nm, ln, ln_);
-              nm[ln_] = 0;
-              if (is_ident(nm) && strcmp(nm, "self") != 0 &&
-                  strcmp(nm, "cls") != 0) {
-                if (!prefix[0] || strncmp(nm, prefix, strlen(prefix)) == 0) {
-                  char val[GCL_NAME_MAX] = {0};
-                  const char *v = eq + 1;
-                  while (*v == ' ') v++;
-                  /* deger SATIR SONUNDA biter (text tek buffer: sonraki
-                   * satirlar da `strlen(v)` icinde; \n'de kIrp) */
-                  size_t vl = 0;
-                  while (v[vl] && v[vl] != '\n' && v[vl] != '\r') vl++;
-                  if (vl >= sizeof val) vl = sizeof val - 1;
-                  memcpy(val, v, vl);
-                  val[vl] = 0;
-                  {
-                    char det[GCL_NAME_MAX + 64];
-                    snprintf(det, sizeof det, "%s = %s", nm, val);
-                    out_item(nm, "const", det);
-                  }
-                }
+        const char *line_end = strchr(q, '\n');
+        if (!line_end || line_end > p) line_end = p;
+        for (const char *c = q; c < line_end; c++) {
+          if (*c != '=') continue;
+          /* != <= >= == atla */
+          if ((c > q && (c[-1] == '!' || c[-1] == '<' || c[-1] == '>')) ||
+              (c + 1 < line_end && c[1] == '='))
+            continue;
+          /* ad: "=" oncesi son kelime */
+          const char *name_end = c;
+          while (name_end > q &&
+                 (name_end[-1] == ' ' || name_end[-1] == '\t'))
+            name_end--;
+          const char *name_start = name_end;
+          while (name_start > q &&
+                 (isalnum((unsigned char)name_start[-1]) ||
+                  name_start[-1] == '_'))
+            name_start--;
+          size_t nl = (size_t)(name_end - name_start);
+          if (nl > 0 && nl < GCL_NAME_MAX) {
+            char nm[GCL_NAME_MAX];
+            memcpy(nm, name_start, nl);
+            nm[nl] = 0;
+            if (is_ident(nm) && strcmp(nm, "self") != 0 &&
+                strcmp(nm, "cls") != 0) {
+              if (!prefix[0] || strncmp(nm, prefix, strlen(prefix)) == 0) {
+                char val[GCL_NAME_MAX] = {0};
+                const char *v = c + 1;
+                while (v < line_end && (*v == ' ' || *v == '\t')) v++;
+                size_t vl = (size_t)(line_end - v);
+                if (vl >= sizeof val) vl = sizeof val - 1;
+                memcpy(val, v, vl);
+                val[vl] = 0;
+                trim(val);
+                char det[GCL_NAME_MAX + 64];
+                snprintf(det, sizeof det, "%s = %s", nm, val);
+                out_item(nm, "const", det);
               }
             }
           }
+          break; /* satirda ilk "=" yeterli */
         }
-        while (*q && *q != '\n') q++;
-        if (*q == '\n') q++;
+        if (line_end >= p) break;
+        q = line_end + 1;
       }
     }
     /* 0a) "from MOD import PREFIX" — import edilen modulun UYELERINI oner.

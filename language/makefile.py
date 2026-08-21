@@ -361,6 +361,7 @@ class windows:
                os.path.join(LSP_DIR, "python_syntax.c"),
                os.path.join(LSP_DIR, "lua_syntax.c"),
                os.path.join(LSP_DIR, "gcl_syntax.c"),
+               os.path.join(LSP_DIR, "raylib_syntax.c"),
                "-o", os.path.join(self.out, LSP_EXE)]
         if IS_WINDOWS:
             # gcl-lsp.exe de GnuChanIDE ikonunu tasir (build kokundeki

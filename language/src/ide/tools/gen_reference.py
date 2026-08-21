@@ -725,15 +725,9 @@ def main():
               ])],
               [])
 
-    # 4) python_raylib C modulu (python_raylib.gcDL) — gcl_raylib module
-    write_ref(os.path.join(py_dir, "python_raylib.gcReference"),
-              "gcl_raylib (Python C module)",
-              "embedded raylib module (python_raylib.gcDL) — the pyRaylib "
-              "wrapper imports this module; call it directly or via "
-              "import pyRaylib as rl",
-              categorize_funcs(PY_RAYLIB_FUNCS), CONSTANTS)
-
-    # 5) pyRaylib imzali + ornekli
+    # 4) pyRaylib imzali + ornekli (todo #5: python_raylib.gcReference
+    #    KALDIRILDI — ayni icerik zaten pyRaylib.gcReference'ta var;
+    #    DOCS panelinde iki kez listeleniyordu)
     write_ref(os.path.join(py_dir, "pyRaylib.gcReference"),
               "pyRaylib (Python raylib wrapper)",
               "window, drawing, colors, keys — call via import pyRaylib as rl",

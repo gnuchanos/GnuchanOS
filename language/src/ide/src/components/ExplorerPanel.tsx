@@ -81,8 +81,12 @@ export default function ExplorerPanel({ root, onOpen, refreshKey }: Props) {
     setEntries(top);
   };
 
-  /* root degisince butun agac sifirlanir; refreshKey geldiginde SADECE
-   * top-level yenilenir — acik dizinler kapali kalir. */
+  /* root degisince butun agac sifirlanir; refreshKey geldiginde top-level
+   * + ACIK DIZINLER birlikte yenilenir (todo #1): chokidar "add/unlink"
+   * event'i src/ altindaki dosyayi yakaladiginda refreshKey artar ama
+   * eski kod yalnizca kok seviyesini okuyordu — acik olan src/ klasorunun
+   * icindeki yeni/silinen dosyalar agacta gorunmez, dosya silinip
+   * tekrar eklenene kadar listede kalmaya devam ediyordu. */
   useEffect(() => {
     load();
     setDirs({});
@@ -92,7 +96,7 @@ export default function ExplorerPanel({ root, onOpen, refreshKey }: Props) {
 
   useEffect(() => {
     if (!root) return;
-    load();
+    void reloadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
@@ -298,11 +302,15 @@ export default function ExplorerPanel({ root, onOpen, refreshKey }: Props) {
 
   const reloadAll = async () => {
     await load();
+    /* ACIK dizinleri de tazele: stale dirs state'i silinen dosyalari
+     * gosteriyordu. Silinen klasorler listeden cikarilir. */
     const keys = Object.keys(dirs);
+    const next: Record<string, FsEntry[]> = {};
     for (const k of keys) {
       const items = await window.ide.dirTree(k);
-      setDirs((d) => ({ ...d, [k]: items }));
+      if (items.length > 0) next[k] = items;
     }
+    setDirs(next);
   };
 
   /* Dosya/klasor olusturma hedefi uygun mu? src/ ve diger kok ogelerine
