@@ -152,15 +152,28 @@ BRIDGE_C = os.path.join(GCS, "gcdl_bridge.c")
 # ---------------------------------------------------------------------------
 
 def sh(cmd, what, cwd=None, env=None):
-    print("makefile.py: building " + what)
+    print("makefile.py: derlenyor -> " + what)
+    sys.stdout.flush()
+    
+    # Show each .c file being compiled
+    if cmd:
+        for arg in cmd:
+            if isinstance(arg, str) and arg.endswith('.c'):
+                fname = os.path.basename(arg)
+                print("  -> " + fname)
+                sys.stdout.flush()
+    
     # CI logunu bulandiran -Wformat-truncation uyarilari (snprintf'in
     # "may be truncated" analizi) kapatilir; derlemeyi durdurmuyordu ama
     # temiz log icin bekleniyor. Yalnizca gcc/g++/clang cagrilarinda eklenir.
     if cmd and (str(cmd[0]).find("gcc") >= 0 or str(cmd[0]).find("clang") >= 0):
         cmd = list(cmd) + [NO_TRUNC]
+    
+    sys.stdout.flush()
     if subprocess.call(cmd, cwd=cwd, env=env) != 0:
         print("makefile.py: error: " + what + " derlenemedi", file=sys.stderr)
         sys.exit(1)
+    print("makefile.py: tamam -> " + what)
 
 
 def need(path, what):
@@ -380,32 +393,22 @@ class windows:
                os.path.join(ROOT, "main.c"),
                os.path.join(GCS, "gcdl_loader.c"),
                os.path.join(GCS, "gclib_utils.c"),
-               os.path.join(SRC, "SharedPipeline", "Common", "gcl_memory_utils.c"),
-               os.path.join(SRC, "SharedPipeline", "Common", "gcl_arena.c"),
-               os.path.join(SRC, "SharedPipeline", "Common", "gcl_string_intern.c"),
-               os.path.join(SRC, "SharedPipeline", "Common", "gcl_token.c"),
-               os.path.join(SRC, "SharedPipeline", "Lexer", "gcl_lexer_init.c"),
-               os.path.join(SRC, "SharedPipeline", "Lexer", "gcl_lexer_scan.c"),
-               os.path.join(SRC, "SharedPipeline", "AST", "gcl_ast_node.c"),
-               os.path.join(SRC, "SharedPipeline", "AST", "gcl_ast_kind.c"),
-               os.path.join(SRC, "SharedPipeline", "AST", "gcl_ast_dump.c"),
-               os.path.join(SRC, "SharedPipeline", "Parser", "gcl_parser.c"),
-               os.path.join(SRC, "SharedPipeline", "Diagnostics", "gcl_diag_bag.c"),
-               os.path.join(SRC, "SharedPipeline", "Diagnostics", "gcl_diag_print.c"),
-               os.path.join(SRC, "SharedPipeline", "Memory", "gcl_mem_init.c"),
-               os.path.join(SRC, "SharedPipeline", "Memory", "gcl_mem_alloc.c"),
-               os.path.join(SRC, "SharedPipeline", "Semantic", "gcl_semantic_init.c"),
-               os.path.join(SRC, "SharedPipeline", "Semantic", "gcl_semantic_check.c"),
-               os.path.join(SRC, "SharedPipeline", "TypeChecker", "gcl_typecheck_init.c"),
-               os.path.join(SRC, "SharedPipeline", "TypeChecker", "gcl_typecheck_walk.c"),
-               os.path.join(SRC, "SharedPipeline", "Ir", "gcl_ir_core.c"),
-               os.path.join(SRC, "SharedPipeline", "Ir", "gcl_ir_gen.c"),
-               os.path.join(SRC, "SharedPipeline", "Ir", "gcl_ir_dump.c"),
-               os.path.join(SRC, "SharedPipeline", "Linker", "gcl_linker_init.c"),
-               os.path.join(SRC, "SharedPipeline", "GarbageCollector", "gcl_gc_init.c"),
-               os.path.join(SRC, "SharedPipeline", "GarbageCollector", "gcl_gc_ops.c"),
+               os.path.join(SRC, "SharedPipeline", "Common", "common_module.c"),
+               os.path.join(SRC, "SharedPipeline", "Lexer", "lexer_module.c"),
+               os.path.join(SRC, "SharedPipeline", "AST", "ast_module.c"),
+               os.path.join(SRC, "SharedPipeline", "Parser", "parser_module.c"),
+               os.path.join(SRC, "SharedPipeline", "Diagnostics", "diag_module.c"),
+               os.path.join(SRC, "SharedPipeline", "Memory", "mem_module.c"),
+               os.path.join(SRC, "SharedPipeline", "Semantic", "semantic_module.c"),
+               os.path.join(SRC, "SharedPipeline", "TypeChecker", "typecheck_module.c"),
+               os.path.join(SRC, "SharedPipeline", "Ir", "ir_module.c"),
+               os.path.join(SRC, "SharedPipeline", "Linker", "linker_module.c"),
+               os.path.join(SRC, "SharedPipeline", "GarbageCollector", "gc_module.c"),
                os.path.join(SRC, "SharedPipeline", "gcl.c"),
                os.path.join(SRC, "FastIR", "gcl_interp.c"),
+               os.path.join(SRC, "FastIR", "scanf_module.c"),
+               os.path.join(SRC, "FastIR", "printf_module.c"),
+               os.path.join(SRC, "FastIR", "fileio_module.c"),
                "-o", os.path.join(self.out, "gcl.exe"), "-lm", "-lws2_32"]
         if icon_obj:
             cmd.append(icon_obj)
@@ -606,6 +609,11 @@ class windows:
         self.ide_deploy()
 
     # -- orkestrasyon -----------------------------------------------------
+    def GCL_ONLY(self):
+        """Sadece GCL derleyicisini build et."""
+        self.gcl_BUILD()
+        print("makefile.py: gcl.exe build tamam -> " + self.out)
+
     def RUN(self):
         """Windows RUN: gcl + gcl-lsp + lua/python modulleri + bridge + IDE (hep birlikte)."""
         self.lsp_BUILD()
@@ -883,6 +891,18 @@ class gnuLinux(windows):
 
 
 if __name__ == "__main__":
+    # Flag handling
+    if len(argv) > 1:
+        flag = argv[1]
+        if flag == "gcl" or flag == "-gcl":
+            # Sadece GCL compiler'ı build et
+            if IS_WINDOWS:
+                windows().GCL_ONLY()
+            else:
+                gnuLinux().GCL_ONLY()
+            sys.exit(0)
+    
+    # Default: FULL BUILD
     if IS_WINDOWS:
         windows().RUN()
     else:

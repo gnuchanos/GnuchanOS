@@ -867,6 +867,27 @@ static void index_gcl_line(Workspace *ws, FileIndex *f, const char *raw) {
     return;
   }
 
+  /* #lib "name.gclib"  ->  library modul import (public symboller) */
+  if (strncmp(s, "#lib", 4) == 0) {
+    const char *q = strchr(s, '"');
+    if (!q) q = strchr(s, '<');
+    if (q) {
+      char close = (q[0] == '<') ? '>' : '"';
+      const char *end = strchr(q + 1, close);
+      if (end) {
+        char mod[GCL_NAME_MAX] = {0};
+        size_t mlen = (size_t)(end - q - 1);
+        if (mlen >= sizeof mod) mlen = sizeof mod - 1;
+        memcpy(mod, q + 1, mlen);
+        mod[mlen] = 0;
+        char *dot = strchr(mod, '.');
+        if (dot) *dot = 0;
+        if (mod[0]) add_import_ex(f, mod, "");
+      }
+    }
+    return;
+  }
+
   /* #extern "dll" + #register T name(...) ;  ->  dis API sembolleri */
   if (strncmp(s, "#register", 9) == 0) {
     const char *p = s + 9;
@@ -892,10 +913,62 @@ static void index_gcl_line(Workspace *ws, FileIndex *f, const char *raw) {
     return;
   }
 
-  /* public T name(...)  /  T name(...)  — fonksiyon (ust seviye).
-   * PARAMETRELİ tanimlar da yakalanir (todo #4): eski kod yalnizca
-   * "fp[1] == ')'" (bos parametreli) eslesiyordu; "int topla(int a,
-   * int b)" gibi fonksiyonlar indexlenmiyor, ayni dosyadaki tamamlama
+  /* struct Name { field1, field2 } - struct type definition */
+  if (strncmp(s, "struct", 6) == 0) {
+    const char *p = s + 6;
+    while (*p == ' ') p++;
+    char name[GCL_NAME_MAX] = {0};
+    int k = 0;
+    while (isalnum((unsigned char)*p) || *p == '_') name[k++] = *p++;
+    if (name[0]) {
+      if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX)
+        return;
+      Symbol *sym = &ws->syms[ws->sym_count];
+      snprintf(sym->name, sizeof sym->name, "%s", name);
+      sym->kind = SYM_FN;
+      snprintf(sym->params, sizeof sym->params, "(struct)");
+      snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
+      snprintf(sym->file, sizeof sym->file, "%s", f->path);
+      ws->sym_count++;
+      f->sym_count++;
+    }
+    return;
+  }
+
+  /* class Name(Parent) { methods } - class type definition */
+  if (strncmp(s, "class", 5) == 0) {
+    const char *p = s + 5;
+    while (*p == ' ') p++;
+    char name[GCL_NAME_MAX] = {0};
+    int k = 0;
+    while (isalnum((unsigned char)*p) || *p == '_') name[k++] = *p++;
+    if (name[0]) {
+      /* check for parent: class Name(Parent) */
+      char parent[GCL_NAME_MAX] = {0};
+      if (*p == '(') {
+        p++;
+        k = 0;
+        while (isalnum((unsigned char)*p) || *p == '_') parent[k++] = *p++;
+      }
+      if (ws->sym_count >= GCL_SYMS_MAX || f->sym_count >= GCL_SYMS_MAX)
+        return;
+      Symbol *sym = &ws->syms[ws->sym_count];
+      snprintf(sym->name, sizeof sym->name, "%s", name);
+      sym->kind = SYM_FN;
+      if (parent[0]) {
+        snprintf(sym->params, sizeof sym->params, "(class: %s)", parent);
+      } else {
+        snprintf(sym->params, sizeof sym->params, "(class)");
+      }
+      snprintf(sym->mod, sizeof sym->mod, "%s", f->name);
+      snprintf(sym->file, sizeof sym->file, "%s", f->path);
+      ws->sym_count++;
+      f->sym_count++;
+    }
+    return;
+  }
+  /* "fp[1] == ')'" (bos parametreli) eslesiyordu; "int topla(int a,"
+   * "int b)" gibi fonksiyonlar indexlenmiyor, ayni dosyadaki tamamlama
    * listesinde hicbir yerde gorunmuyordu. Ayrica blok kosulsuz
    * return YAPMAYARAK alttaki global-const tarayicisinin calismasi
    * saglanir ("int x = 5;" satirlari artik kaybolmaz). */
@@ -1047,10 +1120,17 @@ static int index_workspace(Workspace *ws, const char *root) {
   collect_ext(ws, src_dir, 0, ".lua", "lua");
   collect_ext(ws, src_dir, 0, ".gcsf", "gcl");
   collect_ext(ws, src_dir, 0, ".gclib", "gcl");
+  collect_ext(ws, src_dir, 0, ".gctf", "gcl");  /* text file */
+  collect_ext(ws, src_dir, 0, ".gcdata", "gcl"); /* JSON with comments */
+  collect_ext(ws, src_dir, 0, ".gcdl", "gcl");   /* native module */
+  
   collect_ext(ws, ws->root, 0, ".py", "py");
   collect_ext(ws, ws->root, 0, ".lua", "lua");
   collect_ext(ws, ws->root, 0, ".gcsf", "gcl");
   collect_ext(ws, ws->root, 0, ".gclib", "gcl");
+  collect_ext(ws, ws->root, 0, ".gctf", "gcl");  /* text file */
+  collect_ext(ws, ws->root, 0, ".gcdata", "gcl"); /* JSON with comments */
+  collect_ext(ws, ws->root, 0, ".gcdl", "gcl");   /* native module */
   char lib_dir[GCL_PATH_MAX];
   path_join(lib_dir, sizeof lib_dir, ws->root, "Library/Python");
   collect_ext(ws, lib_dir, 0, ".py", "py");

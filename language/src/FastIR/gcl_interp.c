@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <math.h>
 #include "../SharedPipeline/Ir/gcl_ir.h"
 
 #ifdef _WIN32
@@ -35,6 +36,7 @@ typedef struct {
 typedef struct {
     const char *name;
     Val         value;
+    int         is_const;  /* 1 if variable is const, 0 otherwise */
 } VarSlot;
 
 /* DLL function registry */
@@ -85,7 +87,7 @@ static void push(InterpState *st, Val v) {
     st->stack[st->sp++] = v;
 }
 
-static Val pop(InterpState *st) {
+Val pop(InterpState *st) {
     if (st->sp <= 0) {
         Val v = {VAL_NULL, 0, 0, NULL};
         return v;
@@ -93,9 +95,9 @@ static Val pop(InterpState *st) {
     return st->stack[--st->sp];
 }
 
-static Val val_int(int64_t v) { Val r = {VAL_INT, v, 0, NULL}; return r; }
-static Val val_float(double v) { Val r = {VAL_FLOAT, 0, v, NULL}; return r; }
-static Val val_string(const char *s) { Val r = {VAL_STRING, 0, 0, s}; return r; }
+Val val_int(int64_t v) { Val r = {VAL_INT, v, 0, NULL}; return r; }
+Val val_float(double v) { Val r = {VAL_FLOAT, 0, v, NULL}; return r; }
+Val val_string(const char *s) { Val r = {VAL_STRING, 0, 0, s}; return r; }
 static Val val_null(void) { Val r = {VAL_NULL, 0, 0, NULL}; return r; }
 
 /* Copies a produced string into the stable string pool (bounded ring-ish).
@@ -112,11 +114,22 @@ static const char *pool_string(InterpState *st, const char *s) {
     return st->string_pool[slot];
 }
 
-static int64_t val_to_int(Val v) {
+/* Count UTF-8 characters (not bytes) */
+static int64_t utf8_strlen(const char *s) {
+    if (!s) return 0;
+    int64_t count = 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        /* Count bytes that are not UTF-8 continuation bytes (10xxxxxx) */
+        if ((*p & 0xC0) != 0x80) count++;
+    }
+    return count;
+}
+
+int64_t val_to_int(Val v) {
     switch (v.kind) {
     case VAL_INT: return v.i_val;
     case VAL_FLOAT: return (int64_t)v.f_val;
-    case VAL_STRING: return v.s_val ? (int64_t)strlen(v.s_val) : 0;
+    case VAL_STRING: return v.s_val ? utf8_strlen(v.s_val) : 0;  /* UTF-8 character count */
     case VAL_NULL: return 0;
     }
     return 0;
@@ -142,7 +155,7 @@ static VarSlot *find_var(InterpState *st, const char *name) {
     return NULL;
 }
 
-static void store_var(InterpState *st, const char *name, Val val) {
+void store_var(InterpState *st, const char *name, Val val) {
     VarSlot *slot = find_var(st, name);
     if (!slot) {
         if (st->var_count >= INTERP_VARS_MAX) {
@@ -151,13 +164,60 @@ static void store_var(InterpState *st, const char *name, Val val) {
         }
         slot = &st->vars[st->var_count];
         st->vars[st->var_count].name = name;
+        st->vars[st->var_count].is_const = 0;  /* New variables not const by default */
         st->var_count++;
+    } else if (slot->is_const) {
+        /* Const variable - prevent modification */
+        fprintf(stderr, "gcl: error: cannot assign to const variable '%s'\n", name);
+        return;
     }
     /* Strings that point into the scratch buffer must be copied to the pool */
     if (val.kind == VAL_STRING && val.s_val) {
         val.s_val = pool_string(st, val.s_val);
     }
     slot->value = val;
+    
+    /* Part 8: Struct initialization - when "S;field=value;..." is stored,
+     * also store individual fields as Name.field = value for transparency */
+    if (val.kind == VAL_STRING && val.s_val && strlen(val.s_val) > 2 &&
+        val.s_val[0] == 'S' && val.s_val[1] == ';') {
+        const char *p = val.s_val + 2;
+        const char *end = val.s_val + strlen(val.s_val);
+        char field_name[512];
+        while (p < end) {
+            const char *eq = strchr(p, '=');
+            if (!eq || eq >= end) break;
+            size_t fname_len = (size_t)(eq - p);
+            if (fname_len > 0 && fname_len < 256) {
+                memcpy(field_name, p, fname_len);
+                field_name[fname_len] = '\0';
+                const char *val_start = eq + 1;
+                const char *val_end = strchr(val_start, ';');
+                if (!val_end || val_end > end) val_end = end;
+                size_t vlen = (size_t)(val_end - val_start);
+                
+                /* Store field value - crude but functional */
+                if (vlen > 0 && vlen < 256) {
+                    char fbuf[512];
+                    snprintf(fbuf, sizeof(fbuf), "%s.%s", name, field_name);
+                    char vbuf[256];
+                    memcpy(vbuf, val_start, vlen);
+                    vbuf[vlen] = '\0';
+                    
+                    Val fval;
+                    if (strchr(vbuf, '.') != NULL) {
+                        fval = val_float(atof(vbuf));
+                    } else {
+                        fval = val_int(strtoll(vbuf, NULL, 10));
+                    }
+                    store_var(st, fbuf, fval);
+                }
+            }
+            const char *next = strchr(eq, ';');
+            if (!next || next >= end) break;
+            p = next + 1;
+        }
+    }
 }
 
 static Val load_var(InterpState *st, const char *name) {
@@ -275,109 +335,6 @@ static const char *unquote(const char *s, char *buf, size_t bufsz) {
     return s;
 }
 
-/* Built-in function handling */
-
-static void builtin_printf(InterpState *st, int argc) {
-    if (argc < 1) return;
-    Val args[32];
-    int n = argc < 32 ? argc : 32;
-    for (int i = n - 1; i >= 0; i--) {
-        args[i] = pop(st);
-    }
-    const char *fmt = args[0].s_val;
-    if (!fmt) { printf("(null)\n"); return; }
-
-    size_t flen = strlen(fmt);
-    char fmtbuf[2048];
-    if (flen >= 2 && fmt[0] == '"' && fmt[flen-1] == '"') {
-        memcpy(fmtbuf, fmt + 1, flen - 2);
-        fmtbuf[flen - 2] = '\0';
-        fmt = fmtbuf;
-    }
-
-    int ai = 1;
-    for (const char *p = fmt; *p; p++) {
-        if (*p == '\\' && *(p+1)) {
-            p++;
-            switch (*p) {
-            case 'n': putchar('\n'); break;
-            case 't': putchar('\t'); break;
-            case 'r': putchar('\r'); break;
-            case '\\': putchar('\\'); break;
-            case '"': putchar('"'); break;
-            default: putchar('\\'); putchar(*p); break;
-            }
-        } else if (*p == '%' && *(p+1) && ai < n) {
-            p++;
-            while ((*p >= '0' && *p <= '9') || *p == '.' || *p == '-' || *p == 'l' || *p == 'h' || *p == 'z') p++;
-            switch (*p) {
-            case 'd': case 'i': case 'u':
-                printf("%lld", (long long)val_to_int(args[ai]));
-                ai++;
-                break;
-            case 'f': case 'F':
-                if (args[ai].kind == VAL_FLOAT)
-                    printf("%f", args[ai].f_val);
-                else
-                    printf("%f", (double)val_to_int(args[ai]));
-                ai++;
-                break;
-            case 's': {
-                const char *s = args[ai].s_val;
-                if (!s) s = "(null)";
-                size_t slen = strlen(s);
-                const char *sp = s;
-                if (slen >= 2 && s[0] == '"' && s[slen-1] == '"') {
-                    sp = s + 1;
-                    slen -= 2;
-                }
-                for (size_t i = 0; i < slen; i++) {
-                    if (sp[i] == '\\' && i + 1 < slen) {
-                        i++;
-                        switch (sp[i]) {
-                        case 'n': putchar('\n'); break;
-                        case 't': putchar('\t'); break;
-                        case 'r': putchar('\r'); break;
-                        case '\\': putchar('\\'); break;
-                        case '"': putchar('"'); break;
-                        case '\'': putchar('\''); break;
-                        default: putchar('\\'); putchar(sp[i]); break;
-                        }
-                    } else {
-                        putchar(sp[i]);
-                    }
-                }
-                ai++;
-                break;
-            }
-            case 'c': {
-                const char *cs = args[ai].s_val;
-                if (args[ai].kind == VAL_STRING && cs) {
-                    size_t clen = strlen(cs);
-                    if (clen >= 3 && cs[0] == '\'' && cs[clen-1] == '\'') {
-                        putchar(cs[1]);
-                    } else {
-                        putchar(cs[0]);
-                    }
-                } else {
-                    putchar((char)val_to_int(args[ai]));
-                }
-                ai++;
-                break;
-            }
-            case '%':
-                putchar('%');
-                break;
-            default:
-                putchar('%'); putchar(*p);
-                break;
-            }
-        } else {
-            putchar(*p);
-        }
-    }
-}
-
 /* Extern FFI call (simple: up to 6 int/ptr args) */
 
 typedef int64_t (*ffi_void_fn)(void);
@@ -466,8 +423,237 @@ static Val call_function(InterpState *st, const char *name, int argc) {
     if (!name) return val_null();
 
     if (strcmp(name, "printf") == 0) {
-        builtin_printf(st, argc);
+        extern void interp_printf_module(void *st, int argc);
+        interp_printf_module(st, argc);
         return val_null();
+    }
+    
+    /* String functions */
+    if (strcmp(name, "strlen") == 0) {
+        Val s = pop(st);
+        const char *str = (s.kind == VAL_STRING) ? s.s_val : "";
+        if (str && str[0] == '"') {
+            /* Remove quotes */
+            size_t len = strlen(str);
+            if (len >= 2) return val_int((int64_t)(len - 2));
+        }
+        return val_int((int64_t)strlen(str));
+    }
+    
+    if (strcmp(name, "strcmp") == 0) {
+        Val b = pop(st), a = pop(st);
+        const char *sa = (a.kind == VAL_STRING) ? a.s_val : "";
+        const char *sb = (b.kind == VAL_STRING) ? b.s_val : "";
+        return val_int((int64_t)strcmp(sa, sb));
+    }
+    
+    if (strcmp(name, "strcpy") == 0) {
+        Val src = pop(st), dst = pop(st);
+        const char *s = (src.kind == VAL_STRING) ? src.s_val : "";
+        if (dst.kind == VAL_STRING) {
+            char buf[512];
+            size_t slen = strlen(s);
+            if (slen < sizeof(buf) - 3) {
+                snprintf(buf, sizeof(buf), "\"%s\"", s);
+                store_var(st, (const char*)dst.s_val, val_string(pool_string(st, buf)));
+            }
+        }
+        return val_string(s);
+    }
+    
+    if (strcmp(name, "strcat") == 0) {
+        Val b = pop(st), a = pop(st);
+        const char *sa = (a.kind == VAL_STRING) ? a.s_val : "";
+        const char *sb = (b.kind == VAL_STRING) ? b.s_val : "";
+        char buf[512];
+        snprintf(buf, sizeof(buf), "%s%s", sa, sb);
+        return val_string(pool_string(st, buf));
+    }
+
+    /* Memory functions */
+    if (strcmp(name, "malloc") == 0 || strcmp(name, "gcMalloc") == 0) {
+        Val size = pop(st);
+        int64_t sz = val_to_int(size);
+        if (sz <= 0) sz = 1;
+        char buf[512];
+        snprintf(buf, sizeof(buf), "\"PTR:%lld\"", (long long)sz);
+        return val_string(pool_string(st, buf));
+    }
+    
+    if (strcmp(name, "calloc") == 0) {
+        Val size = pop(st);
+        Val count = pop(st);
+        int64_t total = val_to_int(count) * val_to_int(size);
+        if (total <= 0) total = 1;
+        char buf[512];
+        snprintf(buf, sizeof(buf), "\"PTR:%lld\"", (long long)total);
+        return val_string(pool_string(st, buf));
+    }
+    
+    if (strcmp(name, "realloc") == 0) {
+        Val newsize = pop(st);
+        pop(st);  /* discard old ptr */
+        int64_t sz = val_to_int(newsize);
+        if (sz <= 0) sz = 1;
+        char buf[512];
+        snprintf(buf, sizeof(buf), "\"PTR:%lld\"", (long long)sz);
+        return val_string(pool_string(st, buf));
+    }
+    
+    if (strcmp(name, "memcpy") == 0 || strcmp(name, "memset") == 0 || 
+        strcmp(name, "memmove") == 0 || strcmp(name, "memcmp") == 0) {
+        /* Dummy implementations - just consume arguments */
+        for (int i = 0; i < argc; i++) pop(st);
+        return val_int(0);
+    }
+    
+    /* Math functions */
+    if (strcmp(name, "abs") == 0) {
+        Val v = pop(st);
+        int64_t val = val_to_int(v);
+        return val_int(val < 0 ? -val : val);
+    }
+    
+    if (strcmp(name, "sqrt") == 0) {
+        Val v = pop(st);
+        double d = (v.kind == VAL_FLOAT) ? v.f_val : (double)val_to_int(v);
+        return val_float(d < 0 ? 0.0 : sqrt(d));
+    }
+    
+    if (strcmp(name, "sin") == 0) {
+        Val v = pop(st);
+        double d = (v.kind == VAL_FLOAT) ? v.f_val : (double)val_to_int(v);
+        return val_float(sin(d));
+    }
+    
+    if (strcmp(name, "cos") == 0) {
+        Val v = pop(st);
+        double d = (v.kind == VAL_FLOAT) ? v.f_val : (double)val_to_int(v);
+        return val_float(cos(d));
+    }
+    
+    if (strcmp(name, "pow") == 0) {
+        Val exp = pop(st), base = pop(st);
+        double b = (base.kind == VAL_FLOAT) ? base.f_val : (double)val_to_int(base);
+        double e = (exp.kind == VAL_FLOAT) ? exp.f_val : (double)val_to_int(exp);
+        return val_float(pow(b, e));
+    }
+    
+    if (strcmp(name, "sprintf") == 0 || strcmp(name, "snprintf") == 0) {
+        /* Simplified: just format and return string */
+        Val fmt = pop(st);
+        const char *f = (fmt.kind == VAL_STRING) ? fmt.s_val : "";
+        char buf[512];
+        snprintf(buf, sizeof(buf), "\"%s\"", f);
+        return val_string(pool_string(st, buf));
+    }
+    
+    /* Overflow detection helpers */
+    if (strcmp(name, "_check_add_overflow") == 0) {
+        /* Check if a + b overflows */
+        Val b = pop(st), a = pop(st);
+        int64_t av = val_to_int(a);
+        int64_t bv = val_to_int(b);
+        if ((bv > 0 && av > INT64_MAX - bv) || (bv < 0 && av < INT64_MIN - bv)) {
+            fprintf(stdout, "\x1b[31mgcl: error: integer overflow in addition\x1b[0m\n");
+            return val_int(1);
+        }
+        return val_int(0);
+    }
+    
+    if (strcmp(name, "_check_mul_overflow") == 0) {
+        /* Check if a * b overflows */
+        Val b = pop(st), a = pop(st);
+        int64_t av = val_to_int(a);
+        int64_t bv = val_to_int(b);
+        if (av != 0 && bv != 0) {
+            if ((av > 0 && bv > 0 && av > INT64_MAX / bv) ||
+                (av < 0 && bv < 0 && av < INT64_MAX / bv) ||
+                (av > 0 && bv < 0 && bv < INT64_MIN / av) ||
+                (av < 0 && bv > 0 && av < INT64_MIN / bv)) {
+                fprintf(stdout, "\x1b[31mgcl: error: integer overflow in multiplication\x1b[0m\n");
+                return val_int(1);
+            }
+        }
+        return val_int(0);
+    }
+    
+    if (strcmp(name, "sizeof") == 0) {
+        /* sizeof always returns 8 (generic size) */
+        return val_int(8);
+    }
+
+    /* File I/O functions */
+    if (strcmp(name, "fopen") == 0) {
+        extern void interp_fopen(void *st, const char *filename, const char *mode);
+        Val mode = pop(st), filename = pop(st);
+        const char *fn = (filename.kind == VAL_STRING) ? filename.s_val : "";
+        const char *md = (mode.kind == VAL_STRING) ? mode.s_val : "r";
+        interp_fopen(st, fn, md);
+        return val_null();
+    }
+    
+    if (strcmp(name, "fclose") == 0) {
+        extern void interp_fclose(void *st, int64_t handle);
+        Val handle = pop(st);
+        interp_fclose(st, val_to_int(handle));
+        return val_null();
+    }
+    
+    if (strcmp(name, "fprintf") == 0) {
+        extern void interp_fprintf(void *st, int64_t handle, const char *format, int argc);
+        Val fmt = pop(st), handle = pop(st);
+        const char *f = (fmt.kind == VAL_STRING) ? fmt.s_val : "";
+        interp_fprintf(st, val_to_int(handle), f, argc - 2);
+        return val_null();
+    }
+    
+    if (strcmp(name, "fscanf") == 0) {
+        extern void interp_fscanf(void *st, int64_t handle, const char *format);
+        Val fmt = pop(st), handle = pop(st);
+        const char *f = (fmt.kind == VAL_STRING) ? fmt.s_val : "";
+        interp_fscanf(st, val_to_int(handle), f);
+        return val_null();
+    }
+    
+    if (strcmp(name, "fread") == 0) {
+        extern int64_t interp_fread(void *st, int64_t handle, int64_t size, int64_t count);
+        Val count = pop(st), size = pop(st), handle = pop(st);
+        return val_int(interp_fread(st, val_to_int(handle), val_to_int(size), val_to_int(count)));
+    }
+    
+    if (strcmp(name, "fwrite") == 0) {
+        extern int64_t interp_fwrite(void *st, int64_t handle, const char *data, int64_t size);
+        Val size = pop(st), data = pop(st), handle = pop(st);
+        const char *d = (data.kind == VAL_STRING) ? data.s_val : "";
+        return val_int(interp_fwrite(st, val_to_int(handle), d, val_to_int(size)));
+    }
+    
+    if (strcmp(name, "fgets") == 0) {
+        extern void interp_fgets(void *st, const char *var_name, int64_t handle, int64_t max_len);
+        Val maxlen = pop(st), handle = pop(st), varname = pop(st);
+        const char *vn = (varname.kind == VAL_STRING) ? varname.s_val : "";
+        interp_fgets(st, vn, val_to_int(handle), val_to_int(maxlen));
+        return val_null();
+    }
+    
+    if (strcmp(name, "fputs") == 0) {
+        extern int64_t interp_fputs(void *st, const char *text, int64_t handle);
+        Val handle = pop(st), text = pop(st);
+        const char *t = (text.kind == VAL_STRING) ? text.s_val : "";
+        return val_int(interp_fputs(st, t, val_to_int(handle)));
+    }
+    
+    if (strcmp(name, "fseek") == 0) {
+        extern int64_t interp_fseek(void *st, int64_t handle, int64_t offset, int64_t whence);
+        Val whence = pop(st), offset = pop(st), handle = pop(st);
+        return val_int(interp_fseek(st, val_to_int(handle), val_to_int(offset), val_to_int(whence)));
+    }
+    
+    if (strcmp(name, "ftell") == 0) {
+        extern int64_t interp_ftell(void *st, int64_t handle);
+        Val handle = pop(st);
+        return val_int(interp_ftell(st, val_to_int(handle)));
     }
 
     void *proc = interp_get_proc(st, name);
@@ -590,9 +776,9 @@ static void interp_index_value(InterpState *st, const char *s, int64_t i) {
         if (q < end && *q == ';') q++;
         q = interp_parse_num(q, end, &list_count);
         if (q < end && *q == ';') q++;
-        /* out-of-bounds read → null */
+        /* out-of-bounds read → return 0 (uninitialized element) */
         if (i < 0 || i >= list_count) {
-            push(st, val_null());
+            push(st, val_int(0));
             return;
         }
         int64_t cur = 0;
@@ -612,7 +798,7 @@ static void interp_index_value(InterpState *st, const char *s, int64_t i) {
             if (!sep) break;
             q = sep + 1;
         }
-        push(st, val_null());
+        push(st, val_int(0));
         return;
     }
 
@@ -723,62 +909,10 @@ static void interp_free(InterpState *st, const char *name) {
     slot->value = val_null();
 }
 
-/* Part 3: scanf — safe stdin read.
- * kind 0=%s (string, buffer cap = current value length), 1=%d, 2=%f, 3=%c.
- * Overflow is detected, #warning'd and truncated; always null-terminated. */
+/* Part 3: scanf — delegate to scanf_module.c */
 static void interp_scanf(InterpState *st, const char *name, int64_t kind) {
-    if (!name) return;
-    char line[512];
-    if (!fgets(line, sizeof(line), stdin)) {
-        store_var(st, name, val_string(pool_string(st, "\"\"")));
-        return;
-    }
-    size_t len = strlen(line);
-    while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) {
-        line[--len] = '\0';
-    }
-    switch (kind) {
-    case 0: { /* string: buffer capacity = declared length of current value */
-        size_t cap = 127;
-        VarSlot *slot = find_var(st, name);
-        if (slot && slot->value.kind == VAL_STRING && slot->value.s_val) {
-            size_t sl = strlen(slot->value.s_val);
-            const char *sp = slot->value.s_val;
-            if (sl >= 2 && sp[0] == '"' && sp[sl-1] == '"') sl -= 2;
-            cap = sl > 0 ? sl : 127;
-        }
-        if (len >= cap && cap > 0) {
-            fprintf(stdout, "\x1b[33mgcl: warning: scanf input exceeds buffer size (%d), truncated\x1b[0m\n",
-                    (int)cap);
-            len = cap - 1;
-            line[len] = '\0';
-        }
-        char qbuf[520];
-        int qn = snprintf(qbuf, sizeof(qbuf), "\"%s\"", line);
-        if (qn > 0) store_var(st, name, val_string(pool_string(st, qbuf)));
-        break;
-    }
-    case 1: { /* int */
-        int64_t v = strtoll(line, NULL, 10);
-        store_var(st, name, val_int(v));
-        break;
-    }
-    case 2: { /* float */
-        double v = strtod(line, NULL);
-        store_var(st, name, val_float(v));
-        break;
-    }
-    case 3: { /* char */
-        if (len > 0) {
-            char cb[4];
-            snprintf(cb, sizeof(cb), "'%c'", line[0]);
-            store_var(st, name, val_string(pool_string(st, cb)));
-        }
-        break;
-    }
-    default:
-        break;
-    }
+    extern void interp_scanf_module(void *st, const char *name, int64_t kind);
+    interp_scanf_module(st, name, kind);
 }
 
 /* Part 14: instance field write — obj.field = v.
@@ -1087,6 +1221,8 @@ int gcl_interp_run(const GclIrProgram *prog) {
         case IR_MUL: { Val b = pop(&st); Val a = pop(&st); push(&st, val_int(val_to_int(a) * val_to_int(b))); break; }
         case IR_DIV: { Val b = pop(&st); Val a = pop(&st); int64_t bv = val_to_int(b); push(&st, val_int(bv ? val_to_int(a)/bv : 0)); break; }
         case IR_MOD: { Val b = pop(&st); Val a = pop(&st); int64_t bv = val_to_int(b); push(&st, val_int(bv ? val_to_int(a)%bv : 0)); break; }
+        case IR_PTR_ADD: { Val b = pop(&st); Val a = pop(&st); push(&st, val_int(val_to_int(a) + val_to_int(b))); break; }
+        case IR_PTR_SUB: { Val b = pop(&st); Val a = pop(&st); push(&st, val_int(val_to_int(a) - val_to_int(b))); break; }
         case IR_NEG: { Val a = pop(&st); push(&st, val_int(-val_to_int(a))); break; }
         case IR_NOT: { Val a = pop(&st); push(&st, val_int(!val_truthy(a))); break; }
         case IR_BITNOT: { Val a = pop(&st); push(&st, val_int(~val_to_int(a))); break; }
@@ -1195,6 +1331,7 @@ int gcl_interp_run(const GclIrProgram *prog) {
             interp_gcmalloc(&st, ins->s_val, ins->i_val, ins->arg_count);
             break;
         }
+        case IR_STRUCT_COPY: break;
         case IR_PRINT: { Val v = pop(&st); if (v.kind == VAL_STRING && v.s_val) printf("%s\n", v.s_val); else if (v.kind == VAL_INT) printf("%lld\n", (long long)v.i_val); else printf("null\n"); break; }
         case IR_HALT: st.halted = 1; break;
         }
@@ -1279,6 +1416,8 @@ int gcl_interp_run_with_path(const GclIrProgram *prog, const char *filepath) {
         case IR_MUL: { Val b = pop(&st); Val a = pop(&st); push(&st, val_int(val_to_int(a) * val_to_int(b))); break; }
         case IR_DIV: { Val b = pop(&st); Val a = pop(&st); int64_t bv = val_to_int(b); push(&st, val_int(bv ? val_to_int(a)/bv : 0)); break; }
         case IR_MOD: { Val b = pop(&st); Val a = pop(&st); int64_t bv = val_to_int(b); push(&st, val_int(bv ? val_to_int(a)%bv : 0)); break; }
+        case IR_PTR_ADD: { Val b = pop(&st); Val a = pop(&st); push(&st, val_int(val_to_int(a) + val_to_int(b))); break; }
+        case IR_PTR_SUB: { Val b = pop(&st); Val a = pop(&st); push(&st, val_int(val_to_int(a) - val_to_int(b))); break; }
         case IR_NEG: { Val a = pop(&st); push(&st, val_int(-val_to_int(a))); break; }
         case IR_NOT: { Val a = pop(&st); push(&st, val_int(!val_truthy(a))); break; }
         case IR_BITNOT: { Val a = pop(&st); push(&st, val_int(~val_to_int(a))); break; }
@@ -1387,6 +1526,7 @@ int gcl_interp_run_with_path(const GclIrProgram *prog, const char *filepath) {
             interp_gcmalloc(&st, ins->s_val, ins->i_val, ins->arg_count);
             break;
         }
+        case IR_STRUCT_COPY: break;
         case IR_PRINT: { Val v = pop(&st); if (v.kind == VAL_STRING && v.s_val) printf("%s\n", v.s_val); else if (v.kind == VAL_INT) printf("%lld\n", (long long)v.i_val); else printf("null\n"); break; }
         case IR_HALT: st.halted = 1; break;
         }
@@ -1395,3 +1535,6 @@ int gcl_interp_run_with_path(const GclIrProgram *prog, const char *filepath) {
     interp_unload_dlls(&st);
     return 0;
 }
+
+
+

@@ -1,3 +1,20 @@
+
+/* === From: gcl_lexer_init.c === */
+#include <string.h>
+#include "gcl_lexer.h"
+
+void gcl_lexer_init(GclLexer *lex, const char *source, GclArena *arena, GclStringIntern *intern) {
+    lex->source = source;
+    lex->length = source ? strlen(source) : 0;
+    lex->pos = 0;
+    lex->line = 1;
+    lex->col = 1;
+    lex->arena = arena;
+    lex->intern = intern;
+}
+
+
+/* === From: gcl_lexer_scan.c === */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -191,7 +208,7 @@ static GclToken scan_number(GclLexer *lex) {
                       start, len, line, col);
 }
 
-/* ── scan string ─────────────────────────────────── */
+/* ── scan string with escape sequences ───────────── */
 
 static GclToken scan_string(GclLexer *lex) {
     int line = lex->line, col = lex->col;
@@ -200,7 +217,29 @@ static GclToken scan_string(GclLexer *lex) {
     while (lex->pos < lex->length && peek(lex) != '"') {
         if (peek(lex) == '\\' && lex->pos + 1 < lex->length) {
             advance(lex); /* backslash */
-            advance(lex); /* escaped char */
+            char esc = peek(lex);
+            switch (esc) {
+            case 'n': case 't': case 'r': case '\\': case '"': case '\'':
+            case 'b': case 'f': case 'v': case '0':
+                advance(lex);
+                break;
+            case 'x':
+                advance(lex);
+                if (isxdigit((unsigned char)peek(lex))) advance(lex);
+                if (isxdigit((unsigned char)peek(lex))) advance(lex);
+                break;
+            case 'u':
+                advance(lex);
+                for (int i = 0; i < 4 && isxdigit((unsigned char)peek(lex)); i++) advance(lex);
+                break;
+            case 'U':
+                advance(lex);
+                for (int i = 0; i < 8 && isxdigit((unsigned char)peek(lex)); i++) advance(lex);
+                break;
+            default:
+                advance(lex);
+                break;
+            }
         } else {
             advance(lex);
         }
@@ -418,5 +457,6 @@ GclToken gcl_lexer_peek(GclLexer *lex) {
     lex->col = saved_col;
     return tok;
 }
+
 
 

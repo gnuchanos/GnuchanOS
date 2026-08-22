@@ -72,6 +72,7 @@ typedef struct GclAstNode {
     const char         *type_name;
     int                 is_pointer;
     int                 array_dim;
+    int                 is_const;      /* 1 if variable declared with const */
     int                 line;
     int                 col;
 } GclAstNode;

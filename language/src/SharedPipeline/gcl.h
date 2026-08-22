@@ -56,3 +56,7 @@ int gcl_full_pipeline(const char *source, GclDiagBag *diag);
 int gcl_run_file(const char *source, const char *filepath);
 
 #endif /* GCL_H */
+
+/* Debug mode control */
+void gcl_set_debug_mode(int enabled);
+

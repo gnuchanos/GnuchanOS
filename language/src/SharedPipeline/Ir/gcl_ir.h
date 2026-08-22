@@ -17,6 +17,7 @@ typedef enum {
     IR_PUSH_NULL,
     IR_POP,
     IR_ADD, IR_SUB, IR_MUL, IR_DIV, IR_MOD,
+    IR_PTR_ADD, IR_PTR_SUB,  /* Pointer arithmetic: p+i, p-i */
     IR_NEG, IR_NOT, IR_BITNOT,
     IR_EQ, IR_NEQ, IR_LT, IR_GT, IR_LTE, IR_GTE,
     IR_AND, IR_OR,
@@ -38,6 +39,8 @@ typedef enum {
     /* Part 4/5: variable.free() — s_val=target var. Sets the var to null;
      * freeing an already-null var emits a double-free #warning. */
     IR_FREE,
+    /* Part 5: Struct assignment copy — s_val=target var. */
+    IR_STRUCT_COPY,
     /* Part 5: gcMalloc/malloc reserve — s_val=target var, i_val=reserve
      * capacity, arg_count=extra auto-grow step (0 for plain malloc). */
     IR_GCMALLOC,

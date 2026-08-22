@@ -938,11 +938,17 @@ function attachWatcher() {
     send("workspace:event", ev);
     /* Script/native dosya eklenip silindiginde Project.gcDATA'daki info
      * dump (files + import adlari + dirs) debounce'lu yenilenir. Boylece
-     * dosya haritasi her zaman diskle esit kalir. */
+     * dosya haritasi her zaman diskle esit kalir.
+     * addDir/unlinkDir olaylarinda da refresh yapilir ki bos klasorler
+     * Explorer'da hemen gorunsun — "klasor olusturulunca IDE disinda
+     * gozukmuyor" hatasinin kok nedeni bu refresh'in eksikligiydi. */
     if (
       (event === "add" || event === "unlink") &&
       SCRIPT_EXTS.includes(path.extname(filePath).toLowerCase())
     ) {
+      scheduleProjectRefresh(workspaceRoot);
+    }
+    if (event === "addDir" || event === "unlinkDir") {
       scheduleProjectRefresh(workspaceRoot);
     }
     /* LSP workspace'ini CANLI tut: dosya ekle/sil/kaydet oldugunda

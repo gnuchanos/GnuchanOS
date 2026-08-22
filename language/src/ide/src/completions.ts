@@ -138,6 +138,41 @@ const GCL_WORDS: LangEntry[] = [
   { label: "gcMalloc", kind: "fn", detail: "gcMalloc(reserve=count, extra=n) — auto-grow" },
   { label: "free", kind: "fn", detail: "free(ptr) — frees and sets null" },
   { label: "sizeof", kind: "fn", detail: "sizeof(type) veya sizeof(variable)" },
+  
+  /* string functions */
+  { label: "strlen", kind: "fn", detail: "strlen(s) — string length" },
+  { label: "strcmp", kind: "fn", detail: "strcmp(s1, s2) — compare strings" },
+  { label: "strcpy", kind: "fn", detail: "strcpy(dest, src) — copy string" },
+  { label: "strcat", kind: "fn", detail: "strcat(dest, src) — concatenate" },
+  { label: "strncpy", kind: "fn", detail: "strncpy(dest, src, n) — copy n chars" },
+  { label: "sprintf", kind: "fn", detail: 'sprintf(buf, "fmt", args...) — format to buffer' },
+  { label: "snprintf", kind: "fn", detail: 'snprintf(buf, n, "fmt", args...) — safe format' },
+  { label: "strstr", kind: "fn", detail: "strstr(haystack, needle) — find substring" },
+  { label: "strchr", kind: "fn", detail: "strchr(s, c) — find character" },
+  
+  /* memory functions */
+  { label: "calloc", kind: "fn", detail: "calloc(count, size) — allocate and zero" },
+  { label: "realloc", kind: "fn", detail: "realloc(ptr, size) — resize allocation" },
+  { label: "memcpy", kind: "fn", detail: "memcpy(dest, src, n) — copy bytes" },
+  { label: "memset", kind: "fn", detail: "memset(ptr, val, n) — fill bytes" },
+  { label: "memmove", kind: "fn", detail: "memmove(dest, src, n) — copy with overlap" },
+  { label: "memcmp", kind: "fn", detail: "memcmp(p1, p2, n) — compare bytes" },
+];
+
+/* Export for monacoSetup.ts */
+export const GCL_KEYWORDS = [
+  "if", "else", "elif", "while", "do", "for", "switch", "case", "break", "continue", "return",
+  "public", "private", "const", "inline", "global", "typedef", "struct", "class", "enum", "tuple", "dict",
+  "int8", "int16", "int32", "int64", "int128", "uint8", "uint16", "uint32", "uint64", "uint128",
+  "float16", "float32", "float64", "float128", "gcChar", "bool", "char", "short", "int", "float", "double", "long", "unsigned", "void",
+  "#include", "#lib", "#extern", "#register", "#define", "#undef", "#warning", "#error", "#debug", "#ifdef", "#ifndef", "#if", "#elif", "#endif",
+];
+
+export const GCL_BUILTINS = [
+  "printf", "scanf", "malloc", "gcMalloc", "free", "sizeof",
+  "strlen", "strcmp", "strcpy", "strcat", "strncpy", "sprintf", "snprintf", "strstr", "strchr",
+  "calloc", "realloc", "memcpy", "memset", "memmove", "memcmp",
+  "main",
 ];
 
 /* prefix ile eşleşen GCL kelimelerini döndürür. "#" profiksinde yalnızca

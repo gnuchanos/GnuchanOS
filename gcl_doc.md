@@ -18,15 +18,15 @@ gcl -flags -run path/main.gcsf yada main.gcsf
 
 gnu/focus language but it's can be support windows only no mac or android
 
-`D:\GnuchanOS\language\BUILD` output gcl, .gcsf, .gclib, .so, .dll, .a dosyalarinin olucagi yer burasi proje test emek icin gereksiz compiler coplerini tutma
+`D:\GnuchanOS\language\BUILD` output gcl, .gcsf, .so, .dll, .a dosyalarinin olucagi yer burasi proje test emek icin gereksiz compiler coplerini tutma
 
 ### flags
 
 ```
-gcl -lexer file.gcsf yada file.gclib
-gcl -parser file.gcsf yada file.gclib
-gcl -ast file.gcsf yada file.gclib
-gcl -ir file.gcsf yada file.gclib
+gcl -lexer file.gcsf
+gcl -parser file.gcsf
+gcl -ast file.gcsf
+gcl -ir file.gcsf
 gcl -debug -run file.gcsf
 
 gcl -linclude path -llib path -lextern path -run main.gcsf
@@ -36,7 +36,6 @@ gcl -linclude path -llib path -lextern path -run main.gcsf
 
 ```
 .gcsf   #// script file
-.gclib  #// library/module
 .gctf   #// text file
 .gcdata #// json ile file + #// comment line support
 ```
@@ -44,7 +43,7 @@ gcl -linclude path -llib path -lextern path -run main.gcsf
 ## Language Algorithm
 
 ```
-GCL Source #// .gclib/extern -> .gcsf/extern -> main.gcsf
+GCL Source #// .gcsf/extern -> main.gcsf
      │
      ▼
 src/
@@ -63,7 +62,7 @@ src/
 │   ├── Ir/
 │   └── Common/
 
-.gclib/extern -> include .gcsf/extern -> main.gcsf
+include .gcsf/extern -> main.gcsf
 SharedPipeline -> FastIR
 ```
 
@@ -105,13 +104,6 @@ comment |#
     how to call: member
 ```
 
-### for moduler system
-
-```
-#lib "library.gclib" yada <library.gclib>
-    how to call: library.member
-```
-
 ### .so, .dll, .a
 
 ```
@@ -125,8 +117,6 @@ comment |#
 
 ### macros
 
-this macros only for .gclib and include .gcsf not for main.gcsf
-
 ```
 #register --> from #extern <raylib.dll> -> .so, .dll -> #register type function()
 #ifdef
@@ -139,7 +129,7 @@ this macros only for .gclib and include .gcsf not for main.gcsf
 
 `#if` --> gnuLinux, gnu_linux, gnu, linux, windows
 
-you can use in main.gcsf, include .gcsf and .gclib
+you can use in main.gcsf, include .gcsf
 
 ```
 #define   --> normal
@@ -336,7 +326,260 @@ pointer  &, *
 ### SCANF -> Safer than vanilla C
 
 ```
-scanf("%type", text);
+    // =========================================================
+    // SENİN TYPE'LARIN
+    // =========================================================
+
+    // Signed
+    int8 number1 = 10;
+    scanf("%d", &number1);
+
+    int16 number2 = 100;
+    scanf("%d", &number2);
+
+    int32 number3 = 1000;
+    scanf("%d", &number3);
+
+    int64 number4 = 10000;
+    scanf("%lld", &number4);
+
+    int128 number5 = 100000;
+    scanf("%lld", &number5);
+
+
+    // Unsigned
+    uint8 unumber1 = 10;
+    scanf("%u", &unumber1);
+
+    uint16 unumber2 = 100;
+    scanf("%u", &unumber2);
+
+    uint32 unumber3 = 1000;
+    scanf("%u", &unumber3);
+
+    uint64 unumber4 = 10000;
+    scanf("%llu", &unumber4);
+
+    uint128 unumber5 = 100000;
+    scanf("%llu", &unumber5);
+
+
+    // Floating point
+    float16 fnumber1 = 10.30;
+    scanf("%f", &fnumber1);
+
+    float32 fnumber2 = 10.300;
+    scanf("%f", &fnumber2);
+
+    float64 fnumber3 = 10.3000;
+    scanf("%lf", &fnumber3);
+
+    float128 fnumber4 = 10.30000;
+    scanf("%Lf", &fnumber4);
+
+
+    // =========================================================
+    // VANILLA C TYPE'LARI
+    // =========================================================
+
+    short number6;
+    scanf("%hd", &number6);
+
+    int number7;
+    scanf("%d", &number7);
+
+    long number8;
+    scanf("%ld", &number8);
+
+    long long number9;
+    scanf("%lld", &number9);
+
+    unsigned short unumber6;
+    scanf("%hu", &unumber6);
+
+    unsigned int unumber7;
+    scanf("%u", &unumber7);
+
+    unsigned long unumber8;
+    scanf("%lu", &unumber8);
+
+    unsigned long long unumber9;
+    scanf("%llu", &unumber9);
+
+    float fnumber5;
+    scanf("%f", &fnumber5);
+
+    double fnumber6;
+    scanf("%lf", &fnumber6);
+
+    long double fnumber7;
+    scanf("%Lf", &fnumber7);
+
+
+    // =========================================================
+    // CHAR / STRING / UTF-8
+    // =========================================================
+
+    char character;
+    scanf(" %c", &character);
+
+    char text[100];
+    scanf("%99s", text);
+
+    gcChar gcCharacter;
+    scanf(" %c", &gcCharacter);
+
+    gcChar gcText[100];
+    scanf("%99s", gcText);
+
+
+    // =========================================================
+    // BIRDEN FAZLA DEĞER
+    // =========================================================
+
+    int a, b;
+    scanf("%d %d", &a, &b);
+
+    int x, y, z;
+    scanf("%d %d %d", &x, &y, &z);
+
+    float fx, fy;
+    scanf("%f %f", &fx, &fy);
+
+    double dx, dy;
+    scanf("%lf %lf", &dx, &dy);
+
+
+    // =========================================================
+    // SAYI TABANLARI
+    // =========================================================
+
+    int decimal;
+    scanf("%d", &decimal);
+
+    int automaticBase;
+    scanf("%i", &automaticBase);
+
+    int octal;
+    scanf("%o", &octal);
+
+    int hexadecimal;
+    scanf("%x", &hexadecimal);
+
+    unsigned int unsignedHexadecimal;
+    scanf("%x", &unsignedHexadecimal);
+
+
+    // =========================================================
+    // FIELD WIDTH
+    // =========================================================
+
+    int limitedNumber;
+    scanf("%5d", &limitedNumber);
+
+    char limitedText[20];
+    scanf("%19s", limitedText);
+
+
+    // =========================================================
+    // CHARACTER SET
+    // =========================================================
+
+    char digits[20];
+    scanf("%[0-9]", digits);
+
+    char letters[50];
+    scanf("%[a-zA-Z]", letters);
+
+    char lowercase[50];
+    scanf("%[a-z]", lowercase);
+
+    char untilNumber[50];
+    scanf("%[^0-9]", untilNumber);
+
+    char untilSpace[50];
+    scanf("%[^ ]", untilSpace);
+
+
+    // =========================================================
+    // ASSIGNMENT SUPPRESSION
+    // =========================================================
+
+    int first;
+    int second;
+
+    scanf("%d %*d %d", &first, &second);
+
+
+    // =========================================================
+    // LITERAL KARAKTERLER / AYRAÇLAR
+    // =========================================================
+
+    int day, month, year;
+    scanf("%d/%d/%d", &day, &month, &year);
+
+    int hour, minute, secondTime;
+    scanf("%d:%d:%d", &hour, &minute, &secondTime);
+
+    int n1, n2;
+    scanf("%d,%d", &n1, &n2);
+
+    int left, right;
+    scanf("(%d,%d)", &left, &right);
+
+
+    // =========================================================
+    // POINTER
+    // =========================================================
+
+    int value;
+    int *pointer = &value;
+
+    scanf("%d", pointer);
+
+
+    // =========================================================
+    // POINTER FORMAT
+    // =========================================================
+
+    void *address;
+    scanf("%p", &address);
+
+
+    // =========================================================
+    // STRING İÇİNDE BOŞLUK OKUMA
+    // =========================================================
+
+    char sentence[100];
+    scanf(" %[^\n]", sentence);
+
+
+    // =========================================================
+    // HEX / OCTAL / DECIMAL + UNSIGNED
+    // =========================================================
+
+    unsigned int hexValue;
+    scanf("%x", &hexValue);
+
+    unsigned int octalValue;
+    scanf("%o", &octalValue);
+
+    unsigned int decimalValue;
+    scanf("%u", &decimalValue);
+
+
+    // =========================================================
+    // SCAN SET + WIDTH
+    // =========================================================
+
+    char limitedDigits[10];
+    scanf("%9[0-9]", limitedDigits);
+
+    char limitedLetters[20];
+    scanf("%19[a-zA-Z]", limitedLetters);
+
+    char limitedSentence[50];
+    scanf("%49[^\n]", limitedSentence);
 ```
 
 ```
@@ -357,7 +600,7 @@ int32  number3 = 1000;
 int64  number4 = 10000;
 int128 number5 = 100000;
 
-float16  number6 = 10.30;
+float16  number6 = 10.30;  
 float32  number7 = 10.300;
 float64  number8 = 10.3000;
 float128 number9 = 10.30000;
@@ -771,3 +1014,9 @@ printf("Child Name: %s \n", ThisChild.name);
 printf("Child Age: %d \n", ThisChild.age());
 printf("FATHER CALL From Child No Header: %s \n", ThisChild.Call());
 printf("FATHER CALL From Child With Header: %s \n", ThisChild.talk());
+
+
+
+
+# yeni ozellikler
+

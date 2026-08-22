@@ -58,6 +58,7 @@ const char *gcl_ir_op_name(GclIrOp op) {
     case IR_STORE:        return "STORE";
     case IR_LOAD_GLOBAL:  return "LOAD_GLOBAL";
     case IR_STORE_GLOBAL: return "STORE_GLOBAL";
+    case IR_STRUCT_COPY:  return "STRUCT_COPY";
     case IR_CALL:         return "CALL";
     case IR_RET:          return "RET";
     case IR_JMP:          return "JMP";

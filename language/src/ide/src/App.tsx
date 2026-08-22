@@ -46,7 +46,7 @@ function langOf(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   if (ext === "lua") return "lua";
   if (ext === "py") return "python";
-  if (ext === "gcsf" || ext === "gclib" || ext === "gcl") return "gcl";
+  if (ext === "gcsf" || ext === "gclib" || ext === "gcl" || ext === "gctf" || ext === "gcdata" || ext === "gcdl") return "gcl";
   if (ext === "doc") return "doc";
   if (ext === "gcreference") return "ref";
   return "plaintext";

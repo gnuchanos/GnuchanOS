@@ -319,6 +319,14 @@ int gcl_full_pipeline(const char *source, GclDiagBag *diag) {
  * Walks the AST and prints the directive text: warning=yellow,
  * debug=blue, error=red (ANSI on Windows 10+ terminals).
  * #error increments the diag error count so the pipeline stops. */
+
+/* Global debug flag - set by gcl_run_file_debug() */
+static int g_debug_mode = 0;
+
+/* Public API: enable/disable debug output */
+void gcl_set_debug_mode(int enabled) {
+    g_debug_mode = enabled;
+}
 static void gcl_emit_pp_directives(const GclAstNode *node, GclDiagBag *diag,
                                    const char *filepath) {
     if (!node) return;
@@ -367,9 +375,11 @@ int gcl_run_file(const char *source, const char *filepath) {
     /* Çökme noktasını görmek için stdout'u unbuffered yap */
     setvbuf(stdout, NULL, _IONBF, 0);
 
-    fprintf(stderr, "[gcl_debug] gcl_run_file entered (filepath=%s)\n",
-            filepath ? filepath : "?");
-    fflush(stderr);
+    if (g_debug_mode) {
+        fprintf(stderr, "[gcl_debug] gcl_run_file entered (filepath=%s)\n",
+                filepath ? filepath : "?");
+        fflush(stderr);
+    }
 
     gcl_arena_init(&arena);
     gcl_intern_init(&intern, &arena);
@@ -380,7 +390,7 @@ int gcl_run_file(const char *source, const char *filepath) {
     gcl_gc_init();
     gcl_linker_init();
 
-    printf("gcl: stage 1/6  init pipeline\n");
+    if (g_debug_mode) printf("gcl: stage 1/6  init pipeline\n");
 
     /* Stage 2: Parse (with #include merge) */
     static char merged[GCL_MERGED_MAX]; /* static: 1MB stack buffer taşmaz */
@@ -388,10 +398,10 @@ int gcl_run_file(const char *source, const char *filepath) {
     if (gcl_merge_includes(source, filepath, merged, sizeof merged) == 0) {
         if (merged[0] != '\0') parse_src = merged;
     }
-    printf("gcl: stage 2/6 - parsing (%zu bytes)\n", strlen(parse_src));
+    if (g_debug_mode) printf("gcl: stage 2/6 - parsing (%zu bytes)\n", strlen(parse_src));
     gcl_parser_init(&parser, parse_src, &arena, &intern, &diag, filepath);
     GclAstNode *ast = gcl_parser_parse(&parser);
-    printf("gcl: stage 2/6 - parse OK (%d decls)\n", ast ? ast->child_count : 0);
+    if (g_debug_mode) printf("gcl: stage 2/6 - parse OK (%d decls)\n", ast ? ast->child_count : 0);
 
     /* Part 1: #warning (yellow) / #debug (blue) / #error (red, stops build) */
     gcl_emit_pp_directives(ast, &diag, filepath);
@@ -404,7 +414,7 @@ int gcl_run_file(const char *source, const char *filepath) {
     }
 
     /* Stage 3: Semantic */
-    printf("gcl: stage 3/6 - semantic check\n");
+    if (g_debug_mode) printf("gcl: stage 3/6 - semantic check\n");
     gcl_semantic_init(&diag, filepath);
     gcl_semantic_check(ast);
 
@@ -416,10 +426,10 @@ int gcl_run_file(const char *source, const char *filepath) {
     }
 
     /* Stage 4: Type check */
-    printf("gcl: stage 4/6 - type check\n");
+    if (g_debug_mode) printf("gcl: stage 4/6 - type check\n");
     gcl_typecheck_init(&diag, filepath);
     gcl_typecheck_walk(ast);
-    printf("gcl: stage 4/6 - check OK\n");
+    if (g_debug_mode) printf("gcl: stage 4/6 - check OK\n");
 
     if (diag.error_count > 0) {
         gcl_diag_print_all(&diag);
@@ -429,10 +439,10 @@ int gcl_run_file(const char *source, const char *filepath) {
     }
 
     /* Stage 5: IR Generation */
-    printf("gcl: stage 5/6 - IR generation\n");
+    if (g_debug_mode) printf("gcl: stage 5/6 - IR generation\n");
     gcl_ir_init(&ir, &arena, &diag);
     gcl_ir_gen(&ir, ast);
-    printf("gcl: stage 5/6 - IR OK (%d instructions)\n", ir.count);
+    if (g_debug_mode) printf("gcl: stage 5/6 - IR OK (%d instructions)\n", ir.count);
 
     if (diag.error_count > 0) {
         gcl_diag_print_all(&diag);
@@ -442,7 +452,7 @@ int gcl_run_file(const char *source, const char *filepath) {
     }
 
     /* Stage 6: Interpreter */
-    printf("gcl: stage 6/6 - interpreter run\n");
+    if (g_debug_mode) printf("gcl: stage 6/6 - interpreter run\n");
     int result = gcl_interp_run_with_path(&ir, filepath);
 
     /* Cleanup */

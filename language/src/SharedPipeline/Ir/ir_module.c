@@ -1,3 +1,137 @@
+
+/* === From: gcl_ir_core.c === */
+#include <stdio.h>
+#include <string.h>
+#include "gcl_ir.h"
+
+void gcl_ir_init(GclIrProgram *prog, GclArena *arena, GclDiagBag *diag) {
+    memset(prog->instrs, 0, sizeof(prog->instrs));
+    prog->count = 0;
+    prog->arena = arena;
+    prog->diag = diag;
+}
+
+int gcl_ir_emit(GclIrProgram *prog, GclIrOp op, int64_t i_val, double f_val,
+                const char *s_val, int arg_count) {
+    if (prog->count >= GCL_IR_MAX) {
+        gcl_diag_add(prog->diag, GCL_DIAG_ERROR, 0, 0, "<ir>",
+                     "IR instruction limit reached (%d)", GCL_IR_MAX);
+        return -1;
+    }
+    GclIrInstr *instr = &prog->instrs[prog->count];
+    instr->op = op;
+    instr->i_val = i_val;
+    instr->f_val = f_val;
+    instr->s_val = s_val;
+    instr->arg_count = arg_count;
+    return prog->count++;
+}
+
+const char *gcl_ir_op_name(GclIrOp op) {
+    switch (op) {
+    case IR_NOP:          return "NOP";
+    case IR_PUSH_INT:     return "PUSH_INT";
+    case IR_PUSH_FLOAT:   return "PUSH_FLOAT";
+    case IR_PUSH_STRING:  return "PUSH_STRING";
+    case IR_PUSH_NULL:    return "PUSH_NULL";
+    case IR_POP:          return "POP";
+    case IR_ADD:          return "ADD";
+    case IR_SUB:          return "SUB";
+    case IR_MUL:          return "MUL";
+    case IR_DIV:          return "DIV";
+    case IR_MOD:          return "MOD";
+    case IR_PTR_ADD:      return "PTR_ADD";
+    case IR_PTR_SUB:      return "PTR_SUB";
+    case IR_NEG:          return "NEG";
+    case IR_NOT:          return "NOT";
+    case IR_BITNOT:       return "BITNOT";
+    case IR_EQ:           return "EQ";
+    case IR_NEQ:          return "NEQ";
+    case IR_LT:           return "LT";
+    case IR_GT:           return "GT";
+    case IR_LTE:          return "LTE";
+    case IR_GTE:          return "GTE";
+    case IR_AND:          return "AND";
+    case IR_OR:           return "OR";
+    case IR_BITAND:       return "BITAND";
+    case IR_BITOR:        return "BITOR";
+    case IR_BITXOR:       return "BITXOR";
+    case IR_SHL:          return "SHL";
+    case IR_SHR:          return "SHR";
+    case IR_LOAD:         return "LOAD";
+    case IR_STORE:        return "STORE";
+    case IR_LOAD_GLOBAL:  return "LOAD_GLOBAL";
+    case IR_STORE_GLOBAL: return "STORE_GLOBAL";
+    case IR_STRUCT_COPY:  return "STRUCT_COPY";
+    case IR_CALL:         return "CALL";
+    case IR_RET:          return "RET";
+    case IR_JMP:          return "JMP";
+    case IR_JZ:           return "JZ";
+    case IR_JNZ:          return "JNZ";
+    case IR_LABEL:        return "LABEL";
+    case IR_MEMBER:       return "MEMBER";
+    case IR_MEMBER_ASSIGN: return "MEMBER_ASSIGN";
+    case IR_INDEX:        return "INDEX";
+    case IR_INDEX_ASSIGN: return "INDEX_ASSIGN";
+    case IR_SCANF: return "SCANF";
+    case IR_FREE:  return "FREE";
+    case IR_GCMALLOC: return "GCMALLOC";
+    case IR_PRINT:        return "PRINT";
+    case IR_HALT:         return "HALT";
+    }
+    return "???";
+}
+
+
+/* === From: gcl_ir_dump.c === */
+#include <stdio.h>
+#include "gcl_ir.h"
+
+void gcl_ir_dump(const GclIrProgram *prog) {
+    printf("--- IR Dump (%d instructions) ---\n", prog->count);
+    for (int i = 0; i < prog->count; i++) {
+        const GclIrInstr *ins = &prog->instrs[i];
+        printf("  [%04d] %-14s", i, gcl_ir_op_name(ins->op));
+        switch (ins->op) {
+        case IR_PUSH_INT:
+            printf(" %lld", (long long)ins->i_val);
+            break;
+        case IR_PUSH_FLOAT:
+            printf(" %f", ins->f_val);
+            break;
+        case IR_PUSH_STRING:
+            if (ins->s_val) printf(" \"%s\"", ins->s_val);
+            break;
+        case IR_LOAD:
+        case IR_STORE:
+        case IR_LOAD_GLOBAL:
+        case IR_STORE_GLOBAL:
+        case IR_LABEL:
+        case IR_MEMBER:
+            if (ins->s_val) printf(" %s", ins->s_val);
+            break;
+        case IR_CALL:
+            if (ins->s_val) printf(" %s", ins->s_val);
+            printf(" (argc=%d)", ins->arg_count);
+            break;
+        case IR_JMP:
+        case IR_JZ:
+        case IR_JNZ:
+            printf(" -> %lld", (long long)ins->i_val);
+            break;
+        case IR_INDEX_ASSIGN:
+            if (ins->s_val) printf(" %s", ins->s_val);
+            break;
+        default:
+            break;
+        }
+        printf("\n");
+    }
+    printf("--- End IR ---\n");
+}
+
+
+/* === From: gcl_ir_gen.c === */
 #include <stdio.h>
 #include <string.h>
 #include "gcl_ir.h"
@@ -402,56 +536,88 @@ static void gen_expr(GclIrProgram *prog, const GclAstNode *node) {
             const char *fmt_text = fmt ? fmt->str_value : NULL;
             
             if (fmt_text) {
-                /* Count format specifiers (skip %* and %%) */
-                int spec_count = 0;
-                for (const char *f = fmt_text; *f; f++) {
-                    if (*f == '%' && f[1] && f[1] != '%' && f[1] != '*') spec_count++;
-                }
+                int var_idx = 2;
                 
-                /* Process each variable with corresponding format */
-                int spec_idx = 0;
-                for (int i = 2; i < node->child_count && spec_idx < spec_count; i++) {
-                    const GclAstNode *target = node->children[i];
-                    if (!target || target->kind != AST_IDENT_EXPR) continue;
+                for (const char *f = fmt_text; *f && var_idx < node->child_count; f++) {
+                    if (*f != '%') continue;
+                    if (!f[1] || f[1] == '%') {
+                        f++;
+                        continue;
+                    }
                     
-                    const char *tname = target->str_value;
-                    if (!tname) continue;
-                    
-                    /* Find format specifier for this argument */
                     int kind = -1;
-                    int found_specs = 0;
-                    for (const char *f = fmt_text; *f; f++) {
-                        if (*f != '%' || !f[1] || f[1] == '%') continue;
-                        if (f[1] == '*') continue;  /* Skip assignment suppression */
-                        
-                        if (found_specs == spec_idx) {
-                            /* Match format type */
-                            if (f[1] == 's') { kind = 0; break; }
-                            if (f[1] == 'd' || f[1] == 'i') { kind = 1; break; }
-                            if (f[1] == 'u') { kind = 5; break; }
-                            if (f[1] == 'f' || f[1] == 'F') { kind = 2; break; }
-                            if (f[1] == 'c') { kind = 3; break; }
-                            if (f[1] == 'o') { kind = 9; break; }  /* %o - octal */
-                            if (f[1] == 'x' || f[1] == 'X') { kind = 10; break; }  /* %x/%X - hex */
-                            if (f[1] == 'p') { kind = 10; break; }  /* %p - pointer (hex) */
-                            if (f[1] == 'h' && f[2] == 'd') { kind = 4; break; }  /* %hd - short */
-                            if (f[1] == 'h' && f[2] == 'u') { kind = 11; break; }  /* %hu - unsigned short */
-                            if (f[1] == 'l' && f[2] == 'd' && f[3] != 'l') { kind = 6; break; }  /* %ld - long */
-                            if (f[1] == 'l' && f[2] == 'u') { kind = 12; break; }  /* %lu - unsigned long */
-                            if (f[1] == 'l' && f[2] == 'l' && f[3] == 'd') { kind = 7; break; }  /* %lld - long long */
-                            if (f[1] == 'l' && f[2] == 'l' && f[3] == 'u') { kind = 8; break; }  /* %llu - unsigned long long */
-                            if (f[1] == 'l' && f[2] == 'f') { kind = 2; break; }  /* %lf - double */
-                            if (f[1] == 'L' && f[2] == 'f') { kind = 2; break; }  /* %Lf - long double */
-                            kind = 1;  /* Default to int */
-                            break;
-                        }
-                        found_specs++;
+                    int width = 0;
+                    int skip_assign = 0;
+                    
+                    f++;
+                    
+                    /* Skip assignment suppression */
+                    if (*f == '*') {
+                        skip_assign = 1;
+                        f++;
                     }
                     
-                    if (kind >= 0) {
-                        gcl_ir_emit(prog, IR_SCANF, kind, 0, tname, 0);
+                    /* Parse field width */
+                    while (*f >= '0' && *f <= '9') {
+                        width = width * 10 + (*f - '0');
+                        f++;
                     }
-                    spec_idx++;
+                    
+                    /* Parse format specifier */
+                    if (*f == 's') kind = 0;
+                    else if (*f == 'd' || *f == 'i') kind = 1;
+                    else if (*f == 'f' || *f == 'F') kind = 2;
+                    else if (*f == 'c') kind = 3;
+                    else if (*f == 'o') kind = 9;
+                    else if (*f == 'x' || *f == 'X' || *f == 'p') kind = 10;
+                    else if (*f == 'h') {
+                        f++;
+                        if (*f == 'd') kind = 4;
+                        else if (*f == 'u') kind = 11;
+                        f--;
+                    }
+                    else if (*f == 'l') {
+                        f++;
+                        if (*f == 'd') kind = 6;
+                        else if (*f == 'u') kind = 12;
+                        else if (*f == 'l') {
+                            f++;
+                            if (*f == 'd') kind = 7;
+                            else if (*f == 'u') kind = 8;
+                            f--;
+                        }
+                        else if (*f == 'f') kind = 2;
+                        f--;
+                    }
+                    else if (*f == 'L' && f[1] == 'f') {
+                        kind = 2;
+                        f++;
+                    }
+                    else if (*f == '[') {
+                        kind = 13;
+                        f++;
+                        while (*f && *f != ']') f++;
+                    }
+                    
+                    if (kind >= 0 && !skip_assign && var_idx < node->child_count) {
+                        const GclAstNode *target = node->children[var_idx];
+                        const char *tname = NULL;
+                        
+                        /* Handle both identifier and &identifier */
+                        if (target && target->kind == AST_IDENT_EXPR && target->str_value) {
+                            tname = target->str_value;
+                        } else if (target && target->kind == AST_UNARY_EXPR && target->child_count > 0 &&
+                                   target->children[0] && target->children[0]->kind == AST_IDENT_EXPR) {
+                            tname = target->children[0]->str_value;
+                        }
+                        
+                        if (tname) {
+                            gcl_ir_emit(prog, IR_SCANF, kind, width, tname, 0);
+                            var_idx++;
+                        }
+                    } else if (skip_assign) {
+                        gcl_ir_emit(prog, IR_SCANF, kind, width, "", 0);
+                    }
                 }
                 break;
             }
@@ -799,3 +965,5 @@ void gcl_ir_gen(GclIrProgram *prog, const GclAstNode *ast) {
     gen_stmt(prog, ast);
     gcl_ir_emit(prog, IR_HALT, 0, 0, NULL, 0);
 }
+
+

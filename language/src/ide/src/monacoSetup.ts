@@ -1,6 +1,7 @@
 import * as monaco from "monaco-editor";
 import { loader } from "@monaco-editor/react";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+import { GCL_KEYWORDS, GCL_BUILTINS } from "./completions";
 
 self.MonacoEnvironment = {
   getWorker: () => new editorWorker(),
@@ -12,21 +13,6 @@ loader.config({ monaco });
  * Daha once yalnizca "plaintext" olarak dusen GCL dosyalari artik
  * Monaco tokenizer ile syntax highlight alir: keyword / string /
  * number / comment / type / preprocessor. */
-
-const GCL_KEYWORDS = [
-  "int", "float", "double", "char", "bool", "void", "long", "short",
-  "unsigned", "signed", "const", "static", "struct", "typedef", "enum",
-  "union", "return", "if", "else", "while", "for", "do", "switch",
-  "case", "break", "continue", "default", "sizeof", "goto", "define",
-  "include", "main",
-];
-
-const GCL_BUILTINS = [
-  "printf", "sprintf", "snprintf", "scanf", "sscanf", "fprintf",
-  "malloc", "calloc", "realloc", "free", "memcpy", "memset", "strlen",
-  "strcpy", "strcmp", "strcat", "exit", "abs", "fopen", "fclose",
-  "fread", "fwrite", "fgets", "fputs", "assert",
-];
 
 monaco.languages.register({ id: "gcl" });
 
