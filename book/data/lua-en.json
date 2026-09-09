@@ -1,0 +1,8 @@
+{
+  "meta": {
+    "title": "Lua Programming Language",
+    "subtitle": "Interacting with the Lua runtime from GCL (coming soon)",
+    "badge": "Coming soon",
+    "coming": true
+  }
+}

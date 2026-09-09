@@ -1,0 +1,43 @@
+#native <Stdio>
+
+int main() {
+
+    int8 a = 10;
+    int16 b = 1000;
+    int32 c = 100000;
+    int64 d = 1000000000;
+    int128 e = 1000000000000;
+
+    Stdio.printf("int8: {}\n", a);
+    Stdio.printf("int16: {}\n", b);
+    Stdio.printf("int32: {}\n", c);
+    Stdio.printf("int64: {}\n", d);
+    Stdio.printf("int128: {}\n", e);
+
+
+    float16 f = 1.5;
+    float32 g = 3.14;
+    float64 h = 3.1415926535;
+    float128 i = 3.14159265358979323846;
+
+    Stdio.printf("float16: {}\n", f);
+    Stdio.printf("float32: {}\n", g);
+    Stdio.printf("float64: {}\n", h);
+    Stdio.printf("float128: {}\n", i);
+
+
+    uint8 j = 255;
+    uint16 k = 65535;
+    uint32 l = 4294967295;
+    uint64 m = 18446744073709551615;
+    uint128 n = 340282366920938463463374607431768211455;
+
+    Stdio.printf("uint8: {}\n", j);
+    Stdio.printf("uint16: {}\n", k);
+    Stdio.printf("uint32: {}\n", l);
+    Stdio.printf("uint64: {}\n", m);
+    Stdio.printf("uint128: {}\n", n);
+
+
+    return 0;
+}

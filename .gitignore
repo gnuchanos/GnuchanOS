@@ -1,0 +1,41 @@
+# ── Build outputs ──────────────────────────────────────────
+*.exe
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.out
+nul
+todo.md
+_temp/
+
+
+# GCL build çıktısı (language/build/)
+language/build/
+
+# ── GCL test temp files (_NOTES/) ──────────────────────────
+language/_NOTES/t_*.gcsf
+language/_NOTES/t_*.gcsf.c
+
+# ── Python embeddable (downloaded, not source) ─────────────
+*.pyd
+*.zip
+*.cat
+*.pth
+
+# ── OS / IDE garbage ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vs/
+.vscode/
+.idea/
+
+# ── Python cache ──────────────────────────────────────────
+__pycache__/
+*.pyc
+

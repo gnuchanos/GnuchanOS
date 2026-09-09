@@ -1,0 +1,107 @@
+#native <Stdio>
+
+
+int main() {
+    int8 abc[5] = {1, 2, 3, 4, 5};
+    int8 sizeABC = sizeof(abc) / sizeof(abc[0]);
+
+    for (int i = 0; i < sizeABC; i++) {
+        Stdio.printf("Index: {} - ABC: {} \n", i, abc[i]);
+    }
+
+
+    char chars[5] = {'A', 'B', 'C', 'D', 'E'};
+    int sizeChars = sizeof(chars) / sizeof(chars[0]);
+
+    for (int i = 0; i < sizeChars; i++) {
+        Stdio.printf("Index: {} - Char: {} \n", i, chars[i]);
+    }
+
+
+    short shorts[5] = {10, 20, 30, 40, 50};
+    int sizeShorts = sizeof(shorts) / sizeof(shorts[0]);
+
+    for (int i = 0; i < sizeShorts; i++) {
+        Stdio.printf("Index: {} - Short: {} \n", i, shorts[i]);
+    }
+
+
+    int ints[5] = {100, 200, 300, 400, 500};
+    int sizeInts = sizeof(ints) / sizeof(ints[0]);
+
+    for (int i = 0; i < sizeInts; i++) {
+        Stdio.printf("Index: {} - Int: {} \n", i, ints[i]);
+    }
+
+
+    float floats[5] = {1.1, 2.2, 3.3, 4.4, 5.5};
+    int sizeFloats = sizeof(floats) / sizeof(floats[0]);
+
+    for (int i = 0; i < sizeFloats; i++) {
+        Stdio.printf("Index: {} - Float: {} \n", i, floats[i]);
+    }
+
+
+    double doubles[5] = {1.11, 2.22, 3.33, 4.44, 5.55};
+    int sizeDoubles = sizeof(doubles) / sizeof(doubles[0]);
+
+    for (int i = 0; i < sizeDoubles; i++) {
+        Stdio.printf("Index: {} - Double: {} \n", i, doubles[i]);
+    }
+
+
+    long int longInts[5] = {1000, 2000, 3000, 4000, 5000};
+    int sizeLongInts = sizeof(longInts) / sizeof(longInts[0]);
+
+    for (int i = 0; i < sizeLongInts; i++) {
+        Stdio.printf("Index: {} - Long Int: {} \n", i, longInts[i]);
+    }
+
+
+    long long int longLongInts[5] = {
+        10000, 20000, 30000, 40000, 50000
+    };
+    int sizeLongLongInts =
+        sizeof(longLongInts) / sizeof(longLongInts[0]);
+
+    for (int i = 0; i < sizeLongLongInts; i++) {
+        Stdio.printf(
+            "Index: {} - Long Long Int: {} \n",
+            i,
+            longLongInts[i]
+        );
+    }
+
+
+    long double longDoubles[5] = {
+        1.111, 2.222, 3.333, 4.444, 5.555
+    };
+    int sizeLongDoubles =
+        sizeof(longDoubles) / sizeof(longDoubles[0]);
+
+    for (int i = 0; i < sizeLongDoubles; i++) {
+        Stdio.printf(
+            "Index: {} - Long Double: {} \n",
+            i,
+            longDoubles[i]
+        );
+    }
+
+
+    unsigned int unsignedInts[5] = {
+        10, 20, 30, 40, 50
+    };
+    int sizeUnsignedInts =
+        sizeof(unsignedInts) / sizeof(unsignedInts[0]);
+
+    for (int i = 0; i < sizeUnsignedInts; i++) {
+        Stdio.printf(
+            "Index: {} - Unsigned Int: {} \n",
+            i,
+            unsignedInts[i]
+        );
+    }
+
+
+    return 0;
+}

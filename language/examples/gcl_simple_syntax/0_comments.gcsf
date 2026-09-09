@@ -1,0 +1,20 @@
+#native <Stdio>
+
+# GCL COMMENT LINE
+
+#|
+    GCL COMMENT
+    LINES |#
+
+// C COMMENT LINE
+
+/*
+    C COMMENT
+    LINES */
+
+
+int main() {
+    Stdio.printf("Comment Lines Works");
+
+    return 0;
+}

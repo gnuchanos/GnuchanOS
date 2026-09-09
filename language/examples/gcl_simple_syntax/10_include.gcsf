@@ -1,0 +1,70 @@
+// Types
+typedef int number;
+
+typedef && AND;
+typedef || OR;
+typedef ^ XOR;
+typedef ~ NOT;
+typedef << LEFT_SHIFT;
+typedef >> RIGHT_SHIFT;
+typedef & BIT_AND;
+typedef | BIT_OR;
+
+// Struct
+struct Person {
+    int id;
+    int age;
+    char name[20];
+};
+
+// Typedef struct
+typedef struct {
+    int id;
+    int age;
+    char name[20];
+} User;
+
+// Constants
+#define VERSION 1
+#define MAX_USERS 100
+#define APP_NAME "GnuchanOS"
+
+// Preprocessor
+#ifdef MAX_USERS
+#debug MAX_USERS is defined
+#endif
+
+#ifndef DEBUG_MODE
+#debug DEBUG_MODE is not defined
+#endif
+
+#if VERSION == 1
+#debug Version 1
+#elif VERSION == 2
+#debug Version 2
+#else
+#debug Unknown version
+#endif
+
+
+// Warning
+#warning Header loaded
+
+
+// Values
+#define INT8_VALUE 10
+#define INT16_VALUE 1000
+#define INT32_VALUE 100000
+#define INT64_VALUE 1000000000
+#define INT128_VALUE 1000000000000
+
+#define FLOAT16_VALUE 1.5
+#define FLOAT32_VALUE 3.14
+#define FLOAT64_VALUE 3.1415926535
+#define FLOAT128_VALUE 3.14159265358979323846
+
+#define UINT8_VALUE 255
+#define UINT16_VALUE 65535
+#define UINT32_VALUE 4294967295
+#define UINT64_VALUE 18446744073709551615
+#define UINT128_VALUE 340282366920938463463374607431768211455

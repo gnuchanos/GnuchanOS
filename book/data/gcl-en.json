@@ -1,0 +1,637 @@
+{
+  "meta": {
+    "title": "GCL Programming Language",
+    "subtitle": "A C-based, education-focused language designed for GnuchanOS.",
+    "badge": "Version 0.100 · 2026"
+  },
+  "chapters": [
+    {
+      "id": "giris",
+      "title": "Introduction",
+      "sections": [
+        {
+          "title": "What is GCL?",
+          "paragraphs": [
+            "GCL is a <strong>C-based</strong> programming language at the center of the GnuchanOS project. Its goal is to provide a simple and readable syntax for both education and game development.",
+            "It is written in small <code class=\"inline\">.c</code> files, making the source easy to read and understand.",
+            "The current focus is <strong>GCL</strong>. Lua and Python support also exists (see <code class=\"inline\">#native <Embed></code>), but the current book chapters are for GCL."
+          ],
+          "notes": [
+            {
+              "type": "tip",
+              "text": "GCL is very close to C. If you know C, learning GCL takes a few hours."
+            }
+          ]
+        },
+        {
+          "title": "First Program",
+          "paragraphs": [
+            "The simplest GCL program contains a main function and uses <code class=\"inline\">printf</code> for output.",
+            "Note: GCL uses <code class=\"inline\">{}</code> placeholders instead of C's <code class=\"inline\">%s</code> / <code class=\"inline\">%d</code>. Formatting supports syntax like <code class=\"inline\">{.2f}</code>.",
+            "<code class=\"inline\">printf</code> / <code class=\"inline\">scanf</code> are built-in; you may also use the prefixed forms <code class=\"inline\">Stdio.printf</code> / <code class=\"inline\">Stdio.scanf</code> by declaring <code class=\"inline\">#native <Stdio></code>."
+          ],
+          "code": {
+            "file": "main.gcsf",
+            "src": "int main() {\n    printf(\"Hello GCL!\\n\");\n    return 0;\n}"
+          },
+          "output": "Hello GCL!"
+        },
+        {
+          "title": "Running",
+          "paragraphs": [
+            "Save GCL files with the <code class=\"inline\">.gcsf</code> extension. Then you can run them with:"
+          ],
+          "code": {
+            "file": "terminal",
+            "src": "gcl -run file.gcsf\n# Debug mode:\ngcl -debug -run file.gcsf"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tipler",
+      "title": "Types and Variables",
+      "sections": [
+        {
+          "title": "Vanilla C Types",
+          "paragraphs": [
+            "GCL supports C's standard types: <code class=\"inline\">char</code>, <code class=\"inline\">short</code>, <code class=\"inline\">int</code>, <code class=\"inline\">float</code>, <code class=\"inline\">double</code>, <code class=\"inline\">long int</code>, <code class=\"inline\">long long int</code>, <code class=\"inline\">long double</code> and <code class=\"inline\">unsigned int</code>."
+          ],
+          "code": {
+            "file": "types.gcsf",
+            "src": "char c = 'A';\nint n = 42;\nfloat f = 3.14f;\ndouble d = 2.71828182845;\nlong int big = 1000000L;\nlong long int bigger = 9999999999LL;\nunsigned int positive = 4294967295U;"
+          }
+        },
+        {
+          "title": "GCL Specific Types",
+          "paragraphs": [
+            "GCL also provides its own fixed-bit-width and UTF-8-supporting types:"
+          ],
+          "table": {
+            "headers": ["Type", "Description"],
+            "rows": [
+              ["<code>int8, int16, int32, int64, int128</code>", "Signed integers"],
+              ["<code>uint8, uint16, uint32, uint64, uint128</code>", "Unsigned integers"],
+              ["<code>float16, float32, float64, float128</code>", "Floating point numbers"],
+              ["<code>gcChar</code>", "UTF-8 real-length string"]
+            ]
+          }
+        },
+        {
+          "title": "Variable Declaration",
+          "paragraphs": [
+            "Variables are declared as <code class=\"inline\">type name = value;</code>. Multiple variables can be separated by commas."
+          ],
+          "code": {
+            "file": "variables.gcsf",
+            "src": "int x = 10;\nint y = 20, z = 30;\ndouble pi = 3.14159;\nint8 small = -100;\nuint8 byte = 200;\nfloat32 speed = 3.5f;\ngcChar name = \"Emre\";"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "<code>gcChar</code> stores the real length for UTF-8 strings; it is not limited like C's <code>strlen</code>."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "operatorler",
+      "title": "Operators",
+      "sections": [
+        {
+          "title": "Arithmetic and Assignment",
+          "paragraphs": [
+            "Basic arithmetic operators are the same as C: <code class=\"inline\">+ - / * %</code>. Assignments can use <code class=\"inline\">+= -= *= /=</code>."
+          ],
+          "code": {
+            "file": "arithmetic.gcsf",
+            "src": "int a = 10;\na += 5;        // a = 15\na -= 3;        // a = 12\na *= 2;        // a = 24\na /= 4;        // a = 6\nint mod = a % 4; // 6 % 4 = 2\na++;           // 7\na--;           // 6"
+          }
+        },
+        {
+          "title": "Bitwise Operators",
+          "paragraphs": [
+            "Bit-level operations: <code class=\"inline\">&</code> (AND), <code class=\"inline\">|</code> (OR), <code class=\"inline\">^</code> (XOR), <code class=\"inline\">~</code> (NOT), <code class=\"inline\"><<</code> (left shift), <code class=\"inline\">>></code> (right shift)."
+          ],
+          "code": {
+            "file": "bitwise.gcsf",
+            "src": "int a = 0b1100;  // 12\nint b = 0b1010;  // 10\nint and_ = a & b; // 0b1000 = 8\nint or_ = a | b;  // 0b1110 = 14\nint xor_ = a ^ b; // 0b0110 = 6\nint not_ = ~a;    // bitwise NOT\nint left = a << 2; // 48\nint right = a >> 2; // 3"
+          }
+        },
+        {
+          "title": "Comparison and Logic",
+          "paragraphs": [
+            "Comparison: <code class=\"inline\">== != < > <= >=</code>. Logical operators: <code class=\"inline\">&&</code> (AND), <code class=\"inline\">||</code> (OR), <code class=\"inline\">!</code> (NOT).",
+            "Note: <code class=\"inline\">=></code> syntax is also supported as <code class=\"inline\">>=</code>."
+          ],
+          "code": {
+            "file": "logic.gcsf",
+            "src": "int x = 5;\nint y = 8;\nif (x == 5 && y > 7) {\n    Stdio.printf(\"Both conditions are true\\n\");\n}\nint eq = (x != y);   // 1 (true)"
+          }
+        },
+        {
+          "title": "sizeof / strlen",
+          "paragraphs": [
+            "<code class=\"inline\">sizeof()</code> and <code class=\"inline\">strlen()</code> functions are supported; <code class=\"inline\">sizeof()/sizeof()</code> can compute array size."
+          ],
+          "code": {
+            "file": "sizeof.gcsf",
+            "src": "int arr[10];\nint size = sizeof(arr) / sizeof(arr[0]);\n// size = 10\nconst char *text = \"Hello\";\nint len = strlen(text); // 5"
+          }
+        }
+      ]
+    },
+    {
+      "id": "kontrol",
+      "title": "Control Flow",
+      "sections": [
+        {
+          "title": "if / else if / else",
+          "paragraphs": [
+            "Standard conditional statements are the same as C."
+          ],
+          "code": {
+            "file": "if.gcsf",
+            "src": "int grade = 85;\nif (grade >= 90) {\n    Stdio.printf(\"AA\\n\");\n} else if (grade >= 80) {\n    Stdio.printf(\"BA\\n\");\n} else {\n    Stdio.printf(\"Pass\\n\");\n}"
+          }
+        },
+        {
+          "title": "switch / case",
+          "paragraphs": [
+            "<code class=\"inline\">switch</code>, <code class=\"inline\">case</code>, <code class=\"inline\">default</code> and <code class=\"inline\">break</code> are supported."
+          ],
+          "code": {
+            "file": "switch.gcsf",
+            "src": "int day = 2;\nswitch (day) {\n    case 1:\n        Stdio.printf(\"Monday\\n\");\n        break;\n    case 2:\n        Stdio.printf(\"Tuesday\\n\");\n        break;\n    default:\n        Stdio.printf(\"Unknown\\n\");\n        break;\n}"
+          }
+        },
+        {
+          "title": "for",
+          "paragraphs": [
+            "C-style <code class=\"inline\">for (init; condition; increment)</code> loops are supported."
+          ],
+          "code": {
+            "file": "for.gcsf",
+            "src": "for (int i = 0; i < 5; i++) {\n    Stdio.printf(\"i = {}\\n\", i);\n}"
+          },
+          "output": "i = 0\n...\ni = 4"
+        },
+        {
+          "title": "while",
+          "paragraphs": [
+            "<code class=\"inline\">while (condition)</code> loops are supported."
+          ],
+          "code": {
+            "file": "while.gcsf",
+            "src": "int count = 3;\nwhile (count > 0) {\n    Stdio.printf(\"count = {}\\n\", count);\n    count--;\n}"
+          },
+          "output": "count = 3\ncount = 2\ncount = 1"
+        }
+      ]
+    },
+    {
+      "id": "fonksiyonlar",
+      "title": "Functions",
+      "sections": [
+        {
+          "title": "Function Declaration",
+          "paragraphs": [
+            "Functions are declared like in C. Return type, name and parameters are specified."
+          ],
+          "code": {
+            "file": "function.gcsf",
+            "src": "int add(int a, int b) {\n    return a + b;\n}\n\nvoid greet(const char *name) {\n    Stdio.printf(\"Hello {}\\n\", name);\n}\n\nint main() {\n    int s = add(3, 4);\n    Stdio.printf(\"Sum: {}\\n\", s);\n    greet(\"Emre\");\n    return 0;\n}"
+          },
+          "output": "Sum: 7\nHello Emre"
+        },
+        {
+          "title": "Scope",
+          "paragraphs": [
+            "The <code class=\"inline\">global</code> keyword makes a variable usable in a wider scope, while <code class=\"inline\">inline</code> declares a local variable."
+          ],
+          "code": {
+            "file": "scope.gcsf",
+            "src": "int counter = 30;  // global\n\nint increment() {\n    global counter;  // use global counter\n    counter++;\n    return counter;\n}\n\nint main() {\n    inline local = 5;\n    Stdio.printf(\"counter = {}\\n\", increment());\n    Stdio.printf(\"local = {}\\n\", local);\n    return 0;\n}"
+          }
+        },
+        {
+          "title": "const, public / private",
+          "paragraphs": [
+            "<code class=\"inline\">const</code> makes a value immutable. <code class=\"inline\">public</code> variables are accessible from other files, while <code class=\"inline\">private</code> is only valid in its scope."
+          ],
+          "code": {
+            "file": "scope2.gcsf",
+            "src": "const int fixed = 100;\npublic int shared = 42;\nprivate int secret = 100;\n\nint main() {\n    Stdio.printf(\"fixed = {}\\n\", fixed);\n    Stdio.printf(\"shared = {}\\n\", shared);\n    Stdio.printf(\"secret = {}\\n\", secret);\n    return 0;\n}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "yapilar",
+      "title": "Structs, Enum and Typedef",
+      "sections": [
+        {
+          "title": "struct",
+          "paragraphs": [
+            "<code class=\"inline\">struct</code> can group data of different types together."
+          ],
+          "code": {
+            "file": "struct.gcsf",
+            "src": "struct Student {\n    char name[20];\n    int age;\n};\n\nstruct Student student1;\nstudent1.age = 20;\nStdio.printf(\"Age: {}\\n\", student1.age);"
+          }
+        },
+        {
+          "title": "typedef struct",
+          "paragraphs": [
+            "<code class=\"inline\">typedef</code> allows defining named structs. Here is the <strong>full struct example from <code>simple_doc.md</code></strong> — it covers: empty struct + dot-assign, positional brace initializer, designated (<code>.member = value</code>) initializer, partial initializer, variable-based initializer, struct copy, empty + fill, and a struct returned from a function."
+          ],
+          "code": {
+            "file": "struct_hello.gcsf",
+            "src": "#native <Stdio>\n#native <Math>\n\ntypedef struct hello {\n    int testo;\n    float rollo;\n    char tollo[32];\n    gcChar name;\n} Hello;\n\nint main() {\n    int8 number = Math.randInt(30, 90);\n    gcChar longText = \"very very very long text\";\n\n    // 1. Create empty and assign fields using dot notation\n    Hello a;\n    a.testo = 10;\n    a.rollo = 20.5;\n    a.tollo = \"hello\";\n    a.name = \"GNUCHANOS\";\n\n    // 2. Create using a brace initializer\n    Hello b = {\n        20,\n        30.5,\n        \"world\",\n        \"ALPHA\"\n    };\n\n    // 3. Create using braces with named fields\n    Hello c = {\n        .testo = 30,\n        .rollo = 40.5,\n        .tollo = \"test\",\n        .name = \"BETA\"\n    };\n\n    // 4. Initialize only specific fields\n    Hello d = {\n        .name = \"GAMMA\"\n    };\n\n    // 5. Create using variables\n    int x = 50;\n    float y = 60.5;\n    gcChar text = \"dynamic\";\n\n    Hello e = {\n        x,\n        y,\n        text,\n        \"DELTA\"\n    };\n\n    // 6. Copy from another struct\n    Hello f = e;\n\n    // 7. Create with default values, then assign fields\n    Hello g = {};\n    g.testo = 70;\n    g.rollo = 80.5;\n    g.tollo = \"filled\";\n    g.name = \"EPSILON\";\n\n    // 8. Create from a function return value\n    Hello makeHello() {\n        return {\n            90,\n            100.5,\n            \"function\",\n            \"ZETA\"\n        };\n    }\n\n    Hello h = makeHello();\n\n    Stdio.printf(\"A: {} \\n\", a.name);\n    Stdio.printf(\"B: {} \\n\", b.name);\n    Stdio.printf(\"C: {} \\n\", c.name);\n    Stdio.printf(\"D: {} \\n\", d.name);\n    Stdio.printf(\"E: {} \\n\", e.name);\n    Stdio.printf(\"F: {} \\n\", f.name);\n    Stdio.printf(\"G: {} \\n\", g.name);\n    Stdio.printf(\"H: {} \\n\", h.name);\n\n    Stdio.printf(\"Number: {} \\n\", number);\n\n    return 0;\n}"
+          },
+          "output": "A: GNUCHANOS\nB: ALPHA\nC: BETA\nD: GAMMA\nE: DELTA\nF: DELTA\nG: EPSILON\nH: ZETA\nNumber: 70"
+        },
+        {
+          "title": "enum",
+          "paragraphs": [
+            "<code class=\"inline\">enum</code> defines named constant integer values. It can be used both anonymous and with <code class=\"inline\">typedef</code>."
+          ],
+          "code": {
+            "file": "enum.gcsf",
+            "src": "enum Day { MONDAY, TUESDAY, WEDNESDAY };\nenum Day today;\n\ntypedef enum { RED, GREEN, BLUE } Color;\nColor color = GREEN;"
+          }
+        }
+      ]
+    },
+    {
+      "id": "preprocessor",
+      "title": "Preprocessor",
+      "sections": [
+        {
+          "title": "#define and #undef",
+          "paragraphs": [
+            "<code class=\"inline\">#define</code> defines constants and macros. Function-like macros are also supported."
+          ],
+          "code": {
+            "file": "define.gcsf",
+            "src": "#define PI 3.14\n#define SQ(x) ((x)*(x))\n\nint main() {\n    double area = PI * SQ(5);  // 3.14 * 25\n    Stdio.printf(\"area = {}\\n\", area);\n    return 0;\n}",
+            "lang": "gcl"
+          }
+        },
+        {
+          "title": "#if / #ifdef / #ifndef / #elif / #else / #endif",
+          "paragraphs": [
+            "Preprocessor conditionals are supported. <code class=\"inline\">#if</code> expressions evaluate arithmetic, comparison and logical operators; the <code class=\"inline\">defined()</code> operator also works."
+          ],
+          "code": {
+            "file": "if_pp.gcsf",
+            "src": "#define MODE 2\n\n#if defined(PI)\n    int has_pi = 1;\n#else\n    int has_pi = 0;\n#endif\n\n#if MODE == 1\n    int mode = 1;\n#elif MODE == 2\n    int mode = 2;\n#else\n    int mode = 0;\n#endif",
+            "lang": "gcl"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "<code>#if</code> expressions support both <code>defined(X)</code> and <code>defined X</code> forms."
+            }
+          ]
+        },
+        {
+          "title": "#warning / #error / #debug",
+          "paragraphs": [
+            "Colored diagnostic messages are shown with <code class=\"inline\">#warning</code> (yellow), <code class=\"inline\">#error</code> (red) and <code class=\"inline\">#debug</code> (blue)."
+          ],
+          "code": {
+            "file": "warning.gcsf",
+            "src": "#warning This is a warning\n#debug This is a debug message\n#error This is an error message"
+          }
+        }
+      ]
+    },
+    {
+      "id": "moduller",
+      "title": "Modules and Linking",
+      "sections": [
+        {
+          "title": "#native",
+          "paragraphs": [
+            "The <code class=\"inline\">#native <Module></code> directive loads a module from <code class=\"inline\">.dll</code> or <code class=\"inline\">.so</code> files in the <code class=\"inline\">Library/</code> directory."
+          ],
+          "code": {
+            "file": "native.gcsf",
+            "src": "#native <Stdio>\n#native <Math>\n#native <Embed>\n\nint main() {\n    double sqrt = Math.sqrt(99);\n    Stdio.printf(\"sqrt = {}\\n\", sqrt);\n    return 0;\n}"
+          }
+        },
+        {
+          "title": "#lib",
+          "paragraphs": [
+            "<code class=\"inline\">#lib <Test></code> loads the <code class=\"inline\">Test.gclib</code> library and its members can be called."
+          ],
+          "code": {
+            "file": "lib.gcsf",
+            "src": "#lib <Test>\n\nint main() {\n    Test.member();\n    return 0;\n}"
+          }
+        },
+        {
+          "title": "#extern + #register",
+          "paragraphs": [
+            "<code class=\"inline\">#extern <raylib.dll></code> loads an external DLL and <code class=\"inline\">#register</code> registers C functions."
+          ],
+          "code": {
+            "file": "extern.gcsf",
+            "src": "#extern <raylib.dll>\n#register void InitWindow(int width, int height, const char *title);\n\nint main() {\n    InitWindow(800, 600, \"Game\");\n    return 0;\n}"
+          }
+        },
+        {
+          "title": "#include",
+          "paragraphs": [
+            "<code class=\"inline\">#include <script.gcsf></code> includes another GCL file."
+          ],
+          "code": {
+            "file": "include.gcsf",
+            "src": "#include <helper.gcsf>\n\nint main() {\n    helper_function();\n    return 0;\n}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "raylib",
+      "title": "Raylib Module",
+      "sections": [
+        {
+          "title": "Loading and Core Window",
+          "paragraphs": [
+            "The <code class=\"inline\">Raylib</code> module is loaded with <code class=\"inline\">#native <Raylib></code>. It provides window, drawing, input and shape functions based on the raylib C library.",
+            "All colors are available as constants (e.g. <code class=\"inline\">Raylib.RED</code>) encoded as 32-bit packed integers."
+          ],
+          "code": {
+            "file": "raylib.gcsf",
+            "src": "#native <Raylib>\n\nint main() {\n    Raylib.InitWindow(800, 600, \"GCL Raylib Test\");\n    Raylib.SetTargetFPS(60);\n\n    while (Raylib.WindowShouldClose() == 0) {\n        Raylib.BeginDrawing();\n        Raylib.ClearBackground(Raylib.RAYWHITE);\n        Raylib.DrawRectangle(50, 50, 200, 100, Raylib.RED);\n        Raylib.DrawText(\"Hello from GCL + Raylib\", 20, 20, 30, Raylib.BLACK);\n        Raylib.EndDrawing();\n    }\n\n    Raylib.CloseWindow();\n    return 0;\n}"
+          }
+        },
+        {
+          "title": "Drawing",
+          "paragraphs": [
+            "Core drawing functions: <code class=\"inline\">BeginDrawing</code> / <code class=\"inline\">EndDrawing</code> wrap the frame; <code class=\"inline\">ClearBackground</code>, <code class=\"inline\">DrawRectangle</code>, <code class=\"inline\">DrawCircle</code>, <code class=\"inline\">DrawLine</code>, <code class=\"inline\">DrawPixel</code>, <code class=\"inline\">DrawText</code>, <code class=\"inline\">DrawFPS</code> and <code class=\"inline\">DrawRectangleLines</code> are available."
+          ],
+          "table": {
+            "headers": ["Function", "Description"],
+            "rows": [
+              ["<code>Raylib.BeginDrawing()</code> / <code>Raylib.EndDrawing()</code>", "Begin / end frame"],
+              ["<code>Raylib.ClearBackground(color)</code>", "Clear screen"],
+              ["<code>Raylib.DrawRectangle(x, y, w, h, color)</code>", "Filled rectangle"],
+              ["<code>Raylib.DrawRectangleLines(x, y, w, h, color)</code>", "Outlined rectangle"],
+              ["<code>Raylib.DrawCircle(x, y, radius, color)</code>", "Filled circle"],
+              ["<code>Raylib.DrawLine(x1, y1, x2, y2, color)</code>", "Line"],
+              ["<code>Raylib.DrawPixel(x, y, color)</code>", "Single pixel"],
+              ["<code>Raylib.DrawText(text, x, y, size, color)</code>", "Text"],
+              ["<code>Raylib.DrawFPS(x, y)</code>", "FPS counter"]
+            ]
+          }
+        },
+        {
+          "title": "Input",
+          "paragraphs": [
+            "Keyboard and mouse input functions return 1/0 for states."
+          ],
+          "table": {
+            "headers": ["Function", "Description"],
+            "rows": [
+              ["<code>Raylib.IsKeyPressed(key)</code>", "Key pressed this frame"],
+              ["<code>Raylib.IsKeyDown(key)</code>", "Key currently down"],
+              ["<code>Raylib.IsKeyReleased(key)</code>", "Key released this frame"],
+              ["<code>Raylib.IsMouseButtonPressed(btn)</code>", "Mouse button pressed"],
+              ["<code>Raylib.GetMouseX()</code> / <code>Raylib.GetMouseY()</code>", "Mouse position"]
+            ]
+          }
+        },
+        {
+          "title": "Shapes",
+          "paragraphs": [
+            "<code class=\"inline\">Raylib.Rectangle(x, y, w, h)</code> creates a rectangle value used by raygui widgets."
+          ],
+          "code": {
+            "file": "shapes.gcsf",
+            "src": "#native <Raylib>\n\nint main() {\n    Raylib.InitWindow(800, 600, \"Shapes\");\n    while (Raylib.WindowShouldClose() == 0) {\n        Raylib.BeginDrawing();\n        Raylib.Rectangle(100, 100, 200, 80);\n        Raylib.DrawRectangleRec(Raylib.RED);\n        Raylib.EndDrawing();\n    }\n    Raylib.CloseWindow();\n    return 0;\n}"
+          }
+        },
+        {
+          "title": "Color Constants",
+          "paragraphs": [
+            "All standard raylib colors are available as 32-bit packed integers."
+          ],
+          "table": {
+            "headers": ["Constant", "Constant", "Constant", "Constant"],
+            "rows": [
+              ["<code>RAYWHITE</code>", "<code>LIGHTGRAY</code>", "<code>GRAY</code>", "<code>DARKGRAY</code>"],
+              ["<code>YELLOW</code>", "<code>GOLD</code>", "<code>ORANGE</code>", "<code>PINK</code>"],
+              ["<code>RED</code>", "<code>MAROON</code>", "<code>GREEN</code>", "<code>LIME</code>"],
+              ["<code>DARKGREEN</code>", "<code>SKYBLUE</code>", "<code>BLUE</code>", "<code>DARKBLUE</code>"],
+              ["<code>PURPLE</code>", "<code>VIOLET</code>", "<code>DARKPURPLE</code>", "<code>BEIGE</code>"],
+              ["<code>BROWN</code>", "<code>DARKBROWN</code>", "<code>WHITE</code>", "<code>BLACK</code>"],
+              ["<code>BLANK</code>", "<code>MAGENTA</code>", "", ""]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "raygui",
+      "title": "Raygui Module",
+      "sections": [
+        {
+          "title": "Loading and Core GUI",
+          "paragraphs": [
+            "The <code class=\"inline\">Raygui</code> module is loaded with <code class=\"inline\">#native <Raygui></code>. It must be used together with <code class=\"inline\">#native <Raylib></code>; widgets read the last <code class=\"inline\">Raylib.Rectangle</code> as their layout rectangle."
+          ],
+          "code": {
+            "file": "raygui.gcsf",
+            "src": "#native <Raylib>\n#native <Raygui>\n\nint main() {\n    Raylib.InitWindow(800, 600, \"GCL Raygui Test\");\n    Raylib.SetTargetFPS(60);\n\n    while (Raylib.WindowShouldClose() == 0) {\n        Raylib.BeginDrawing();\n        Raylib.ClearBackground(Raylib.RAYWHITE);\n        Raylib.Rectangle(10, 10, 200, 30);\n        Raygui.GuiButton(\"Click Me\");\n        Raylib.EndDrawing();\n    }\n\n    Raylib.CloseWindow();\n    return 0;\n}"
+          }
+        },
+        {
+          "title": "Widgets",
+          "paragraphs": [
+            "Available raygui widgets. Colored values are passed as 32-bit packed integers."
+          ],
+          "table": {
+            "headers": ["Function", "Description"],
+            "rows": [
+              ["<code>Raygui.GuiButton(text)</code>", "Button (returns 1 if clicked)"],
+              ["<code>Raygui.GuiLabel(text)</code>", "Label"],
+              ["<code>Raygui.GuiCheckBox(text, checked)</code>", "Checkbox (returns new state)"],
+              ["<code>Raygui.GuiSlider(textLeft, textRight, value, min, max)</code>", "Slider (returns new value)"],
+              ["<code>Raygui.GuiProgressBar(textLeft, textRight, value, min, max)</code>", "Progress bar (returns value)"],
+              ["<code>Raygui.GuiTextBox(text, bufferSize, editMode)</code>", "Text box"],
+              ["<code>Raygui.GuiSpinner(text, value, min, max, editMode)</code>", "Spinner (returns value)"],
+              ["<code>Raygui.GuiComboBox(text, active)</code>", "Combo box (returns index)"],
+              ["<code>Raygui.GuiPanel(text)</code>", "Panel"],
+              ["<code>Raygui.GuiStatusBar(text)</code>", "Status bar"],
+              ["<code>Raygui.GuiSetStyle(control, property, value)</code>", "Set style"],
+              ["<code>Raygui.GuiGetStyle(control, property)</code>", "Get style"]
+            ]
+          }
+        },
+        {
+          "title": "Example: Button and Slider",
+          "paragraphs": [
+            "A small window with a button and a slider. The button click resets a counter; the slider controls a rectangle width."
+          ],
+          "code": {
+            "file": "raygui_demo.gcsf",
+            "src": "#native <Raylib>\n#native <Raygui>\n\nint main() {\n    Raylib.InitWindow(800, 600, \"Raygui Demo\");\n    Raylib.SetTargetFPS(60);\n    float width = 200.0f;\n\n    while (Raylib.WindowShouldClose() == 0) {\n        Raylib.BeginDrawing();\n        Raylib.ClearBackground(Raylib.RAYWHITE);\n\n        Raylib.Rectangle(20, 20, 200, 40);\n        if (Raygui.GuiButton(\"Reset\") == 1) {\n            width = 200.0f;\n        }\n\n        Raylib.Rectangle(20, 80, 300, 30);\n        width = Raygui.GuiSlider(\"\", \"Width\", width, 50.0f, 500.0f);\n\n        Raylib.DrawRectangle(20, 140, (int)width, 60, Raylib.BLUE);\n        Raylib.EndDrawing();\n    }\n\n    Raylib.CloseWindow();\n    return 0;\n}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "math",
+      "title": "Math Module",
+      "sections": [
+        {
+          "title": "Core Functions",
+          "paragraphs": [
+            "The <code class=\"inline\">Math</code> module is loaded with <code class=\"inline\">#native <Math></code>."
+          ],
+          "table": {
+            "headers": ["Function", "Description"],
+            "rows": [
+              ["<code>Math.randInt(min, max)</code>", "Random integer between min-max"],
+              ["<code>Math.randFloat(min, max)</code>", "Random float between min-max"],
+              ["<code>Math.min(a, b)</code> / <code>Math.max(a, b)</code>", "Minimum / maximum"],
+              ["<code>Math.abs(x)</code>", "Absolute value"],
+              ["<code>Math.floor(x)</code> / <code>Math.ceil(x)</code>", "Round down / up"],
+              ["<code>Math.sqrt(x)</code>", "Square root"],
+              ["<code>Math.pow(base, exp)</code>", "Power"],
+              ["<code>Math.sin(deg)</code> / <code>Math.cos(deg)</code>", "Trigonometric"],
+              ["<code>Math.clamp(x, min, max)</code>", "Clamp to range"],
+              ["<code>Math.sign(x)</code>", "Sign (-1, 0, 1)"],
+              ["<code>Math.randBool()</code>", "Random boolean"],
+              ["<code>Math.randChoice(a, b, c)</code>", "Random choice from list"]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "stdio",
+      "title": "Stdio Module",
+      "sections": [
+        {
+          "title": "printf / scanf",
+          "paragraphs": [
+            "<code class=\"inline\">printf</code> provides output and <code class=\"inline\">scanf</code> provides safe input. They are built-in; the prefixed forms <code class=\"inline\">Stdio.printf</code> / <code class=\"inline\">Stdio.scanf</code> also work when <code class=\"inline\">#native <Stdio></code> is declared. Input is safer than C's <code class=\"inline\">scanf</code> — no <code class=\"inline\">&</code> or format scanner needed."
+          ],
+          "code": {
+            "file": "stdio.gcsf",
+            "src": "#native <Stdio>\n\nint main() {\n    Stdio.printf(\"Name: {}\\n\", \"Emre\");\n    Stdio.printf(\"Score: {.2f}\\n\", 87.5);\n    Stdio.scanf(age);   // safe input into a variable\n    printf(\"Age: {}\\n\", age);\n    return 0;\n}"
+          }
+        },
+        {
+          "title": "File Operations",
+          "paragraphs": [
+            "File functions support named arguments: <code class=\"inline\">file=</code> and <code class=\"inline\">text=</code>."
+          ],
+          "table": {
+            "headers": ["Function", "Description"],
+            "rows": [
+              ["<code>Stdio.openFile(file)</code>", "Open file"],
+              ["<code>Stdio.writeFile(file, text)</code>", "Write to file"],
+              ["<code>Stdio.readFile(file)</code>", "Read file"],
+              ["<code>Stdio.appendFile(file, text)</code>", "Append to file"],
+              ["<code>Stdio.fileExists(file)</code>", "Does file exist?"],
+              ["<code>Stdio.deleteFile(file)</code>", "Delete file"],
+              ["<code>Stdio.renameFile(file, newName)</code>", "Rename file"],
+              ["<code>Stdio.fileSize(file)</code>", "File size"],
+              ["<code>Stdio.flushFile(file)</code>", "Flush buffer"]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "embed",
+      "title": "Embed Module",
+      "sections": [
+        {
+          "title": "Python and Lua Runtime",
+          "paragraphs": [
+            "The <code class=\"inline\">Embed</code> module starts, stops Python and Lua runtimes and provides variable sharing."
+          ],
+          "code": {
+            "file": "embed.gcsf",
+            "src": "#native <Embed>\n\nEmbed.Run(type=\"python\");\nint active = Embed.IsActive(type=\"python\");\n\nEmbed.SendValue(type=\"python\", name=\"myVar\", value=\"42\");\nint val = Embed.GetValue(type=\"python\", name=\"myVar\");\n\nEmbed.Stop(type=\"python\");"
+          }
+        },
+        {
+          "title": "Methods",
+          "paragraphs": [
+            "Available methods and return values:"
+          ],
+          "table": {
+            "headers": ["Method", "Description"],
+            "rows": [
+              ["<code>Embed.Run(type)</code>", "Start runtime (python / lua)"],
+              ["<code>Embed.Stop(type)</code>", "Stop runtime"],
+              ["<code>Embed.IsActive(type)</code>", "Is active? (1/0)"],
+              ["<code>Embed.SendValue(type, name, value)</code>", "Send variable"],
+              ["<code>Embed.GetValue(type, name)</code>", "Get variable (returns double)"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "warn",
+              "text": "The variable on the Python/Lua side must be defined in <code>__main__</code> globals. Sent values are currently int, float, char and soon gcChar."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "proje",
+      "title": "Project and Build",
+      "sections": [
+        {
+          "title": "New Project",
+          "paragraphs": [
+            "The <code class=\"inline\">gcl -new project_name</code> command creates a new project skeleton."
+          ],
+          "code": {
+            "file": "terminal",
+            "src": "gcl -new Demo\n\nDemo/\n    assets/       # automatically visible for raylib\n    external/     # .so, .dll (gcl python lua searches here)\n    include/      # .gcsf\n    lib/          # .gclib\n    out/          # Demo, Demo.gcBundle\n    scripts/      # lua, python files\n    main.gcsf\n    project.gcdata"
+          }
+        },
+        {
+          "title": "project.gcdata",
+          "paragraphs": [
+            "Project settings are stored in the <code class=\"inline\">project.gcdata</code> JSON file."
+          ],
+          "code": {
+            "file": "project.gcdata",
+            "src": "{\n  \"project_name\": \"Demo\",\n  \"developer_name\": \"developer\",\n  \"version\": 0.100,\n  \"open_lua\": true,\n  \"open_python\": true,\n  \"single_bundle\": false,\n  \"gcl_dirs\": [],\n  \"gcl_scripts\": [],\n  \"lua_dirs\": [],\n  \"lua_scripts\": [],\n  \"python_dirs\": [],\n  \"python_scripts\": [],\n  \"lua_main_file\": \"main.lua\",\n  \"python_main_file\": \"main.py\",\n  \"gcl_include_path\": \"include\",\n  \"gcl_lib_path\": \"lib\",\n  \"gcl_external_path\": \"external\",\n  \"python_import_path\": \"scripts\",\n  \"lua_import_path\": \"scripts\",\n  \"raylib_asset_directory_path\": \"assets\"\n}"
+          }
+        },
+        {
+          "title": "Build",
+          "paragraphs": [
+            "Project compile and package commands:"
+          ],
+          "code": {
+            "file": "terminal",
+            "src": "# Run a single file:\ngcl -run file.gcsf\n\n# Run Python / Lua:\ngcl -pyrun file.py\ngcl -luarun file.lua\n\n# Start IDE:\ngcl -ide\n\n# Build project:\ngcl -build project.gcdata -o path/dir\n#    -> Demo.exe / Demo.gcBundle"
+          }
+        },
+        {
+          "title": "Build Directory",
+          "paragraphs": [
+            "Compiled output is collected under <code class=\"inline\">Build/OS_NAME/</code>."
+          ],
+          "code": {
+            "file": "terminal",
+            "src": "Build/\n    windows/\n        Library/\n            Math.dll\n            Stdio.dll\n            Embed.dll\n            Lsp.dll\n            Raylib.dll\n            Raygui.dll\n            Embeded/\n                Lua_Runtime/\n                Python_Runtime/\n        Programs/\n            ide.dll\n        gcl.exe\n    gnuLinux/\n        Library/\n            Math.so\n            Stdio.so\n            Embed.so\n            Lsp.so\n            Raylib.so\n            Raygui.so\n            Embeded/\n                Lua_Runtime/\n                Python_Runtime/\n        Programs/\n            ide.so\n        gcl"
+          }
+        }
+      ]
+    }
+  ]
+}

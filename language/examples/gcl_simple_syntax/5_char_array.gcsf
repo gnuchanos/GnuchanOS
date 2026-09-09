@@ -1,0 +1,47 @@
+#native <Stdio>
+
+int main() {
+
+    // Tek bir char
+    char c = 'A';
+    Stdio.printf("Char: {}\n", c);
+
+
+    // Char dizisi
+    char array[5] = {
+        'H', 'e', 'l', 'l', 'o'
+    };
+
+    int sizeArray = sizeof(array) / sizeof(array[0]);
+
+    for (int i = 0; i < sizeArray; i++) {
+        Stdio.printf("Index: {} - Char: {}\n", i, array[i]);
+    }
+
+
+    // String
+    char string[14] = "Hello, World!";
+
+    int sizeString = sizeof(string) / sizeof(string[0]);
+
+    for (int i = 0; i < sizeString - 1; i++) {
+        Stdio.printf("Index: {} - Char: {}\n", i, string[i]);
+    }
+
+
+    // Çoklu string
+    char texts[3][20] = {
+        "Hello",
+        "World",
+        "Test"
+    };
+
+    int sizeTexts = sizeof(texts) / sizeof(texts[0]);
+
+    for (int i = 0; i < sizeTexts; i++) {
+        Stdio.printf("Index: {} - String: {}\n", i, texts[i]);
+    }
+
+
+    return 0;
+}

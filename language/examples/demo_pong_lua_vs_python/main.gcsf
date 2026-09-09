@@ -1,0 +1,30 @@
+#native <Embed>
+#native <Stdio>
+
+int main() {
+    /* Lua ve Python AI pong yarışması.
+       Her biri kendi raylib penceresini açar; top state'i
+       shared memory üzerinden paylaşılır (Embed.GetValue/SendValue). */
+
+    /* Sadece top durumu paylaşılır (shared memory). Paddle ve skor local. */
+    /* Dünya 1600x600: sol pencere 0-800 (Lua), sağ pencere 800-1600 (Python).
+       Top ortadan (800) başlar. */
+    Embed.SendValue(type="python", value="ball_x", 800.0);
+    Embed.SendValue(type="python", value="ball_y", 300.0);
+    Embed.SendValue(type="python", value="ball_vx", 4.0);
+    Embed.SendValue(type="python", value="ball_vy", 2.0);
+
+    /* İki pencereyi başlat: önce Lua (sol taraf), sonra Python (sağ taraf).
+       Embed.Run aynı türden 1 süreç kısıtı var: python + lua birlikte çalışır. */
+    Stdio.printf("Pong: Lua vs Python başlatılıyor...\n");
+
+    Embed.Run(type="lua");
+    Embed.Run(type="python");
+
+    /* Her iki pencere kapanana kadar bekle (Embed.Stop child süreçleri bekletir). */
+    Embed.Stop(type="lua");
+    Embed.Stop(type="python");
+
+    Stdio.printf("Pong pencereleri kapatıldı.\n");
+    return 0;
+}

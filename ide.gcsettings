@@ -1,0 +1,16 @@
+font=23
+theme=0
+syntax_highlight=1
+vhs=1
+crt=1
+screen_shake=1
+typewriter=1
+particles=1
+blink_cursor=1
+text_bloom=1
+bloom_strength=100
+shake_strength=100
+particle_strength=100
+vhs_strength=100
+crt_strength=100
+sound=1

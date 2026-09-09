@@ -1,0 +1,53 @@
+#native <Stdio>
+
+typedef int number;
+
+typedef && AND;
+typedef || OR;
+typedef ^ XOR;
+typedef ~ NOT;
+typedef << LEFT_SHIFT;
+typedef >> RIGHT_SHIFT;
+typedef & BIT_AND;
+typedef | BIT_OR;
+
+int main() {
+    number a = 10;
+    number b = 30;
+
+    // AND
+    if (a < b AND a != b) {
+        Stdio.printf("AND: YEAP\n");
+    }
+
+    // OR
+    if (a == 10 OR b == 20) {
+        Stdio.printf("OR: YEAP\n");
+    }
+
+    // XOR
+    number xor_result = a XOR b;
+    Stdio.printf("XOR: {}\n", xor_result);
+
+    // NOT
+    number not_result = NOT a;
+    Stdio.printf("NOT: {}\n", not_result);
+
+    // Left Shift
+    number left_result = a LEFT_SHIFT 2;
+    Stdio.printf("LEFT SHIFT: {}\n", left_result);
+
+    // Right Shift
+    number right_result = b RIGHT_SHIFT 2;
+    Stdio.printf("RIGHT SHIFT: {}\n", right_result);
+
+    // Bitwise AND
+    number bit_and_result = a BIT_AND b;
+    Stdio.printf("BIT AND: {}\n", bit_and_result);
+
+    // Bitwise OR
+    number bit_or_result = a BIT_OR b;
+    Stdio.printf("BIT OR: {}\n", bit_or_result);
+
+    return 0;
+}

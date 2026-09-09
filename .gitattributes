@@ -1,0 +1,15 @@
+# ── Satır sonu politikası ──────────────────────────────────
+# Windows'ta düzenlense bile repo'da dosyalar LF olarak saklansın.
+# Aksi halde script'ler Linux/CI'da CRLF yüzünden patlar (shebang bozulur).
+
+* text=auto
+
+# Shell ve boot script'leri daima LF
+*.sh      text eol=lf
+os/boot/init    text eol=lf
+os/boot/initrc  text eol=lf
+os/boot/inittab text eol=lf
+os/boot/grub.cfg    text eol=lf
+os/boot/os-release  text eol=lf
+os/build/gnuchanos-build.conf text eol=lf
+.github/workflows/*.yml text eol=lf
