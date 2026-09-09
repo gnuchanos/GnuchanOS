@@ -38,7 +38,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gcc make python3 python3-dev tar gzip \
+            gcc make python3 python3-dev tar gzip zip \
             zlib1g-dev libffi-dev libssl-dev xorg-dev libx11-dev \
             libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
             libgl1-mesa-dev libasound2-dev pkg-config
@@ -72,7 +72,9 @@ jobs:
             language/build/gnuLinux/Library
             language/build/gnuLinux/Assets
             language/build/gnuLinux/Programs
-          if-no-files-found: warn
+          # Programs/ide.so eksikse CI KIRILSIN — "warn" eksik IDE'yi gizlerdi.
+          # (Linux case-sensitive build'de Programs/ hiç oluşmuyordu; bunu yakala.)
+          if-no-files-found: error
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'
@@ -84,7 +86,7 @@ jobs:
             language/build/windows/Library
             language/build/windows/Assets
             language/build/windows/Programs
-          if-no-files-found: warn
+          if-no-files-found: error
 
   # v* tag push'larinda: tum platform build'lerinin paketlerini
   # GitHub Release'e ekler (otomatik release + asset'ler).
@@ -108,15 +110,21 @@ jobs:
           # Artifact klasör adları build job'daki isimlerle AYNI olmalı:
           # gcl-linux-build / gcl-win-build. Çıktı paket adları farklı olsun
           # ki "aynı isimde zip içinde zip" oluşmasın.
-          # Linux
+          # Linux — Programs/ IDE'nin gerekli parçasıdır; eksikse BAŞARISIZ ol.
           if [ -d artifacts/gcl-linux-build ]; then
-            ( cd artifacts/gcl-linux-build && tar czf "$OLDPWD/release/gcl-linux-full.tar.gz" gcl Library Assets Programs 2>/dev/null || \
-              ( cd artifacts/gcl-linux-build && tar czf "$OLDPWD/release/gcl-linux-full.tar.gz" gcl Library Assets ) )
+            if [ ! -e artifacts/gcl-linux-build/Programs/ide.so ]; then
+              echo "::error::Programs/ide.so yok — IDE build edilmedi. makefile.py'de src/→_SRC/ yol düzeltmesi yapılmış olmalı."
+              exit 1
+            fi
+            ( cd artifacts/gcl-linux-build && tar czf "$OLDPWD/release/gcl-linux-full.tar.gz" gcl Library Assets Programs )
           fi
           # Windows
           if [ -d artifacts/gcl-win-build ]; then
-            ( cd artifacts/gcl-win-build && zip -r "$OLDPWD/release/gcl-win-full.zip" gcl.exe Library Assets Programs 2>/dev/null || \
-              ( cd artifacts/gcl-win-build && zip -r "$OLDPWD/release/gcl-win-full.zip" gcl.exe Library Assets ) )
+            if [ ! -e artifacts/gcl-win-build/Programs/ide.dll ]; then
+              echo "::error::Programs/ide.dll yok — IDE build edilmedi."
+              exit 1
+            fi
+            ( cd artifacts/gcl-win-build && zip -r "$OLDPWD/release/gcl-win-full.zip" gcl.exe Library Assets Programs )
           fi
           ls -la release
 

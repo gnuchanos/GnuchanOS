@@ -75,51 +75,53 @@ RAYGUI_SRC = RAYGUI_DIR / "src"
 
 FREEFONT_URL = "https://ftp.gnu.org/gnu/freefont/freefont-ttf-20120503.zip"
 FREEFONT_DIR = _plat_temp() / "FreeFont"
-FREEFONT_EMBED = ROOT / "src" / "embed_freemono.c"
+# GERÇEK kaynak dizini language/_SRC (src/ DEĞİL). Linux case-sensitive: src/IDE vs _SRC/ide
+# farkı build'i kırar; bu yüzden tüm yollar _SRC/ + doğru case ile kullanılır.
+FREEFONT_EMBED = ROOT / "_SRC" / "embed_freemono.c"
 
 # ---------- Program (CLI) kaynakları — IDE ayrı DLL'e taşındı (Programs/ide.dll) ----------
 GCL_SRCS = [
-    "src/Build/gcbundle_reader.c",
-    "src/Build/gcbundle_pack.c",
-    "src/Build/gcbundle_build.c",
-    "src/SharedPipeline/gcl_error.c",
-    "src/SharedPipeline/gcl_lexer.c",
-    "src/SharedPipeline/gcl_parser.c",
-    "src/GCL/SimpleRunner/gcl_runner.c",
-    "src/GCL/SimpleRunner/gcl_simple_runner.c",
-    "src/gcl_os.c",
-    "src/gcl_main.c",
+    "_SRC/build/gcbundle_reader.c",
+    "_SRC/build/gcbundle_pack.c",
+    "_SRC/build/gcbundle_build.c",
+    "_SRC/SharedPipeline/gcl_error.c",
+    "_SRC/SharedPipeline/gcl_lexer.c",
+    "_SRC/SharedPipeline/gcl_parser.c",
+    "_SRC/GCL/SimpleRunner/gcl_runner.c",
+    "_SRC/GCL/SimpleRunner/gcl_simple_runner.c",
+    "_SRC/gcl_os.c",
+    "_SRC/gcl_main.c",
 ]
 
 # ---------- IDE kaynakları — Programs/ide.dll|.so (gcl.exe'den bağımsız) ----------
 IDE_SRCS = [
-    "src/IDE/ide_buffer.c",
-    "src/IDE/ide_font.c",
-    "src/IDE/ide_fs_tree.c",
-    "src/IDE/ide_editor.c",
-    "src/IDE/ide_clipboard.c",
-    "src/IDE/ide_widgets.c",
-    "src/IDE/ide_project.c",
-    "src/IDE/ide_menu.c",
-    "src/IDE/ide_main.c",
-    "src/IDE/ide_new_project.c",
-    "src/IDE/ide_proc.c",
-    "src/IDE/ide_native_dialog.c",
-    "src/IDE/ide_settings.c",
-    "src/IDE/gcl_settings_panel.c",
-    "src/IDE/gcl_lsp_scan.c",
-    "src/Build/gcbundle_reader.c",
-    "src/Build/gcbundle_pack.c",
-    "src/Build/gcbundle_build.c",
-    "src/embed_freemono.c",
-    "src/gcl_os.c",
+    "_SRC/ide/ide_buffer.c",
+    "_SRC/ide/ide_font.c",
+    "_SRC/ide/ide_fs_tree.c",
+    "_SRC/ide/ide_editor.c",
+    "_SRC/ide/ide_clipboard.c",
+    "_SRC/ide/ide_widgets.c",
+    "_SRC/ide/ide_project.c",
+    "_SRC/ide/ide_menu.c",
+    "_SRC/ide/ide_main.c",
+    "_SRC/ide/ide_new_project.c",
+    "_SRC/ide/ide_proc.c",
+    "_SRC/ide/ide_native_dialog.c",
+    "_SRC/ide/ide_settings.c",
+    "_SRC/ide/gcl_settings_panel.c",
+    "_SRC/ide/gcl_lsp_scan.c",
+    "_SRC/build/gcbundle_reader.c",
+    "_SRC/build/gcbundle_pack.c",
+    "_SRC/build/gcbundle_build.c",
+    "_SRC/embed_freemono.c",
+    "_SRC/gcl_os.c",
 ]
 
 # simple_doc.md: Library/Math.dll|.so, Stdio.dll|.so, Embed.dll|.so
 MODULES = [
-    ("Math", "src/Modules/gcl_math.c"),
-    ("Stdio", "src/Modules/gcl_stdio.c"),
-    ("Embed", "src/Modules/gcl_embed.c"),
+    ("Math", "_SRC/Modules/gcl_math.c"),
+    ("Stdio", "_SRC/Modules/gcl_stdio.c"),
+    ("Embed", "_SRC/Modules/gcl_embed.c"),
 ]
 
 
@@ -477,7 +479,10 @@ def build_modules(build_dir: Path) -> None:
 
     py_inc, py_libdir, py_lib = python_config()
 
-    raylib_src = build_raylib() if os_name() == "windows" else None
+    # Embed.so/dll, LuaRaylib, Raygui vb. hepsi raylib'e bağlanır. Linux'ta da
+    # Embed.so'nun raylib sembollerini çözebilmesi için modüllerden ÖNCE
+    # libraylib.a derlenmelidir; aksi halde Embed.so "undefined symbol" verir.
+    raylib_src = build_raylib()
     for name, src in MODULES:
         out = lib_dir / f"{name}.{ext}"
         sources = [src]
@@ -493,11 +498,11 @@ def build_modules(build_dir: Path) -> None:
         # gcl -luarun / -pyrun artık Embed.dll'den dinamik yüklenir (gcl_main.c).
         cmd_get_raylib = False
         if name == "Embed":
-            sources += ["src/embed/gcl_embed_lua.c",
-                        "src/embed/gcl_luaraylib.c",
-                        "src/embed/gcl_luaraygui.c"]
+            sources += ["_SRC/embed/gcl_embed_lua.c",
+                        "_SRC/embed/gcl_luaraylib.c",
+                        "_SRC/embed/gcl_luaraygui.c"]
             if use_python_link or use_python_dynamic:
-                sources += ["src/embed/gcl_embed_python.c"]
+                sources += ["_SRC/embed/gcl_embed_python.c"]
             # Lua kaynaklarını statik olarak göm (liblua.a build edilmiyor).
             # onelua.c (amalgamasyon), lua.c (standalone yorumlayıcı),
             # luac.c (derleyici) ve ltests.c (test) — çift tanım hataları verir.
@@ -512,8 +517,8 @@ def build_modules(build_dir: Path) -> None:
             cmd += ["-DGCL_HAVE_PYTHON"]
         elif use_python_dynamic:
             cmd += ["-DGCL_EMBED_PYTHON_DYNAMIC"]
-        cmd += ["-I", "src/include",
-                "-I", "src/embed",
+        cmd += ["-I", "_SRC/include",
+                "-I", "_SRC/embed",
                 "-I", str(LUA_SRC)]
         if cmd_get_raylib:
             cmd += ["-I", str(RAYLIB_SRC),
@@ -575,10 +580,10 @@ def build_raylib_module(build_dir: Path) -> None:
         print(f"[gcl] uyarı: libraylib.a bulunamadı, Raylib atlanıyor", flush=True)
         return
     cmd = ["gcc", "-std=c99", "-shared", "-fPIC", "-D_POSIX_C_SOURCE=200809L",
-           "-I", "src/include",
+           "-I", "_SRC/include",
            "-I", str(RAYLIB_SRC),
            "-I", str(RAYLIB_SRC / "external" / "glfw" / "include"),
-           "src/Modules/gcl_raylib.c",
+           "_SRC/Modules/gcl_raylib.c",
            str(libs[0]),
            "-o", str(out)]
     if os_name() == "windows":
@@ -628,11 +633,11 @@ def build_raygui_module(build_dir: Path) -> None:
     raylib_link = import_lib if (os_name() == "windows" and import_lib.exists()) else (raylib_stack_libs[0] if raylib_stack_libs else None)
     cmd = ["gcc", "-std=c99", "-shared", "-fPIC", "-D_POSIX_C_SOURCE=200809L",
            "-DRAYGUI_IMPLEMENTATION",
-           "-I", "src/include",
+           "-I", "_SRC/include",
            "-I", str(RAYGUI_SRC),
            "-I", str(RAYLIB_SRC),
            "-I", str(RAYLIB_SRC / "external" / "glfw" / "include"),
-           "src/Modules/gcl_raygui.c",
+           "_SRC/Modules/gcl_raygui.c",
            "-o", str(out)]
     if raylib_link:
         cmd += [str(raylib_link)]
@@ -677,14 +682,14 @@ def build_lua_runtime(build_dir: Path) -> None:
     ):
         out_dll = embed_dir / f"{out_name}.{ext}"
         cmd = ["gcc", "-std=c99", "-shared", "-fPIC", "-D_POSIX_C_SOURCE=200809L",
-               "-I", "src/embed",
+               "-I", "_SRC/embed",
                "-I", str(LUA_SRC),
                "-I", str(RAYLIB_SRC),
                "-I", str(RAYLIB_SRC / "external" / "glfw" / "include"),
                "-I", str(RAYGUI_SRC)]
         if needs_raygui:
             cmd += ["-DRAYGUI_IMPLEMENTATION"]
-        cmd += [f"src/embed/{src_base}.c"]
+        cmd += [f"_SRC/embed/{src_base}.c"]
         cmd += sources   # Lua kaynakları (lapi.c, lauxlib.c, ...)
         cmd += ["-o", str(out_dll)]
         if raylib_link:
@@ -750,10 +755,10 @@ def build_python_runtime(build_dir: Path) -> None:
     ext_suffix = "pyd" if os_name() == "windows" else "so"
     gcl_out = embed_dir / f"gcl.{ext_suffix}"
     gcl_cmd = ["gcc", "-std=c99", "-shared", "-fPIC", "-D_POSIX_C_SOURCE=200809L",
-               "-I", "src/embed"]
+               "-I", "_SRC/embed"]
     if py_inc:
         gcl_cmd += ["-I", str(py_inc)]
-    gcl_cmd += ["src/embed/gcl_pygcl.c", "-o", str(gcl_out)]
+    gcl_cmd += ["_SRC/embed/gcl_pygcl.c", "-o", str(gcl_out)]
     if os_name() == "windows" and py_libdir and py_lib:
         gcl_cmd += ["-L", str(py_libdir)]
         stem = py_lib[:-4] if py_lib.endswith(".lib") else py_lib
@@ -776,7 +781,7 @@ def build_python_runtime(build_dir: Path) -> None:
         ext_suffix = "pyd" if os_name() == "windows" else "so"
         out_mod = embed_dir / f"{mod_name}.{ext_suffix}"
         cmd = ["gcc", "-std=c99", "-shared", "-fPIC", "-D_POSIX_C_SOURCE=200809L",
-               "-I", "src/embed",
+               "-I", "_SRC/embed",
                "-I", str(RAYLIB_SRC),
                "-I", str(RAYLIB_SRC / "external" / "glfw" / "include"),
                "-I", str(RAYGUI_SRC)]
@@ -784,7 +789,7 @@ def build_python_runtime(build_dir: Path) -> None:
             cmd += ["-DRAYGUI_IMPLEMENTATION"]
         if py_inc:
             cmd += ["-I", str(py_inc)]
-        cmd += [f"src/embed/{src_base}.c", "-o", str(out_mod)]
+        cmd += [f"_SRC/embed/{src_base}.c", "-o", str(out_mod)]
         if raylib_link:
             cmd += [str(raylib_link)]
         if os_name() == "windows" and py_libdir and py_lib:
@@ -839,9 +844,9 @@ def build_ide(build_dir: Path) -> None:
            "-Wno-unused-function", "-Wno-unused-variable", "-Wno-format-truncation",
            "-Wno-discarded-qualifiers",
            "-shared", "-fPIC", "-D_POSIX_C_SOURCE=200809L",
-           "-I", "src/IDE", "-I", "src/Build",
-           "-I", "src/SharedPipeline", "-I", "src/GCL/SimpleRunner",
-           "-I", "src/Modules", "-I", "src/include", "-I", "src/embed",
+           "-I", "_SRC/ide", "-I", "_SRC/build",
+           "-I", "_SRC/SharedPipeline", "-I", "_SRC/GCL/SimpleRunner",
+           "-I", "_SRC/Modules", "-I", "_SRC/include", "-I", "_SRC/embed",
            "-I", str(RAYLIB_SRC),
            "-I", str(RAYLIB_SRC / "external" / "glfw" / "include"),
            "-I", str(RAYGUI_SRC),
@@ -888,11 +893,11 @@ def build_gcl() -> Path:
     build_lua_runtime(build_dir)
     build_python_runtime(build_dir)
     # IDE kaynakları eksikse build'i KIRMA (CI geçsin) ama NET UYARI ver.
-    # Programs/ide.so ancak language/src/IDE/ + src/Build/ kaynakları repo'da
+    # Programs/ide.so ancak language/_SRC/ide/ + _SRC/build/ kaynakları repo'da
     # olduğunda üretilir. embed_freemono.c OTOMATİK üretilir (embed_font());
     # CI'da git'te olmasa bile build sırasında oluşur — o yüzden hariç tutulur.
     missing_ide = [s for s in IDE_SRCS
-                   if s != "src/embed_freemono.c" and not (ROOT / s).exists()]
+                   if s != "_SRC/embed_freemono.c" and not (ROOT / s).exists()]
     if not missing_ide:
         build_ide(build_dir)
     else:
@@ -928,18 +933,18 @@ def build_gcl() -> Path:
     cmd = ["gcc", "-std=c99", "-Wall", "-Wextra", "-Wno-unused-parameter",
            "-Wno-unused-function", "-Wno-unused-variable", "-Wno-format-truncation",
            "-Wno-discarded-qualifiers",
-           "-I", "src/IDE",
-           "-I", "src/Build",
-           "-I", "src/SharedPipeline",
-           "-I", "src/GCL/SimpleRunner",
-           "-I", "src/Modules",
-           "-I", "src/include",
-           "-I", "src/embed",
+           "-I", "_SRC/ide",
+           "-I", "_SRC/build",
+           "-I", "_SRC/SharedPipeline",
+           "-I", "_SRC/GCL/SimpleRunner",
+           "-I", "_SRC/Modules",
+           "-I", "_SRC/include",
+           "-I", "_SRC/embed",
            "-D_POSIX_C_SOURCE=200809L"]
-    # CI'da src/Build/*.c repo'da yok → gcBundle kaynaklarını atla ve
+    # CI'da _SRC/build/*.c repo'da yok → gcBundle kaynaklarını atla ve
     # gcl_main.c'de -DGCL_SKIP_BUNDLE ile bundle kodunu devre dışı bırak.
     gcl_srcs = [s for s in GCL_SRCS if (ROOT / s).exists()]
-    if not (ROOT / "src" / "Build" / "gcbundle_reader.c").exists():
+    if not (ROOT / "_SRC" / "build" / "gcbundle_reader.c").exists():
         cmd += ["-DGCL_SKIP_BUNDLE"]
     cmd += gcl_srcs
     # gcl_runner.c fmod kullanır → libm gerekli (Linux makefile'sinde -lm eklenmeli,
