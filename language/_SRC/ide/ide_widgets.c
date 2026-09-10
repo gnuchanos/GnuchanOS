@@ -4,7 +4,7 @@
    Widgets
    --------------------------------------------- */
 
-/* Basılı tutma (key repeat) için tekrarlı tuş işleme */
+/* Repeated key handling for hold-to-repeat (key repeat) */
 static void textbox_handle_key(int key, char *buf, size_t bufsz, size_t *caret, size_t *sel, bool shift) {
     (void)bufsz;
     size_t n = strlen(buf);
@@ -78,8 +78,8 @@ void textbox_process(char *buf, size_t bufsz, size_t *caret, size_t *sel) {
     if (sel && *sel > n) *sel = n;
     if (!caret || !sel) return;
 
-    /* Basılı tutma (key repeat) desteği:
-       İlk basışta anında işle, 0.4s bekle, sonra 0.03s aralıkla tekrarla. */
+    /* Hold-to-repeat (key repeat) support:
+       Process immediately on the first press, wait 0.4s, then repeat every 0.03s. */
     static int rep_key = 0;
     static double rep_t = 0.0;
     double now = GetTime();
@@ -110,7 +110,7 @@ void textbox_process(char *buf, size_t bufsz, size_t *caret, size_t *sel) {
 }
 
 int ui_button(Rectangle r, const char *label, const GclIdeTheme *t, int font_sz) {
-    /* Yazı genişliğine göre otomatik büyüt: sağ kenar sabit kalsın diye x'i sola kaydır. */
+    /* Auto-grow to fit the text width: shift x left so the right edge stays fixed. */
     int tw = MeasureText(label, font_sz);
     float needed = (float)(tw + 16);
     if (r.width < needed) {
@@ -141,7 +141,7 @@ int ui_checkbox(Rectangle r, const char *label, int checked, const GclIdeTheme *
 }
 
 int ui_slider(Rectangle r, const char *label, int *val, int min, int max, const GclIdeTheme *t, int font_sz) {
-    /* label + değer üst satırda, track alta ve daha belirgin; label track'ten 14px yukarıda */
+    /* label + value on the top line, track below and more prominent; label is 14px above the track */
     int ly = (int)r.y - font_sz - 14;
     DrawText(label, (int)r.x, ly, font_sz, t->text);
     char txt[16];
@@ -181,10 +181,10 @@ int ui_label_textbox(Rectangle r, char *buf, size_t bufsz, int focused, size_t *
     if (caret && *caret > n) *caret = n;
     if (sel && *sel > n) *sel = n;
 
-    /* Gömülü FreeMono monospace: ölçüm VE çizim aynı fontla (gcl_measure_text_f/gcl_draw_text_f).
-       Raylib varsayılan fontu kullanılırsa DrawText'in advance'ı MeasureText ile uyuşmaz
-       ve path/input yazısı kayar (caret metnin gerisinde/farklı yerde görünür).
-       gcl_draw_text_f karakter başına sabit "M" adımı kullanır — ölçümle birebir eşleşir. */
+    /* Embedded FreeMono monospace: measurement AND drawing use the same font (gcl_measure_text_f/gcl_draw_text_f).
+       If raylib's default font is used, DrawText's advance does not match MeasureText
+       and the path/input text drifts (the caret appears behind or elsewhere relative to the text).
+       gcl_draw_text_f uses a fixed "M" step per character - matching the measurement exactly. */
     float cwf = gcl_measure_text_f("M", font_sz);
     if (cwf < 1.0f) cwf = 1.0f;
     int cw = (int)(cwf + 0.5f);
@@ -194,13 +194,13 @@ int ui_label_textbox(Rectangle r, char *buf, size_t bufsz, int focused, size_t *
     int max_chars = max_w / cw;
     if (max_chars < 1) max_chars = 1;
 
-    /* Horizontal scroll: caret her zaman görünür kalsın. */
+    /* Horizontal scroll: keep the caret always visible. */
     size_t cpos = focused && caret ? *caret : 0;
     if (cpos > n) cpos = n;
     int start = 0;
     if ((int)cpos > max_chars) start = (int)cpos - max_chars;
 
-    /* Seçim çizimi (görünür alan içinde). */
+    /* Selection drawing (within the visible area). */
     if (focused && caret && sel) {
         size_t s0 = *sel < *caret ? *sel : *caret;
         size_t s1 = *sel < *caret ? *caret : *sel;
@@ -216,16 +216,16 @@ int ui_label_textbox(Rectangle r, char *buf, size_t bufsz, int focused, size_t *
         }
     }
 
-    /* Metin çiz (scroll edilmiş başlangıçtan) — gömülü FreeMono monospace.
-       gcl_draw_text_f karakter başına sabit cw adımıyla çizer; DrawText yerine
-       kullanmak caret/imetin hizalamasını birebir eşleştirir.
-       KRİTİK: metin alanını scissor ile KIRP. Aksi halde uzun path/input metni
-       kutunun sağ kenarını aşar — "yazılar kutudan taşıyor" görüntüsünün nedeni bu. */
+    /* Draw text (from the scrolled start) - embedded FreeMono monospace.
+       gcl_draw_text_f draws with a fixed cw step per character; using it instead of
+       DrawText makes caret/text alignment match exactly.
+       CRITICAL: CLIP the text area with scissor. Otherwise long path/input text
+       overflows the right edge of the box - the cause of the "text overflows the box" look. */
     BeginScissorMode((int)(r.x + 6), (int)(r.y + 2), (int)(r.width - 12), (int)(r.height - 4));
     gcl_draw_text_f(buf + start, (float)(r.x + 6), (int)(r.y + (r.height - font_sz) / 2), font_sz, t->text);
     EndScissorMode();
 
-    /* Caret çiz. */
+    /* Draw the caret. */
     if (focused && caret) {
         int cc = (int)*caret - start;
         if (cc < 0) cc = 0;
@@ -235,7 +235,7 @@ int ui_label_textbox(Rectangle r, char *buf, size_t bufsz, int focused, size_t *
         DrawRectangle(cx, (int)(r.y + 4), 2, (int)(r.height - 8), t->cursor);
     }
 
-    /* Mouse tıklama: görünür alana göre caret. */
+    /* Mouse click: caret relative to the visible area. */
     if (CheckCollisionPointRec(GetMousePosition(), r) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         int rel = (int)(GetMousePosition().x - ((float)r.x + 6));
         if (rel < 0) rel = 0;
@@ -266,7 +266,7 @@ void run_name_dialog(Editor *ed) {
     int target_is_dir = valid_target && ed->tree.nodes[ed->ctx_target].is_dir;
     const char *target = valid_target ? ed->tree.nodes[ed->ctx_target].path : ed->cwd;
     if (ed->name_dialog_mode == 2) {
-        /* rename: her zaman target'in parent'ı */
+        /* rename: always the parent of the target */
         if (valid_target) {
             fs_parent_dir(target, parent, sizeof(parent));
             if (!parent[0]) snprintf(parent, sizeof(parent), "%s", ed->cwd);
@@ -302,7 +302,7 @@ void run_name_dialog(Editor *ed) {
         ed->name_dialog_open = 0;
         ed->ctx_open = 0;
         ed->active_textbox = -1;
-        ed->last_tree_scan = 0;  /* bir sonraki frame'de tree_rescan (blocked değilken) */
+        ed->last_tree_scan = 0;  /* tree_rescan on the next frame (while not blocked) */
     } else {
         snprintf(ed->status_msg, sizeof(ed->status_msg), "Error: could not %s '%s'",
                  ed->name_dialog_mode == 0 ? "create file" : (ed->name_dialog_mode == 1 ? "create directory" : "rename"),
@@ -328,7 +328,7 @@ void ctx_execute(Editor *ed) {
             ed->active_textbox = 1;
             ed->text_caret_name = strlen(ed->name_dialog_input);
             ed->text_sel_name = ed->text_caret_name;
-            ed->ctx_open = 0; /* context menüyü KAPAT — name_dialog ile çakışmasın */
+            ed->ctx_open = 0; /* CLOSE the context menu - so it does not conflict with name_dialog */
             break;
         case CTX_COPY:
             if (ed->ctx_target >= 0 && ed->ctx_target < ed->tree.count) {
@@ -349,7 +349,7 @@ void ctx_execute(Editor *ed) {
                 snprintf(dst, sizeof(dst), "%s/%s", parent, path_basename(ed->clipboard_path));
                 if (fs_is_dir(ed->clipboard_path)) fs_copy_dir_rec(ed->clipboard_path, dst);
                 else fs_copy_file(ed->clipboard_path, dst);
-                ed->last_tree_scan = 0;  /* senkron tree_rescan yerine geciktirilmiş */
+                ed->last_tree_scan = 0;  /* deferred instead of synchronous tree_rescan */
             }
             ed->ctx_open = 0;
             break;
@@ -357,7 +357,7 @@ void ctx_execute(Editor *ed) {
             if (ed->ctx_target >= 0 && ed->ctx_target < ed->tree.count) {
                 const char *del = ed->tree.nodes[ed->ctx_target].path;
                 const char *bn = path_basename(del);
-                /* Default proje klasör/dosyalarını silme */
+                /* Do not delete default project folders/files */
                 if (strcmp(bn, "scripts") == 0 || strcmp(bn, "assets") == 0 ||
                     strcmp(bn, "include") == 0 || strcmp(bn, "lib") == 0 ||
                     strcmp(bn, "external") == 0 || strcmp(bn, "main.gcsf") == 0 ||
@@ -369,7 +369,7 @@ void ctx_execute(Editor *ed) {
                     break;
                 }
                 fs_remove_rec(del);
-                ed->last_tree_scan = 0;  /* senkron tree_rescan yerine geciktirilmiş */
+                ed->last_tree_scan = 0;  /* deferred instead of synchronous tree_rescan */
             }
             ed->ctx_open = 0;
             break;

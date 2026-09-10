@@ -140,6 +140,27 @@ def run(cmd: list[str], cwd: Path, env: dict | None = None) -> None:
     subprocess.run(cmd, cwd=cwd, check=True, env=env)
 
 
+def run_optional(cmd: list[str], cwd: Path, env: dict | None = None) -> bool:
+    """check=False ile çalıştır; başarısızlıkta build'i KIRMADAN False döndür.
+
+    MK-2: `make clean` gibi temizlik adımları için. Araç yoksa (FileNotFoundError)
+    veya hedef hata verirse yalnızca uyarı verilir, derleme devam eder.
+    Dönüş: True (başarı) / False (başarısız veya araç yok).
+    """
+    print(f"[gcl] {' '.join(str(x) for x in cmd)}", flush=True)
+    if env is None:
+        env = os.environ.copy()
+    try:
+        result = subprocess.run(cmd, cwd=cwd, check=False, env=env)
+        return result.returncode == 0
+    except FileNotFoundError:
+        print(f"[gcl] uyarı: '{cmd[0]}' bulunamadı — adım atlandı", flush=True)
+        return False
+    except OSError as e:
+        print(f"[gcl] uyarı: komut çalıştırılamadı: {e}", flush=True)
+        return False
+
+
 def gcl_env() -> dict:
     env = os.environ.copy()
     if PYTHON_DIR.exists():
@@ -347,13 +368,24 @@ def embed_font() -> Path:
     if not (FREEFONT_DIR / "FreeMono.ttf").exists():
         download_freefont()
     data = (FREEFONT_DIR / "FreeMono.ttf").read_bytes()
-    with open(FREEFONT_EMBED, "w", encoding="utf-8") as f:
-        f.write("/* generated: FreeMono.ttf embedded byte array */\n")
-        f.write("const unsigned char gcl_embed_freemono_ttf[] = {\n")
-        for i in range(0, len(data), 12):
-            f.write("    " + ",".join(str(b) for b in data[i:i + 12]) + ",\n")
-        f.write("    0\n};\n")
-        f.write(f"const unsigned int gcl_embed_freemono_ttf_size = {len(data)};\n")
+    parts = ["/* generated: FreeMono.ttf embedded byte array */\n",
+             "const unsigned char gcl_embed_freemono_ttf[] = {\n"]
+    for i in range(0, len(data), 12):
+        parts.append("    " + ",".join(str(b) for b in data[i:i + 12]) + ",\n")
+    parts.append("    0\n};\n")
+    parts.append(f"const unsigned int gcl_embed_freemono_ttf_size = {len(data)};\n")
+    content = "".join(parts)
+    # MK-3: içerik değişmediyse dosyayı YENİDEN YAZMA. Aksi halde embed_freemono.c'nin
+    # mtime'ı her build'de değişir ve onu içeren IDE DLL'i gereksiz yere yeniden derlenir.
+    if FREEFONT_EMBED.exists():
+        try:
+            if FREEFONT_EMBED.read_text(encoding="utf-8") == content:
+                print(f"[gcl] font embed güncel (yeniden yazılmadı): {FREEFONT_EMBED}", flush=True)
+                return FREEFONT_EMBED
+        except OSError:
+            pass
+    FREEFONT_EMBED.parent.mkdir(parents=True, exist_ok=True)
+    FREEFONT_EMBED.write_text(content, encoding="utf-8")
     print(f"[gcl] font embedded: {FREEFONT_EMBED}", flush=True)
     return FREEFONT_EMBED
 
@@ -402,7 +434,16 @@ def build_raylib() -> Path:
             except OSError:
                 pass
     make_tool = "mingw32-make" if os_name() == "windows" else "make"
-    run([make_tool, "clean", "PLATFORM=PLATFORM_DESKTOP", "RAYLIB_LIBTYPE=STATIC"], cwd=RAYLIB_SRC)
+    # MK-2: derleme aracı yoksa NET hata ver (aksi halde FileNotFoundError belirsizdir).
+    if shutil.which(make_tool) is None:
+        hint = "MinGW (mingw32-make)" if os_name() == "windows" else "make + build-essential"
+        print(f"[gcl] HATA: '{make_tool}' bulunamadı. Raylib derlemek için {hint} "
+              f"kurulmalı ve PATH'te olmalıdır.", file=sys.stderr, flush=True)
+        raise RuntimeError(f"required build tool not found: {make_tool}")
+    # MK-2: `make clean` temizlik adımıdır; başarısız olsa da derleme devam eder.
+    if not run_optional([make_tool, "clean", "PLATFORM=PLATFORM_DESKTOP", "RAYLIB_LIBTYPE=STATIC"], cwd=RAYLIB_SRC):
+        print(f"[gcl] uyarı: '{make_tool} clean' tamamlanamadı — temizlik atlandı, "
+              f"derleme yine de sürdürülüyor.", flush=True)
     run([make_tool, "PLATFORM=PLATFORM_DESKTOP", "RAYLIB_LIBTYPE=STATIC"], cwd=RAYLIB_SRC)
     stems = list(RAYLIB_SRC.glob("libraylib*.a"))
     if stems:
@@ -729,7 +770,11 @@ def build_python_runtime(build_dir: Path) -> None:
         # Bu yüzden lib dizinindeki gerçek libpython*.so* dosyasını bul.
         py_inc, py_libdir, py_lib = python_config()
         if py_libdir:
-            lib_candidates = list(Path(py_libdir).glob("libpython*.so*")) + list(Path(py_libdir).glob("libpython*.a"))
+            # MK-1: glob sırası garanti değildir; statik "libpython*.a"nın
+            # "Python.so" adıyla kopyalanması dlopen'ı bozar. ÖNCE paylaşımlı
+            # .so ara; hiç yoksa statik .a'ya düş.
+            lib_candidates = sorted(Path(py_libdir).glob("libpython*.so*")) or \
+                             sorted(Path(py_libdir).glob("libpython*.a"))
             if lib_candidates:
                 src_lib = lib_candidates[0]
                 out = embed_dir / f"Python.{ext}"

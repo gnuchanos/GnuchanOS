@@ -1,8 +1,8 @@
 /*
- * gcbundle_reader.c — .gcBundle okuma (AppImage modeli).
+ * gcbundle_reader.c — .gcBundle reading (AppImage model).
  *
- * .gcBundle dosyası belleğe okunur; entry tablosu üzerinden dosyalara
- * pointer'la erişilir. HİÇBİR ŞEY DISKE YAZILMAZ.
+ * The .gcBundle file is read into memory; files are accessed via pointers
+ * through the entry table. NOTHING IS WRITTEN TO DISK.
  */
 
 #include "gcbundle.h"
@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>    /* for distinguishing mkdir errors (EEXIST) */
 
 #ifdef _WIN32
 #include <direct.h>  /* _mkdir */
@@ -41,6 +42,34 @@ const char *gcb_last_error(void) { return g_last_error; }
 const void *gcb_raw_data(const GcbBundle *b) { return b ? b->data : NULL; }
 size_t gcb_raw_size(const GcbBundle *b) { return b ? b->size : 0; }
 
+/* Get the file size as 64-bit and rewind the position.
+   CRITICAL (Windows): because long is 32-bit, ftell() OVERFLOWS on files >2GB;
+   _fseeki64/_ftelli64 are used. On Linux, ftello/fseeko (off_t 64-bit).
+   This way large bundles are read correctly on Windows too. Success: >=0, error: -1. */
+static long long gcb_file_size(FILE *f) {
+#ifdef _WIN32
+    if (_fseeki64(f, 0, SEEK_END) != 0) return -1;
+    long long sz = (long long)_ftelli64(f);
+    if (_fseeki64(f, 0, SEEK_SET) != 0) return -1;
+    return sz;
+#else
+    if (fseeko(f, 0, SEEK_END) != 0) return -1;
+    long long sz = (long long)ftello(f);
+    if (fseeko(f, 0, SEEK_SET) != 0) return -1;
+    return sz;
+#endif
+}
+
+/* out_dir + in-bundle rel path → full path for writing (native separator on Windows). */
+static void build_out_path(char *out, size_t outsz, const char *out_dir, const char *rel) {
+#ifdef _WIN32
+    snprintf(out, outsz, "%s\\%s", out_dir, rel ? rel : "");
+    for (char *p = out; *p; p++) if (*p == '/') *p = '\\';
+#else
+    snprintf(out, outsz, "%s/%s", out_dir, rel ? rel : "");
+#endif
+}
+
 static int validate(GcbBundle *b) {
     if (!b->data || b->size < sizeof(GcbHeader)) {
         gcb_set_error("GCB: insufficient data for header");
@@ -65,16 +94,43 @@ static int validate(GcbBundle *b) {
         gcb_set_error("GCB: too many entries");
         return -1;
     }
-    /* uint32 taşmasını önle: aritmetiği size_t (64-bit) üzerinden yap */
+    /* prevent uint32 overflow: do the arithmetic through size_t (64-bit) */
     size_t table_bytes = (size_t)h->entry_count * sizeof(GcbEntryHeader);
-    if ((size_t)h->entry_offset + table_bytes > b->size) {
+
+    /* RD-3a: the entry table must start AFTER the header and stay within the file. */
+    if ((size_t)h->entry_offset < sizeof(GcbHeader) ||
+        (size_t)h->entry_offset + table_bytes > b->size) {
         gcb_set_error("GCB: entry table out of bounds");
+        return -1;
+    }
+    /* RD-3b: the blob must come AFTER the entry table and stay within the file. */
+    if ((size_t)h->blob_offset < (size_t)h->entry_offset + table_bytes ||
+        (size_t)h->blob_offset > b->size) {
+        gcb_set_error("GCB: blob offset out of bounds");
         return -1;
     }
 
     b->entry_count = h->entry_count;
     b->entries = (GcbEntryHeader *)(b->data + h->entry_offset);
     b->valid = 1;
+
+    /* RD-2: every entry.path[GCB_PATH_MAX] field MUST be NUL-terminated.
+       Otherwise strcmp in find_entry/gcb_entry_path reads out of bounds
+       (crash on a corrupt/truncated bundle). Non-terminated path = corrupt
+       package → reject. */
+    for (size_t i = 0; i < b->entry_count; i++) {
+        if (memchr(b->entries[i].path, '\0', GCB_PATH_MAX) == NULL) {
+            b->valid = 0;
+            gcb_set_error("GCB: entry path not terminated");
+            return -1;
+        }
+        if (b->entries[i].type != GCB_ENTRY_FILE &&
+            b->entries[i].type != GCB_ENTRY_DIR) {
+            b->valid = 0;
+            gcb_set_error("GCB: bad entry type");
+            return -1;
+        }
+    }
     return 0;
 }
 
@@ -83,10 +139,13 @@ GcbBundle *gcb_open(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) { gcb_set_error("GCB: cannot open"); return NULL; }
 
-    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); gcb_set_error("GCB: seek failed"); return NULL; }
-    long sz = ftell(f);
-    if (sz < 0) { fclose(f); gcb_set_error("GCB: tell failed"); return NULL; }
-    rewind(f);
+    long long sz = gcb_file_size(f);
+    if (sz < 0) { fclose(f); gcb_set_error("GCB: seek/tell failed"); return NULL; }
+    /* prevent 32-bit size_t overflow (size + 1 terminator byte) */
+    if ((unsigned long long)sz >= (unsigned long long)SIZE_MAX) {
+        fclose(f); gcb_set_error("GCB: file too large");
+        return NULL;
+    }
 
     GcbBundle *b = (GcbBundle *)calloc(1, sizeof(GcbBundle));
     if (!b) { fclose(f); gcb_set_error("GCB: out of memory"); return NULL; }
@@ -95,6 +154,16 @@ GcbBundle *gcb_open(const char *path) {
     if (!b->data) { free(b); fclose(f); gcb_set_error("GCB: out of memory"); return NULL; }
     size_t rd = fread(b->data, 1, (size_t)sz, f);
     fclose(f);
+
+    /* RD-1: A short read (corrupt/truncated file, network drive) must NOT be
+       silently accepted — otherwise the entry table/blob is read over
+       incomplete data. */
+    if (rd != (size_t)sz) {
+        free(b->data);
+        free(b);
+        gcb_set_error("GCB: short read (truncated file)");
+        return NULL;
+    }
     b->size = rd;
 
     if (validate(b) != 0) {
@@ -161,16 +230,30 @@ const void *gcb_read_path(const GcbBundle *b, const char *path, uint32_t *size) 
     if (size) *size = 0;
     const GcbEntryHeader *e = find_entry(b, path);
     if (!e) { gcb_set_error("GCB: path not found"); return NULL; }
-    /* uint32 taşmasını önle: aritmetiği size_t (64-bit) üzerinden yap */
+    /* prevent uint32 overflow: do the arithmetic through size_t (64-bit) */
     if ((size_t)e->offset + (size_t)e->size > b->size) { gcb_set_error("GCB: entry out of bounds"); return NULL; }
     if (size) *size = e->size;
     return b->data + e->offset;
 }
 
-/* Alt dizinleriyle birlikte dizin oluştur (mkdir -p).
-   Windows'ta "C:\path\to\dir" gibi drive letter'lı mutlak yollar ve UNC
-   (\\server\share\...) doğru işlenir — "C:" gibi geçersiz parçalar denenmez. */
+/* Create a single directory. EEXIST (already exists) is considered NORMAL;
+   other errors (no permission, invalid path, ...) return -1. RD-4: a failure
+   is not silently swallowed — so gcb_extract_all can report a clear error. */
+static int mkdir_one(const char *dir) {
+#ifdef _WIN32
+    if (_mkdir(dir) != 0 && errno != EEXIST) return -1;
+#else
+    if (mkdir(dir, 0755) != 0 && errno != EEXIST) return -1;
+#endif
+    return 0;
+}
+
+/* Create a directory along with its subdirectories (mkdir -p).
+   On Windows, absolute paths with a drive letter such as "C:\path\to\dir" and
+   UNC paths (\\server\share\...) are handled correctly — invalid fragments
+   like "C:" are never attempted. Success: 0, real error: -1. */
 static int mkdir_p(const char *path) {
+    int rc = 0;
     char tmp[4096];
     snprintf(tmp, sizeof(tmp), "%s", path);
 #ifdef _WIN32
@@ -178,32 +261,32 @@ static int mkdir_p(const char *path) {
 #endif
     size_t len = strlen(tmp);
     if (len == 0) return 0;
-    /* Sondaki ayracı kırp */
+    /* Trim the trailing separator */
     while (len > 1 && (tmp[len - 1] == '/' || tmp[len - 1] == '\\')) tmp[--len] = '\0';
 
-    /* Kök dizin konumunu bul — iterasyon buradan başlar */
+    /* Find the root directory position — iteration starts here */
     size_t start = 1;
 #ifdef _WIN32
-    /* "C:\..." → drive letter + ayraç atla */
+    /* "C:\..." → skip drive letter + separator */
     if (len > 2 && tmp[1] == ':' && (tmp[2] == '\\' || tmp[2] == '/')) {
         start = 3;
     }
-    /* UNC: "\\server\share\..." → server+share adını atla.
-       \\server adında dizin OLUŞTURULMAZ (UNC root'u var olmalıdır);
-       ilk mkdir \\server\share altındaki ilk alt dizinden başlar. */
+    /* UNC: "\\server\share\..." → skip the server+share name.
+       No directory is CREATED on \\server (the UNC root must already exist);
+       the first mkdir starts from the first subdirectory under \\server\share. */
     else if (len > 2 && tmp[0] == '\\' && tmp[1] == '\\') {
         char *sp = tmp + 2;
-        while (*sp && *sp != '\\' && *sp != '/') sp++;  /* server adını atla */
+        while (*sp && *sp != '\\' && *sp != '/') sp++;  /* skip server name */
         if (*sp) {
             sp++;
-            while (*sp && *sp != '\\' && *sp != '/') sp++;  /* share adını atla */
+            while (*sp && *sp != '\\' && *sp != '/') sp++;  /* skip share name */
         }
-        if (*sp) sp++;  /* son ayracı da atla */
+        if (*sp) sp++;  /* also skip the final separator */
         start = (size_t)(sp - tmp);
-        if (start >= len) start = 1;  /* güvenlik: hiç seperator yoksa */
+        if (start >= len) start = 1;  /* safety: if there is no separator at all */
     }
 #else
-    /* POSIX mutlak yol: "/..." → baştaki ayracı atla */
+    /* POSIX absolute path: "/..." → skip the leading separator */
     if (tmp[0] == '/') start = 1;
 #endif
 
@@ -211,36 +294,41 @@ static int mkdir_p(const char *path) {
         if (*p == '/' || *p == '\\') {
             char c = *p;
             *p = '\0';
-#ifdef _WIN32
-            _mkdir(tmp);
-#else
-            mkdir(tmp, 0755);
-#endif
+            if (mkdir_one(tmp) != 0) rc = -1;
             *p = c;
         }
     }
-#ifdef _WIN32
-    _mkdir(tmp);
-#else
-    mkdir(tmp, 0755);
-#endif
-    return 0;
+    if (mkdir_one(tmp) != 0) rc = -1;
+    return rc;
 }
 
-/* Bundle içindeki TÜM dosyaları out_dir altına yazar (recursive). */
+/* Writes ALL files in the bundle under out_dir (recursive). */
 int gcb_extract_all(const GcbBundle *b, const char *out_dir) {
     if (!b || !b->valid || !out_dir) { gcb_set_error("GCB: extract null param"); return -1; }
-    mkdir_p(out_dir);
+    if (mkdir_p(out_dir) != 0) {
+        gcb_set_error("GCB: cannot create extract directory");
+        return -1;
+    }
+
+    /* 1) Create directory entries — so empty directories (like assets/) are kept.
+       Otherwise only directories containing files would be written to disk. */
+    for (uint32_t i = 0; i < b->entry_count; i++) {
+        if (b->entries[i].type != GCB_ENTRY_DIR) continue;
+        if (!b->entries[i].path[0]) continue;   /* skip the root directory entry */
+        char full[8192];
+        build_out_path(full, sizeof(full), out_dir, b->entries[i].path);
+        if (mkdir_p(full) != 0) {
+            gcb_set_error("GCB: cannot create extract subdirectory");
+            return -1;
+        }
+    }
+
+    /* 2) Write files — create the parent directory if it does not exist. */
     for (uint32_t i = 0; i < b->entry_count; i++) {
         if (b->entries[i].type != GCB_ENTRY_FILE) continue;
         char full[8192];
-#ifdef _WIN32
-        snprintf(full, sizeof(full), "%s\\%s", out_dir, b->entries[i].path);
-        for (char *p = full; *p; p++) if (*p == '/') *p = '\\';
-#else
-        snprintf(full, sizeof(full), "%s/%s", out_dir, b->entries[i].path);
-#endif
-        /* full içindeki son \'den sonrası dosya adı — parent dizini mkdir_p ile yap */
+        build_out_path(full, sizeof(full), out_dir, b->entries[i].path);
+
         char parent[8192];
         snprintf(parent, sizeof(parent), "%s", full);
         char *slash = strrchr(parent, '\\');

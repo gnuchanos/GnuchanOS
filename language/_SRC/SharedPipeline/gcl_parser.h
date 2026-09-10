@@ -1,5 +1,5 @@
 /*
- * gcl_parser.h — GCL AST tipleri.
+ * gcl_parser.h — GCL AST types.
  */
 
 #ifndef GCL_PARSER_H
@@ -27,11 +27,11 @@ typedef enum {
 
 typedef struct GclExpr GclExpr;
 
-/* Dizi/member index erişimi: expr[expr] */
+/* Array/member index access: expr[expr] */
 typedef struct {
-    GclExpr *name;        /* dizi ismi (AST_EXPR_VAR) */
-    GclExpr *index;       /* index ifadesi */
-    char *member_name;    /* varsa .member (req: arr[i].member) */
+    GclExpr *name;        /* array name (AST_EXPR_VAR) */
+    GclExpr *index;       /* index expression */
+    char *member_name;    /* optional .member (e.g. arr[i].member) */
 } GclArrayAccess;
 
 typedef enum {
@@ -63,8 +63,8 @@ typedef struct {
     char *name;
     char **params;
     int param_count;
-    char *return_type;   /* fonksiyon dönüş tipi (Hello, void, int, ...) */
-    /* body: ilk stmt bloğu */
+    char *return_type;   /* function return type (Hello, void, int, ...) */
+    /* body: first stmt block */
     GclStmt *body;
 } GclFuncDecl;
 
@@ -72,11 +72,11 @@ typedef struct {
     char *name;
     char *type_name;
     GclExpr *init;
-    int array_size;   /* 0=array değil, -1=char[] boş, N=char[N] boyut */
+    int array_size;   /* 0=not an array, -1=empty char[], N=char[N] size */
     int array_inner;  /* optional second dimension for char arrays: char a[3][20] */
     int is_pointer;   /* 1=char *ptr */
-    int is_const;     /* 1=const değişken (atama yapılamaz) */
-    int is_global;    /* 1=global değişken (blok dışına taşmaz) */
+    int is_const;     /* 1=const variable (cannot be assigned) */
+    int is_global;    /* 1=global variable (does not leak out of the block) */
 } GclVarDecl;
 
 typedef struct {
@@ -111,7 +111,7 @@ typedef struct {
     char *base_type;
 } GclTypedefInfo;
 
-/* enum Day { MONDAY, TUESDAY, ... } — üye adları + başlangıç değeri */
+/* enum Day { MONDAY, TUESDAY, ... } — member names + start value */
 typedef struct {
     char *enum_name;
     char **const_names;
@@ -126,16 +126,16 @@ typedef struct {
     int member_count;
 } GclStructInfo;
 
-/* Struct değişken member'ı */
+/* Struct variable member */
 typedef struct GclStructValue GclStructValue;
 struct GclStructValue {
     char *name;
     double num;
     char *str;
     int is_string;
-    char *decl_type;   /* üyenin bildirim tipi (int8, float32, ...) — clamp için */
+    char *decl_type;   /* the member's declared type (int8, float32, ...) — for clamping */
     struct GclStructValue *next;
-    struct GclStructValue *members; /* nested struct değeri */
+    struct GclStructValue *members; /* nested struct value */
 };
 
 struct GclStmt {

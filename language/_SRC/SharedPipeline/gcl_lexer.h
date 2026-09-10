@@ -1,5 +1,5 @@
 /*
- * gcl_lexer.h — GCL token tipleri.
+ * gcl_lexer.h — GCL token types.
  */
 
 #ifndef GCL_LEXER_H
@@ -42,7 +42,7 @@ typedef enum {
 
 typedef struct {
     GclTokenType type;
-    const char *lexeme;   /* kaynağa işaret eder (strlen ayrı) */
+    const char *lexeme;   /* points into the source (strlen kept separately) */
     size_t len;
     int line;
     int col;
@@ -55,8 +55,8 @@ typedef struct {
     int cap;
 } GclTokenList;
 
-/* Kaynağı tokenler'a ayırır (sahibi token listesidir, lexeme'ler kaynağa işaret eder).
-   Başarı: token listesi, hata: NULL. */
+/* Splits the source into tokens (the token list owns them; lexemes point into
+   the source). Success: token list, error: NULL. */
 GclTokenList *gcl_lex(const char *src, size_t len, char **error_msg);
 void gcl_token_free(GclTokenList *list);
 

@@ -180,8 +180,9 @@ static GclExpr *parse_primary(Parser *p) {
                    segfault / double-free). bin->left için KOPYA var oluştur. */
                 GclExpr *var_clone = new_expr(AST_EXPR_VAR);
                 if (var_clone) {
-                    var_clone->name = (e->kind == AST_EXPR_VAR) ? strdup(e->name ? e->name : "") : (char *)"";
-                    if (e->kind != AST_EXPR_VAR) { free(var_clone->name); var_clone->name = strdup(""); }
+                    /* Her durumda heap'te yeni bir isim üret — string literal'i
+                       free etmek (eski kod) MSVCRT'de çökmeye yol açıyordu. */
+                    var_clone->name = strdup((e->kind == AST_EXPR_VAR && e->name) ? e->name : "");
                     bin->left = var_clone;
                 }
                 GclExpr *one = new_expr(AST_EXPR_FLOAT);
@@ -395,6 +396,34 @@ static GclExpr *parse_expr_binary(Parser *p, int min_prec) {
         if (p->err) break;
     }
     return left;
+}
+
+/* Deep copy of an expression tree.
+   parse_assign, `a += b` ifadesini `a = (a + b)` şekline çevirirken sol tarafın
+   BAĞIMSIZ bir kopyasına ihtiyaç duyar: e->left (assign.hedefi) ve bin->left
+   (toplamın sol operandı) AYNI işaretçi olursa gcl_program_free aynı Var düğümünü
+   iki kez serbest bırakır (double-free / segfault). */
+static GclExpr *clone_expr(const GclExpr *e) {
+    if (!e) return NULL;
+    GclExpr *c = new_expr(e->kind);
+    if (!c) return NULL;
+    c->op = e->op;
+    c->num = e->num;
+    c->str = e->str ? strdup(e->str) : NULL;
+    c->name = e->name ? strdup(e->name) : NULL;
+    c->member_name = e->member_name ? strdup(e->member_name) : NULL;
+    c->left = clone_expr(e->left);
+    c->right = clone_expr(e->right);
+    if (e->arg_count > 0 && e->args) {
+        c->args = (GclExpr **)calloc((size_t)e->arg_count, sizeof(GclExpr *));
+        if (c->args) {
+            for (int i = 0; i < e->arg_count; i++) {
+                c->args[i] = clone_expr(e->args[i]);
+            }
+            c->arg_count = e->arg_count;
+        }
+    }
+    return c;
 }
 
 /* assignment: a = expr, a += b, ... */

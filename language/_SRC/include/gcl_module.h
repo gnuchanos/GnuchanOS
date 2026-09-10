@@ -1,9 +1,9 @@
 /*
- * gcl_module.h — GCL native modül API'si.
+ * gcl_module.h — GCL native module API.
  *
- * simple_doc.md: modüller .dll/.so olarak Library/ altında bulunur.
- * #native <Math> direktifi modülü yükler; Math.member çağrıları modül
- * fonksiyon tablosundan çözülür.
+ * simple_doc.md: modules are found under Library/ as .dll/.so.
+ * The #native <Math> directive loads the module; Math.member calls are
+ * resolved from the module function table.
  */
 
 #ifndef GCL_MODULE_H
@@ -17,8 +17,8 @@
 #define GCL_EXPORT __attribute__((visibility("default")))
 #endif
 
-/* GCL tarafından geçilen argümanlar string dizisi olarak gelir.
-   Sayısal fonksiyonlar atof/strtod ile çevirir; string fonksiyonlar direkt kullanır. */
+/* Arguments passed by GCL arrive as an array of strings.
+   Numeric functions parse them with atof/strtod; string functions use them directly. */
 typedef double (*GclNativeFn)(int argc, const char **argv);
 
 typedef struct {
@@ -26,7 +26,7 @@ typedef struct {
     GclNativeFn fn;
 } GclNativeEntry;
 
-/* Modül bu fonksiyonu export eder: fonksiyon tablosunu döndürür. */
+/* The module exports this function: it returns the function table. */
 typedef const GclNativeEntry *(*GclModuleGetFunctions)(int *count);
 
 #endif /* GCL_MODULE_H */

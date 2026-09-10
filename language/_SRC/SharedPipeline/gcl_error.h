@@ -1,5 +1,5 @@
 /*
- * gcl_error.h — GCL hata tipleri.
+ * gcl_error.h — GCL error types.
  */
 
 #ifndef GCL_ERROR_H

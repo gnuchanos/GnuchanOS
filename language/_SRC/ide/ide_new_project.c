@@ -1,5 +1,5 @@
 #include "gcl_ide_internal.h"
-/* rayGUI gövdesi (implementation) tek TU'da üretilir — gcl_settings_panel.c. */
+/* rayGUI body (implementation) is generated in a single TU — gcl_settings_panel.c. */
 #ifdef RAYGUI_IMPLEMENTATION
 #undef RAYGUI_IMPLEMENTATION
 #endif
@@ -13,7 +13,7 @@
 
 #define NPD_PAD 16
 
-/* RayGUI'yi tema ile senkronize et */
+/* Sync RayGUI with the theme */
 static void npd_sync_raygui_style(const GclIdeTheme *t, int font_sz) {
     GuiSetFont(g_font);
     GuiSetStyle(DEFAULT, TEXT_SIZE, font_sz);
@@ -103,10 +103,10 @@ void ide_new_project_input(Editor *ed, int ctrl) {
     }
 }
 
-/* Scene butonları çiz — genişlik yazıya göre.
-   GuiButton global rayGUI state'ine bağlı olduğu için bu panelde tıklamaları
-   kaçırabiliyor (3D seçilemiyor, hep Empty üretiliyor). Projenin kendi ui_button'u
-   saf CheckCollisionPointRec ile çalışır ve OK/Cancel'de kanıtlanmıştır. */
+/* Draw scene buttons — width based on text.
+   GuiButton is tied to global rayGUI state and can miss clicks in this panel
+   (cannot select 3D, always produces Empty). The project's own ui_button
+   works with pure CheckCollisionPointRec and is proven with OK/Cancel. */
 static void npd_scene_buttons(Editor *ed, int x, int y, int *scene, const GclIdeTheme *t, int fs) {
     const char *names[] = { "Empty", "2D", "3D" };
     int bx = x;
@@ -114,13 +114,13 @@ static void npd_scene_buttons(Editor *ed, int x, int y, int *scene, const GclIde
         int sw = MeasureText(names[i], fs) + 22;
         Rectangle br = { (float)bx, (float)y, (float)sw, 28 };
         bool sel = (*scene == i);
-        /* Seçili butonun zeminini accent ile doldur, diğerleri panel bg */
+        /* Fill the selected button's background with accent, others with panel bg */
         DrawRectangleRec(br, sel ? t->accent : t->panel_bg);
         DrawRectangleLinesEx(br, 1.0f, t->accent);
         int tw = MeasureText(names[i], fs);
         DrawText(names[i], (int)(br.x + (br.width - tw) / 2), (int)(br.y + (br.height - fs) / 2), fs,
                  sel ? WHITE : t->text);
-        /* Tıklama: ui_button ile aynı saf yöntem (rayGUI state'inden bağımsız) */
+        /* Click: same pure method as ui_button (independent of rayGUI state) */
         if (CheckCollisionPointRec(GetMousePosition(), br) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             *scene = i;
         }
@@ -134,7 +134,7 @@ void ide_new_project_draw(Editor *ed, int w, int h, int font_sz, const GclIdeThe
 
     npd_sync_raygui_style(t, font_sz);
 
-    /* karartma */
+    /* dim overlay */
     DrawRectangle(0, 0, w, h, (Color){ 0, 0, 0, 200 });
 
     int fs = font_sz;
@@ -142,9 +142,9 @@ void ide_new_project_draw(Editor *ed, int w, int h, int font_sz, const GclIdeThe
     int tb_h = 30;
     int box_h = 90;
 
-    /* --- Gerçek içerik yüksekliği (font'a bağlı) ---
+    /* --- Real content height (depends on font) ---
        Title 40 + (Name lbl+6+tb+14) + (Location lbl+6+tb+14)
-       + 3 group box (box_h + aralık) + buton satırı. */
+       + 3 group boxes (box_h + spacing) + button row. */
     int content_h = 40
         + (lbl_h + 6 + tb_h + 14)     /* Name */
         + (lbl_h + 6 + tb_h + 14)     /* Location */
@@ -169,16 +169,16 @@ void ide_new_project_draw(Editor *ed, int w, int h, int font_sz, const GclIdeThe
     int cx = dx + NPD_PAD;
     int cw = NPD_W - NPD_PAD * 2;
 
-    /* --- Scroll: içerik sığmıyorsa scrollbar --- */
+    /* --- Scroll: scrollbar if the content does not fit --- */
     int content_top = dy + 40;
-    int content_bottom = dy + NPD_H - 40; /* OK/Cancel alanı */
+    int content_bottom = dy + NPD_H - 40; /* OK/Cancel area */
     int avail_h = content_bottom - content_top;
     int total_content = content_h - 40 - 8 - 30 - 8;
     int max_scroll = total_content > avail_h ? total_content - avail_h : 0;
     if (ed->new_project_scroll > max_scroll) ed->new_project_scroll = max_scroll;
     if (ed->new_project_scroll < 0) ed->new_project_scroll = 0;
 
-    /* Fare tekerleği ile kaydır */
+    /* Scroll with the mouse wheel */
     Rectangle scroll_area = { (float)cx, (float)content_top, (float)cw, (float)avail_h };
     if (CheckCollisionPointRec(GetMousePosition(), scroll_area)) {
         float mw = GetMouseWheelMove();
@@ -189,7 +189,7 @@ void ide_new_project_draw(Editor *ed, int w, int h, int font_sz, const GclIdeThe
         }
     }
 
-    /* İçerik alanı — scissor ile kırp, y offset ile kaydır */
+    /* Content area — clip with scissor, offset with y */
     BeginScissorMode(cx, content_top, cw, avail_h);
     int y = content_top - ed->new_project_scroll;
 
@@ -289,7 +289,7 @@ void ide_new_project_draw(Editor *ed, int w, int h, int font_sz, const GclIdeThe
     y += box_h + 12;
     EndScissorMode();
 
-    /* Scrollbar çiz */
+    /* Draw scrollbar */
     if (max_scroll > 0) {
         int sbw = 6;
         int sby = content_top;
@@ -302,11 +302,11 @@ void ide_new_project_draw(Editor *ed, int w, int h, int font_sz, const GclIdeThe
         DrawRectangle(cx + cw - sbw, (int)bar_y, sbw, (int)bar_h, t->accent);
     }
 
-    /* ---- OK / Cancel — her zaman görünür, panel altına sabit.
-       NOT: rayGUI'nin GuiButton'u yerine projenin kendi ui_button'u kullanılır.
-       ui_button saf raylib CheckCollisionPointRec ile tıklamayı algılar;
-       GuiButton global rayGUI state'ine bağlıdır ve bu panelde tıklamayı
-       kaçırabiliyordu. ui_button ile OK kesin tetiklenir. ---- */
+    /* ---- OK / Cancel — always visible, fixed at the bottom of the panel.
+       NOTE: the project's own ui_button is used instead of rayGUI's GuiButton.
+       ui_button detects clicks with pure raylib CheckCollisionPointRec;
+       GuiButton is tied to global rayGUI state and could miss clicks in this
+       panel. ui_button reliably triggers OK. ---- */
     int ok_w = MeasureText("OK", fs) + 24;
     int cc_w = MeasureText("Cancel", fs) + 24;
     int gap2 = 8;

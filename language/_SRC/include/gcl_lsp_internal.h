@@ -47,7 +47,7 @@ static const char *gcl_builtin_types[] = {
     NULL
 };
 
-/* Python completion disabled for now (user: "lua ve python suanda gerek yok") */
+/* Python completion disabled for now (user: "lua and python are not needed right now") */
 static const char *gcl_python_keywords[] = { NULL };
 
 /* ---- Raylib (GCL native module) ----

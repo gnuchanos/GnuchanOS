@@ -1,6 +1,6 @@
 #include "gcl_ide_internal.h"
 
-/* Güvenli sabit-boyut string kopyalama - truncation uyarılarını giderir. */
+/* Safe fixed-size string copy - eliminates truncation warnings. */
 static void copy_fixed(char *dst, size_t dstsz, const char *src) {
     if (!dst || dstsz == 0) return;
     size_t n = src ? strlen(src) : 0;
@@ -10,7 +10,7 @@ static void copy_fixed(char *dst, size_t dstsz, const char *src) {
 }
 
 /* ---------------------------------------------
-   Menü
+   Menu
    --------------------------------------------- */
 
 const char *g_menu_titles[] = { "File", "View", "Project", "Help", NULL };
@@ -47,7 +47,7 @@ void editor_run_program(Editor *ed) {
         ed->output_len = strlen(ed->output);
         return;
     }
-    /* kendi exe'ni kullan (PATH'te gcl olmayabilir) — ide.dll artık g_gcl_argv'ye erişemez */
+    /* use our own exe (gcl may not be in PATH) — ide.dll can no longer access g_gcl_argv */
     const char *self = getenv("GCL_EXE_PATH");
     if (!self || !self[0]) self = "gcl";
     const char *ext = strrchr(CURP.path, '.');
@@ -57,13 +57,13 @@ void editor_run_program(Editor *ed) {
     else mode = "-run";
     char cmd[4096];
 #ifdef _WIN32
-    /* cmd /c ""..."" 2>&1 — çıktı pipe'tan asenkron okunur */
+    /* cmd /c ""..."" 2>&1 — output is read asynchronously from the pipe */
     snprintf(cmd, sizeof(cmd), "cmd /c \"\"%s\" %s \"%s\"\" 2>&1", self, mode, CURP.path);
 #else
     snprintf(cmd, sizeof(cmd), "\"%s\" %s \"%s\" 2>&1", self, mode, CURP.path);
 #endif
-    /* Senkron popen yerine asenkron süreç: IDE kilitlenmez, IDE kapanınca süreç sonlanır.
-       Tek dosya Run için project.gclog yok → logf = NULL. */
+    /* Async process instead of synchronous popen: the IDE does not freeze, and the process
+       terminates when the IDE closes. There is no project.gclog for single-file Run -> logf = NULL. */
     gcl_ide_proc_start(ed, cmd, CURP.path, NULL);
 }
 

@@ -2,8 +2,8 @@
 #include <sys/stat.h>
 
 #ifdef _WIN32
-/* windows.h'in CloseWindow/ShowCursor fonksiyonları raylib.h ile çakışır.
-   Aynı gizleme tekniği ide_proc.c'de kullanılır. */
+/* windows.h's CloseWindow/ShowCursor functions clash with raylib.h.
+   The same hiding technique is used in ide_proc.c. */
 #ifndef NOGDI
 #define NOGDI
 #endif
@@ -20,7 +20,7 @@
 #include <process.h> /* _beginthreadex */
 #endif
 
-/* Güvenli sabit-boyut string kopyalama - truncation uyarılarını giderir. */
+/* Safe fixed-size string copy - eliminates truncation warnings. */
 static void str_copy_fixed(char *dst, size_t dstsz, const char *src) {
     if (!dst || dstsz == 0) return;
     size_t n = src ? strlen(src) : 0;
@@ -33,9 +33,9 @@ static void str_copy_fixed(char *dst, size_t dstsz, const char *src) {
    Project helpers
    --------------------------------------------- */
 
-/* Build thread — IDE build'i KENDİ İÇİNDE yapar (GUI kilitlenmesin).
-   gcb_build_project_runtime + exe kopyalama thread'de çalışır; main döngü
-   editor_build_poll ile build_output'u akıtır. */
+/* Build thread — the IDE performs the build ITSELF (so the GUI does not freeze).
+   gcb_build_project_runtime + exe copy run in the thread; the main loop
+   streams build_output via editor_build_poll. */
 #ifdef _WIN32
 static unsigned __stdcall build_thread_fn(void *arg) {
 #else
@@ -44,7 +44,7 @@ static void *build_thread_fn(void *arg) {
     Editor *ed = (Editor *)arg;
     char step[512];
 
-    snprintf(step, sizeof(step), "[Build] 1/5 Proje + runtime paketleniyor...\n");
+    snprintf(step, sizeof(step), "[Build] 1/5 Packing project + runtime...\n");
     strncpy(ed->build_step, step, sizeof(ed->build_step) - 1);
     ed->build_step[sizeof(ed->build_step) - 1] = '\0';
 
@@ -59,7 +59,7 @@ static void *build_thread_fn(void *arg) {
         return 0;
     }
 
-    snprintf(step, sizeof(step), "[Build] 2/5 Çalıştırılabilir kopyalanıyor...\n");
+    snprintf(step, sizeof(step), "[Build] 2/5 Copying executable...\n");
     strncpy(ed->build_step, step, sizeof(ed->build_step) - 1);
     ed->build_step[sizeof(ed->build_step) - 1] = '\0';
 
@@ -88,7 +88,7 @@ static void *build_thread_fn(void *arg) {
 #endif
     }
 
-    snprintf(step, sizeof(step), "[Build] 3/5 Tamamlandı.\n");
+    snprintf(step, sizeof(step), "[Build] 3/5 Done.\n");
     strncpy(ed->build_step, step, sizeof(ed->build_step) - 1);
     ed->build_step[sizeof(ed->build_step) - 1] = '\0';
     ed->build_done = 1;
@@ -128,7 +128,7 @@ void editor_build_poll(Editor *ed) {
     }
 }
 
-/* Default proje klasör/dosyası eksik mi? (IDE run/build öncesi uyarı) */
+/* Is a default project folder/file missing? (IDE run/build pre-warning) */
 static int defaults_missing(const char *base, char *missing_out, size_t outsz) {
     const char *req[] = { "scripts", "assets", "include", "external", "main.gcsf" };
     for (int i = 0; i < 5; i++) {
@@ -144,7 +144,7 @@ static int defaults_missing(const char *base, char *missing_out, size_t outsz) {
 }
 
 void project_find_gcdata(Editor *ed, char *out, size_t outsz) {
-    /* current_project > cwd içinde project.gcdata ara */
+    /* search for project.gcdata in current_project > cwd */
     const char *bases[2];
     bases[0] = ed->current_project;
     bases[1] = ed->cwd;
@@ -169,7 +169,7 @@ void editor_run_project(Editor *ed) {
     }
     char base_dir[4096];
     fs_parent_dir(gcdata, base_dir, sizeof(base_dir));
-    /* Doğru çalıştırılacak dosya main.gcsf'tir (gcdata değil!) */
+    /* The correct file to run is main.gcsf (not gcdata!) */
     char main_gcsf[8192];
     snprintf(main_gcsf, sizeof(main_gcsf), "%s/main.gcsf", base_dir);
     struct stat st;
@@ -179,7 +179,7 @@ void editor_run_project(Editor *ed) {
         ed->output_visible = 1;
         return;
     }
-    /* Default klasörler eksikse uyar */
+    /* Warn if default folders are missing */
     char miss[256] = "";
     if (defaults_missing(base_dir, miss, sizeof(miss))) {
         snprintf(ed->output, sizeof(ed->output),
@@ -188,18 +188,18 @@ void editor_run_project(Editor *ed) {
         ed->output_len = strlen(ed->output);
         ed->output_visible = 1;
     }
-    /* .gclog dosyasına da yaz — asenkron process çıktısı buraya akar.
-       gcl_ide_proc_start logf'u process'e bağlar; poll her frame'de hem
-       ed->output'a hem logf'a yazar. Böylece project.gclog boş kalmaz. */
+    /* Also write to the .gclog file — async process output flows here.
+       gcl_ide_proc_start binds logf to the process; poll writes to both
+       ed->output and logf every frame. Thus project.gclog is never empty. */
     char log_path[8192];
     snprintf(log_path, sizeof(log_path), "%s/project.gclog", base_dir);
     FILE *logf = fopen(log_path, "wb");
     if (logf) fputs("=== gcl -run ===\n", logf);
 
-    /* Project Run: standalone -run'dan farklı olarak GCL_PROJECT_DIR'i
-       PROJE KÖKÜNE zorla. Aksi halde Embed.Run alt süreçleri script yolunu
-       workspace'e göre çözer (örn. D:\GnuchanOS/scripts/main.lua — yanlış).
-       Bu env çocuk sürece miras kalır; run_gcl dışarıdan set edilmiş değeri korur. */
+    /* Project Run: unlike standalone -run, force GCL_PROJECT_DIR to the
+       PROJECT ROOT. Otherwise Embed.Run subprocesses resolve the script path
+       relative to the workspace (e.g. D:\GnuchanOS/scripts/main.lua — wrong).
+       This env is inherited by the child process; run_gcl preserves an externally set value. */
 #ifdef _WIN32
     _putenv_s("GCL_PROJECT_DIR", base_dir);
     {
@@ -223,8 +223,9 @@ void editor_run_project(Editor *ed) {
 #else
     snprintf(cmd, sizeof(cmd), "\"%s\" -run \"%s\" 2>&1", self, main_gcsf);
 #endif
-    /* Senkron popen yerine asenkron süreç: IDE kilitlenmez, IDE kapanınca süreç sonlanır.
-       logf, process'in log handle'ı olur (poll yazar, kill kapatır). */
+    /* Async process instead of synchronous popen: the IDE does not freeze, and
+       the process ends when the IDE closes. logf becomes the process's log
+       handle (poll writes, kill closes). */
     gcl_ide_proc_start(ed, cmd, main_gcsf, logf);
 }
 
@@ -236,14 +237,14 @@ void run_project_dialog(Editor *ed) {
     if (ed->new_project_path[0]) snprintf(base, sizeof(base), "%s", ed->new_project_path);
     else if (ed->current_project[0]) snprintf(base, sizeof(base), "%s", ed->current_project);
     else snprintf(base, sizeof(base), "%s", ed->cwd);
-    /* Base yolun sonundaki ayraçları temizle — sürücü kökü gibi path seçicilerden
-       gelen "D:\" artık "D:\_2" yerine "D:/_2" gibi çift ayraçlı kirli birleşimlere
-       yol açmasın. "D:\" gibi kök dizinlerde tek ayraç korunur (normalize edici
-       aşağıda). */
+    /* Strip trailing separators from the base path — so that values from path
+       pickers like a drive root "D:\" no longer lead to dirty double-separator
+       joins like "D:/_2" instead of "D:\_2". For root directories like "D:\"
+       a single separator is preserved (normalizer below). */
     {
         size_t blen = strlen(base);
         while (blen > 0 && (base[blen - 1] == '/' || base[blen - 1] == '\\')) {
-            /* "D:\" gibi sürücü kökünde tek ayraç bırak */
+            /* leave a single separator at a drive root like "D:\" */
             if (blen == 3 && base[0] && base[1] == ':' && (base[2] == '\\' || base[2] == '/')) break;
             base[--blen] = '\0';
         }
@@ -256,8 +257,8 @@ void run_project_dialog(Editor *ed) {
         return;
     }
     gcl_ensure_dir(full);
-    /* IDE KENDİ İÇİNDE proje iskeleti oluşturur — gcl -new ÇAĞIRILMAZ.
-       Dizinler + main.gcsf + project.gcdata + scripts/main.{lua,py} üretilir. */
+    /* The IDE creates the project skeleton ITSELF — gcl -new is NOT called.
+       Directories + main.gcsf + project.gcdata + scripts/main.{lua,py} are generated. */
     {
         const char *dirs[] = { "scripts", "assets", "include", "external", "out", NULL };
         for (int i = 0; dirs[i]; i++) {
@@ -282,7 +283,7 @@ void run_project_dialog(Editor *ed) {
             if (gcl_raylib) fputs("#native <Raylib>\n", mf);
 
             if (gcl_scene == 0 && !gcl_raylib && !want_embed) {
-                /* Pure Empty — sadece hello world */
+                /* Pure Empty — just hello world */
                 fputs("\nint main() {\n", mf);
                 fputs("    Stdio.printf(\"Hello, GCL!\\n\");\n", mf);
                 if (lua_on) fputs("    Embed.Run(type=\"lua\");\n", mf);
@@ -291,9 +292,9 @@ void run_project_dialog(Editor *ed) {
                 fputs("}\n", mf);
                 fclose(mf);
             } else {
-                /* GCL typedef struct kamera tanımları — raylib Camera3D/Camera2D
-                   karşılığı. Vector3/Vector2 nested struct'ları ile (kullanıcının
-                   istediği raylib imzası): camera.position.x gibi erişim çalışır. */
+                /* GCL typedef struct camera definitions — equivalent to raylib
+                   Camera3D/Camera2D. With nested Vector3/Vector2 structs (the raylib
+                   signature the user wanted): access like camera.position.x works. */
                 if (gcl_raylib && gcl_scene == 2) {
                     fputs("typedef struct {\n", mf);
                     fputs("    float x;\n", mf);
@@ -326,8 +327,8 @@ void run_project_dialog(Editor *ed) {
 
                 if (gcl_raylib) {
                     if (gcl_scene == 2) {
-                        /* GCL 3D — C-örneğine yakın: Raylib.*, compound literal,
-                           member-atama, &camera, CAMERA_FREE/CAMERA_PERSPECTIVE. */
+                        /* GCL 3D — close to the C example: Raylib.*, compound literal,
+                           member assignment, &camera, CAMERA_FREE/CAMERA_PERSPECTIVE. */
                         fputs("    Raylib.InitWindow(800, 600, \"GCL 3D Project\");\n", mf);
                         fputs("    Raylib.SetTargetFPS(60);\n", mf);
                         fputs("    const int screenWidth = 800;\n", mf);
@@ -355,10 +356,10 @@ void run_project_dialog(Editor *ed) {
                         fputs("    }\n", mf);
                         fputs("    Raylib.CloseWindow();\n", mf);
                     } else if (gcl_scene == 1) {
-                        /* GCL 2D — GERÇEK GCL typedef struct Camera2D (Vector2 nested).
-                           camera.offset.x/y, target.x/y, rotation, zoom alan alan atanır
-                           (GCL 3D ile aynı stil). Raylib.BeginMode2D(camera) struct
-                           üyelerini genişletip raylib Camera2D'ye aktarır. */
+                        /* GCL 2D — REAL GCL typedef struct Camera2D (nested Vector2).
+                           camera.offset.x/y, target.x/y, rotation, zoom are assigned field by field
+                           (same style as GCL 3D). Raylib.BeginMode2D(camera)
+                           expands the struct members and passes them to raylib Camera2D. */
                         fputs("    Raylib.InitWindow(800, 600, \"GCL 2D Project\");\n", mf);
                         fputs("    Raylib.SetTargetFPS(60);\n", mf);
                         fputs("    Camera2D camera;\n", mf);
@@ -398,9 +399,9 @@ void run_project_dialog(Editor *ed) {
         snprintf(gcdata_path, sizeof(gcdata_path), "%s/project.gcdata", full);
         FILE *gf = fopen(gcdata_path, "wb");
         if (gf) {
-            /* Lua/Python raylib: Enable açıksa Empty scene'de bile raylib
-               pencere şablonu üretilir. "Empty" = boş pencere + hello,
-               "2D"/"3D" = kamera içeren şablon. */
+            /* Lua/Python raylib: if Enable is on, a raylib window template is
+               generated even in the Empty scene. "Empty" = empty window + hello,
+               "2D"/"3D" = template with a camera. */
             int lua_raylib = ed->new_project_open_lua;
             int py_raylib = ed->new_project_open_python;
             fprintf(gf, "{\n");
@@ -430,7 +431,7 @@ void run_project_dialog(Editor *ed) {
             if (lf) {
                 /* Scene: 0=Empty, 1=2D, 2=3D */
                 if (ed->new_project_lua_scene == 2) {
-                    /* Lua 3D — gerçek Camera3D tablo nesnesi */
+                    /* Lua 3D — real Camera3D table object */
                     fputs(
                         "-- GCL Lua 3D example\n"
                         "gcl.init()\n"
@@ -459,7 +460,7 @@ void run_project_dialog(Editor *ed) {
                         "\n"
                         "raylib.CloseWindow()\n", lf);
                 } else if (ed->new_project_lua_scene == 1) {
-                    /* Lua 2D — gerçek Camera2D tablo nesnesi */
+                    /* Lua 2D — real Camera2D table object */
                     fputs(
                         "-- GCL Lua 2D example\n"
                         "gcl.init()\n"
@@ -485,7 +486,7 @@ void run_project_dialog(Editor *ed) {
                         "\n"
                         "raylib.CloseWindow()\n", lf);
                 } else {
-                    /* Lua Empty — boş pencere + hello */
+                    /* Lua Empty — empty window + hello */
                     fputs(
                         "-- GCL Lua Empty example\n"
                         "gcl.init()\n"
@@ -512,7 +513,7 @@ void run_project_dialog(Editor *ed) {
             if (pf) {
                 /* Scene: 0=Empty, 1=2D, 2=3D */
                 if (ed->new_project_python_scene == 2) {
-                    /* Python 3D — gerçek Camera3D dict nesnesi */
+                    /* Python 3D — real Camera3D dict object */
                     fputs(
                         "# GCL Python 3D example\n"
                         "import raylib\n"
@@ -543,7 +544,7 @@ void run_project_dialog(Editor *ed) {
                         "\n"
                         "raylib.CloseWindow()\n", pf);
                 } else if (ed->new_project_python_scene == 1) {
-                    /* Python 2D — gerçek Camera2D dict nesnesi */
+                    /* Python 2D — real Camera2D dict object */
                     fputs(
                         "# GCL Python 2D example\n"
                         "import raylib\n"
@@ -571,7 +572,7 @@ void run_project_dialog(Editor *ed) {
                         "\n"
                         "raylib.CloseWindow()\n", pf);
                 } else {
-                    /* Python Empty — boş pencere + hello */
+                    /* Python Empty — empty window + hello */
                     fputs(
                         "# GCL Python Empty example\n"
                         "import raylib\n"
@@ -594,7 +595,7 @@ void run_project_dialog(Editor *ed) {
             }
         }
     }
-    /* Yeni projeyi aç */
+    /* Open the new project */
     str_copy_fixed(ed->new_project_path, sizeof(ed->new_project_path), base);
     str_copy_fixed(ed->current_project, sizeof(ed->current_project), full);
     str_copy_fixed(ed->cwd, sizeof(ed->cwd), full);
@@ -624,7 +625,7 @@ void editor_build_project(Editor *ed) {
     }
     char base_dir[4096];
     fs_parent_dir(gcdata, base_dir, sizeof(base_dir));
-    /* Default klasörler eksikse uyar */
+    /* Warn if default folders are missing */
     char miss[256] = "";
     if (defaults_missing(base_dir, miss, sizeof(miss))) {
         snprintf(ed->output, sizeof(ed->output),
@@ -634,7 +635,7 @@ void editor_build_project(Editor *ed) {
         ed->output_visible = 1;
     }
 
-    /* project.gcdata'dan proje adını al (JSON: "project_name": "X") */
+    /* Read the project name from project.gcdata (JSON: "project_name": "X") */
     char name[256] = "project";
     FILE *gf = fopen(gcdata, "rb");
     if (gf) {
@@ -659,7 +660,7 @@ void editor_build_project(Editor *ed) {
         }
     }
 
-    /* çıktı dizini — HER ZAMAN proje kökündeki out/ klasörü (simple_doc.md: out/) */
+    /* output dir — ALWAYS the out/ folder at the project root (simple_doc.md: out/) */
     char out_dir[2048];
     snprintf(out_dir, sizeof(out_dir), "%s/out", base_dir);
     {
@@ -669,7 +670,7 @@ void editor_build_project(Editor *ed) {
     }
     gcl_ensure_dir(out_dir);
 
-    /* runtime dizini = GCL_EXE_PATH'ın parent'ı (build/<os>/) */
+    /* runtime dir = parent of GCL_EXE_PATH (build/<os>/) */
     char runtime_dir[4096] = "";
     const char *gcl_exe = getenv("GCL_EXE_PATH");
     if (gcl_exe && gcl_exe[0]) {
@@ -680,13 +681,13 @@ void editor_build_project(Editor *ed) {
     }
     if (!runtime_dir[0]) snprintf(runtime_dir, sizeof(runtime_dir), ".");
 
-    /* .gclog — build çıktısı buraya da yazılır */
+    /* .gclog — build output is also written here */
     char log_path[8192];
     snprintf(log_path, sizeof(log_path), "%s/project.gclog", base_dir);
     FILE *logf = fopen(log_path, "wb");
     if (logf) fputs("=== Build started ===\n", logf);
 
-    /* Thread için alanları doldur (build_thread_fn kullanır) */
+    /* Fill the fields for the thread (used by build_thread_fn) */
     str_copy_fixed(ed->build_base_dir, sizeof(ed->build_base_dir), base_dir);
     str_copy_fixed(ed->build_runtime_dir, sizeof(ed->build_runtime_dir), runtime_dir);
     str_copy_fixed(ed->build_name, sizeof(ed->build_name), name);
@@ -702,8 +703,8 @@ void editor_build_project(Editor *ed) {
     ed->output_len = strlen(ed->output);
     ed->output_visible = 1;
 
-    /* IDE KENDİ build'ini thread'de yapar — dış süreç (gcl.exe -build) YOK.
-       GUI kilitlenmez; main döngü editor_build_poll ile adımları akıtır. */
+    /* The IDE performs its OWN build in the thread — no external process (gcl.exe -build).
+       The GUI does not freeze; the main loop streams the steps via editor_build_poll. */
 #ifdef _WIN32
     _beginthreadex(NULL, 0, build_thread_fn, ed, 0, NULL);
 #else

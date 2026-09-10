@@ -17,10 +17,21 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include <stdarg.h>
 
 /* -debug bayrağı: gcl -debug -run ... ile etkinleşir (gcl_main.c set eder).
    Normal çalıştırmada runtime debug mesajları GÖRÜNMEZ. */
 int gcl_debug = 0;
+
+/* Tek debug kapısı: runtime debug/izleme çıktısının TAMAMI buradan geçer.
+   `gcl -debug -run ...` verilmedikçe hiçbir debug satırı yazılmaz. */
+static void gcl_debugf(const char *fmt, ...) {
+    if (!gcl_debug) return;
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+}
 
 #ifdef _WIN32
 #include <windows.h>

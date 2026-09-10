@@ -2,29 +2,29 @@
 #native <Stdio>
 
 int main() {
-    /* Lua ve Python AI pong yarışması.
-       Her biri kendi raylib penceresini açar; top state'i
-       shared memory üzerinden paylaşılır (Embed.GetValue/SendValue). */
+    /* Lua and Python AI Pong competition.
+       Each opens its own raylib window; the ball state
+       is shared via shared memory (Embed.GetValue/SendValue). */
 
-    /* Sadece top durumu paylaşılır (shared memory). Paddle ve skor local. */
-    /* Dünya 1600x600: sol pencere 0-800 (Lua), sağ pencere 800-1600 (Python).
-       Top ortadan (800) başlar. */
+    /* Only the ball state is shared (shared memory). Paddle and score are local. */
+    /* World 1600x600: left window 0-800 (Lua), right window 800-1600 (Python).
+       The ball starts in the center (800). */
     Embed.SendValue(type="python", value="ball_x", 800.0);
     Embed.SendValue(type="python", value="ball_y", 300.0);
     Embed.SendValue(type="python", value="ball_vx", 4.0);
     Embed.SendValue(type="python", value="ball_vy", 2.0);
 
-    /* İki pencereyi başlat: önce Lua (sol taraf), sonra Python (sağ taraf).
-       Embed.Run aynı türden 1 süreç kısıtı var: python + lua birlikte çalışır. */
-    Stdio.printf("Pong: Lua vs Python başlatılıyor...\n");
+    /* Start both windows: first Lua (left side), then Python (right side).
+       Embed.Run has a 1-process limit for the same type: python + lua can run together. */
+    Stdio.printf("Starting Pong: Lua vs Python...\n");
 
     Embed.Run(type="lua");
     Embed.Run(type="python");
 
-    /* Her iki pencere kapanana kadar bekle (Embed.Stop child süreçleri bekletir). */
+    /* Wait until both windows are closed (Embed.Stop waits for child processes). */
     Embed.Stop(type="lua");
     Embed.Stop(type="python");
 
-    Stdio.printf("Pong pencereleri kapatıldı.\n");
+    Stdio.printf("Pong windows closed.\n");
     return 0;
 }

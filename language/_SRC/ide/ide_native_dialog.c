@@ -1,8 +1,8 @@
 /*
  * ide_native_dialog.c — Windows native file open/save dialog + folder picker.
  *
- * Windows.h, raylib'in Rectangle/CloseWindow/DrawText isimleriyle çakıştığı için
- * bu dosya AYRI translation unit'tedir. ide_main.c sadece extern prototip kullanır.
+ * Because windows.h clashes with raylib's Rectangle/CloseWindow/DrawText names,
+ * this file is a SEPARATE translation unit. ide_main.c only uses an extern prototype.
  */
 
 #ifdef _WIN32
@@ -70,10 +70,10 @@ char *gcl_ide_native_dialog_folder(char *out, size_t outsz) {
 #include <stdlib.h>
 #include <string.h>
 
-/* Linux / WSL: native file dialog YOK. Zenity (GNOME) veya kdialog (KDE) ile
-   gerçek bir GTK/KDE dialog açılır. İkisi de yoksa PATH tabanlı basit bir
-   dosya seçici (ls + gir) kullanılır. Böylece "Open Project"/"Browse" butonları
-   Linux'ta da gerçekten çalışır — WSL'de zenity kuruluysa X11 üzerinden açılır. */
+/* Linux / WSL: no native file dialog. Zenity (GNOME) or kdialog (KDE) opens a
+   real GTK/KDE dialog. If neither exists, a simple PATH-based file picker
+   (ls + enter) is used. This way the "Open Project"/"Browse" buttons
+   actually work on Linux too — in WSL, if zenity is installed it opens via X11. */
 
 static char *run_capture(const char *cmd) {
     FILE *p = popen(cmd, "r");
@@ -92,7 +92,7 @@ static char *run_capture(const char *cmd) {
     }
     if (buf) buf[len] = '\0';
     pclose(p);
-    /* çıktıdaki son newline'ı kırp */
+    /* trim the trailing newline in the output */
     if (buf) {
         size_t l = strlen(buf);
         while (l > 0 && (buf[l-1] == '\n' || buf[l-1] == '\r')) buf[--l] = '\0';
@@ -134,7 +134,7 @@ char *gcl_ide_native_dialog(int save, const char *initial_dir) {
         if (r && r[0]) return r;
         free(r);
     }
-    /* Fallback: printf'li basit metin dosya yolu seçici */
+    /* Fallback: simple text file path picker using printf */
     fprintf(stderr, "No zenity/kdialog found. Enter a file path (or leave empty to cancel): ");
     fflush(stderr);
     char line[4096];

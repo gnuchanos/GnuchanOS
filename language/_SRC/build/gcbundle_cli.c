@@ -12,6 +12,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <io.h>      /* _setmode, _fileno */
+#include <fcntl.h>   /* _O_BINARY */
+#endif
+
 static void print_usage(void) {
     fprintf(stderr,
         "usage:\n"
@@ -46,6 +51,11 @@ int main(int argc, char **argv) {
         uint32_t size = 0;
         const void *data = gcb_read_path(b, argv[3], &size);
         if (!data) { fprintf(stderr, "gcb error: %s\n", gcb_last_error()); gcb_close(b); return 1; }
+#ifdef _WIN32
+        /* Windows'ta stdout varsayılan olarak METİN modundadır: '\n' → "\r\n"
+           dönüşür ve 0x1A (EOF) baytı işlenir — binary çıktıyı BOZAR. Moda al. */
+        _setmode(_fileno(stdout), _O_BINARY);
+#endif
         fwrite(data, 1, size, stdout);
         gcb_close(b);
         return 0;

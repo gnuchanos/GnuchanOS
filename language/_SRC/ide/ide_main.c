@@ -1,7 +1,7 @@
 #include "gcl_ide_internal.h"
 
-/* Tamamlama seçili elemanı için imza/detay penceresi çizer.
-   VSCode signature-help benzeri: ad(parametreler) + detay. Uzun imzayı sarar. */
+/* Draws the signature/detail window for the selected completion item.
+   VSCode signature-help style: name(parameters) + detail. Wraps long signatures. */
 static void draw_completion_signature(const LspSymbol *s, int px, int py, int pw,
                                       int efont, const GclIdeTheme *t, int *out_h) {
     if (!s || !s->name) { if (out_h) *out_h = 0; return; }
@@ -26,7 +26,7 @@ static void draw_completion_signature(const LspSymbol *s, int px, int py, int pw
         while (idx < slen && taken < max_chars) {
             lines[nlines][taken++] = sig[idx++];
         }
-        /* kelime ortasında kesme — ayraç/boşluk bulana kadar geri al */
+        /* do not cut mid-word — back up until a separator/space is found */
         if (idx < slen) {
             while (taken > 1 && lines[nlines][taken-1] != ' ' && lines[nlines][taken-1] != ','
                    && lines[nlines][taken-1] != '(' && lines[nlines][taken-1] != ')') {
@@ -46,9 +46,10 @@ static void draw_completion_signature(const LspSymbol *s, int px, int py, int pw
     DrawRectangle(px, py, pw, h, t->popup_bg);
     DrawRectangleLinesEx((Rectangle){ (float)px, (float)py, (float)pw, (float)h }, 1.0f, t->accent);
 
-    /* Parametre vurgusu: fonksiyon adı (s->name) normal, parametreler ve parantez
-       vurgulu (t->accent) çizilir. Uzun imza satırlara bölünürken hangi karakterin
-       parametreye denk geldiğini line_offsets ile takip ederiz. */
+    /* Parameter highlighting: the function name (s->name) is drawn normally,
+       while parameters and parentheses are highlighted (t->accent). When a long
+       signature is split into lines, we track which character corresponds to a
+       parameter via line_offsets. */
     size_t name_len = strlen(s->name);
     int y = py + 4;
     for (int i = 0; i < nlines; i++) {
@@ -57,11 +58,11 @@ static void draw_completion_signature(const LspSymbol *s, int px, int py, int pw
         size_t name_end_in_line = (name_len > lo) ? name_len - lo : 0;
         char part[256];
         if (name_end_in_line < ll) {
-            /* ad kısmı */
+            /* name part */
             memcpy(part, lines[i], name_end_in_line);
             part[name_end_in_line] = '\0';
             if (part[0]) DrawText(part, px + 8, y, efont - 1, t->accent);
-            /* parametre kısmı */
+            /* parameter part */
             DrawText(lines[i] + name_end_in_line, px + 8 + MeasureText(part, efont - 1), y,
                      efont - 1, t->text);
         } else {
@@ -84,7 +85,7 @@ int gcl_ide_run(const char *path) {
     ed.settings_theme = ed.settings.theme_index;
     ed.theme = gcl_ide_theme_get(ed.settings.theme_index);
 
-    /* efekt/ayar kopyaları */
+    /* effect/setting copies */
     ed.syntax_highlight = ed.settings.syntax_highlight;
     ed.vhs = ed.settings.vhs;
     ed.crt = ed.settings.crt;
@@ -103,7 +104,7 @@ int gcl_ide_run(const char *path) {
     ed.editor_font = ed.settings.font_size;
     g_line_h = ed.editor_font + 2;
 
-    /* efekt başlangıç değerleri (ridiculous_coding: ease-out shake + pitch typewriter) */
+    /* effect initial values (ridiculous_coding: ease-out shake + pitch typewriter) */
     ed.sound_pitch = 1.0f;
     ed.pitch_increase = 0.0f;
     ed.shake_remaining = 0.0f;
@@ -163,7 +164,7 @@ int gcl_ide_run(const char *path) {
     ed.output[0] = '\0';
     ed.output_len = 0;
     ed.output_visible = 0;
-    ed.output_scroll = 0;  /* 0 = en alt (follow); pozitif = yukarı kaydırılmış satır sayısı */
+    ed.output_scroll = 0;  /* 0 = bottom (follow); positive = number of lines scrolled up */
     ed.running = 0;
 
 #ifndef _WIN32
@@ -174,7 +175,7 @@ int gcl_ide_run(const char *path) {
 
     gcl_ide_buffer_init(&ed.blank_tab);
     if (path && path[0]) {
-        /* Doc: gcl -ide D:\path → dizin workspace olarak açılır, dosya tab olarak yüklenir. */
+        /* Doc: gcl -ide D:\path -> directory opens as the workspace, file loads as a tab. */
         if (fs_is_dir(path)) {
             snprintf(ed.cwd, sizeof(ed.cwd), "%s", path);
             ed.tab_count = 0;
@@ -202,13 +203,15 @@ int gcl_ide_run(const char *path) {
     }
 
     /* GNU FreeFont - FreeMono.ttf (monospace, SIL OFL 1.1 license).
-       Byte array olarak gömüldü; LoadFontFromMemory dosya yolu sorununu kökten çözer.
-       Texture filtresi BILINEAR: zoom out'ta (16px→8px) pikselleşme yerine yumuşak
-       (yumuşatılmış) metin çizilir. Varsayılan POINT filtre küçük boyutta berbat görünüm verir. */
+       Embedded as a byte array; LoadFontFromMemory eliminates the file path problem
+       at its root. Texture filter BILINEAR: on zoom out (16px->8px) text is drawn
+       smooth (antialiased) instead of pixelated. The default POINT filter looks
+       terrible at small sizes. */
     {
-        /* Font texture'ı YÜKSEK çözünürlükte (48px) üretilir; DrawTextEx(fontSize) ile
-           8-32px arası ölçeklenirken BILINEAR filtre sayesinde zoom out'ta yumuşak,
-           zoom in'de net görünür. Küçük (16px) texture'a ölçeklemek pikselleşmeyi artırırdı. */
+        /* The font texture is generated at HIGH resolution (48px); when scaled to
+           8-32px via DrawTextEx(fontSize), the BILINEAR filter makes it smooth on
+           zoom out and sharp on zoom in. Scaling down to a small (16px) texture
+           would increase pixelation. */
         int tf = 48;
         Font f = LoadFontFromMemory(".ttf", gcl_embed_freemono_ttf,
                                     (int)gcl_embed_freemono_ttf_size, tf, NULL, 0);
@@ -223,7 +226,7 @@ int gcl_ide_run(const char *path) {
         const unsigned int rate = 22050;
         const unsigned int samples = rate * 60 / 1000;
 
-        /* Normal daktilo tık sesi (yazma karakter) */
+        /* Normal typewriter click sound (typing a character) */
         short *buf = (short *)malloc(sizeof(short) * samples);
         if (buf) {
             for (unsigned int i = 0; i < samples; i++) {
@@ -245,7 +248,7 @@ int gcl_ide_run(const char *path) {
             free(buf);
         }
 
-        /* Enter: güçlü düşük patlama (60Hz + sub) */
+        /* Enter: strong low thud (60Hz + sub) */
         short *ebuf = (short *)malloc(sizeof(short) * samples);
         if (ebuf) {
             for (unsigned int i = 0; i < samples; i++) {
@@ -268,7 +271,7 @@ int gcl_ide_run(const char *path) {
             free(ebuf);
         }
 
-        /* Delete/Backspace: farklı, daha tiz patlama (chirp 200→600Hz) */
+        /* Delete/Backspace: different, higher-pitched pop (chirp 200->600Hz) */
         short *dbuf = (short *)malloc(sizeof(short) * samples);
         if (dbuf) {
             for (unsigned int i = 0; i < samples; i++) {
@@ -293,10 +296,10 @@ int gcl_ide_run(const char *path) {
     }
 
     while (!WindowShouldClose() && !ed.quit) {
-        /* Her frame'de çalışan dış sürecin çıktısını topla (asenkron run) */
+        /* Collect output of the externally running process each frame (async run) */
         gcl_ide_proc_poll(&ed);
 
-        /* Build thread'i poll et — GUI kilitlenmeden build adımları akar */
+        /* Poll the build thread — build steps flow without freezing the GUI */
         editor_build_poll(&ed);
         int w = GetScreenWidth();
         int h = GetScreenHeight();
@@ -318,7 +321,7 @@ int gcl_ide_run(const char *path) {
 
         bool blocked = ed.settings_open || ed.name_dialog_open || ed.folder_picker_open || ed.project_dialog_open || ed.about || ed.menu_open || ed.help_open || ed.warning_open;
 
-        /* sidebar boyutlandırma (sağ kenardan sürüklenebilir) */
+        /* sidebar resizing (draggable from the right edge) */
         if (ed.sidebar_visible && !blocked) {
             Vector2 mp = GetMousePosition();
             Rectangle handle = { (float)(ed.sidebar_width - 4), (float)content_top + TAB_H, 8, (float)(h - content_top - TAB_H - STATUS_H) };
@@ -329,9 +332,9 @@ int gcl_ide_run(const char *path) {
             }
         }
 
-        /* periyodik explorer yenileme — modal/name_dialog açıkken çalışma (GUI kilitlenmesin).
-           tree_rescan senkron I/O yapar; büyük dizinde her 1 sn'de bir bloklayıcı olur.
-           Modal açıkken (blocked) çağırmak "hiçbir şeye tıklanamıyor" durumuna yol açar. */
+        /* periodic explorer refresh — do not run while modal/name_dialog is open (avoid GUI freeze).
+           tree_rescan performs synchronous I/O; in a large directory it blocks once per second.
+           Calling it while a modal is open (blocked) causes a "nothing can be clicked" state. */
         if (!blocked && (GetTime() - ed.last_tree_scan) > 1.0) {
             ed.last_tree_scan = GetTime();
             tree_rescan(&ed);
@@ -360,16 +363,16 @@ int gcl_ide_run(const char *path) {
         } else {
             editor_process_typing(&ed, ctrl, shift);
 
-            /* Faz 4: debounce — yazma durduktan 200ms sonra otomatik tamamlama açılır.
-               editor_process_typing yalnızca completion_debounce_until'ü set eder;
-               burada süre dolduysa pencereyi açar. Ctrl+Space hâlâ anında zorlar. */
+            /* Phase 4: debounce — auto-completion opens 200ms after typing stops.
+               editor_process_typing only sets completion_debounce_until;
+               here we open the window if the time has elapsed. Ctrl+Space still forces it instantly. */
             if (!ed.completion_visible && ed.completion_debounce_until > 0.0 &&
                 GetTime() >= ed.completion_debounce_until) {
                 ed.completion_debounce_until = 0.0;
                 editor_show_completion(&ed);
             }
 
-            /* Ctrl+MouseWheel zoom (sadece kod editörü) */
+            /* Ctrl+MouseWheel zoom (code editor only) */
             if (ctrl) {
                 float mw = GetMouseWheelMove();
                 if (mw != 0) {
@@ -379,7 +382,7 @@ int gcl_ide_run(const char *path) {
                     g_line_h = ed.editor_font + 2;
                 }
             } else if (shift) {
-                /* Shift+MouseWheel yatay kaydırma */
+                /* Shift+MouseWheel horizontal scroll */
                 float mw = GetMouseWheelMove();
                 if (mw != 0) {
                     int step_chars = 8;
@@ -390,10 +393,10 @@ int gcl_ide_run(const char *path) {
                     }
                 }
             } else {
-                /* Normal MouseWheel: dikey kaydırma (imleç değil, scroll_y değişir). */
+                /* Normal MouseWheel: vertical scroll (scroll_y changes, not the cursor). */
                 float mw = GetMouseWheelMove();
                 if (mw != 0) {
-                    /* Fare output panel üzerindeyken output'u kaydır */
+                    /* When the mouse is over the output panel, scroll the output */
                     if (ed.output_visible && CheckCollisionPointRec(GetMousePosition(), output_rect)) {
                         int out_line_h = ed.editor_font + 2;
                         int out_vis = (int)((output_rect.height - 28) / out_line_h);
@@ -407,10 +410,10 @@ int gcl_ide_run(const char *path) {
                         }
                         int max_out = total_out > out_vis ? total_out - out_vis : 0;
                         if (mw > 0) {
-                            /* yukarı kaydır — bottom-relative: artır */
+                            /* scroll up — bottom-relative: increase */
                             if (ed.output_scroll < max_out) ed.output_scroll++;
                         } else {
-                            /* aşağı kaydır — bottom-relative: azalt */
+                            /* scroll down — bottom-relative: decrease */
                             if (ed.output_scroll > 0) ed.output_scroll--;
                         }
                     } else {
@@ -481,14 +484,14 @@ int gcl_ide_run(const char *path) {
             }
             if (shift && IsKeyPressed(KEY_SPACE)) ed.sidebar_visible = !ed.sidebar_visible;
 
-            /* Run: F5 veya Ctrl+R */
+            /* Run: F5 or Ctrl+R */
             if (IsKeyPressed(KEY_F5) || (ctrl && IsKeyPressed(KEY_R))) editor_run_program(&ed);
 
             /* Undo: Ctrl+Z  Redo: Ctrl+Y */
             if (ctrl && IsKeyPressed(KEY_Z)) gcl_ide_buffer_undo(&CUR);
             if (ctrl && IsKeyPressed(KEY_Y)) gcl_ide_buffer_redo(&CUR);
 
-            /* Ctrl+Space: otomatik tamamlama penceresini ZORLA aç */
+            /* Ctrl+Space: FORCE the auto-completion window open */
             if (ctrl && IsKeyPressed(KEY_SPACE)) {
                 editor_show_completion(&ed);
             }
@@ -496,23 +499,23 @@ int gcl_ide_run(const char *path) {
             if (!(ed.completion_visible && (ed.completion_count > 0 || ed.completion_no_match))) {
                 if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
                     gcl_ide_buffer_insert_newline(&CUR); ed.sel_anchor = CUR.cursor;
-                    if (ed.typewriter) editor_typewriter_sound(&ed, 1); /* Enter: güçlü patlama */
+                    if (ed.typewriter) editor_typewriter_sound(&ed, 1); /* Enter: strong thud */
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
                 }
                 if (IsKeyPressed(KEY_TAB)) { for (int i=0;i<4;i++) gcl_ide_buffer_insert_char(&CUR,' '); ed.sel_anchor = CUR.cursor; }
                 if (IsKeyPressed(KEY_BACKSPACE)) {
                     if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); ed.sel_anchor=CUR.cursor; }
                     else { gcl_ide_buffer_backspace(&CUR); ed.sel_anchor = CUR.cursor; }
-                    if (ed.typewriter) editor_typewriter_sound(&ed, 2); /* Backspace: tiz patlama */
+                    if (ed.typewriter) editor_typewriter_sound(&ed, 2); /* Backspace: high-pitched pop */
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
                 }
                 if (IsKeyPressed(KEY_DELETE)) {
                     if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); ed.sel_anchor=CUR.cursor; }
                     else { gcl_ide_buffer_delete(&CUR); }
-                    if (ed.typewriter) editor_typewriter_sound(&ed, 2); /* Delete: tiz patlama */
+                    if (ed.typewriter) editor_typewriter_sound(&ed, 2); /* Delete: high-pitched pop */
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
                 }
-                /* Ok tuşları: basılı tutma desteği (key repeat). */
+                /* Arrow keys: hold-to-repeat support (key repeat). */
                 int nav_key = 0;
                 if (IsKeyPressed(KEY_LEFT) || IsKeyDown(KEY_LEFT)) nav_key = KEY_LEFT;
                 else if (IsKeyPressed(KEY_RIGHT) || IsKeyDown(KEY_RIGHT)) nav_key = KEY_RIGHT;
@@ -528,13 +531,13 @@ int gcl_ide_run(const char *path) {
                         else if (nav_key == KEY_RIGHT) { gcl_ide_buffer_cursor_right(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
                         else if (nav_key == KEY_UP) { gcl_ide_buffer_cursor_up(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
                         else if (nav_key == KEY_DOWN) { gcl_ide_buffer_cursor_down(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                        ed.nav_repeat_time = now_t + 0.40;  /* 400ms sonra tekrar başla */
+                        ed.nav_repeat_time = now_t + 0.40;  /* start repeating after 400ms */
                     } else if (now_t >= ed.nav_repeat_time) {
                         if (nav_key == KEY_LEFT) { gcl_ide_buffer_cursor_left(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
                         else if (nav_key == KEY_RIGHT) { gcl_ide_buffer_cursor_right(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
                         else if (nav_key == KEY_UP) { gcl_ide_buffer_cursor_up(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
                         else if (nav_key == KEY_DOWN) { gcl_ide_buffer_cursor_down(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                        ed.nav_repeat_time = now_t + 0.03;  /* ~30ms hız */
+                        ed.nav_repeat_time = now_t + 0.03;  /* ~30ms rate */
                     }
                 } else {
                     ed.nav_repeat_key = 0;
@@ -545,7 +548,7 @@ int gcl_ide_run(const char *path) {
                 if (IsKeyPressed(KEY_PAGE_UP)) { for (int i=0;i<20;i++) gcl_ide_buffer_cursor_up(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
                 if (IsKeyPressed(KEY_PAGE_DOWN)) { for (int i=0;i<20;i++) gcl_ide_buffer_cursor_down(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
             } else {
-                /* otomatik tamamlama navigasyonu */
+                /* auto-completion navigation */
                 if (ctrl && IsKeyPressed(KEY_SPACE)) editor_show_completion(&ed);
                 if (IsKeyPressed(KEY_UP)) { if (ed.completion_selected > 0) ed.completion_selected--; }
                 if (IsKeyPressed(KEY_DOWN)) { if (ed.completion_selected < ed.completion_count - 1) ed.completion_selected++; }
@@ -577,14 +580,14 @@ int gcl_ide_run(const char *path) {
                     else fs_copy_file(src, dst);
                 }
                 UnloadDroppedFiles(fpl);
-                ed.last_tree_scan = 0;  /* geciktirilmiş tarama */
+                ed.last_tree_scan = 0;  /* deferred rescan */
             }
         }
 
         /* ---- draw ---- */
         BeginDrawing();
 
-        /* screen shake — ease-out (ridiculous_coding): kalan süreyle genlik düşer */
+        /* screen shake — ease-out (ridiculous_coding): amplitude decreases with remaining time */
         if (ed.screen_shake && ed.shake_remaining > 0.0f) {
             float t = ed.shake_remaining / (ed.shake_duration > 0.0f ? ed.shake_duration : 1.0f);
             float mag = ed.shake_intensity * t * t; /* ease-out quadratic */
@@ -594,7 +597,7 @@ int gcl_ide_run(const char *path) {
             rlTranslatef(ed.shake_x, ed.shake_y, 0.0f);
         }
 
-        /* menü bar */
+        /* menu bar */
         DrawRectangleRec(menu_rect, t.menu_bg);
         {
             float mx0 = 8;
@@ -609,7 +612,7 @@ int gcl_ide_run(const char *path) {
                 }
                 mx0 += tw + 20;
             }
-            /* proje adı top-right */
+            /* project name top-right */
             if (ed.current_project[0]) {
                 const char *pname = path_basename(ed.current_project);
                 int pw = MeasureText(pname, font_sz);
@@ -646,7 +649,7 @@ int gcl_ide_run(const char *path) {
             }
             EndScissorMode();
 
-            /* tree click handling - context menu açıkken çalışmaz */
+            /* tree click handling - does not run while the context menu is open */
             if (!blocked && !ed.ctx_open) {
                 if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
                     Vector2 mp = GetMousePosition();
@@ -659,7 +662,7 @@ int gcl_ide_run(const char *path) {
                                 if (node->is_dir) {
                                     if (is_expanded(&ed, node->path)) set_expanded(&ed, node->path, 0);
                                     else set_expanded(&ed, node->path, 1);
-                                    ed.last_tree_scan = 0;  /* geciktirilmiş tarama */
+                                    ed.last_tree_scan = 0;  /* deferred rescan */
                                 } else {
                                     tab_add(&ed, node->path);
                                 }
@@ -705,9 +708,9 @@ int gcl_ide_run(const char *path) {
             }
         }
 
-        /* tab bar - editor alanının üstünde; menü popup açıkken tıklamaları yok say.
-           Modal (settings, build, project vb.) açıkken tıklamalar yutulur — aksi halde
-           settings dialogunun üstüne denk gelen tıklama alttaki tab butonunu da tetikler. */
+        /* tab bar - above the editor area; ignore clicks while a menu popup is open.
+           While a modal (settings, build, project, etc.) is open, clicks are swallowed —
+           otherwise a click landing on the settings dialog also triggers the tab button underneath. */
         DrawRectangleRec(tabbar_rect, t.menu_bg);
         if (!ed.menu_open && !blocked) {
             float tx = tabbar_rect.x + 6;
@@ -740,9 +743,10 @@ int gcl_ide_run(const char *path) {
         if (fcw < 1.0f) fcw = 1.0f;
         int cw = (int)(fcw + 0.5f);
         if (cw < 1) cw = 1;
-        /* cursor X görünürlük: imleç ekran dışına çıkınca yatay kaydır.
-           ccol_t artık UTF-8 KARAKTER sayısı; scroll_x da karakter sayısı olarak tutulur.
-           Böylece bayt/karakter uyumsuzluğu "cursor burada görünüyor ama yazı oraya" hissini yok eder. */
+        /* cursor X visibility: scroll horizontally when the cursor goes off-screen.
+           ccol_t is now a UTF-8 CHARACTER count; scroll_x is also kept as a character count.
+           This eliminates the byte/character mismatch that gives the feeling of
+           "the cursor is here but the text goes there". */
         {
             size_t ccol_t = gcl_ide_buffer_cursor_in_line_chars(&CUR);
             int view_chars = ((int)editor_rect.width - GUTTER_W - 8) / cw;
@@ -750,9 +754,9 @@ int gcl_ide_run(const char *path) {
             if ((int)ccol_t < (int)CUR.scroll_x) CUR.scroll_x = ccol_t;
             else if ((int)ccol_t >= (int)CUR.scroll_x + view_chars) CUR.scroll_x = (int)ccol_t - view_chars + 1;
         }
-        /* cursor Y görünürlük: imleç ekran dışına çıkınca dikey kaydır (scroll_y cursor'ı takip eder).
-           Yalnızca imleç GERÇEKTEN değiştiyse çalışır (klik, yazma, ok tuşu). Fare tekerleği
-           imleci değiştirmediği için manuel scroll korunur ve "aşağı inince yukarı atma" olmaz. */
+        /* cursor Y visibility: scroll vertically when the cursor goes off-screen (scroll_y follows the cursor).
+           Runs only when the cursor ACTUALLY changed (click, typing, arrow key). The mouse wheel
+           does not change the cursor, so manual scroll is preserved and it does not "jump up when scrolling down". */
         if (CUR.cursor != ed.last_cursor) {
             size_t cline_t = gcl_ide_buffer_line_of_cursor(&CUR);
             size_t vis = (size_t)((editor_rect.height - 8) / LINE_H);
@@ -761,9 +765,9 @@ int gcl_ide_run(const char *path) {
             else if (cline_t >= CUR.scroll_y + vis) CUR.scroll_y = cline_t - vis + 1;
         }
         ed.last_cursor = CUR.cursor;
-        /* Yatay kaydırma offset'i: CUR.scroll_x UTF-8 KARAKTER sayısı.
-           Çizim monospace sabit adım (cw) kullanıyor — sx = cw * scroll_x (float).
-           Böylece ölçüm/çizim birebir eşleşir, `,` vb. sembollerde kümülatif kayma yok. */
+        /* Horizontal scroll offset: CUR.scroll_x is a UTF-8 CHARACTER count.
+           Drawing uses a fixed monospace step (cw) — sx = cw * scroll_x (float).
+           Thus measurement/drawing match exactly, with no cumulative drift on symbols like `,`. */
         float sx_f = fcw * (float)CUR.scroll_x;
         int sx = (int)(sx_f + 0.5f);
         DrawRectangleRec(editor_rect, t.bg);
@@ -819,15 +823,15 @@ int gcl_ide_run(const char *path) {
             if (l >= sizeof(linebuf)) l = sizeof(linebuf) - 1;
             memcpy(linebuf, line, l); linebuf[l] = '\0';
             if (ed.syntax_highlight) {
-                /* chunk çizimi: FLOAT akümülatör. `,` gibi her sembol ayrı chunk olduğunda
-                   px += MeasureText(chunk) int yuvarlaması kümülatif hata biriktirir ve
-                   imleç/metin ayrışır. gcl_measure_text_f ile gerçek float genişlik toplamı
-                   DrawTextEx'in çizim konumuyla birebir eşleşir. */
+                /* chunk drawing: FLOAT accumulator. When every symbol like `,` is a separate chunk,
+                   px += MeasureText(chunk) integer rounding accumulates cumulative error and
+                   the cursor/text diverge. Summing real float widths with gcl_measure_text_f
+                   matches DrawTextEx's drawing position exactly. */
                 float px = (float)editor_rect.x + GUTTER_W - (float)sx;
                 size_t pos = 0;
                 while (pos < l) {
                     size_t tl = 0;
-                    /* Aktif dosyanın uzantısına göre dil belirle: .py → python, .lua → lua, diğer → gcl */
+                    /* Determine the language by the active file's extension: .py -> python, .lua -> lua, else -> gcl */
                     const char *ext = CUR.path ? strrchr(CUR.path, '.') : NULL;
                     const char *hl_lang = "gcl";
                     if (ext && strcmp(ext, ".py") == 0) hl_lang = "python";
@@ -867,7 +871,7 @@ int gcl_ide_run(const char *path) {
         }
         EndScissorMode();
 
-        /* editor mouse - modal/ctx açıkken çalışmaz */
+        /* editor mouse - does not run while modal/ctx is open */
         if (!blocked) {
             Vector2 mp = GetMousePosition();
             Rectangle inner = { editor_rect.x + GUTTER_W, editor_rect.y + 4, editor_rect.width - GUTTER_W, editor_rect.height - 8 };
@@ -878,9 +882,9 @@ int gcl_ide_run(const char *path) {
                         size_t l = 0;
                         const char *line_p = gcl_ide_buffer_line_at(&CUR, (size_t)line, &l);
                         size_t off = (size_t)(line_p - CUR.content);
-                        /* UTF-8 güvenli tıklama: karakter bazlı ilerle, çok baytlı karakterlerin
-                           ortasına değil tam başına/sonuna konumlan. Bayt bazlı ilerleme
-                           "cursor burada görünüyor ama yazı buraya gidiyor" hissini verir. */
+                        /* UTF-8 safe click: advance character by character, position at the exact
+                           start/end of multi-byte characters, not in their middle. Byte-based advancement
+                           gives the feeling of "the cursor is here but the text goes there". */
                         size_t col = 0;
                         size_t boff = 0;
                         while (boff < l) {
@@ -904,7 +908,7 @@ int gcl_ide_run(const char *path) {
             }
         }
 
-        /* welcome screen - proje açık değilken; modal açıkken tıklamalar yutulur */
+        /* welcome screen - when no project is open; clicks are swallowed while a modal is open */
         if (ed.tab_count == 0 && !blocked) {
             Rectangle wr = { editor_rect.x + GUTTER_W, editor_rect.y + 4, editor_rect.width - GUTTER_W, editor_rect.height - 8 };
             int wcx = (int)(wr.x + wr.width / 2);
@@ -923,7 +927,7 @@ int gcl_ide_run(const char *path) {
             }
         }
 
-        /* completion penceresi */
+        /* completion window */
         if (ed.completion_visible && (ed.completion_count > 0 || ed.completion_no_match)) {
             int px = (int)editor_rect.x + GUTTER_W;
             int py = (int)editor_rect.y + 4 + (int)(gcl_ide_buffer_line_of_cursor(&CUR) - CUR.scroll_y) * LINE_H + LINE_H;
@@ -942,14 +946,14 @@ int gcl_ide_run(const char *path) {
                 ph = ed.completion_count * 20 + 4;
                 if (ph > 200) ph = 200;
             }
-            /* Pencere imlecin HEMEN ALTINDA açılır; editor alanının içinde kalır.
-               Uzun listenin ekran altına taşması durumunda yukarı kaydırılır —
-               AMA imleç satırının üzerine binmemesi için editor_rect.y ofseti hesaba katılır. */
-            /* X: editor içinde kal */
+            /* The window opens RIGHT BELOW the cursor; it stays within the editor area.
+               If a long list overflows below the screen it is scrolled up —
+               BUT the editor_rect.y offset is taken into account so it does not overlap the cursor line. */
+            /* X: stay within the editor */
             if (px + pw > (int)(editor_rect.x + editor_rect.width)) px = (int)(editor_rect.x + editor_rect.width) - pw;
             if (px < (int)editor_rect.x) px = (int)editor_rect.x;
-            /* Pencere önce imlecin ALTINDA açılır; alta sığmazsa imlecin ÜSTÜNE geç —
-               yazılan satırın üzerine asla binmez. */
+            /* The window first opens BELOW the cursor; if it does not fit below, it moves ABOVE it —
+               it never overlaps the line being typed. */
             if (py + ph > (int)(editor_rect.y + editor_rect.height)) {
                 py = (int)editor_rect.y + 4 + (int)(gcl_ide_buffer_line_of_cursor(&CUR) - CUR.scroll_y) * LINE_H - ph - 4;
                 if (py < (int)editor_rect.y) py = (int)editor_rect.y;
@@ -971,25 +975,25 @@ int gcl_ide_run(const char *path) {
                     if (dt[0]) DrawText(dt, px + pw - MeasureText(dt, efont - 2) - 8, y + 4, efont - 2, t.gutter);
                 }
             }
-            /* signature/parametre penceresi — seçili elemanın imzası listenin ALTINDA (VSCode benzeri) */
+            /* signature/parameter window — the selected item's signature appears BELOW the list (VSCode-like) */
             if (ed.completion_selected >= 0 && ed.completion_selected < ed.completion_count) {
                 int sig_h = 0;
                 draw_completion_signature(&ed.completions[ed.completion_selected],
                                           px, py + ph, pw, efont, &t, &sig_h);
                 ph += sig_h;
             }
-            /* Ekran dışına taşarsa popup'ı yukarı kaydır (VSCode davranışı) */
+            /* If it overflows off-screen, scroll the popup up (VSCode behavior) */
             if (py + ph > (int)editor_rect.y + (int)editor_rect.height - 4) {
                 py = (int)editor_rect.y + 4 + (int)(cur_line - CUR.scroll_y) * LINE_H - ph;
                 if (py < (int)editor_rect.y + 4) py = (int)editor_rect.y + 4;
             }
         }
 
-        /* name dialog (New File / New Directory / Rename) — modal çizimi.
-           DİKKAT: input handling var (satır 299-302) ama çizim kodu YOKTU.
-           blocked=true olduğu için tab/editor da çizilmiyordu → ekran boşalıyordu. */
+        /* name dialog (New File / New Directory / Rename) — modal drawing.
+           NOTE: input handling exists (lines 299-302) but there was NO drawing code.
+           Because blocked=true, tab/editor were also not drawn -> the screen went blank. */
         if (ed.name_dialog_open) {
-            /* karartma */
+            /* dim overlay */
             DrawRectangle(0, 0, w, h, (Color){ 0, 0, 0, 200 });
             int dw = 360, dh = 140;
             int dx = (w - dw) / 2, dy = (h - dh) / 2;
@@ -1015,14 +1019,14 @@ int gcl_ide_run(const char *path) {
             }
         }
 
-        /* settings / about modalları — `blocked=true` olduğu için editor çizilmez;
-           bu paneller olmadan ekran siyah kalır. */
+        /* settings / about modals — because `blocked=true`, the editor is not drawn;
+           without these panels the screen would stay black. */
         if (ed.project_dialog_open) ide_new_project_draw(&ed, w, h, font_sz, &t);
         if (ed.settings_open) gcl_settings_panel_draw(&ed, w, h, font_sz, &t);
         if (ed.about) draw_about_panel(&ed, w, h, font_sz, &t);
 
-        /* output panel — modal (New Project vb.) açıkken gizle: modal her zaman üstte kalmalı.
-           Aksi halde output paneli modalın üstüne çizilip altta kalmasına yol açar. */
+        /* output panel — hide while a modal (New Project, etc.) is open: the modal must always stay on top.
+           Otherwise the output panel would be drawn on top of the modal, leaving the modal underneath. */
         if (ed.output_visible && !blocked) {
             DrawRectangleRec(output_rect, t.popup_bg);
             DrawRectangleLinesEx(output_rect, 1.0f, t.accent);
@@ -1081,7 +1085,7 @@ int gcl_ide_run(const char *path) {
             DrawText(status, (int)(status_rect.x + 8), (int)(status_rect.y + 6), font_sz - 2, t.text);
         }
 
-        /* menü popup en üstte */
+        /* menu popup on top */
         if (ed.menu_open) {
             int mi = ed.menu_open - 1;
             int n = menu_item_count(mi);
@@ -1113,12 +1117,12 @@ int gcl_ide_run(const char *path) {
             }
         }
 
-        /* shake'i kapat */
+        /* end the shake */
         if (ed.screen_shake && ed.shake_remaining > 0.0f) {
             rlPopMatrix();
         }
 
-        /* particles — pixel-art kare parçacıklar */
+        /* particles — pixel-art square particles */
         {
             float pdt = GetFrameTime();
             editor_update_particles(&ed, pdt);
@@ -1132,7 +1136,7 @@ int gcl_ide_run(const char *path) {
             }
         }
 
-        /* efekt sönümlemesi (ridiculous_coding): shake ve pitch düşüşü */
+        /* effect decay (ridiculous_coding): shake and pitch falloff */
         {
             float pdt = GetFrameTime();
             if (ed.shake_remaining > 0.0f) {
@@ -1145,7 +1149,7 @@ int gcl_ide_run(const char *path) {
             }
         }
 
-        /* VHS bozukluk — font okunabilirliğini koruyan daha yumuşak versiyon */
+        /* VHS distortion — a softer version that preserves font readability */
         if (ed.vhs) {
             int base_a = 2 + (ed.vhs_strength * 18 / 100);
             int band_a = 4 + (ed.vhs_strength * 40 / 100);
@@ -1158,7 +1162,7 @@ int gcl_ide_run(const char *path) {
             DrawRectangle(0, band_y, w, 8, (Color){ 255, 255, 255, band_a });
         }
 
-        /* CRT — daha hafif scanline + köşe karartması (okunabilirlik öncelikli) */
+        /* CRT — lighter scanline + corner darkening (readability first) */
         if (ed.crt) {
             int ca = 8 + (ed.crt_strength * 35 / 100);
             for (int yy = 2; yy < h; yy += 4) {
@@ -1177,7 +1181,7 @@ int gcl_ide_run(const char *path) {
         EndDrawing();
     }
 
-    /* IDE kapanırken hâlâ çalışan dış süreci (Run/Project run) sonlandır */
+    /* Terminate the still-running external process (Run/Project run) when the IDE closes */
     gcl_ide_proc_kill(&ed);
 
     free(ed.tabs);

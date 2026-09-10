@@ -1,8 +1,8 @@
 /*
- * ide_settings.c — GCL IDE tema paletleri ve ide.gcsettings yükle/kaydet.
+ * ide_settings.c — GCL IDE theme palettes and ide.gcsettings load/save.
  *
- * Default tema: mor (purple). 8 tema.
- * Tüm renk değerleri index tabanlı saklanır; tema palet adı da kaydedilir.
+ * Default theme: purple. 8 themes.
+ * All color values are stored index-based; the theme palette name is saved too.
  */
 
 #include "gcl_ide_settings.h"
@@ -13,7 +13,7 @@
 #define MAX_THEMES 16
 
 static const GclIdeThemeEntry g_themes[] = {
-    { "Mor (Purple)", {
+    { "Purple", {
         { 20, 14, 44, 255 },       /* bg          */
         { 234, 222, 255, 255 },    /* text        */
         { 28, 20, 58, 255 },       /* line_bg     */
@@ -30,7 +30,7 @@ static const GclIdeThemeEntry g_themes[] = {
         { 90, 220, 110, 255 },     /* ok          */
         { 30, 22, 66, 255 }        /* tree_bg     */
     }},
-    { "Siyah (Black)", {
+    { "Black", {
         { 8, 8, 8, 255 },
         { 220, 220, 220, 255 },
         { 14, 14, 14, 255 },
@@ -47,7 +47,7 @@ static const GclIdeThemeEntry g_themes[] = {
         { 90, 220, 110, 255 },
         { 16, 16, 16, 255 }
     }},
-    { "Beyaz (White)", {
+    { "White", {
         { 240, 240, 240, 255 },
         { 25, 25, 25, 255 },
         { 232, 232, 232, 255 },
@@ -64,7 +64,7 @@ static const GclIdeThemeEntry g_themes[] = {
         { 50, 160, 70, 255 },
         { 228, 228, 228, 255 }
     }},
-    { "Mavi (Blue)", {
+    { "Blue", {
         { 8, 16, 36, 255 },
         { 220, 230, 250, 255 },
         { 12, 22, 44, 255 },
@@ -81,7 +81,7 @@ static const GclIdeThemeEntry g_themes[] = {
         { 90, 220, 110, 255 },
         { 14, 24, 52, 255 }
     }},
-    { "Turuncu (Orange)", {
+    { "Orange", {
         { 28, 18, 10, 255 },
         { 240, 225, 210, 255 },
         { 36, 24, 12, 255 },
@@ -98,7 +98,7 @@ static const GclIdeThemeEntry g_themes[] = {
         { 90, 220, 110, 255 },
         { 36, 24, 12, 255 }
     }},
-    { "Yeşil (Green)", {
+    { "Green", {
         { 12, 28, 18, 255 },
         { 220, 240, 225, 255 },
         { 16, 36, 24, 255 },
@@ -115,7 +115,7 @@ static const GclIdeThemeEntry g_themes[] = {
         { 90, 220, 110, 255 },
         { 18, 36, 24, 255 }
     }},
-    { "Kırmızı (Red)", {
+    { "Red", {
         { 30, 10, 10, 255 },
         { 245, 220, 220, 255 },
         { 38, 14, 14, 255 },
@@ -132,7 +132,7 @@ static const GclIdeThemeEntry g_themes[] = {
         { 90, 220, 110, 255 },
         { 40, 16, 16, 255 }
     }},
-    { "Gri (Gray)", {
+    { "Gray", {
         { 24, 24, 24, 255 },
         { 220, 220, 220, 255 },
         { 30, 30, 30, 255 },
@@ -185,7 +185,7 @@ int gcl_ide_settings_load(GclIdeSettings *s) {
     s->font_size = 14;
     s->theme_index = 0;
     s->syntax_highlight = 1;
-    /* Font kalitesini korumak için tüm heavy efektler default KAPALI (ridiculous_coding yaklaşımı) */
+    /* All heavy effects default OFF to preserve font quality (ridiculous_coding approach) */
     s->vhs = 0;
     s->crt = 0;
     s->screen_shake = 0;
@@ -194,11 +194,11 @@ int gcl_ide_settings_load(GclIdeSettings *s) {
     s->blink_cursor = 1;
     s->text_bloom = 0;
     s->bloom_strength = 50;
-    s->shake_strength = 30;        /* rahatsız edici olmasın: varsayılan düşük */
+    s->shake_strength = 30;        /* keep it non-annoying: low by default */
     s->particle_strength = 40;
     s->vhs_strength = 30;
     s->crt_strength = 30;
-    s->sound = 0;                  /* daktilo sesi default kapalı (monotonluk) */
+    s->sound = 0;                  /* typewriter sound off by default (monotony) */
     FILE *f = fopen(settings_path(), "r");
     if (!f) return -1;
     char line[4096];
