@@ -415,7 +415,7 @@ static GclExpr *parse_assign(Parser *p) {
         GclBinOp bop = op == TOK_PLUSEQ ? OP_ADD : (op == TOK_MINUSEQ ? OP_SUB : (op == TOK_STAREQ ? OP_MUL : OP_DIV));
         if (e) {
             GclExpr *bin = new_expr(AST_EXPR_BINOP);
-            if (bin) { bin->left = left; bin->right = right; bin->op = bop; }
+            if (bin) { bin->left = clone_expr(left); bin->right = right; bin->op = bop; }
             e->left = left;
             e->right = bin;
         }

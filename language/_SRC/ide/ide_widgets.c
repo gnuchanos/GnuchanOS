@@ -181,8 +181,13 @@ int ui_label_textbox(Rectangle r, char *buf, size_t bufsz, int focused, size_t *
     if (caret && *caret > n) *caret = n;
     if (sel && *sel > n) *sel = n;
 
-    /* FreeMono monospace: her karakter sabit genişlikte. */
-    int cw = MeasureText("M", font_sz);
+    /* Gömülü FreeMono monospace: ölçüm VE çizim aynı fontla (gcl_measure_text_f/gcl_draw_text_f).
+       Raylib varsayılan fontu kullanılırsa DrawText'in advance'ı MeasureText ile uyuşmaz
+       ve path/input yazısı kayar (caret metnin gerisinde/farklı yerde görünür).
+       gcl_draw_text_f karakter başına sabit "M" adımı kullanır — ölçümle birebir eşleşir. */
+    float cwf = gcl_measure_text_f("M", font_sz);
+    if (cwf < 1.0f) cwf = 1.0f;
+    int cw = (int)(cwf + 0.5f);
     if (cw < 1) cw = 1;
     int max_w = (int)r.width - 10;
     if (max_w < cw) max_w = cw;
@@ -211,8 +216,14 @@ int ui_label_textbox(Rectangle r, char *buf, size_t bufsz, int focused, size_t *
         }
     }
 
-    /* Metin çiz (scroll edilmiş başlangıçtan). */
-    DrawText(buf + start, (int)(r.x + 6), (int)(r.y + (r.height - font_sz) / 2), font_sz, t->text);
+    /* Metin çiz (scroll edilmiş başlangıçtan) — gömülü FreeMono monospace.
+       gcl_draw_text_f karakter başına sabit cw adımıyla çizer; DrawText yerine
+       kullanmak caret/imetin hizalamasını birebir eşleştirir.
+       KRİTİK: metin alanını scissor ile KIRP. Aksi halde uzun path/input metni
+       kutunun sağ kenarını aşar — "yazılar kutudan taşıyor" görüntüsünün nedeni bu. */
+    BeginScissorMode((int)(r.x + 6), (int)(r.y + 2), (int)(r.width - 12), (int)(r.height - 4));
+    gcl_draw_text_f(buf + start, (float)(r.x + 6), (int)(r.y + (r.height - font_sz) / 2), font_sz, t->text);
+    EndScissorMode();
 
     /* Caret çiz. */
     if (focused && caret) {
@@ -220,7 +231,7 @@ int ui_label_textbox(Rectangle r, char *buf, size_t bufsz, int focused, size_t *
         if (cc < 0) cc = 0;
         if (cc > max_chars) cc = max_chars;
         int cx = (int)(r.x + 6) + cc * cw;
-        if (cx > (int)(r.x + r.width - 2)) cx = (int)(r.x + r.width - 4);
+        if (cx > (int)(r.x + r.width - 4)) cx = (int)(r.x + r.width - 4);
         DrawRectangle(cx, (int)(r.y + 4), 2, (int)(r.height - 8), t->cursor);
     }
 

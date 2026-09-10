@@ -33,6 +33,8 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <unistd.h>
+#include <sys/stat.h>
 #endif
 
 /* ---------- Python C-API fonksiyon imzaları ---------- */
@@ -115,6 +117,62 @@ static const char *py_embed_dir(void) {
 #endif
 }
 
+/* Çalışan gcl.exe'nin dizini — Python home'unu runtime'da bulmak için. */
+static void get_exe_dir(char *out, size_t outsz) {
+    out[0] = '\0';
+#ifdef _WIN32
+    DWORD n = GetModuleFileNameA(NULL, out, (DWORD)outsz);
+    if (n > 0) {
+        char *es = strrchr(out, '\\');
+        if (!es) es = strrchr(out, '/');
+        if (es) *es = '\0';
+    }
+#else
+    ssize_t n = readlink("/proc/self/exe", out, outsz - 1);
+    if (n > 0) out[n] = '\0';
+    char *es = strrchr(out, '/');
+    if (es) *es = '\0';
+#endif
+}
+
+/* Dizin var mı? (Python home adayları için) */
+static int dir_exists(const char *p) {
+    if (!p || !p[0]) return 0;
+#ifdef _WIN32
+    DWORD a = GetFileAttributesA(p);
+    return (a != INVALID_FILE_ATTRIBUTES) && (a & FILE_ATTRIBUTE_DIRECTORY);
+#else
+    struct stat st;
+    return stat(p, &st) == 0 && S_ISDIR(st.st_mode);
+#endif
+}
+
+/* Python home (stdlib + tam python314.dll) çözümü:
+   1) Compile-time PYTHON_EMBED_DIR (varsa) — geliştirme makinesi.
+   2) <exe>/Library/Embeded/Python_Runtime/Python — üretim/CI artifact (Python/ kopyası).
+   3) <exe>/Library/Embeded/Python_Runtime.
+   4) Son çare: compile-time yol.
+   Böylece _temp/ yolu build makinesine bağımlı kalmaz; kurulu artifact her yerde çalışır. */
+static char g_py_home[4096];
+static void resolve_py_home(char *out, size_t outsz) {
+    out[0] = '\0';
+    const char *d = py_embed_dir();
+    if (d && d[0] && dir_exists(d)) {
+        snprintf(out, outsz, "%s", d);
+        return;
+    }
+    char exe_dir[4096];
+    get_exe_dir(exe_dir, sizeof(exe_dir));
+    if (exe_dir[0]) {
+        char cand[4096];
+        snprintf(cand, sizeof(cand), "%s/Library/Embeded/Python_Runtime/Python", exe_dir);
+        if (dir_exists(cand)) { snprintf(out, outsz, "%s", cand); return; }
+        snprintf(cand, sizeof(cand), "%s/Library/Embeded/Python_Runtime", exe_dir);
+        if (dir_exists(cand)) { snprintf(out, outsz, "%s", cand); return; }
+    }
+    if (d && d[0]) snprintf(out, outsz, "%s", d);
+}
+
 /* isim geçerli Python identifier mı? (değişken adı güvenliği) */
 static int is_valid_identifier(const char *name) {
     if (!name || !name[0]) return 0;
@@ -185,14 +243,24 @@ static int api_load(void) {
 #ifdef _WIN32
     /* python3.dll, stable ABI shim'dir — PyConfig_* / Py_InitializeFromConfig
        export etmez. Bu yüzden önce tam C-API'li python314.dll'i dene; shim'i atla. */
-    const char *dir = py_embed_dir();
+    resolve_py_home(g_py_home, sizeof(g_py_home));
+    const char *dir = g_py_home[0] ? g_py_home : py_embed_dir();
     char dll_path[MAX_PATH];
     g_api.handle = NULL;
 
-    /* 1) Tam Python 3.14 DLL (PYTHON_EMBED_DIR içinden) */
+    /* 1) Tam Python 3.14 DLL (çözümlenen home / PYTHON_EMBED_DIR içinden) */
     if (dir && dir[0]) {
         snprintf(dll_path, sizeof(dll_path), "%s\\python314.dll", dir);
         g_api.handle = LoadLibraryA(dll_path);
+    }
+    /* 1b) Runtime kopyası: <exe>/Library/Embeded/Python_Runtime/Python/python314.dll */
+    if (!g_api.handle) {
+        char exe_dir[4096];
+        get_exe_dir(exe_dir, sizeof(exe_dir));
+        if (exe_dir[0]) {
+            snprintf(dll_path, sizeof(dll_path), "%s/Library/Embeded/Python_Runtime/Python/python314.dll", exe_dir);
+            g_api.handle = LoadLibraryA(dll_path);
+        }
     }
     /* 2) PATH üzerinden */
     if (!g_api.handle) g_api.handle = LoadLibraryA("python314.dll");
@@ -335,7 +403,8 @@ int gcl_py_runtime_init(void) {
         if (!api_load()) return 0;
     }
 
-    const char *home = py_embed_dir();
+    resolve_py_home(g_py_home, sizeof(g_py_home));
+    const char *home = g_py_home[0] ? g_py_home : py_embed_dir();
     PyConfig config;
     g_api.config_init_python_config(&config);
 
