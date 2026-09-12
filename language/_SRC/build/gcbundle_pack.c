@@ -96,19 +96,20 @@ static int has_suffix(const char *p, const char *suf) {
     return 1;
 }
 
-/* p, pre ile başlıyor mu? */
+/* Does p start with pre? */
 static int has_prefix(const char *p, const char *pre) {
     return strncmp(p, pre, strlen(pre)) == 0;
 }
 
 /*
- * Python stdlib'inden atlanacak paket adları. Windows embed düzeni
+ * Python stdlib package names to skip. The Windows embed layout is
  *   Library/Embeded/Python_Runtime/Python/Lib/<pkg>/...
- * Linux (python-build-standalone) düzeni ise
+ * and the Linux (python-build-standalone) layout is
  *   Library/Embeded/Python_Runtime/Python/lib/python3.X/<pkg>/...
- * şeklindedir. Önek (Lib/ vs lib/python3.X/) platformlar arası FARKLI olduğu
- * için, gerçek paket adı bulunup ona göre karar verilir. Bu sayede Linux
- * build'inde de test/tkinter/... gömülmez (aksi halde bundle ~1 GB şişer).
+ * Because the prefix (Lib/ vs lib/python3.X/) DIFFERS between platforms, the
+ * real package name is extracted and the decision is made from it. This way
+ * test/tkinter/... are not embedded in the Linux build either (otherwise the
+ * bundle bloats to ~1 GB).
  */
 static const char *const GCB_JUNK_PACKAGES[] = {
     "test", "tests", "tkinter", "turtle", "idlelib", "ensurepip",
@@ -132,19 +133,19 @@ static int should_skip_python_stdlib(const char *rel) {
     if (strncmp(rel, root, rl) != 0) return 0;
     const char *tail = rel + rl;
 
-    /* Windows: "Lib/..." ; Linux: "lib/python3.X/..." önekini atla */
+    /* Windows: "Lib/..." ; Linux: "lib/python3.X/..." — skip the prefix */
     if (has_prefix(tail, "Lib/")) {
         tail += 4;
     } else if (has_prefix(tail, "lib/python3.")) {
-        tail += 12;                                /* "python3." bitti */
-        while (*tail && *tail != '/') tail++;      /* sürüm rakamlarını atla */
+        tail += 12;                                /* "python3." done */
+        while (*tail && *tail != '/') tail++;      /* skip the version digits */
         if (*tail == '/') tail++;
     } else {
         return 0;
     }
 
-    /* tail içindeki HERHANGİ bir / ile ayrılmış bileşen junk paket adı mı?
-       (örn. ctypes/test, email/test, xml/test gibi iç içe test dizinleri) */
+    /* Is ANY '/'-separated component inside tail a junk package name?
+       (e.g. nested test dirs like ctypes/test, email/test, xml/test) */
     const char *p = tail;
     while (*p) {
         const char *slash = strchr(p, '/');
@@ -156,14 +157,14 @@ static int should_skip_python_stdlib(const char *rel) {
     return 0;
 }
 
-/* Pakete GÖMÜLMEYECEK yollar.
-   1.26 GB'lık bundle'ın nedeni: runtime dizini olduğu gibi gömülüyordu
-   (Python stdlib full paketi + libraylib.a + .lib/.h/.pyc + test/tkinter...).
-   Bunlar pakete girmez — bundle ~176 MB civarına iner. */
+/* Paths that must NOT be EMBEDDED into the package.
+   The reason for the 1.26 GB bundle: the runtime directory was embedded as-is
+   (full Python stdlib + libraylib.a + .lib/.h/.pyc + test/tkinter...).
+   These do not go into the package — the bundle drops to around ~176 MB. */
 static int should_skip(const char *rel, int is_dir) {
     if (!rel || !rel[0]) return 0;
 
-    /* __pycache__ ve derlenmiş/ara dosyalar */
+    /* __pycache__ and compiled/intermediate files */
     if (strstr(rel, "__pycache__")) return 1;
     if (!is_dir) {
         if (has_suffix(rel, ".pyc") || has_suffix(rel, ".pyo") ||
@@ -174,19 +175,19 @@ static int should_skip(const char *rel, int is_dir) {
             return 1;
     }
 
-    /* Windows embed yan ürünleri (Scripts/, libs/) — çalışma zamanında gerekmez */
+    /* Windows embed by-products (Scripts/, libs/) — not needed at runtime */
     if (has_prefix(rel, "Library/Embeded/Python_Runtime/Python/Scripts")) return 1;
     if (has_prefix(rel, "Library/Embeded/Python_Runtime/Python/libs")) return 1;
 
-    /* Python stdlib gereksiz paketleri (Windows Lib/ + Linux lib/python3.X/) */
+    /* Unnecessary Python stdlib packages (Windows Lib/ + Linux lib/python3.X/) */
     if (should_skip_python_stdlib(rel)) return 1;
 
     return 0;
 }
 
-/* ---------- Entry ekleme ---------- */
+/* ---------- Entry insertion ---------- */
 
-/* Entry tablosunda yer var mı? */
+/* Is there room in the entry table? */
 static int entry_slot(Entry **out) {
     if (entries_grow() != 0) return -1;
     Entry *e = &g_entries[g_entry_count++];
@@ -195,17 +196,17 @@ static int entry_slot(Entry **out) {
     return 0;
 }
 
-/* Bir dosyayı okuyup FILE entry olarak ekle. Atlandı: 0, bellek hatası: -1. */
+/* Read a file and add it as a FILE entry. Skipped: 0, out of memory: -1. */
 static int collect_file(const char *full, const char *rel) {
     if (!rel || !rel[0]) return 0;
     if (strlen(rel) >= GCB_PATH_MAX) {
-        fprintf(stderr, "[gcbundle] atlandı (yol çok uzun): %s\n", rel);
+        fprintf(stderr, "[gcbundle] skipped (path too long): %s\n", rel);
         return 0;
     }
     if (should_skip(rel, 0)) return 0;
 
     FILE *f = fopen(full, "rb");
-    if (!f) return 0;                      /* okunamayan dosyayı ATLA (tüm platformlar) */
+    if (!f) return 0;                      /* SKIP an unreadable file (all platforms) */
     if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return 0; }
     long sz = ftell(f);
     if (sz < 0) { fclose(f); return 0; }
@@ -224,11 +225,11 @@ static int collect_file(const char *full, const char *rel) {
     return 0;
 }
 
-/* Dizin entry'si ekle. Atlandı: 0, bellek hatası: -1. */
+/* Add a directory entry. Skipped: 0, out of memory: -1. */
 static int add_dir_entry(const char *rel) {
     if (!rel || !rel[0]) return 0;
     if (strlen(rel) >= GCB_PATH_MAX) {
-        fprintf(stderr, "[gcbundle] atlandı (yol çok uzun): %s\n", rel);
+        fprintf(stderr, "[gcbundle] skipped (path too long): %s\n", rel);
         return 0;
     }
     Entry *e = NULL;
@@ -238,45 +239,47 @@ static int add_dir_entry(const char *rel) {
     return 0;
 }
 
-/* ---------- Dizin yürüyüşü ---------- */
+/* ---------- Directory walk ---------- */
 
 /*
- * Yürüyüş tampon sınırları.
- *   GCB_REL_MAX  : bundle içi göreli yol üst sınırı. GCB_PATH_MAX ile AYNI —
- *                  bundler zaten bu boyuttan uzun yolu saklamaz, dolayısıyla
- *                  bu sınırın ötesine inmek anlamsızdır (PK-2).
- *   GCB_FULL_MAX : base (mutlak yol, en fazla ~4096) + '/' + rel + NUL.
- *                  Taşma ÖNCEDEN kontrol edilir; snprintf'in sessizce kesmesi
- *                  engellenir (PK-1).
- *   GCB_MAX_DEPTH: self-referencing symlink (Linux) veya junction/reparse
- *                  point (Windows) döngülerinde sonsuz özyinelemeyi keser (PK-3).
+ * Walk buffer bounds.
+ *   GCB_REL_MAX  : upper bound for the in-bundle relative path. SAME as
+ *                  GCB_PATH_MAX — the bundler never stores a path longer than
+ *                  this, so going beyond this bound is meaningless (PK-2).
+ *   GCB_FULL_MAX : base (absolute path, at most ~4096) + '/' + rel + NUL.
+ *                  Overflow is checked IN ADVANCE; snprintf silently
+ *                  truncating is prevented (PK-1).
+ *   GCB_MAX_DEPTH: cuts off infinite recursion in self-referencing symlink
+ *                  (Linux) or junction/reparse point (Windows) loops (PK-3).
  */
 #define GCB_REL_MAX   GCB_PATH_MAX
 #define GCB_FULL_MAX  (4096 + GCB_PATH_MAX + 8)
 #define GCB_MAX_DEPTH 64
 
-/* Etkin dizin özyineleme derinliği (GCB_MAX_DEPTH koruması için). */
+/* Current directory recursion depth (for the GCB_MAX_DEPTH guard). */
 static int g_dir_depth = 0;
 
 static int collect_dir(const char *base, const char *rel) {
     int top_level = (!rel || rel[0] == '\0');
     const char *r = (rel && rel[0]) ? rel : "";
 
-    /* PK-6: base zaten ayraçla bitiyorsa ikinci ayraç eklenmez — çift ayraç
-       (özellikle UNC / kök yollarda) yanlış çözümlenebilir. */
+    /* PK-6: if base already ends with a separator, a second separator is not
+       added — a double separator (especially in UNC / root paths) can be
+       resolved incorrectly. */
     size_t blen = strlen(base);
     int base_has_sep = (blen > 0 && (base[blen - 1] == '/' || base[blen - 1] == '\\'));
 
-    /* full = base + '/' + rel. Taşmayı ÖNCEDEN kontrol et: snprintf sessizce
-       keserse yanlış bir yol stat'lanır ve dosya/dizin SESSİZCE atlanır. */
+    /* full = base + '/' + rel. Check overflow IN ADVANCE: if snprintf silently
+       truncates, the wrong path is stat'ed and the file/dir is SILENTLY skipped. */
     size_t need = blen + (base_has_sep ? 0 : 1) + strlen(r) + 1;
     if (need > GCB_FULL_MAX) {
-        fprintf(stderr, "[gcbundle] atlandı (yol çok uzun): %s\n", r);
+        fprintf(stderr, "[gcbundle] skipped (path too long): %s\n", r);
         return 0;
     }
 
-    /* rel içindeki yollar HER ZAMAN '/' ile; Windows'ta stat/FindFirstFile için
-       yerel ayraca çevrilir. Bundle'a yazılan yol ise '/' kalır. */
+    /* Paths inside rel ALWAYS use '/'; on Windows they are converted to the
+       native separator for stat/FindFirstFile. The path written into the bundle
+       stays '/'. */
     char full[GCB_FULL_MAX];
     if (base_has_sep || !r[0])
         snprintf(full, sizeof(full), "%s%s", base, r);
@@ -286,7 +289,7 @@ static int collect_dir(const char *base, const char *rel) {
     for (char *p = full; *p; p++) if (*p == '/') *p = '\\';
     {
         size_t flen = strlen(full);
-        /* Sondaki ayraçları kırp ama sürücü kökünü ("C:\") BOZMA. */
+        /* Trim trailing separators but do NOT break the drive root ("C:\"). */
         while (flen > 1 && full[flen - 1] == '\\' && full[flen - 2] != ':') {
             full[flen - 1] = '\0'; flen--;
         }
@@ -302,16 +305,16 @@ static int collect_dir(const char *base, const char *rel) {
     if (!S_ISDIR(st.st_mode)) return 0;
 #endif
 
-    /* Bu bir dizin */
+    /* This is a directory */
     if (should_skip(rel, 1)) return 0;
     if (rel && rel[0]) {
         int rc = add_dir_entry(rel);
         if (rc != 0) return -1;
     }
 
-    /* Sonsuz özyineleme koruması (symlink/junction döngüsü). */
+    /* Infinite recursion guard (symlink/junction loop). */
     if (g_dir_depth >= GCB_MAX_DEPTH) {
-        fprintf(stderr, "[gcbundle] atlandı (derinlik limiti %d): %s\n",
+        fprintf(stderr, "[gcbundle] skipped (depth limit %d): %s\n",
                 GCB_MAX_DEPTH, r);
         return 0;
     }
@@ -322,14 +325,14 @@ static int collect_dir(const char *base, const char *rel) {
     snprintf(pattern, sizeof(pattern), "%s\\*", full);
     WIN32_FIND_DATAA ffd;
     HANDLE h = FindFirstFileA(pattern, &ffd);
-    if (h == INVALID_HANDLE_VALUE) { g_dir_depth--; return 0; }  /* listelenemeyen dizini atla */
+    if (h == INVALID_HANDLE_VALUE) { g_dir_depth--; return 0; }  /* skip the unlistable directory */
     do {
         if (strcmp(ffd.cFileName, ".") == 0 || strcmp(ffd.cFileName, "..") == 0) continue;
         char sub_rel[GCB_REL_MAX];
         int n = snprintf(sub_rel, sizeof(sub_rel), "%s%s%s",
                          r, r[0] ? "/" : "", ffd.cFileName);
         if (n < 0 || (size_t)n >= sizeof(sub_rel)) {
-            fprintf(stderr, "[gcbundle] atlandı (rel çok uzun): %s\n", ffd.cFileName);
+            fprintf(stderr, "[gcbundle] skipped (rel too long): %s\n", ffd.cFileName);
             continue;
         }
         if (collect_dir(base, sub_rel) != 0) { FindClose(h); g_dir_depth--; return -1; }
@@ -337,7 +340,7 @@ static int collect_dir(const char *base, const char *rel) {
     FindClose(h);
 #else
     DIR *d = opendir(full);
-    if (!d) { g_dir_depth--; return 0; }         /* listelenemeyen dizini atla */
+    if (!d) { g_dir_depth--; return 0; }         /* skip the unlistable directory */
     struct dirent *ent;
     while ((ent = readdir(d)) != NULL) {
         if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
@@ -345,7 +348,7 @@ static int collect_dir(const char *base, const char *rel) {
         int n = snprintf(sub_rel, sizeof(sub_rel), "%s%s%s",
                          r, r[0] ? "/" : "", ent->d_name);
         if (n < 0 || (size_t)n >= sizeof(sub_rel)) {
-            fprintf(stderr, "[gcbundle] atlandı (rel çok uzun): %s\n", ent->d_name);
+            fprintf(stderr, "[gcbundle] skipped (rel too long): %s\n", ent->d_name);
             continue;
         }
         if (collect_dir(base, sub_rel) != 0) { closedir(d); g_dir_depth--; return -1; }
@@ -356,21 +359,21 @@ static int collect_dir(const char *base, const char *rel) {
     return 0;
 }
 
-/* ---------- Yazma ---------- */
+/* ---------- Writing ---------- */
 
 static int write_all(FILE *f, const void *data, size_t size) {
     if (!size) return 0;
     return fwrite(data, 1, size, f) == size ? 0 : -1;
 }
 
-/* Toplanan g_entries'leri paket olarak yazar (header + entry tablosu + blob). */
+/* Writes the collected g_entries as a package (header + entry table + blob). */
 static int write_bundle(const char *name, const char *out_path) {
     FILE *f = fopen(out_path, "wb");
     if (!f) { entries_clear(); gcb_set_error("pack: cannot write output"); return -1; }
 
-    /* 4 GB sınırı (PK-5): format offset/boyut alanları uint32 olduğundan
-       header + entry tablosu + blob toplamı UINT32_MAX'i aşamaz. Aşarsa
-       sessizce uint32 taşması (veri bozulması) yerine NET hata ver. */
+    /* 4 GB limit (PK-5): because the format offset/size fields are uint32,
+       header + entry table + blob total cannot exceed UINT32_MAX. If it does,
+       give a CLEAR error instead of a silent uint32 overflow (data corruption). */
     {
         size_t table_sz = (size_t)g_entry_count * sizeof(GcbEntryHeader);
         size_t blob_sz = 0;
@@ -449,14 +452,15 @@ int gcb_pack_project_runtime(const char *project_dir, const char *runtime_dir,
     if (!path_is_dir(project_dir)) { gcb_set_error("pack: project directory not found"); return -1; }
 
     entries_clear();
-    /* Proje dosyaları (scripts/, assets/, main.gcsf, ...) */
+    /* Project files (scripts/, assets/, main.gcsf, ...) */
     if (collect_dir(project_dir, "") != 0) {
         entries_clear();
         gcb_set_error("pack: could not traverse project directory");
         return -1;
     }
-    /* Runtime (Library/ altındaki tüm DLL/SO) — "Library" prefix'iyle göm.
-       runtime_dir altında Library/ YOKSA paket eksik olur → net hata ver. */
+    /* Runtime (all DLL/SO under Library/) — embed with the "Library" prefix.
+       If there is NO Library/ under runtime_dir the package would be
+       incomplete → give a clear error. */
     if (runtime_dir && runtime_dir[0]) {
         char lib_dir[4096];
         snprintf(lib_dir, sizeof(lib_dir), "%s/Library", runtime_dir);

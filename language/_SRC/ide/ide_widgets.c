@@ -1,4 +1,5 @@
 #include "gcl_ide_internal.h"
+#include "gcl_ide_clipboard.h"
 
 /* ---------------------------------------------
    Widgets
@@ -370,6 +371,28 @@ void ctx_execute(Editor *ed) {
                 }
                 fs_remove_rec(del);
                 ed->last_tree_scan = 0;  /* deferred instead of synchronous tree_rescan */
+            }
+            ed->ctx_open = 0;
+            break;
+        case CTX_COPY_PATH: {
+            /* Explorer'daki öğenin MUTLAK yolunu sistem panosuna yaz (todo #5).
+               Boş alana sağ tıklandıysa (ctx_target < 0) hedef çalışma dizinidir. */
+            char abs[4096];
+            fs_absolute_path(target, abs, sizeof(abs));
+            if (abs[0]) {
+                gcl_ide_clipboard_set_text(abs, strlen(abs));
+                snprintf(ed->status_msg, sizeof(ed->status_msg), "Copied path: %s", abs);
+                ed->status_msg_time = GetTime();
+            }
+            ed->ctx_open = 0;
+        } break;
+        case CTX_COPY_NAME:
+            /* Yalnızca gerçek bir öğe seçiliyse anlamlıdır; dosya/dizin ADI
+               (base name) panoya yazılır. */
+            if (ed->ctx_target >= 0 && ed->ctx_target < ed->tree.count && base && base[0]) {
+                gcl_ide_clipboard_set_text(base, strlen(base));
+                snprintf(ed->status_msg, sizeof(ed->status_msg), "Copied name: %s", base);
+                ed->status_msg_time = GetTime();
             }
             ed->ctx_open = 0;
             break;

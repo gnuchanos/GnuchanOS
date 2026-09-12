@@ -38,6 +38,27 @@ static float mono_cw(int fontSize) {
     return (float)MeasureText("M", fontSize);
 }
 
+/* Bir karakterin kac hucre ilerlettigi. '\t' bir sonraki TAB duragina
+   (GCL_TAB_SIZE) kadar ilerletir. Python dosyalari girinti icin sekme
+   karakteri kullanabilir; cizim ve olcum ayni kurali kullanmazsa
+   imlec metinden kayar. */
+static int gcl_tab_advance(char c, int col) {
+    if (c != '\t') return 1;
+    int step = GCL_TAB_SIZE - (col % GCL_TAB_SIZE);
+    return step > 0 ? step : GCL_TAB_SIZE;
+}
+
+/* 'text'in 'start_col' hucre kolonundan itibaren kapladigi hucre sayisi. */
+int gcl_text_cells(const char *text, int start_col) {
+    if (!text) return 0;
+    int col = start_col;
+    for (const char *p = text; *p; ) {
+        col += gcl_tab_advance(*p, col);
+        p += utf8_char_len2((unsigned char)*p);
+    }
+    return col - start_col;
+}
+
 /* Tek karakteri x + i*cw konumuna çiz (UTF-8 güvenli). */
 static void draw_mono_char(const char *s, float x, float y, int fontSize, Color color) {
     char tmp[5];
@@ -48,80 +69,66 @@ static void draw_mono_char(const char *s, float x, float y, int fontSize, Color 
     else DrawText(tmp, (int)x, (int)y, fontSize, color);
 }
 
-void gcl_draw_text_f(const char *text, float posX, int posY, int fontSize, Color color) {
+/* Sekme duyarli cizim: 'start_col' = metnin basladigi hucre kolonu.
+   '\t' ekrana cizilmez; bir sonraki TAB duragina kadar bosluk birakir.
+   Boylece sekme ile girintilenmis Python dosyalari hizali gorunur. */
+void gcl_draw_text_col(const char *text, float posX, int posY, int fontSize, Color color, int start_col) {
     if (!text) return;
     float cw = mono_cw(fontSize);
-    float x0 = posX;
     float y0 = (float)posY;
-    if (g_bloom > 0) {
-        Color soft = color;
-        soft.a = (unsigned char)(color.a * (g_bloom / 100.0f) * 0.6f);
-        float x = x0;
-        for (const char *p = text; *p; ) {
-            draw_mono_char(p, x - 1, y0, fontSize, soft);
-            draw_mono_char(p, x + 1, y0, fontSize, soft);
-            draw_mono_char(p, x, y0 - 1, fontSize, soft);
-            draw_mono_char(p, x, y0 + 1, fontSize, soft);
+    int col = start_col;
+    int bloom = (g_bloom > 0);
+    Color soft = color;
+    if (bloom) soft.a = (unsigned char)(color.a * (g_bloom / 100.0f) * 0.6f);
+    float x = posX;
+    for (const char *p = text; *p; ) {
+        int adv = gcl_tab_advance(*p, col);
+        if (*p != '\t') {
+            if (bloom) {
+                draw_mono_char(p, x - 1, y0, fontSize, soft);
+                draw_mono_char(p, x + 1, y0, fontSize, soft);
+                draw_mono_char(p, x, y0 - 1, fontSize, soft);
+                draw_mono_char(p, x, y0 + 1, fontSize, soft);
+            }
             draw_mono_char(p, x, y0, fontSize, color);
-            p += utf8_char_len2((unsigned char)*p);
-            x += cw;
         }
-    } else {
-        float x = x0;
-        for (const char *p = text; *p; ) {
-            draw_mono_char(p, x, y0, fontSize, color);
-            p += utf8_char_len2((unsigned char)*p);
-            x += cw;
-        }
+        col += adv;
+        x += cw * (float)adv;
+        p += utf8_char_len2((unsigned char)*p);
     }
 }
 
+void gcl_draw_text_f(const char *text, float posX, int posY, int fontSize, Color color) {
+    gcl_draw_text_col(text, posX, posY, fontSize, color, 0);
+}
+
 void gcl_draw_text(const char *text, int posX, int posY, int fontSize, Color color) {
-    if (!text) return;
-    float cw = mono_cw(fontSize);
-    float x0 = (float)posX;
-    float y0 = (float)posY;
-    if (g_bloom > 0) {
-        Color soft = color;
-        soft.a = (unsigned char)(color.a * (g_bloom / 100.0f) * 0.6f);
-        float x = x0;
-        for (const char *p = text; *p; ) {
-            draw_mono_char(p, x - 1, y0, fontSize, soft);
-            draw_mono_char(p, x + 1, y0, fontSize, soft);
-            draw_mono_char(p, x, y0 - 1, fontSize, soft);
-            draw_mono_char(p, x, y0 + 1, fontSize, soft);
-            draw_mono_char(p, x, y0, fontSize, color);
-            p += utf8_char_len2((unsigned char)*p);
-            x += cw;
-        }
-    } else {
-        float x = x0;
-        for (const char *p = text; *p; ) {
-            draw_mono_char(p, x, y0, fontSize, color);
-            p += utf8_char_len2((unsigned char)*p);
-            x += cw;
-        }
-    }
+    gcl_draw_text_col(text, (float)posX, posY, fontSize, color, 0);
 }
 
 /* Ölçüm: monospace sabit adım (cw * karakter sayısı).
    DrawTextEx'in tek parça advance birikimi ile MeasureTextEx arasındaki kümülatif
    sapmayı tamamen ortadan kaldırır; ölçüm artık çizimle birebir eşleşir. */
-static float measure_mono(const char *text, int fontSize) {
+static float measure_mono(const char *text, int fontSize, int start_col) {
     if (!text) return 0.0f;
     float cw = mono_cw(fontSize);
-    return cw * (float)utf8_char_count2(text);
+    return cw * (float)gcl_text_cells(text, start_col);
 }
 
 int gcl_measure_text(const char *text, int fontSize) {
-    float w = measure_mono(text, fontSize);
+    float w = measure_mono(text, fontSize, 0);
     return (int)(w + 0.5f);
 }
 
 /* Gerçek float genişlik — syntax highlight chunk çiziminde int truncate/round hatası
    birikmesin diye kullanılır. Monospace sabit adımla çizimle birebir eşleşir. */
 float gcl_measure_text_f(const char *text, int fontSize) {
-    return measure_mono(text, fontSize);
+    return measure_mono(text, fontSize, 0);
+}
+
+/* Sekme duyarli olcum: chunk'lar satir basindan farkli kolonlarda baslayabilir. */
+float gcl_measure_text_col(const char *text, int fontSize, int start_col) {
+    return measure_mono(text, fontSize, start_col);
 }
 
 char *gcl_strdup(const char *s) {
@@ -145,9 +152,9 @@ const char *gcl_keywords[] = {
     /* yapılar */
     "struct","enum","typedef","const","sizeof",
     /* görünürlük / yaşam */
-    "global","inline","public","private",
+    "global","local","inline","public","private",
     /* yerleşik fonksiyonlar / kavramlar */
-    "printf","scanf","true","false",
+    "printf","scanf","strlen","true","false","null",
     NULL
 };
 

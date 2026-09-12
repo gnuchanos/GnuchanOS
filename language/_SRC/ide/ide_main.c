@@ -76,6 +76,25 @@ static void draw_completion_signature(const LspSymbol *s, int px, int py, int pw
     if (out_h) *out_h = h;
 }
 
+/* Hold-to-repeat for editing keys (Backspace/Delete): fires on the first press,
+   then repeats after 'first_delay' seconds at 'rate' intervals while held.
+   Uses its own state so it never conflicts with arrow-key navigation repeat. */
+static int s_edit_repeat_key = 0;
+static double s_edit_repeat_time = 0.0;
+static int key_repeat_fire(int key, double first_delay, double rate) {
+    double now = GetTime();
+    if (IsKeyPressed(key)) {
+        s_edit_repeat_key = key;
+        s_edit_repeat_time = now + first_delay;
+        return 1;
+    }
+    if (IsKeyDown(key) && s_edit_repeat_key == key && now >= s_edit_repeat_time) {
+        s_edit_repeat_time = now + rate;
+        return 1;
+    }
+    return 0;
+}
+
 int gcl_ide_run(const char *path) {
     Editor ed;
     memset(&ed, 0, sizeof(ed));
@@ -363,14 +382,8 @@ int gcl_ide_run(const char *path) {
         } else {
             editor_process_typing(&ed, ctrl, shift);
 
-            /* Phase 4: debounce — auto-completion opens 200ms after typing stops.
-               editor_process_typing only sets completion_debounce_until;
-               here we open the window if the time has elapsed. Ctrl+Space still forces it instantly. */
-            if (!ed.completion_visible && ed.completion_debounce_until > 0.0 &&
-                GetTime() >= ed.completion_debounce_until) {
-                ed.completion_debounce_until = 0.0;
-                editor_show_completion(&ed);
-            }
+            /* Auto-completion opens ONLY on a deliberate trigger: a typed '.' or
+               Ctrl+Space. It never opens by itself while typing ordinary letters. */
 
             /* Ctrl+MouseWheel zoom (code editor only) */
             if (ctrl) {
@@ -491,25 +504,36 @@ int gcl_ide_run(const char *path) {
             if (ctrl && IsKeyPressed(KEY_Z)) gcl_ide_buffer_undo(&CUR);
             if (ctrl && IsKeyPressed(KEY_Y)) gcl_ide_buffer_redo(&CUR);
 
-            /* Ctrl+Space: FORCE the auto-completion window open */
+            /* Ctrl+Space: FORCE the auto-completion window open (manual) */
             if (ctrl && IsKeyPressed(KEY_SPACE)) {
-                editor_show_completion(&ed);
+                ed.completion_dismissed = 0;
+                editor_show_completion(&ed, 1);
             }
 
             if (!(ed.completion_visible && (ed.completion_count > 0 || ed.completion_no_match))) {
                 if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
-                    gcl_ide_buffer_insert_newline(&CUR); ed.sel_anchor = CUR.cursor;
+                    /* Yeni satır + otomatik gövde girintisi (Python/GCL):
+                       ":" ile biten satırdan sonra bir girinti birimi eklenir. */
+                    editor_insert_newline_autoindent(&ed);
                     if (ed.typewriter) editor_typewriter_sound(&ed, 1); /* Enter: strong thud */
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
                 }
-                if (IsKeyPressed(KEY_TAB)) { for (int i=0;i<4;i++) gcl_ide_buffer_insert_char(&CUR,' '); ed.sel_anchor = CUR.cursor; }
-                if (IsKeyPressed(KEY_BACKSPACE)) {
+                /* Tab: seçim varsa seçili satırları girintiler; seçim YOKSA imlece
+                   girinti ekler (Python dosyası sekme ile girintilenmişse '\t',
+                   aksi halde 4 boşluk). Shift+Tab satır girintisini azaltır. */
+                if (IsKeyPressed(KEY_TAB)) {
+                    if (selection_active(&ed)) editor_indent_selection(&ed, shift ? 1 : 0);
+                    else if (shift) editor_indent_selection(&ed, 1);
+                    else editor_insert_tab(&ed);
+                }
+                /* Backspace/Delete: hold-to-repeat (no more mashing the key). */
+                if (key_repeat_fire(KEY_BACKSPACE, 0.40, 0.03)) {
                     if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); ed.sel_anchor=CUR.cursor; }
                     else { gcl_ide_buffer_backspace(&CUR); ed.sel_anchor = CUR.cursor; }
                     if (ed.typewriter) editor_typewriter_sound(&ed, 2); /* Backspace: high-pitched pop */
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
                 }
-                if (IsKeyPressed(KEY_DELETE)) {
+                if (key_repeat_fire(KEY_DELETE, 0.40, 0.03)) {
                     if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); ed.sel_anchor=CUR.cursor; }
                     else { gcl_ide_buffer_delete(&CUR); }
                     if (ed.typewriter) editor_typewriter_sound(&ed, 2); /* Delete: high-pitched pop */
@@ -549,24 +573,45 @@ int gcl_ide_run(const char *path) {
                 if (IsKeyPressed(KEY_PAGE_DOWN)) { for (int i=0;i<20;i++) gcl_ide_buffer_cursor_down(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
             } else {
                 /* auto-completion navigation */
-                if (ctrl && IsKeyPressed(KEY_SPACE)) editor_show_completion(&ed);
+                if (ctrl && IsKeyPressed(KEY_SPACE)) { ed.completion_dismissed = 0; editor_show_completion(&ed, 1); }
                 if (IsKeyPressed(KEY_UP)) { if (ed.completion_selected > 0) ed.completion_selected--; }
                 if (IsKeyPressed(KEY_DOWN)) { if (ed.completion_selected < ed.completion_count - 1) ed.completion_selected++; }
-                if (IsKeyPressed(KEY_ESCAPE)) ed.completion_visible = 0;
-                if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) || IsKeyPressed(KEY_TAB)) editor_accept_completion(&ed);
+                if (IsKeyPressed(KEY_ESCAPE)) {
+                    /* A SINGLE ESC closes the popup and keeps it closed until a new
+                       deliberate trigger — no more pressing ESC 4-5 times. */
+                    ed.completion_visible = 0;
+                    ed.completion_no_match = 0;
+                    ed.completion_message[0] = '\0';
+                    ed.completion_dismissed = 1;
+                }
+                if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) || IsKeyPressed(KEY_TAB)) {
+                    /* Tab/Enter gerçek bir aday varsa tamamlar. Aday yoksa
+                       (yalnızca "there is no 'X'" uyarısı görünüyorsa) Tab
+                       yutulmaz — normal girinti yapar (todo #1: "tab çalışmıyor"). */
+                    if (ed.completion_count > 0) {
+                        editor_accept_completion(&ed);
+                    } else if (IsKeyPressed(KEY_TAB)) {
+                        ed.completion_visible = 0;
+                        ed.completion_no_match = 0;
+                        ed.completion_message[0] = '\0';
+                        if (selection_active(&ed)) editor_indent_selection(&ed, shift ? 1 : 0);
+                        else if (shift) editor_indent_selection(&ed, 1);
+                        else editor_insert_tab(&ed);
+                    }
+                }
                 if (IsKeyPressed(KEY_BACKSPACE)) {
                     if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); ed.sel_anchor=CUR.cursor; }
                     else { gcl_ide_buffer_backspace(&CUR); ed.sel_anchor = CUR.cursor; }
                     if (ed.typewriter) editor_typewriter_sound(&ed, 2);
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
-                    editor_show_completion(&ed);
+                    editor_show_completion(&ed, 0);
                 }
                 if (IsKeyPressed(KEY_DELETE)) {
                     if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); ed.sel_anchor=CUR.cursor; }
                     else { gcl_ide_buffer_delete(&CUR); }
                     if (ed.typewriter) editor_typewriter_sound(&ed, 2);
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
-                    editor_show_completion(&ed);
+                    editor_show_completion(&ed, 0);
                 }
             }
 
@@ -683,8 +728,11 @@ int gcl_ide_run(const char *path) {
 
             /* explorer context menu */
             if (ed.ctx_open) {
-                const char *items[] = { "New File", "New Directory", "Rename", "Copy", "Paste", "Delete", NULL };
-                int iw = 160, ih = 24, n = 6;
+                /* Sıralama gcl_ide_internal.h'deki CtxItem enum'ı ile BİREBİR
+                   aynı olmalı: New File, New Directory, Rename, Copy, Paste,
+                   Delete, Copy Path, Copy Name (todo #5). */
+                const char *items[] = { "New File", "New Directory", "Rename", "Copy", "Paste", "Delete", "Copy Path", "Copy Name", NULL };
+                int iw = 160, ih = 24, n = 8;
                 int mxm = ed.ctx_x, mym = ed.ctx_y;
                 if (mxm + iw > w) mxm = w - iw;
                 if (mym + n * ih > h) mym = h - n * ih;
@@ -748,7 +796,18 @@ int gcl_ide_run(const char *path) {
            This eliminates the byte/character mismatch that gives the feeling of
            "the cursor is here but the text goes there". */
         {
-            size_t ccol_t = gcl_ide_buffer_cursor_in_line_chars(&CUR);
+            /* İmlecin satır içi GÖRSEL hücre kolonu (sekme duyarlı). Sekme
+               karakteri birden fazla hücre kapladığı için karakter sayısı
+               yeterli değildir; yatay kaydırma da hücre cinsindendir. */
+            size_t ccur_line = gcl_ide_buffer_line_of_cursor(&CUR);
+            size_t ccur_len = 0;
+            const char *ccur_txt = gcl_ide_buffer_line_at(&CUR, ccur_line, &ccur_len);
+            size_t ccur_off = gcl_ide_buffer_cursor_in_line(&CUR);
+            if (ccur_off > ccur_len) ccur_off = ccur_len;
+            char ccur_pre[4096];
+            if (ccur_off > sizeof(ccur_pre) - 1) ccur_off = sizeof(ccur_pre) - 1;
+            memcpy(ccur_pre, ccur_txt, ccur_off); ccur_pre[ccur_off] = '\0';
+            size_t ccol_t = (size_t)gcl_text_cells(ccur_pre, 0);
             int view_chars = ((int)editor_rect.width - GUTTER_W - 8) / cw;
             if (view_chars < 1) view_chars = 1;
             if ((int)ccol_t < (int)CUR.scroll_x) CUR.scroll_x = ccol_t;
@@ -828,6 +887,7 @@ int gcl_ide_run(const char *path) {
                    the cursor/text diverge. Summing real float widths with gcl_measure_text_f
                    matches DrawTextEx's drawing position exactly. */
                 float px = (float)editor_rect.x + GUTTER_W - (float)sx;
+                int pcol = 0;   /* satır başından itibaren görsel hücre kolonu (sekme duyarlı) */
                 size_t pos = 0;
                 while (pos < l) {
                     size_t tl = 0;
@@ -844,8 +904,9 @@ int gcl_ide_run(const char *path) {
                     memcpy(chunk, linebuf + pos, tl); chunk[tl] = '\0';
                     if (chunk[0] != '\0') {
                         Color col = gcl_token_color(tt, &t);
-                        gcl_draw_text_f(chunk, px, y, efont, col);
-                        px += gcl_measure_text_f(chunk, efont);
+                        gcl_draw_text_col(chunk, px, y, efont, col, pcol);
+                        px += gcl_measure_text_col(chunk, efont, pcol);
+                        pcol += gcl_text_cells(chunk, pcol);
                     }
                     pos += tl;
                 }
@@ -887,14 +948,19 @@ int gcl_ide_run(const char *path) {
                            gives the feeling of "the cursor is here but the text goes there". */
                         size_t col = 0;
                         size_t boff = 0;
+                        int cells = 0;
+                        /* Tıklanan görsel hücre kolonu (sekme birden fazla hücre). */
+                        int want = (int)(((mp.x - (inner.x - (float)sx)) / fcw) + 0.5f);
+                        if (want < 0) want = 0;
                         while (boff < l) {
                             unsigned char lc = (unsigned char)line_p[boff];
                             int ll = (lc < 0x80) ? 1 : (((lc & 0xE0) == 0xC0) ? 2 :
                                      (((lc & 0xF0) == 0xE0) ? 3 : 4));
                             if (boff + (size_t)ll > l) ll = (int)(l - boff);
-                            char tmp[5];
-                            memcpy(tmp, line_p + boff, (size_t)ll); tmp[ll] = '\0';
-                            if ((int)(inner.x - sx + MeasureText(tmp, efont)) <= (int)mp.x) {
+                            int adv = (line_p[boff] == '\t')
+                                      ? (GCL_TAB_SIZE - (cells % GCL_TAB_SIZE)) : 1;
+                            if (cells + adv <= want) {
+                                cells += adv;
                                 col = boff + (size_t)ll;
                                 boff += (size_t)ll;
                             } else {
@@ -1061,6 +1127,12 @@ int gcl_ide_run(const char *path) {
                 char linebuf[4096];
                 if (llen > sizeof(linebuf) - 1) llen = sizeof(linebuf) - 1;
                 memcpy(linebuf, line_start, llen); linebuf[llen] = '\0';
+                /* Strip the trailing CR of CRLF output. The embedded mono font has
+                   no glyph for '\r', so a leftover CR used to be drawn as '?' at
+                   the end of every output line (todo item 11). */
+                while (llen > 0 && (linebuf[llen - 1] == '\r' || linebuf[llen - 1] == '\n')) {
+                    linebuf[--llen] = '\0';
+                }
                 DrawText(linebuf, (int)(output_rect.x + 8), oy, efont, t.text);
                 oy += line_h;
                 if (!nl) break;

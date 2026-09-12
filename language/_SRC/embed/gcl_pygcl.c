@@ -1,9 +1,9 @@
 /*
  * gcl_pygcl.c — GCL embed Python helper module (`gcl`).
  *
- * Python tarafında `import gcl` ile kullanılır:
+ * Used on the Python side with `import gcl`:
  *   import gcl
- *   gcl.init()   → no-op (uygulama başlatma)
+ *   gcl.init()   → no-op (application startup)
  *
  * Python C extension module: PyInit_gcl (gcl.pyd|.so).
  */

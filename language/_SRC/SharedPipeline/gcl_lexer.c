@@ -1,8 +1,8 @@
 /*
  * gcl_lexer.c — GCL tokenizer.
  *
- * simple_doc.md'deki sözdizimini destekler:
- *   type variable = 30;  int8/float16/gcl tipleri, printf("{}", ...), scanf(),
+ * Supports the syntax in simple_doc.md:
+ *   type variable = 30;  int8/float16/gcl types, printf("{}", ...), scanf(),
  *   #new/#include, if/else/switch/for/while, struct/enum/typedef, &&/||, ++, +=, ...
  */
 
@@ -22,7 +22,7 @@ typedef struct {
     char *err;
 } Lexer;
 
-/* GCL keyword listesi (simple_doc.md) */
+/* GCL keyword list (simple_doc.md) */
 static const char *g_keywords[] = {
     "if","else","while","for","switch","case","default","break","continue",
     "return","struct","enum","typedef","const","public","private",
@@ -99,7 +99,7 @@ GclTokenList *gcl_lex(const char *src, size_t len, char **error_msg) {
             continue;
         }
 
-        /* comments: // ve yıldız-blok */
+        /* comments: // and star-block */
         if (c == '/' && lx.pos + 1 < lx.len && src[lx.pos + 1] == '/') {
             while (lx.pos < lx.len && src[lx.pos] != '\n') { lx.pos++; lx.col++; }
             continue;
@@ -137,8 +137,9 @@ GclTokenList *gcl_lex(const char *src, size_t len, char **error_msg) {
         if (isdigit((unsigned char)c)) {
             const char *start = src + lx.pos;
             int sline = lx.line, scol = lx.col;
-            /* 0x/0X öneki: arkasında geçerli hex digit varsa hex sayı, yoksa
-               yine tek parça olarak tüketilir — "0x" ayrı "0"+"x" token'ı olmaz. */
+            /* 0x/0X prefix: if followed by a valid hex digit it is a hex number,
+               otherwise it is still consumed as a single piece — "0x" never becomes
+               a separate "0"+"x" token. */
             int is_hex = 0;
             int has_hex_prefix = (c == '0' && lx.pos + 1 < lx.len &&
                                   (src[lx.pos + 1] == 'x' || src[lx.pos + 1] == 'X'));
@@ -147,7 +148,7 @@ GclTokenList *gcl_lex(const char *src, size_t len, char **error_msg) {
                 is_hex = 1;
             }
             if (has_hex_prefix) {
-                /* "0x"/"0X" önekini atla; hex sayısıysa rakamlarını tüket */
+                /* skip the "0x"/"0X" prefix; if it is a hex number, consume its digits */
                 lx.pos += 2; lx.col += 2;
                 while (is_hex && lx.pos < lx.len && isxdigit((unsigned char)src[lx.pos])) {
                     lx.pos++; lx.col++;
@@ -190,8 +191,8 @@ GclTokenList *gcl_lex(const char *src, size_t len, char **error_msg) {
             continue;
         }
 
-        /* GCL özel çok satırlı yorum: #| ... |# — içerideki her şey atlanır.
-           C yorumlarından (slash-yıldız ... yıldız-slash) farklı, GCL'nin kendi yorum biçimi. */
+        /* GCL special multi-line comment: #| ... |# — everything inside is skipped.
+           Unlike C comments (slash-star ... star-slash), this is GCL's own comment form. */
         if (c == '#' && lx.pos + 1 < lx.len && src[lx.pos + 1] == '|') {
             const char *start = src + lx.pos;
             int sline = lx.line, scol = lx.col;
@@ -206,7 +207,7 @@ GclTokenList *gcl_lex(const char *src, size_t len, char **error_msg) {
             continue;
         }
 
-        /* preprocessor: #define, #include, #if, ... — satır sonuna kadar */
+        /* preprocessor: #define, #include, #if, ... — up to the end of the line */
         if (c == '#') {
             const char *start = src + lx.pos;
             int sline = lx.line, scol = lx.col;

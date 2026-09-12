@@ -1,8 +1,8 @@
 /*
- * gcl_os.c — platform yardımcıları.
+ * gcl_os.c — platform helpers.
  *
- * gcl_os_name: hedef platform adı (windows/gnuLinux).
- * gcl_ensure_dir: eksik dizinleri oluşturur.
+ * gcl_os_name: target platform name (windows/gnuLinux).
+ * gcl_ensure_dir: creates missing directories.
  */
 
 #include <stdio.h>
@@ -27,26 +27,26 @@ const char *gcl_os_name(void) {
 #endif
 }
 
-/* Sürücü kökü ("D:" veya "D:\"), dosya sistemi kökü ("/") ve UNC kökü
-   ("\\server" veya "\\server\share") zaten VAR — bunlara mkdir denenmemeli.
-   Aksi halde _mkdir, EEXIST yerine başka bir errno (örn. EACCES/EINVAL)
-   döndürüp gcl_ensure_dir'i yanlışlıkla -1'e düşürür. */
+/* Drive root ("D:" or "D:\"), filesystem root ("/") and UNC root
+   ("\\server" or "\\server\share") already EXIST — mkdir must not be tried
+   on them. Otherwise _mkdir returns another errno (e.g. EACCES/EINVAL)
+   instead of EEXIST and wrongly makes gcl_ensure_dir return -1. */
 static int gcl_is_root_dir(const char *p) {
     if (!p || !p[0]) return 0;
 #ifdef _WIN32
-    /* "D:" veya "D:\" — sürücü kökü */
+    /* "D:" or "D:\" — drive root */
     if (p[0] && p[1] == ':') {
         if (p[2] == '\0') return 1;                                        /* "D:" */
         if ((p[2] == '\\' || p[2] == '/') && p[3] == '\0') return 1;       /* "D:\" */
         return 0;
     }
-    /* "\\server" veya "\\server\share" — UNC kökü (oluşturulamaz) */
+    /* "\\server" or "\\server\share" — UNC root (cannot be created) */
     if (p[0] == '\\' && p[1] == '\\') {
-        const char *q = p + 2;                       /* server adını atla */
+        const char *q = p + 2;                       /* skip the server name */
         while (*q && *q != '\\' && *q != '/') q++;
         if (!*q) return 1;                           /* "\\server" */
         q++;
-        while (*q && *q != '\\' && *q != '/') q++;   /* share adını atla */
+        while (*q && *q != '\\' && *q != '/') q++;   /* skip the share name */
         if (!*q) return 1;                           /* "\\server\share" */
         return 0;
     }
@@ -56,17 +56,17 @@ static int gcl_is_root_dir(const char *p) {
     return 0;
 }
 
-/* Recursive dizin oluşturma: "a/b/c" -> a, a/b, a/b/c
-   Windows'ta "C:\\a\\b" gibi sürücü harfli mutlak yollar ve UNC yolları
-   (\\server\\share\\...) doğru işlenir. */
+/* Recursive directory creation: "a/b/c" -> a, a/b, a/b/c
+   On Windows, absolute paths with a drive letter such as "C:\\a\\b" and UNC
+   paths (\\server\\share\\...) are handled correctly. */
 int gcl_ensure_dir(const char *dir) {
     if (!dir || !dir[0]) return 0;
     char tmp[4096];
     snprintf(tmp, sizeof(tmp), "%s", dir);
 #ifdef _WIN32
-    /* Backslash'e normalize et ve tekrar eden ayraçları daralt.
-       UNC öneki "\\" (iki baştaki ayraç) ve sürücü kökü "D:\" korunur;
-       böylece "D:\/_2" -> "D:\_2" gibi kirli yollar temizlenir. */
+    /* Normalize to backslash and collapse repeated separators.
+       The UNC prefix "\\" (two leading separators) and the drive root "D:\"
+       are preserved; this cleans up dirty paths like "D:\/_2" -> "D:\_2". */
     size_t w = 0;
     char prev = '\0';
     for (size_t r = 0; tmp[r]; r++) {
@@ -74,7 +74,7 @@ int gcl_ensure_dir(const char *dir) {
         if (c == '/' || c == '\\') {
             c = '\\';
             if (w > 0 && prev == '\\') {
-                /* UNC: tam olarak iki baştaki ayraç korunur */
+                /* UNC: exactly two leading separators are preserved */
                 if (w == 1 && tmp[0] == '\\') {
                     tmp[w++] = c;
                     prev = c;
@@ -92,30 +92,30 @@ int gcl_ensure_dir(const char *dir) {
     /* Trim trailing separator */
     while (len > 1 && (tmp[len - 1] == '/' || tmp[len - 1] == '\\')) tmp[--len] = '\0';
 
-    /* Kök dizin konumunu bul — iterasyon buradan başlar.
-       Bu, "C:\\a\\b" için "C:" gibi geçersiz parçaların denenmesini önler. */
+    /* Find the root directory position — iteration starts from here.
+       This prevents trying invalid segments like "C:" for "C:\\a\\b". */
     size_t start = 1;
 #ifdef _WIN32
-    /* "C:\\..." veya "C:/..." → sürücü + ayraç atla (ilk 3 karakter) */
+    /* "C:\\..." or "C:/..." → skip drive + separator (first 3 characters) */
     if (len > 2 && tmp[1] == ':' && (tmp[2] == '\\' || tmp[2] == '/')) {
         start = 3;
     }
-    /* UNC: "\\server\share\..." → server+share adını atla.
-       \server adında dizin OLUŞTURULMAZ (UNC root'u var olmalıdır);
-       ilk mkdir \server\share altındaki ilk alt dizinden başlar. */
+    /* UNC: "\\server\share\..." → skip server+share names.
+       No directory is CREATED under \server (the UNC root must already exist);
+       the first mkdir starts at the first subdirectory under \server\share. */
     else if (len > 2 && tmp[0] == '\\' && tmp[1] == '\\') {
         char *sp = tmp + 2;
-        while (*sp && *sp != '\\' && *sp != '/') sp++;  /* server adını atla */
+        while (*sp && *sp != '\\' && *sp != '/') sp++;  /* skip the server name */
         if (*sp) {
             sp++;
-            while (*sp && *sp != '\\' && *sp != '/') sp++;  /* share adını atla */
+            while (*sp && *sp != '\\' && *sp != '/') sp++;  /* skip the share name */
         }
-        if (*sp) sp++;  /* son ayracı da atla */
+        if (*sp) sp++;  /* skip the last separator too */
         start = (size_t)(sp - tmp);
-        if (start >= len) start = 1;  /* güvenlik: hiç seperator yoksa */
+        if (start >= len) start = 1;  /* safety: if there is no separator at all */
     }
 #else
-    /* POSIX mutlak yol: "/..." → baştaki ayracı atla */
+    /* POSIX absolute path: "/..." → skip the leading separator */
     if (tmp[0] == '/') start = 1;
 #endif
 

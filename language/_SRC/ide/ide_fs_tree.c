@@ -6,8 +6,8 @@
    File system helpers
    --------------------------------------------- */
 
-/* gcl_lsp_list_dir silindi — yerel, bağımlılıksız dizin listeleme.
-   MinGW dirent.h her iki platformda da çalışır (windows.h ile raylib tipleri çakışır). */
+/* gcl_lsp_list_dir removed — local, dependency-free directory listing.
+   MinGW dirent.h works on both platforms (windows.h collides with raylib types). */
 char **fs_list_dir(const char *dir, int *count) {
     *count = 0;
     if (!dir || !dir[0]) return NULL;
@@ -122,19 +122,39 @@ const char *path_basename(const char *p) {
     return s ? s + 1 : p;
 }
 
+/* Verilen yolu (göreli olsa bile) tam/mutlak yola çevirir.
+   Explorer'daki "Copy Path" bunu panoya yazar (todo #5). Sistem çağrısı
+   başarısız olursa (dosya yok vb.) yol aynen kopyalanır — böylece işlev
+   her durumda çalışır. */
+void fs_absolute_path(const char *path, char *out, size_t outsz) {
+    if (!out || outsz == 0) return;
+    out[0] = '\0';
+    if (!path || !path[0]) return;
+#ifdef _WIN32
+    if (_fullpath(out, path, outsz) == NULL) {
+        snprintf(out, outsz, "%s", path);
+    }
+#else
+    /* POSIX realpath resolved_path'i en az PATH_MAX bayt ister; 4096 yeterlidir. */
+    if (realpath(path, out) == NULL) {
+        snprintf(out, outsz, "%s", path);
+    }
+#endif
+}
+
 /* ---------------------------------------------
    Tab management
    --------------------------------------------- */
 
 void tab_add(Editor *ed, const char *path) {
     if (ed->tab_count >= MAX_TABS) return;
-    /* aynı dosya zaten açıksa yeni tab açma, mevcut tab'a geç */
+        /* if the same file is already open, don't open a new tab, switch to the existing one */
     if (path && path[0]) {
         for (int i = 0; i < ed->tab_count; i++) {
             if (ed->tabs[i].path && strcmp(ed->tabs[i].path, path) == 0) {
                 ed->active_tab = i;
-                /* Seçim anchor'ını yeni aktif buffer'ın imleçine eşitle: yoksa 0'dan cursor'a
-                   rastgele mavi seçim görünür. */
+                /* Sync the selection anchor to the new active buffer's cursor: otherwise a
+                   random blue selection appears from 0 to the cursor. */
                 ed->sel_anchor = editor_cur(ed)->cursor;
                 return;
             }
@@ -199,45 +219,60 @@ void tree_add(TreeModel *tm, const char *path, int is_dir, int depth) {
 
 int is_supported_ext(const char *name) {
     size_t ln = strlen(name);
-    /* Her türlü metin/kod formatı (kullanıcı: "her türlü text formatını desteklesin") */
+    /* Every kind of text/code format (user: "should support every text format") */
     const char *code_exts[] = {
         /* GCL */
         ".gcsf", ".gclib", ".gcdl", ".gc", ".gcsettings", ".gcdata",
-        /* C ailesi */
+        /* C family */
         ".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hxx",
         /* Lua / Python */
         ".lua", ".py", ".pyw",
         /* Web */
         ".html", ".htm", ".css", ".scss", ".less", ".js", ".jsx", ".ts", ".tsx",
         ".json", ".xml", ".yaml", ".yml", ".toml",
-        /* Markdown / belge */
+        /* Markdown / document */
         ".md", ".markdown", ".txt", ".rst", ".doc", ".docx", ".rtf",
-        /* Yapılandırma */
+        /* Configuration */
         ".ini", ".cfg", ".conf", ".properties", ".env", ".editorconfig",
         ".gitignore", ".gitattributes", ".gradle", ".cmake", ".mk", ".mak",
         ".project", ".cproject", ".prefs",
-        /* Script / kabuk */
+        /* Script / shell */
         ".sh", ".bash", ".zsh", ".bat", ".cmd", ".ps1", ".psm1", ".psd1",
-        /* Veri */
+        /* Data */
         ".csv", ".tsv", ".sql", ".log",
-        /* Diğer diller */
+        /* Other languages */
         ".go", ".rs", ".java", ".kt", ".kts", ".rb", ".php", ".swift",
         ".m", ".mm", ".cs", ".fs", ".fsx", ".pl", ".pm", ".r", ".jl",
         ".vb", ".f", ".f90", ".dart", ".ex", ".exs", ".erl", ".hrl",
-        /* Godot (örnek projeler) */
+        /* Godot (sample projects) */
         ".gd", ".tscn", ".tres", ".godot", ".gdignore",
         NULL
     };
     for (int i = 0; code_exts[i]; i++) {
         size_t el = strlen(code_exts[i]);
-        if (ln > el && strcmp(name + ln - el, code_exts[i]) == 0) return 1;
+        if (ln >= el && strcmp(name + ln - el, code_exts[i]) == 0) return 1;
     }
-    /* Asset dosyaları (resim, ses, font) — IDE explorer'da da görünsün */
-    const char *asset_exts[] = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tga",
-                                ".ttf", ".otf", ".wav", ".ogg", ".mp3", ".flac", NULL};
+    /* Asset files (image, sound, font) — they should also appear in the IDE explorer */
+    const char *asset_exts[] = {
+        /* Images raylib can load (png, qoi, bmp, tga, gif, jpg, psd, hdr, pic, pnm) */
+        ".png", ".qoi", ".bmp", ".tga", ".gif", ".jpg", ".jpeg", ".psd",
+        ".hdr", ".pic", ".ppm", ".pgm", ".pbm", ".pnm", ".pfm",
+        /* Fonts */
+        ".ttf", ".otf", ".fnt",
+        /* Audio (raylib: wav, ogg, mp3, flac, qoa, xm) */
+        ".wav", ".ogg", ".mp3", ".flac", ".qoa", ".xm", ".mod",
+        /* 3D models / animation */
+        ".obj", ".mtl", ".gltf", ".glb", ".iqm", ".vox", ".m3d",
+        /* Shaders / data */
+        ".vs", ".fs", ".glsl", ".vert", ".frag",
+        /* Shared + static libraries and build artifacts:
+           the explorer used to hide .dll/.so, so the whole build output was invisible. */
+        ".dll", ".so", ".dylib", ".a", ".lib", ".o", ".def", ".d",
+        NULL
+    };
     for (int i = 0; asset_exts[i]; i++) {
         size_t el = strlen(asset_exts[i]);
-        if (ln > el && strcmp(name + ln - el, asset_exts[i]) == 0) return 1;
+        if (ln >= el && strcmp(name + ln - el, asset_exts[i]) == 0) return 1;
     }
     return 0;
 }
@@ -293,7 +328,7 @@ void tree_scan_node(Editor *ed, const char *dir, int depth, int max_depth) {
 }
 
 void tree_rescan(Editor *ed) {
-    /* seçili yolu koru */
+    /* preserve the selected path */
     char selpath[4096] = "";
     if (ed->tree_selected >= 0 && ed->tree_selected < ed->tree.count) {
         snprintf(selpath, sizeof(selpath), "%s", ed->tree.nodes[ed->tree_selected].path);

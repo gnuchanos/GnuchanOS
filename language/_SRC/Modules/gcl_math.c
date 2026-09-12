@@ -1,7 +1,7 @@
 /*
- * gcl_math.c — GCL Math modülü (.dll/.so).
+ * gcl_math.c — GCL Math module (.dll/.so).
  *
- * simple_doc.md'deki tam fonksiyon seti:
+ * Full function set from simple_doc.md:
  *   randInt, randint, randFloat, randfloat,
  *   min, max, abs, floor, ceil, round, sqrt, pow,
  *   sin, cos, tan, asin, acos, atan,

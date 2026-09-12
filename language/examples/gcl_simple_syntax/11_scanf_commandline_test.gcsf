@@ -1,0 +1,32 @@
+#pragma commendline 
+
+#|
+    #pragma commendline nasil calisiyor
+    1: eger dosyanin yukarisinda #pragma commendline var ise otomatik isletim sisteminin terminaliacilir
+    2: gcl programi orada acilir
+    3: eger Embeded.run ile python ve lua var ise onlar icinde ayri terminal acilir ve orada baslatilir
+    4: terminal manuel kapanmadan ornek x tusuna basmak yada exit yazmak program terminali acik kalicak
+|#
+
+#native <Stdio>
+
+int main() {
+
+    int test = 0;
+    Stdio.printf("Variable:-> ");
+    Stdio.scanf(test);
+    Stdio.printf("Variable: {}\n", test);
+
+    #// alt alta scanf oldugunda skip yapabiliyor 
+
+    gcChar test1 = "";
+    Stdio.printf("Variable:-> ");
+    Stdio.scanf(test1);
+    Stdio.printf("Variable: {}\n", test1);
+
+
+
+
+
+    return 0;
+}

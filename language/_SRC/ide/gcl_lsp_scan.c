@@ -63,6 +63,17 @@ static size_t copy_ident(const char *p, char *out, size_t outcap) {
     return n;
 }
 
+/* 'name' gcl_builtin_types içindeki bir tip anahtar sözcüğü mü?
+   ("unsigned", "const", "long", "char" ...). Çok kelimeli tipleri
+   ("unsigned int x", "const char *p") tek tipe birleştirmek için. */
+static int is_type_keyword(const char *name) {
+    if (!name || !name[0]) return 0;
+    for (int i = 0; gcl_builtin_types[i]; i++) {
+        if (strcmp(gcl_builtin_types[i], name) == 0) return 1;
+    }
+    return 0;
+}
+
 /* Aynı isimli sembol zaten var mı? (duplicate önle) */
 static int sym_exists(LspSymbol *syms, int count, const char *name, const char *file) {
     for (int i = 0; i < count; i++) {
@@ -123,6 +134,12 @@ static int scan_struct(LspSymbol **out, int *count, int *cap,
         if (tn > 0) {
             q += tn;
             while (*q == ' ' || *q == '\t') q++;
+            /* pointer üyeler: "char *name;", "int **pp;" — yıldızları atla
+               (eskiden '*' yüzünden isim okunamıyor, üye kaydedilmiyordu). */
+            while (*q == '*') {
+                q++;
+                while (*q == ' ' || *q == '\t') q++;
+            }
             char member_name[128] = {0};
             size_t mn = copy_ident(q, member_name, sizeof(member_name));
             if (mn > 0) {
@@ -248,6 +265,43 @@ static void scan_text(const char *text, size_t len, const char *file,
             continue;
         }
 
+        /* #native <X> → native modülü bilinen bir tip olarak kaydet (üyeleriyle).
+           Eskiden tarayıcı #native'i hiç işlemiyordu; modül adı yalnızca
+           `#native <X>` satırında görünüyordu ve kod içinde `Stdio.printf(...)`
+           çağrılınca "there is no 'Stdio'" çıkıyordu (todo #2). */
+        if (q[0] == '#' && strncmp(q, "#native", 7) == 0 &&
+            (q[7] == ' ' || q[7] == '\t' || q[7] == '<')) {
+            const char *lt = strchr(q, '<');
+            const char *gt = lt ? strchr(lt + 1, '>') : NULL;
+            if (lt && gt && gt > lt + 1) {
+                char mname[64];
+                size_t ml = (size_t)(gt - (lt + 1));
+                if (ml >= sizeof(mname)) ml = sizeof(mname) - 1;
+                memcpy(mname, lt + 1, ml);
+                mname[ml] = '\0';
+                /* iç ve dış boşlukları kırp */
+                char *a = mname;
+                while (*a == ' ' || *a == '\t') a++;
+                char *b = a + strlen(a);
+                while (b > a && (b[-1] == ' ' || b[-1] == '\t')) b--;
+                *b = '\0';
+                if (a[0] && !sym_exists(*out, *count, a, file)) {
+                    LspSymbol *mod = lsp_list_add(out, count, cap, a,
+                                                  LSP_KIND_TYPE, LSP_VIS_PUBLIC,
+                                                  "native module", NULL, file);
+                    const char **mem = gcl_native_module_members(a);
+                    if (mod && mem) {
+                        for (int mi = 0; mem[mi]; mi++) {
+                            add_member(mod, mem[mi], LSP_KIND_FUNC,
+                                       "native function", file);
+                        }
+                    }
+                }
+            }
+            p = line_end + (nl ? 1 : 0);
+            continue;
+        }
+
         /* typedef → type sembolü */
         if (strncmp(q, "typedef", 7) == 0) {
             const char *t = q + 7;
@@ -357,13 +411,43 @@ static void scan_text(const char *text, size_t len, const char *file,
         }
 
         /* Fonksiyon: "type name(params...) {" — satır başında tip + ident + '(' */
-        /* Değişken: "type name = ...;" veya "type name;" */
+        /* Değişken: "type name = ...;" veya "type name;" — pointer yıldızları
+           ("char *DCB") ve çok kelimeli/qualifier tipler ("unsigned int x",
+           "const char *p") desteklenir. Eskiden "char *DCB = ..." hiç
+           tanınmıyordu: tip 'char', sonra '*' geldiği için isim okunamıyor,
+           DCB değişkeni sembol listesine girmiyor ve Stdio.printf argümanında
+           tamamlanmıyordu (todo #3: eksik char tamamlaması). */
         {
-            char type1[128] = {0};
+            char type1[256] = {0};
             size_t t1 = copy_ident(q, type1, sizeof(type1));
             if (t1 > 0) {
                 const char *after_t = q + t1;
-                while (*after_t == ' ' || *after_t == '\t') after_t++;
+                /* ek tip anahtar sözcükleri: "unsigned int", "const char" ... */
+                for (;;) {
+                    const char *save = after_t;
+                    while (*after_t == ' ' || *after_t == '\t') after_t++;
+                    char extra[64] = {0};
+                    size_t ex = copy_ident(after_t, extra, sizeof(extra));
+                    if (ex > 0 && is_type_keyword(extra) &&
+                        strlen(type1) + ex + 2 < sizeof(type1)) {
+                        strcat(type1, " ");
+                        strcat(type1, extra);
+                        after_t += ex;
+                        continue;
+                    }
+                    after_t = save;
+                    break;
+                }
+                /* pointer yıldızları: "char *DCB", "int **argv" */
+                for (;;) {
+                    while (*after_t == ' ' || *after_t == '\t') after_t++;
+                    if (*after_t == '*' && strlen(type1) + 2 < sizeof(type1)) {
+                        strcat(type1, "*");
+                        after_t++;
+                        continue;
+                    }
+                    break;
+                }
                 char name1[128] = {0};
                 size_t n1 = copy_ident(after_t, name1, sizeof(name1));
                 if (n1 > 0) {

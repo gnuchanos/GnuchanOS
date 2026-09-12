@@ -1,7 +1,7 @@
 /*
- * gcbundle_cli.c — gcBundle test CLI'ı.
+ * gcbundle_cli.c — gcBundle test CLI.
  *
- * Kullanım:
+ * Usage:
  *   gcbmod pack <dir> <name> <out.gcBundle>
  *   gcbmod info <module.gcBundle>
  *   gcbmod read <module.gcBundle> <path>
@@ -52,8 +52,9 @@ int main(int argc, char **argv) {
         const void *data = gcb_read_path(b, argv[3], &size);
         if (!data) { fprintf(stderr, "gcb error: %s\n", gcb_last_error()); gcb_close(b); return 1; }
 #ifdef _WIN32
-        /* Windows'ta stdout varsayılan olarak METİN modundadır: '\n' → "\r\n"
-           dönüşür ve 0x1A (EOF) baytı işlenir — binary çıktıyı BOZAR. Moda al. */
+        /* On Windows stdout defaults to TEXT mode: '\n' → "\r\n" is translated
+           and the 0x1A (EOF) byte is processed — this CORRUPTS binary output.
+           Switch to binary mode. */
         _setmode(_fileno(stdout), _O_BINARY);
 #endif
         fwrite(data, 1, size, stdout);

@@ -1,10 +1,10 @@
 /*
- * gcl_runner.c — GCL AST yürütücü (SimpleRunner'a ait).
+ * gcl_runner.c — GCL AST executor (part of SimpleRunner).
  *
- * simple_doc.md'deki örnekleri çalıştırır:
+ * Runs the examples from simple_doc.md:
  *   variable decl, printf("{}", ...), if/else, while, for, break/continue,
- *   aritmetik/karşılaştırma/boolean op'lar, scanf (basit), Math.*, Stdio.*,
- *   struct/enum/typedef, kullanıcı fonksiyon tanımı ve çağrısı.
+ *   arithmetic/comparison/boolean ops, scanf (simple), Math.*, Stdio.*,
+ *   struct/enum/typedef, user function definition and calls.
  */
 
 #include "gcl_runner.h"
@@ -19,12 +19,12 @@
 #include <math.h>
 #include <stdarg.h>
 
-/* -debug bayrağı: gcl -debug -run ... ile etkinleşir (gcl_main.c set eder).
-   Normal çalıştırmada runtime debug mesajları GÖRÜNMEZ. */
+/* -debug flag: enabled by `gcl -debug -run ...` (set by gcl_main.c).
+   During a normal run runtime debug messages are NOT shown. */
 int gcl_debug = 0;
 
-/* Tek debug kapısı: runtime debug/izleme çıktısının TAMAMI buradan geçer.
-   `gcl -debug -run ...` verilmedikçe hiçbir debug satırı yazılmaz. */
+/* Single debug gate: ALL runtime debug/trace output goes through here.
+   Unless `gcl -debug -run ...` is given, no debug line is printed. */
 static void gcl_debugf(const char *fmt, ...) {
     if (!gcl_debug) return;
     va_list ap;
@@ -42,26 +42,26 @@ static void gcl_debugf(const char *fmt, ...) {
 #include <unistd.h>
 #endif
 
-/* ---------- Değişken ortamı ---------- */
+/* ---------- Variable environment ---------- */
 
 typedef struct Var {
     char *name;
     double num;
     char *str;          /* string ise */
     int is_string;
-    char *decl_type;    /* bildirim tipi (gcChar, char, int, ...) */
-    int array_size;     /* 0=array değil, -1=char[] boş, N=char[N] */
+    char *decl_type;    /* declared type (gcChar, char, int, ...) */
+    int array_size;     /* 0=not an array, -1=empty char[], N=char[N] */
     int is_pointer;     /* char *ptr */
-    int is_const;       /* 1=const değişken (atama yapılamaz) */
-    int is_global;      /* 1=global değişken (fonksiyon çıkışında kalır) */
-    /* int arr[] = {...} sayısal dizi desteği */
+    int is_const;       /* 1=const variable (cannot be assigned) */
+    int is_global;      /* 1=global variable (survives function exit) */
+    /* int arr[] = {...} numeric array support */
     double *arr_vals;
     int arr_count;
     /* char array of strings: e.g. char texts[3][20] */
     char **arr_strs;
     /* array of struct members (for struct T arr[N]) */
     struct GclStructValue **arr_members;
-    struct GclStructValue *members; /* struct değişken ise */
+    struct GclStructValue *members; /* if this is a struct variable */
     struct Var *next;
 } Var;
 
@@ -87,10 +87,10 @@ typedef struct FuncDef {
     struct FuncDef *next;
 } FuncDef;
 
-/* #lib <Ad> ile yüklenen GCL kütüphanesi (Ad.gclib) */
+/* GCL library loaded via #lib <Name> (Name.gclib) */
 /* #lib/.gclib support removed — LibModule type eliminated */
 
-/* Yüklenmiş native modül */
+/* A loaded native module */
 typedef struct NativeModule {
     char *name;
 #ifdef _WIN32
@@ -115,12 +115,12 @@ typedef struct GclEnv {
     GclExternReg extern_regs[64];
     int extern_reg_count;
     char base_dir[4096];
-    /* main(int argc, char *argv[]) desteği */
+    /* main(int argc, char *argv[]) support */
     int arg_count;
     char **arg_vals;
 } GclEnv;
 
-/* ön bildirimler */
+/* forward declarations */
 static void free_struct_members(GclStructValue *m);
 static GclStructValue *clone_struct_members(GclStructValue *m);
 static StructDef *find_struct(GclEnv *env, const char *name);
@@ -133,7 +133,7 @@ static Var *env_find(GclEnv *env, const char *name) {
     return NULL;
 }
 
-/* For-init gibi blok-scope değişkenini env'den kaldır (scope sonu) */
+/* Remove a block-scoped variable (like a for-init) from env (end of scope) */
 static void env_remove_var(GclEnv *env, const char *name) {
     if (!env || !name) return;
     Var **pp = &env->vars;
@@ -170,7 +170,7 @@ static void env_set_num(GclEnv *env, const char *name, double val) {
         v->next = env->vars;
         env->vars = v;
     }
-    /* int8/uint8/.../float32 gibi tiplerde gerçek taşma/clamp semantiği */
+    /* real overflow/clamp semantics for types like int8/uint8/.../float32 */
     v->num = truncate_to_declared_type(val, v->decl_type);
     v->is_string = 0;
     v->array_size = 0;
@@ -200,20 +200,20 @@ static double env_get_num(GclEnv *env, const char *name) {
     return v->num;
 }
 
-/* Gerçek int/uint/float tipleri: bildirilen decl_type'a göre değeri
-   taşma/fazlalık sınırına clamp eder. Runner önceden her şeyi double
-   tutuyordu; bu, int8/int16/.../float32 ve bool için doğru semantik verir. */
+/* Real int/uint/float types: clamps the value to the overflow/excess
+   boundary according to the declared decl_type. The runner used to keep
+   everything as double; this gives correct semantics for int8/int16/.../float32 and bool. */
 static double truncate_to_declared_type(double val, const char *decl_type) {
     if (!decl_type || !decl_type[0]) return val;
     /* bool → 0/1 */
     if (strcmp(decl_type, "bool") == 0) return val != 0.0 ? 1.0 : 0.0;
-    /* işaretli tamsayılar */
+    /* signed integers */
     if (strcmp(decl_type, "int8") == 0) return (double)(signed char)((long long)val);
     if (strcmp(decl_type, "int16") == 0) return (double)(short)((long long)val);
     if (strcmp(decl_type, "int32") == 0) return (double)(int)((long long)val);
     if (strcmp(decl_type, "int64") == 0) return (double)(long long)val;
     if (strcmp(decl_type, "int128") == 0) return (double)(long long)val;
-    /* işaretsiz tamsayılar */
+    /* unsigned integers */
     if (strcmp(decl_type, "uint8") == 0) return (double)(unsigned char)((long long)val);
     if (strcmp(decl_type, "uint16") == 0) return (double)(unsigned short)((long long)val);
     if (strcmp(decl_type, "uint32") == 0) return (double)(unsigned int)((long long)val);
@@ -226,7 +226,7 @@ static double truncate_to_declared_type(double val, const char *decl_type) {
     return val;
 }
 
-/* Struct member listesini yapılandır (recursive nested struct) */
+/* Build the struct member list (recursive nested struct) */
 static void build_members_recursive(GclEnv *env, GclStructValue **head, StructDef *def) {
     if (!env || !head || !def) return;
     *head = NULL;
@@ -237,10 +237,10 @@ static void build_members_recursive(GclEnv *env, GclStructValue **head, StructDe
         m->num = 0.0;
         m->is_string = 0;
         m->members = NULL;
-        /* üyenin bildirim tipi — int8/float32 gibi tiplerde clamp için */
+        /* the member's declared type — used for clamping types like int8/float32 */
         if (def->member_types && def->member_types[i])
             m->decl_type = strdup(def->member_types[i]);
-        /* member tipi başka struct ise recursive oluştur */
+        /* if the member type is another struct, build it recursively */
         if (def->member_types && def->member_types[i]) {
             StructDef *nsd = find_struct(env, def->member_types[i]);
             if (nsd) build_members_recursive(env, &m->members, nsd);
@@ -250,7 +250,7 @@ static void build_members_recursive(GclEnv *env, GclStructValue **head, StructDe
     }
 }
 
-/* Struct değişken oluştur */
+/* Create a struct variable */
 static void env_set_struct(GclEnv *env, const char *name, StructDef *def) {
     Var *v = env_find(env, name);
     if (!v) {
@@ -267,7 +267,7 @@ static void env_set_struct(GclEnv *env, const char *name, StructDef *def) {
     build_members_recursive(env, &v->members, def);
 }
 
-/* Struct member değeri oku */
+/* Read a struct member value */
 static double env_get_member_num(GclEnv *env, const char *var_name, const char *member) {
     Var *v = env_find(env, var_name);
     if (!v || !v->members) return 0.0;
@@ -286,7 +286,7 @@ static const char *env_get_member_str(GclEnv *env, const char *var_name, const c
     return NULL;
 }
 
-/* Struct member değer yaz — member tipine göre clamp uygula */
+/* Write a struct member value — clamp according to the member type */
 static void env_set_member_num(GclEnv *env, const char *var_name, const char *member, double val) {
     Var *v = env_find(env, var_name);
     if (!v || !v->members) return;
@@ -299,7 +299,7 @@ static void env_set_member_num(GclEnv *env, const char *var_name, const char *me
     }
 }
 
-/* Struct member string değer yaz */
+/* Write a struct member string value */
 static void env_set_member_str(GclEnv *env, const char *var_name, const char *member, const char *val) {
     Var *v = env_find(env, var_name);
     if (!v || !v->members) return;
@@ -327,7 +327,7 @@ static void free_struct_members(GclStructValue *m) {
     }
 }
 
-/* Struct değerini kopyala (aynı listeden derin kopya, recursive nested) */
+/* Copy a struct value (deep copy from the same list, recursive nested) */
 static GclStructValue *clone_struct_members(GclStructValue *m) {
     GclStructValue *head = NULL, *tail = NULL;
     while (m) {
@@ -350,7 +350,7 @@ static GclStructValue *clone_struct_members(GclStructValue *m) {
     return head;
 }
 
-/* typedef arar */
+/* Look up a typedef */
 static const char *find_typedef_base(GclEnv *env, const char *alias) {
     for (TypedefDef *td = env->typedefs; td; td = td->next) {
         if (strcmp(td->alias, alias) == 0) return td->base;
@@ -358,7 +358,7 @@ static const char *find_typedef_base(GclEnv *env, const char *alias) {
     return NULL;
 }
 
-/* struct tanımı arar */
+/* Look up a struct definition */
 static StructDef *find_struct(GclEnv *env, const char *name) {
     for (StructDef *sd = env->structs; sd; sd = sd->next) {
         if (strcmp(sd->name, name) == 0) return sd;
@@ -366,7 +366,7 @@ static StructDef *find_struct(GclEnv *env, const char *name) {
     return NULL;
 }
 
-/* fonksiyon arar */
+/* Look up a function */
 static FuncDef *find_func(GclEnv *env, const char *name) {
     for (FuncDef *fd = env->funcs; fd; fd = fd->next) {
         if (strcmp(fd->name, name) == 0) return fd;
@@ -383,19 +383,19 @@ typedef struct {
     int break_flag;
     int continue_flag;
     int error;
-    GclStructValue *return_struct;  /* struct dönüş değeri */
-    GclExpr *return_init_list;      /* struct literal dönüşü (return { ... }) */
+    GclStructValue *return_struct;  /* struct return value */
+    GclExpr *return_init_list;      /* struct literal return (return { ... }) */
 } Runner;
 
-/* eval_expr ön bildirimi */
+/* eval_expr forward declaration */
 static double eval_expr(GclExpr *e, Runner *r);
-/* Nested struct init için ön bildirim — fill_members_from_init_list recursive */
+/* Forward declaration for nested struct init — fill_members_from_init_list is recursive */
 static void fill_members_from_init_list(Runner *r, GclStructValue *members, GclExpr *init);
 
-/* Struct member'ına değer yaz — string ise string, sayı ise number */
+/* Write a value to a struct member — string if it is a string, number if it is a number */
 static void set_member_value(GclStructValue *m, GclExpr *item, Runner *r) {
     if (!m || !item) return;
-    /* Nested struct init: Vector3 position = { 10, 20, 30 } → alt üyelere recursive uygula */
+    /* Nested struct init: Vector3 position = { 10, 20, 30 } → apply recursively to sub-members */
     if (item->kind == AST_EXPR_INIT_LIST && m->members) {
         fill_members_from_init_list(r, m->members, item);
         return;
@@ -422,7 +422,7 @@ static void set_member_value(GclStructValue *m, GclExpr *item, Runner *r) {
     }
 }
 
-/* Struct init listesini member listesine uygula (pozisyonel + designated) */
+/* Apply a struct init list to the member list (positional + designated) */
 static void fill_members_from_init_list(Runner *r, GclStructValue *members, GclExpr *init) {
     if (!members || !init || init->kind != AST_EXPR_INIT_LIST) return;
     GclStructValue *m = members;
@@ -440,7 +440,7 @@ static void fill_members_from_init_list(Runner *r, GclStructValue *members, GclE
                     }
                 }
             } else if (item->left->kind == AST_EXPR_VAR) {
-                /* .member = value → AST_EXPR_VAR + member_name bazı durumlarda */
+                /* .member = value → AST_EXPR_VAR + member_name in some cases */
                 const char *mname = item->left->name;
                 for (GclStructValue *ms = members; ms; ms = ms->next) {
                     if (ms->name && strcmp(ms->name, mname) == 0) {
@@ -450,14 +450,14 @@ static void fill_members_from_init_list(Runner *r, GclStructValue *members, GclE
                 }
             }
         } else if (m) {
-            /* pozisyonel: { val1, val2, ... } */
+            /* positional: { val1, val2, ... } */
             set_member_value(m, item, r);
             m = m->next;
         }
     }
 }
 
-/* Struct init doldur — VAR kopya, CALL dönüş, INIT_LIST (pozisyonel + designated) */
+/* Fill struct init — VAR copy, CALL return, INIT_LIST (positional + designated) */
 static void fill_struct_init(Runner *r, const char *var_name, GclExpr *init) {
     Var *v = env_find(r->env, var_name);
     if (!v || !v->members || !init) return;
@@ -467,7 +467,7 @@ static void fill_struct_init(Runner *r, const char *var_name, GclExpr *init) {
         return;
     }
 
-    /* init bir değişken: aynı struct'tan kopyala (Hello f = e;) */
+    /* init is a variable: copy from the same struct (Hello f = e;) */
     if (init->kind == AST_EXPR_VAR) {
         Var *sv = env_find(r->env, init->name);
         if (sv && sv->members) {
@@ -477,9 +477,9 @@ static void fill_struct_init(Runner *r, const char *var_name, GclExpr *init) {
         return;
     }
 
-    /* init bir fonksiyon çağrısı: return { ... } veya return struct */
+    /* init is a function call: return { ... } or return struct */
     if (init->kind == AST_EXPR_CALL) {
-        /* call_expr eval edildiğinde return_struct/return_init_list dolu olur */
+        /* when call_expr is evaluated, return_struct/return_init_list gets filled */
         double dummy = eval_expr(init, r);
         (void)dummy;
         if (r->return_struct) {
@@ -495,13 +495,13 @@ static void fill_struct_init(Runner *r, const char *var_name, GclExpr *init) {
     }
 }
 
-/* ---------- GCL lib modülleri (#lib <Ad>) ---------- */
+/* ---------- GCL lib modules (#lib <Name>) ---------- */
 
-/* eval_expr ve call_user_func ön bildirimi */
+/* Forward declaration of eval_expr and call_user_func */
 static double eval_expr(GclExpr *e, Runner *r);
 static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args, int arg_count);
 
-/* AST_EXPR_MEMBER zincirini çöz: p.addr.city -> son GclStructValue */
+/* Resolve an AST_EXPR_MEMBER chain: p.addr.city -> the final GclStructValue */
 static GclStructValue *resolve_member_chain(GclExpr *e, Runner *r) {
     if (!e) return NULL;
     if (e->kind == AST_EXPR_VAR) {
@@ -523,9 +523,9 @@ static GclStructValue *resolve_member_chain(GclExpr *e, Runner *r) {
     if (e->kind == AST_EXPR_MEMBER) {
         GclStructValue *parent = resolve_member_chain(e->left, r);
         if (!parent) return NULL;
-        /* Nested zincir: e->left MEMBER ise parent son member'dır,
-           onun members listesinde aranmalı. e->left VAR ise parent zaten
-           kök struct'ın üye listesidir. */
+        /* Nested chain: if e->left is a MEMBER, parent is the last member,
+           so we must search its members list. If e->left is a VAR, parent is
+           already the root struct's member list. */
         GclStructValue *search_from = parent;
         if (e->left && e->left->kind == AST_EXPR_MEMBER) {
             search_from = parent->members;
@@ -538,8 +538,8 @@ static GclStructValue *resolve_member_chain(GclExpr *e, Runner *r) {
     return NULL;
 }
 
-/* Struct üyelerini native modüle recursive düzleştir: nested struct (Vector3 vb.)
-   içindeki alt float üyeleri de sırayla açılır. Camera3D.position → 3 arg. */
+/* Flatten struct members recursively for a native module: the sub-float members
+   of a nested struct (Vector3 etc.) are also expanded in order. Camera3D.position → 3 args. */
 static void flatten_struct_members(GclStructValue *m, const char **argv,
                                    char (*numbuf)[64], char (*chbuf)[2], int *ac, int cap) {
     for (; m && *ac < cap; m = m->next) {
@@ -559,7 +559,7 @@ static void flatten_struct_members(GclStructValue *m, const char **argv,
 
 /* #lib support removed */
 
-/* Modül bul */
+/* Find a module */
 static NativeModule *native_find(GclEnv *env, const char *name) {
     for (NativeModule *m = env->modules; m; m = m->next) {
         if (strcmp(m->name, name) == 0) return m;
@@ -567,23 +567,23 @@ static NativeModule *native_find(GclEnv *env, const char *name) {
     return NULL;
 }
 
-/* scanf(name) veya scanf("format", var...) — güvenli input, env'e yazar */
+/* scanf(name) or scanf("format", var...) — safe input, writes to env */
 static double do_scanf(Runner *r, GclExpr **args, int arg_count) {
     if (arg_count < 1 || !args[0]) return 0.0;
     GclExpr *var = NULL;
     if (args[0]->kind == AST_EXPR_VAR) {
-        /* scanf(name) — tek argüman: değişkene oku */
+        /* scanf(name) — single argument: read into the variable */
         var = args[0];
     } else if (args[0]->kind == AST_EXPR_STRING && arg_count >= 2 &&
                args[1] && args[1]->kind == AST_EXPR_VAR) {
-        /* scanf("format", var) — format + hedef değişken */
+        /* scanf("format", var) — format + target variable */
         var = args[1];
     } else {
         return 0.0;
     }
     Var *v = env_find(r->env, var->name);
     if (!v) return 0.0;
-    /* vanilla char — tek karakter */
+    /* vanilla char — single character */
     if (v->decl_type && strcmp(v->decl_type, "char") == 0 && !v->is_pointer && v->array_size == 0) {
         char c;
         if (scanf("%c", &c) == 1) {
@@ -605,36 +605,42 @@ static double do_scanf(Runner *r, GclExpr **args, int arg_count) {
         }
         return 1.0;
     }
+    /* Numeric read: scanf("%lf") reads the number but the trailing '\n'
+       stays in the buffer. The next fgets-based string scanf would read it
+       as an EMPTY line ("second scanf is not working"). So after the number,
+       consume the rest of the line (including the newline) — this way
+       consecutive scanf(int) + scanf(gcChar) works correctly. */
     double n;
     if (scanf("%lf", &n) == 1) env_set_num(r->env, var->name, n);
+    { int ch; while ((ch = getchar()) != '\n' && ch != EOF) { } }
     return 1.0;
 }
 
 static NativeModule *native_load(GclEnv *env, const char *name);
 
-/* Modül fonksiyonunu çağır: Modul.member(args) */
+/* Call a module function: Modul.member(args) */
 static double call_native_member(const char *module_name, const char *member,
                                  GclExpr **args, int arg_count, Runner *r) {
     NativeModule *mod = native_find(r->env, module_name);
     if (!mod) {
-        /* Yerleşik modül ise (Math/Stdio/Embed) tembel yükle — bare printf/scanf için */
+        /* If it is a built-in module (Math/Stdio/Embed), load lazily — for bare printf/scanf */
         mod = native_load(r->env, module_name);
     }
     if (!mod) {
         fprintf(stderr, "Runtime error: unknown module '%s'\n", module_name);
         return 0.0;
     }
-    /* Stdio.scanf — gerçek input okuma, env'e yaz (bare scanf ile aynı) */
+    /* Stdio.scanf — real input read, writes to env (same as bare scanf) */
     if (strcmp(module_name, "Stdio") == 0 && strcmp(member, "scanf") == 0) {
         return do_scanf(r, args, arg_count);
     }
     for (int i = 0; i < mod->entry_count; i++) {
         if (strcmp(mod->entries[i].name, member) == 0) {
-            /* GclExpr argümanlarını string dizisine çevir.
-               STRUCT DEĞİŞKEN argümanı: üyeleri bildirim sırasıyla genişletilir.
-               Örn. Camera3D camera → BeginMode3D(camera) → 11 arg (position.x,y,z,
-               target.x,y,z, up.x,y,z, fovy, projection). Bu, GCL typedef struct
-               sisteminin native modüllere gerçek köprüsüdür. */
+            /* Convert GclExpr arguments into a string array.
+               STRUCT VARIABLE argument: its members are expanded in declaration order.
+               E.g. Camera3D camera → BeginMode3D(camera) → 11 args (position.x,y,z,
+               target.x,y,z, up.x,y,z, fovy, projection). This is the real bridge from
+               the GCL typedef struct system to native modules. */
             const char *argv[256];
             char numbuf[256][64];
             char chbuf[256][2];
@@ -642,7 +648,7 @@ static double call_native_member(const char *module_name, const char *member,
             for (int j = 0; j < arg_count && ac < 255; j++) {
                 GclExpr *a = args[j];
                 if (!a) { argv[ac++] = ""; continue; }
-                /* Address-of: &camera → alttaki struct üyelerini düzleştir (UpdateCamera(&camera, ...)) */
+                /* Address-of: &camera → flatten the underlying struct members (UpdateCamera(&camera, ...)) */
                 if (a->kind == AST_EXPR_UNOP && a->op == OP_BITAND && a->right) {
                     GclExpr *inner = a->right;
                     if (inner->kind == AST_EXPR_VAR) {
@@ -655,7 +661,7 @@ static double call_native_member(const char *module_name, const char *member,
                 }
                 if (a->kind == AST_EXPR_VAR) {
                     Var *v = env_find(r->env, a->name);
-                    /* Struct değişken → üyeleri bildirim sırasıyla genişlet */
+                    /* Struct variable → expand its members in declaration order */
                     if (v && v->members) {
                         flatten_struct_members(v->members, argv, numbuf, chbuf, &ac, 255);
                         continue;
@@ -677,7 +683,7 @@ static double call_native_member(const char *module_name, const char *member,
                         argv[ac++] = numbuf[idx];
                     }
                 } else if (a->kind == AST_EXPR_ASSIGN && a->right) {
-                    /* named/pozisyonel atama argümanı: sağ tarafın değerini kullan */
+                    /* named/positional assignment argument: use the value on the right side */
                     GclExpr *right = a->right;
                     if (right->kind == AST_EXPR_STRING) {
                         argv[ac++] = right->str ? right->str : "";
@@ -697,12 +703,12 @@ static double call_native_member(const char *module_name, const char *member,
                     }
                     continue;
                 } else if (a->kind == AST_EXPR_STRING) {
-                    /* String argüman: InitWindow(..., "GCL 3D Project") gibi başlıklar
-                       doğru iletilsin. Eski kod bunu eval_expr ile sayıya çevirip
-                       "0" gönderiyordu (pencer başlığı "0" oluyordu). */
+                    /* String argument: titles like InitWindow(..., "GCL 3D Project")
+                       must be passed through correctly. The old code converted this to
+                       a number via eval_expr and sent "0" (the window title became "0"). */
                     argv[ac++] = a->str ? a->str : "";
                 } else if (a->kind == AST_EXPR_ARRAY) {
-                    /* argv[i] — string olarak geç; ayrıca normal dizi arr[i] desteği. */
+                    /* argv[i] — pass as a string; also supports a normal array arr[i]. */
                     if (a->left && a->left->kind == AST_EXPR_VAR &&
                         strcmp(a->left->name, "argv") == 0 && r->env->arg_vals) {
                         int idx = (int)eval_expr(a->right, r);
@@ -751,7 +757,7 @@ static double call_native_member(const char *module_name, const char *member,
                     }
                     continue;
                 } else if (a->kind == AST_EXPR_MEMBER) {
-                    /* Native modül sabiti: Raylib.WHITE gibi (parantezsiz). */
+                    /* Native module constant: like Raylib.WHITE (without parentheses). */
                     int native_resolved = 0;
                     if (a->left && a->left->kind == AST_EXPR_VAR) {
                         NativeModule *nm = native_find(r->env, a->left->name);
@@ -769,7 +775,7 @@ static double call_native_member(const char *module_name, const char *member,
                         }
                     }
                     if (!native_resolved) {
-                        /* struct member fallback (nested destekli) */
+                        /* struct member fallback (nested supported) */
                         GclStructValue *mv = resolve_member_chain(a, r);
                         if (mv && mv->is_string && mv->str) {
                             argv[ac++] = mv->str;
@@ -785,7 +791,7 @@ static double call_native_member(const char *module_name, const char *member,
                     }
                     continue;
                 } else {
-                    /* Diğer tüm argüman türleri (number, binop, vs.) */
+                    /* All other argument kinds (number, binop, etc.) */
                     int idx = ac;
                     snprintf(numbuf[idx], sizeof(numbuf[idx]), "%.17g", eval_expr(a, r));
                     argv[ac++] = numbuf[idx];
@@ -798,11 +804,11 @@ static double call_native_member(const char *module_name, const char *member,
     return 0.0;
 }
 
-/* Aşağıdaki eski kod bloğu kaldırıldı (yukarıda yeni genişletilmiş mantık var) */
+/* The old code block below was removed (the new extended logic is above) */
 #if 0
     for (int i = 0; i < mod->entry_count; i++) {
         if (strcmp(mod->entries[i].name, member) == 0) {
-            /* GclExpr argümanlarını string dizisine çevir */
+            /* Convert GclExpr arguments into a string array */
             const char *argv[32];
             char numbuf[32][64];
             char chbuf[32][2];
@@ -838,8 +844,8 @@ static double call_native_member(const char *module_name, const char *member,
                         argv[j] = numbuf[j];
                     }
                 } else if (a->kind == AST_EXPR_MEMBER) {
-                    /* Native modül sabiti: Raylib.WHITE gibi (parantezsiz).
-                       Önce bu modülün üyesi olarak ara — struct member değil! */
+                    /* Native module constant: like Raylib.WHITE (without parentheses).
+                       Search it first as a member of this module — not a struct member! */
                     int native_resolved = 0;
                     if (a->left && a->left->kind == AST_EXPR_VAR) {
                         NativeModule *nm = native_find(r->env, a->left->name);
@@ -869,7 +875,7 @@ static double call_native_member(const char *module_name, const char *member,
                         }
                     }
                 } else if (a->kind == AST_EXPR_ARRAY) {
-                    /* argv[i] — string olarak geç */
+                    /* argv[i] — pass as a string */
                     if (a->left && a->left->kind == AST_EXPR_VAR &&
                         strcmp(a->left->name, "argv") == 0 && r->env->arg_vals) {
                         int idx = (int)eval_expr(a->right, r);
@@ -879,7 +885,7 @@ static double call_native_member(const char *module_name, const char *member,
                             argv[j] = "";
                         }
                     } else if (a->left && a->left->kind == AST_EXPR_VAR) {
-                        /* Regular array: arr[i] → element değerini getir */
+                        /* Regular array: arr[i] → get the element value */
                         Var *arr = env_find(r->env, a->left->name);
                         int idx = (int)eval_expr(a->right, r);
                         if (arr && idx >= 0) {
@@ -935,7 +941,7 @@ static double call_native_member(const char *module_name, const char *member,
     return 0.0;
 #endif
 
-/* Modül yükle: #native <Ad> — exe'nin Library/, base_dir/Library, cwd/Library, PATH sırasıyla */
+/* Load a module: #native <Name> — in the order exe/Library, base_dir/Library, cwd/Library, PATH */
 static NativeModule *native_load(GclEnv *env, const char *name) {
     if (native_find(env, name)) return native_find(env, name);
     char path[4096];
@@ -949,7 +955,7 @@ static NativeModule *native_load(GclEnv *env, const char *name) {
     if (!m) return NULL;
     m->name = strdup(name);
 
-    /* exe'nin bulunduğu dizini bul (Library/ onun altında) */
+    /* Find the directory containing the exe (Library/ is under it) */
     char exe_dir[4096] = "";
 #ifdef _WIN32
     GetModuleFileNameA(NULL, exe_dir, (DWORD)sizeof(exe_dir));
@@ -964,10 +970,10 @@ static NativeModule *native_load(GclEnv *env, const char *name) {
 #endif
 
     int found = 0;
-    /* Linux: Embed.so/gcl.so vb. libpython3.14.so.1.0'a DT_NEEDED bağımlılığı taşır.
-       LD_LIBRARY_PATH'ı setenv ile değiştirmek dinamik linker başladıktan sonra
-       etkisizdir. Bu yüzden libpython'u önce manuel dlopen ile yükle —
-       böylece Embed.so açılırken bağımlılık bellekte çözülmüş olur. */
+    /* Linux: Embed.so/gcl.so etc. carry a DT_NEEDED dependency on libpython3.14.so.1.0.
+       Changing LD_LIBRARY_PATH via setenv is ineffective once the dynamic linker has
+       started. So load libpython manually via dlopen first — this way the dependency is
+       already resolved in memory when Embed.so opens. */
 #ifdef __linux__
     {
         char py_lib[4096];
@@ -975,7 +981,7 @@ static NativeModule *native_load(GclEnv *env, const char *name) {
         if (access(py_lib, 0) == 0) {
             void *h = dlopen(py_lib, RTLD_NOW | RTLD_GLOBAL);
             if (!h) {
-                /* alternatif: libpython3.so */
+                /* alternative: libpython3.so */
                 snprintf(py_lib, sizeof(py_lib), "%s/Library/Embeded/Python_Runtime/libpython3.so", exe_dir);
                 if (access(py_lib, 0) == 0) dlopen(py_lib, RTLD_NOW | RTLD_GLOBAL);
             }
@@ -1012,7 +1018,7 @@ static NativeModule *native_load(GclEnv *env, const char *name) {
     m->handle = dlopen(path, RTLD_LAZY);
     if (!m->handle) { free(m->name); free(m); return NULL; }
 #endif
-    /* Export adı: gcl_<name>_get_functions — küçük harfe çevir */
+    /* Export name: gcl_<name>_get_functions — convert to lowercase */
     char export_name[256];
     snprintf(export_name, sizeof(export_name), "gcl_%s_get_functions", name);
     for (char *p = export_name; *p; p++) {
@@ -1034,9 +1040,9 @@ static NativeModule *native_load(GclEnv *env, const char *name) {
     return m;
 }
 
-/* ---------- #extern DLL + #register fonksiyonlar ---------- */
+/* ---------- #extern DLL + #register functions ---------- */
 
-/* Extern DLL bul */
+/* Find an extern DLL */
 static GclExternDll *extern_dll_find(GclEnv *env, const char *dll_name) {
     for (int i = 0; i < env->extern_dll_count; i++) {
         if (strcmp(env->extern_dlls[i].dll_name, dll_name) == 0) return &env->extern_dlls[i];
@@ -1044,7 +1050,7 @@ static GclExternDll *extern_dll_find(GclEnv *env, const char *dll_name) {
     return NULL;
 }
 
-/* Extern DLL yükle — exe_dir, base_dir, cwd, sırasıyla aranır */
+/* Load an extern DLL — searched in exe_dir, base_dir, cwd, in order */
 static GclExternDll *extern_dll_load(GclEnv *env, const char *name) {
     GclExternDll *d = extern_dll_find(env, name);
     if (d) return d;
@@ -1083,10 +1089,10 @@ static GclExternDll *extern_dll_load(GclEnv *env, const char *name) {
     return new_d;
 }
 
-/* "ret|func|params" kayıt dizesini parse et ve GclExternReg'e yaz */
+/* Parse the "ret|func|params" registration string and write it into GclExternReg */
 static GclExternType extern_parse_type(const char *s) {
     if (!s) return GCL_EXT_VOID;
-    /* Parametre adı dahil: "int width" → INT, "const char *title" → STRING,
+    /* Including the parameter name: "int width" → INT, "const char *title" → STRING,
        "char *buf" → STRING, "double x" → DOUBLE, "float f" → INT. */
     if (strstr(s, "char")) return GCL_EXT_STRING;
     if (strstr(s, "int") || strstr(s, "float") || strstr(s, "long")) return GCL_EXT_INT;
@@ -1109,7 +1115,7 @@ static void extern_register_parse(GclEnv *env, const char *reg) {
     GclExternReg *er = &env->extern_regs[env->extern_reg_count];
     memset(er, 0, sizeof(*er));
 
-    er->dll_name = strdup("");  /* şimdilik DLL adı register'dan bağımsız — tüm extern DLL'lerde aranır */
+    er->dll_name = strdup("");  /* for now the DLL name is independent of the register — searched in all extern DLLs */
     er->func_name = strdup(p1 + 1);
     er->ret = extern_parse_type(buf);
 
@@ -1120,23 +1126,23 @@ static void extern_register_parse(GclEnv *env, const char *reg) {
     char *tok = strtok_r(params, ",", &save);
     while (tok && er->param_count < 8) {
         while (*tok == ' ' || *tok == '\t') tok++;
-        /* sondaki boşlukları ve ')' ';' karakterlerini temizle (son token'da ");" kalır) */
+        /* trim trailing spaces and ')' ';' characters (the last token keeps the closing ");") */
         char *e = tok + strlen(tok) - 1;
         while (e >= tok && (*e == ' ' || *e == '\t' || *e == ')' || *e == ';')) *e-- = '\0';
-        /* parametre adını ayır: "const char *title" → tip "const char *" */
+        /* strip the parameter name: "const char *title" → type "const char *" */
         er->params[er->param_count++] = extern_parse_type(tok);
         tok = strtok_r(NULL, ",", &save);
     }
     env->extern_reg_count++;
 }
 
-/* Extern fonksiyon bul: isim eşleşirse fn_ptr'ı döndür */
+/* Find an extern function: return fn_ptr if the name matches */
 static void *extern_func_find(GclEnv *env, const char *func_name) {
     for (int i = 0; i < env->extern_reg_count; i++) {
         GclExternReg *er = &env->extern_regs[i];
         if (strcmp(er->func_name, func_name) == 0) {
             if (er->fn_ptr) return er->fn_ptr;
-            /* fn_ptr yoksa tüm DLL'lerde ara */
+            /* if there is no fn_ptr, search all DLLs */
             for (int j = 0; j < env->extern_dll_count; j++) {
                 if (!env->extern_dlls[j].handle) continue;
 #ifdef _WIN32
@@ -1154,7 +1160,7 @@ static void *extern_func_find(GclEnv *env, const char *func_name) {
     return NULL;
 }
 
-/* Extern C fonksiyonunu çağır — tip dönüşümleri yaparak */
+/* Call an extern C function — performing the type conversions */
 static double call_extern_func(GclEnv *env, const char *func_name, GclExpr **args, int arg_count, Runner *r) {
     GclExternReg *er = NULL;
     for (int i = 0; i < env->extern_reg_count; i++) {
@@ -1171,7 +1177,7 @@ static double call_extern_func(GclEnv *env, const char *func_name, GclExpr **arg
         return 0.0;
     }
 
-    /* GCL değerlerini C tiplerine dönüştür ve çağır */
+    /* Convert GCL values to C types and call */
     int n = arg_count < er->param_count ? arg_count : er->param_count;
 
     /* Basit: en fazla 8 int/double/char* destekle */

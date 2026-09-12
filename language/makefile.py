@@ -89,6 +89,7 @@ GCL_SRCS = [
     "_SRC/SharedPipeline/gcl_parser.c",
     "_SRC/GCL/SimpleRunner/gcl_runner.c",
     "_SRC/GCL/SimpleRunner/gcl_simple_runner.c",
+    "_SRC/GCL/SimpleRunner/gcl_terminal.c",
     "_SRC/gcl_os.c",
     "_SRC/gcl_main.c",
 ]

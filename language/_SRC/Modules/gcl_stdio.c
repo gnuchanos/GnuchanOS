@@ -1,11 +1,11 @@
 /*
- * gcl_stdio.c — GCL Stdio modülü (.dll/.so).
+ * gcl_stdio.c — GCL Stdio module (.dll/.so).
  *
  * simple_doc.md:
  *   Stdio.printf(); Stdio.scanf("%", ...);
  *   openFile/writeFile/readFile/closeFile/appendFile,
  *   fileExists/deleteFile/renameFile/fileSize/flushFile
- *   (camelCase ve lowercase varyantları)
+ *   (camelCase and lowercase variants)
  */
 
 #include "gcl_module.h"

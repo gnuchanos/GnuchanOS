@@ -222,6 +222,52 @@ static const char *gcl_Raygui_type_names[] = { NULL };
 /* Python completion disabled for now */
 static const char *gcl_python_raylib_names[] = { NULL };
 
+/* ---- Native modules (#native <X>) ----
+   Shared by the LSP scanner (gcl_lsp_scan.c) and the editor completion
+   (ide_editor.c) so a module loaded with `#native <X>` is recognized
+   everywhere in the code, not only on the `#native <X>` line itself (todo #2).
+   The runtime loads these as Library/<Name>.dll|.so. */
+static const char *gcl_native_modules[] = {
+    "Math","Stdio","Embed","Raylib","Raygui", NULL
+};
+
+static const char *gcl_native_math_members[] = {
+    "randInt","randint","randFloat","randfloat","min","max","abs","floor","ceil","round",
+    "sqrt","pow","sin","cos","tan","asin","acos","atan","log","log10","exp","clamp","sign",
+    "randBool","randChoice","randSign", NULL
+};
+
+static const char *gcl_native_stdio_members[] = {
+    "printf","scanf","openFile","openfile","writeFile","writefile","readFile","readfile",
+    "closeFile","closefile","appendFile","appendfile","fileExists","fileexists","deleteFile",
+    "deletefile","renameFile","renamefile","fileSize","filesize","flushFile","flushfile", NULL
+};
+
+static const char *gcl_native_embed_members[] = {
+    "Run","Stop","IsActive","GetValue","SendValue", NULL
+};
+
+/* Is 'name' one of the built-in native modules (Math/Stdio/Embed/Raylib/Raygui)? */
+static inline int gcl_is_native_module(const char *name) {
+    if (!name) return 0;
+    for (int i = 0; gcl_native_modules[i]; i++) {
+        if (strcmp(gcl_native_modules[i], name) == 0) return 1;
+    }
+    return 0;
+}
+
+/* NULL-terminated member names of a native module, or NULL if unknown.
+   Raylib/Raygui reuse the big name tables defined above. */
+static inline const char **gcl_native_module_members(const char *name) {
+    if (!name) return NULL;
+    if (strcmp(name, "Math") == 0)    return gcl_native_math_members;
+    if (strcmp(name, "Stdio") == 0)   return gcl_native_stdio_members;
+    if (strcmp(name, "Embed") == 0)   return gcl_native_embed_members;
+    if (strcmp(name, "Raylib") == 0)  return gcl_Raylib_types;
+    if (strcmp(name, "Raygui") == 0)  return gcl_Raygui_types;
+    return NULL;
+}
+
 static inline char *gcl_lsp_strdup(const char *s) {
     if (!s) return NULL;
     size_t n = strlen(s) + 1;

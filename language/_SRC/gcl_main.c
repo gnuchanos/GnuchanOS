@@ -1,16 +1,16 @@
 /*
- * gcl_main.c — GCL CLI ana girişi.
+ * gcl_main.c — GCL CLI main entry point.
  *
- * Kullanım (simple_doc.md):
- *   gcl -ide [file]                 IDE başlat
- *   gcl -debug -run file.gcsf       GCL script çalıştır
- *   gcl -luarun file.lua            Lua script çalıştır
- *   gcl -pyrun file.py              Python script çalıştır
- *   gcl -build project.gcdata -o d  Proje build (exe + gcBundle)
- *   gcl -new path [--lua|--python]  Proje iskeleti oluştur
+ * Usage (simple_doc.md):
+ *   gcl -ide [file]                 start the IDE
+ *   gcl -debug -run file.gcsf       run a GCL script
+ *   gcl -luarun file.lua            run a Lua script
+ *   gcl -pyrun file.py              run a Python script
+ *   gcl -build project.gcdata -o d  build a project (exe + gcBundle)
+ *   gcl -new path [--lua|--python]  create a project skeleton
  */
 
-#define _GNU_SOURCE   /* realpath prototipi için (POSIX.1-2008; -std=c99 altında gerekli) */
+#define _GNU_SOURCE   /* for the realpath prototype (POSIX.1-2008; required under -std=c99) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,30 +31,30 @@
 #define PCLOSE pclose
 #endif
 
-/* IDE'nin kendi exe'ni bulması için global argv */
+/* global argv so the IDE can locate its own exe */
 int g_gcl_argc = 0;
 char **g_gcl_argv = NULL;
-/* gcl_runner.c'de tanımlı — -debug bayrağıyla etkinleşir */
+/* defined in gcl_runner.c — enabled by the -debug flag */
 extern int gcl_debug;
 
 /* GCL SimpleRunner — lexer→parser→runner */
 #include "gcl_simple_runner.h"
 
-/* Embedded runtimes (-luarun / -pyrun CLI modları) — Artık Embed.dll'den DİNAMİK yüklenir */
+/* Embedded runtimes (-luarun / -pyrun CLI modes) — now loaded DYNAMICALLY from Embed.dll */
 #include "gcl_shared_state.h"
 
-/* IDE — ayrı DLL olarak yüklenir (Programs/ide.dll|.so). gcl.exe küçülür. */
+/* IDE — loaded as a separate DLL (Programs/ide.dll|.so). This keeps gcl.exe small. */
 #ifdef _WIN32
 typedef int (*GclIdeRunFn)(const char *path);
 #else
 typedef int (*GclIdeRunFn)(const char *path);
 #endif
 
-/* Çalışan gcl.exe'nin bulunduğu dizin.
-   Windows: GetModuleFileNameA → her zaman TAM yol (argv[0] göreli olsa bile).
-   Linux: argv[0] tam yol değilse realpath ile çalışma dizinine göre çöz.
-   Eski kod argv[0]="./gcl.exe" veya "gcl.exe" iken exe_dir'i hiç kırpmıyor,
-   "gcl.exe\Programs\ide.dll" gibi YANLIŞ yol üretiyordu. */
+/* Directory containing the running gcl.exe.
+   Windows: GetModuleFileNameA → always a FULL path (even if argv[0] is relative).
+   Linux: if argv[0] is not an absolute path, resolve it with realpath relative
+   to the working directory. The old code never trimmed exe_dir when argv[0] was
+   "./gcl.exe" or "gcl.exe", producing WRONG paths like "gcl.exe\Programs\ide.dll". */
 static void get_exe_dir(char *out, size_t outsz) {
     out[0] = '\0';
 #ifdef _WIN32
@@ -66,10 +66,10 @@ static void get_exe_dir(char *out, size_t outsz) {
     }
 #else
     if (g_gcl_argc > 0 && g_gcl_argv && g_gcl_argv[0] && g_gcl_argv[0][0]) {
-        /* Her durumda mutlak yol üret: realpath ile çöz.
-           Aksi halde "./language/build/gnuLinux/gcl" gibi göreli yoldan
-           "exe_dir" göreli kalır ve LD_LIBRARY_PATH göreli olur — dlopen
-           libpython3.14.so.1.0'ı bulamaz ("unknown module 'Embed'"). */
+        /* Always produce an absolute path: resolve with realpath.
+           Otherwise, from a relative path like "./language/build/gnuLinux/gcl"
+           "exe_dir" stays relative and LD_LIBRARY_PATH becomes relative — dlopen
+           cannot find libpython3.14.so.1.0 ("unknown module 'Embed'"). */
         char abs_path[4096];
         if (realpath(g_gcl_argv[0], abs_path) != NULL) {
             snprintf(out, outsz, "%s", abs_path);
@@ -89,8 +89,9 @@ static int run_ide(const char *path) {
     char exe_dir[4096] = { 0 };
     get_exe_dir(exe_dir, sizeof(exe_dir));
 
-    /* IDE'nin gcl.exe'yi çağırabilmesi için (gcl -run/-new/-build) gcl.exe yolunu ortama ver.
-       ide.dll artık g_gcl_argv'ye erişemez; bu ortam değişkeni üzerinden bulur. */
+    /* Expose the gcl.exe path via the environment so the IDE can invoke it
+       (gcl -run/-new/-build). ide.dll can no longer access g_gcl_argv; it locates
+       it through this environment variable. */
     if (g_gcl_argc > 0 && g_gcl_argv && g_gcl_argv[0] && g_gcl_argv[0][0]) {
 #ifdef _WIN32
         _putenv_s("GCL_EXE_PATH", g_gcl_argv[0]);
@@ -104,7 +105,7 @@ static int run_ide(const char *path) {
     snprintf(ide_path, sizeof(ide_path), "%s\\Programs\\ide.dll", exe_dir);
     HMODULE h = LoadLibraryA(ide_path);
     if (!h) {
-        /* Fallback: PATH üzerinden dene */
+        /* Fallback: try via PATH */
         h = LoadLibraryA("ide.dll");
         if (!h) {
             fprintf(stderr, "Error: could not load IDE library '%s'\n", ide_path);
@@ -152,11 +153,11 @@ int gcb_build_project_runtime(const char *project_dir, const char *runtime_dir,
                               const char *project_name, const char *out_dir);
 #endif
 
-/* Platform yardımcıları */
+/* Platform helpers */
 const char *gcl_os_name(void);
 int gcl_ensure_dir(const char *dir);
 
-/* ---------- Dosya oku ---------- */
+/* ---------- Read file ---------- */
 static int path_is_dir(const char *p) {
 #ifdef _WIN32
     struct _stat st;
@@ -182,7 +183,7 @@ static char *read_file(const char *path) {
     return buf;
 }
 
-/* ---------- Dış interpreter çalıştır (stdin'e ver, extract yok) ---------- */
+/* ---------- Run an external interpreter (feed via stdin, no extract) ---------- */
 static int run_interpreter(const char *path, const char *interp) {
     char *src = read_file(path);
     if (!src) { fprintf(stderr, "Error: cannot read '%s'\n", path); return 1; }
@@ -224,15 +225,15 @@ static int run_interpreter(const char *path, const char *interp) {
 #endif
 }
 
-/* ---------- GCL script çalıştırma: gerçek lexer→parser→runner pipeline ---------- */
+/* ---------- Run a GCL script: the real lexer→parser→runner pipeline ---------- */
 static int run_gcl(const char *path, int script_argc, char **script_argv) {
     char *src = read_file(path);
     if (!src) { fprintf(stderr, "Error: cannot read '%s'\n", path); return 1; }
-    /* base_dir = dosyanın bulunduğu dizin (include çözümlemesi için).
-       Her durumda MUTLAK yol üret: göreli yol/sadece dosya adı verildiğinde
-       çalışma dizinine göre çöz. Embed.Run alt süreçleri GCL_PROJECT_DIR
-       üzerinden script'i arar; göreli yol kalırsa "D:/scripts/main.lua"
-       gibi yanlış yollar oluşur. */
+    /* base_dir = the directory containing the file (for include resolution).
+       Always produce an ABSOLUTE path: when a relative path or just a file name
+       is given, resolve it against the working directory. Embed.Run subprocesses
+       look for the script via GCL_PROJECT_DIR; if the path stays relative, wrong
+       paths like "D:/scripts/main.lua" are produced. */
     char base_dir[4096];
     {
         char dir_tmp[4096];
@@ -241,7 +242,7 @@ static int run_gcl(const char *path, int script_argc, char **script_argv) {
         if (!slash) slash = strrchr(dir_tmp, '/');
         if (slash) *slash = '\0';
         else {
-            /* yalnızca dosya adı → çalışma dizini */
+            /* file name only → working directory */
             snprintf(dir_tmp, sizeof(dir_tmp), ".");
         }
 #ifdef _WIN32
@@ -251,10 +252,10 @@ static int run_gcl(const char *path, int script_argc, char **script_argv) {
             snprintf(base_dir, sizeof(base_dir), "%s", dir_tmp);
 #endif
     }
-    /* Embed.Run alt süreçleri (gcl -luarun/-pyrun) için proje kökünü ve
-       shared store yolunu ortam değişkeniyle aktar.
-       Project Run (IDE) GCL_PROJECT_DIR'i proje köküne zaten set eder;
-       standalone -run'da bu env yoksa base_dir kullanılır. */
+    /* Pass the project root and the shared store path to Embed.Run subprocesses
+       (gcl -luarun/-pyrun) via environment variables.
+       Project Run (IDE) already sets GCL_PROJECT_DIR to the project root; in
+       standalone -run, base_dir is used when this env is not set. */
     char shared_file[4096];
 #ifdef _WIN32
     const char *pre_proj = getenv("GCL_PROJECT_DIR");
@@ -274,8 +275,7 @@ static int run_gcl(const char *path, int script_argc, char **script_argv) {
     free(src);
     return rc == 0 ? 0 : 1;
 }
-
-/* ---------- gcBundle'dan build edilmiş programı çalıştır ---------- */
+/* ---------- Run a program built from a gcBundle ---------- */
 #ifndef GCL_SKIP_BUNDLE
 #include "gcbundle.h"
 
@@ -314,10 +314,11 @@ static int run_bundle_program(const char *bundle_path) {
         fprintf(stderr, "Error: cannot open bundle '%s': %s\n", bundle_path, gcb_last_error());
         return 1;
     }
-    /* Godot PCK mantığı: exe, bundle'ı kendine yanına açar. Library/Embed.dll,
-       scripts/, assets/ diske çıkar — böylece #native <Embed> + Embed.Run
-       (Lua/Python) pencereleri açılır. Programs/ bundle'da ZATEN YOK (build'de
-       sadece scripts + Library gömülür). */
+    /* Godot PCK logic: the exe extracts the bundle next to itself.
+       Library/Embed.dll, scripts/, assets/ are written to disk — so that
+       #native <Embed> + Embed.Run (Lua/Python) windows can open.
+       Programs/ is NOT in the bundle anyway (only scripts + Library are
+       embedded at build time). */
     char base_dir[4096];
     snprintf(base_dir, sizeof(base_dir), "%s", bundle_path);
     char *slash = strrchr(base_dir, '\\');
@@ -335,9 +336,10 @@ static int run_bundle_program(const char *bundle_path) {
         gcb_close(b);
         return 1;
     }
-    /* KRİTİK: bundle blob'u null-terminated DEĞİL. Lexer/parser null terminator'a
-       kadar okur; terminator yoksa blob'daki rastgele veri okunur ve
-       "unexpected character" hatası oluşur. Kaynağı null-terminated kopyaya al. */
+    /* CRITICAL: the bundle blob is NOT null-terminated. The lexer/parser reads
+       up to a null terminator; without one, random data from the blob is read
+       and an "unexpected character" error occurs. Copy the source into a
+       null-terminated buffer. */
     char *src = (char *)malloc((size_t)sz + 1);
     if (!src) { gcb_close(b); return 1; }
     memcpy(src, bundle_src, sz);
@@ -365,9 +367,10 @@ static int run_bundle_program(const char *bundle_path) {
 }
 #endif /* GCL_SKIP_BUNDLE */
 
-/* ---------- Embed.dll dinamik yükleme (-luarun / -pyrun) ---------- */
-/* Embed.dll artık Lua/Python runtime + LuaRaylib/LuaRaygui binding'lerini içerir.
-   gcl.exe yalnızca GCL dilidir; -luarun/-pyrun Embed.dll'den yüklenir. */
+/* ---------- Dynamic loading of Embed.dll (-luarun / -pyrun) ---------- */
+/* Embed.dll now contains the Lua/Python runtime plus the LuaRaylib/LuaRaygui
+   bindings. gcl.exe is only the GCL language; -luarun/-pyrun are loaded from
+   Embed.dll. */
 
 typedef int (*GclLuaRunFileFn)(const char *path);
 typedef int (*GclPyRunFileFn)(const char *path);
@@ -383,7 +386,7 @@ static int embed_library_path(char *out, size_t outsz, const char *name) {
     return 0;
 }
 
-/* ---------- Lua script çalıştır (-luarun) — Embed.dll'den ---------- */
+/* ---------- Run a Lua script (-luarun) — from Embed.dll ---------- */
 static int run_lua(const char *path) {
 #ifdef _WIN32
     char lib[4096];
@@ -424,7 +427,7 @@ static int run_lua(const char *path) {
 #endif
 }
 
-/* ---------- Python script çalıştır (-pyrun) — Embed.dll'den ---------- */
+/* ---------- Run a Python script (-pyrun) — from Embed.dll ---------- */
 static int run_python(const char *path) {
 #ifdef _WIN32
     char lib[4096];
@@ -465,16 +468,16 @@ static int run_python(const char *path) {
 #endif
 }
 
-/* ---------- Proje iskeleti oluştur (-new) ---------- */
+/* ---------- Create a project skeleton (-new) ---------- */
 /* simple_doc.md: gcl -new project_name
    Project_name/
-       assets/         --> raylib de kullanilicak (gcl, lua, python otomatik gorebilmeli)
-       external/       --> .so, .dll gibi seyleri burada ariycak (#external <file.dll>)
+       assets/         --> also used by raylib (gcl, lua, python must find it automatically)
+       external/       --> looks for .so, .dll and similar here (#external <file.dll>)
        include/        --> .gcsf
        out/            --> project_name, project_name.gcBundle
-       scripts/        --> lua, python dosyalari
+       scripts/        --> lua, python files
        main.gcsf
-       project.gcdata  --> JSON (asagidaki sema)
+       project.gcdata  --> JSON (schema below)
 */
 static int new_project(const char *path, int with_lua, int with_luaraylib, int with_python, int with_pyraylib) {
     if (!path || !path[0]) { fprintf(stderr, "Error: project path required\n"); return 1; }
@@ -488,8 +491,9 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
     const char *proj_name = strrchr(path, '\\') ? strrchr(path, '\\') + 1 : (strrchr(path, '/') ? strrchr(path, '/') + 1 : "project");
 
     /* main.gcsf — simple_doc.md: #native <Stdio> + Stdio.printf
-       Lua/Python seçiliyse Embed.Run çağrıları; LuaRaylib/PyRaylib seçiliyse
-       Raylib window örneği; hiçbiri seçili değilse yalnızca print örneği. */
+       If Lua/Python is selected, Embed.Run calls; if LuaRaylib/PyRaylib is
+       selected, a Raylib window example; if none is selected, only a print
+       example. */
     char main_path[4096];
     snprintf(main_path, sizeof(main_path), "%s/main.gcsf", path);
     FILE *f = fopen(main_path, "wb");
@@ -503,10 +507,11 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
         }
         fputs("\nint main() {\n", f);
         fputs("    Stdio.printf(\"Hello, GCL!\\n\");\n", f);
-        /* Embed pencereleri ÖNCE açılır — Lua/Python raylib pencereleri ana pencereyi beklemez */
+        /* Embed windows open FIRST — the Lua/Python raylib windows do not
+           wait for the main window */
         if (with_lua) fputs("    Embed.Run(type=\"lua\");\n", f);
         if (with_python) fputs("    Embed.Run(type=\"python\");\n", f);
-        /* GCL raylib penceresi: kullanıcı kapatana kadar açık kalır */
+        /* GCL raylib window: stays open until the user closes it */
         if (with_luaraylib || with_pyraylib) {
             fputs("    Raylib.InitWindow(800, 600, \"GCL Project\");\n", f);
             fputs("    Raylib.SetTargetFPS(60);\n", f);
@@ -522,7 +527,7 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
         fputs("}\n", f);
         fclose(f);
     }
-    /* project.gcdata — JSON (simple_doc.md semasi) */
+    /* project.gcdata — JSON (simple_doc.md schema) */
     char gcdata[4096];
     snprintf(gcdata, sizeof(gcdata), "%s/project.gcdata", path);
     f = fopen(gcdata, "wb");
@@ -553,9 +558,9 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
         f = fopen(lp, "wb");
         if (f) {
             if (with_luaraylib) {
-                /* Lua 2D örneği — gerçek Camera2D tablo nesnesi (IDE ile aynı) */
+                /* Lua 2D example — a real Camera2D table object (same as the IDE) */
                 const char *tpl =
-                    "-- GCL Lua 2D ornegi\n"
+                    "-- GCL Lua 2D example\n"
                     "gcl.init()\n"
                     "\n"
                     "raylib.InitWindow(800, 600, \"GCL Lua 2D Project\")\n"
@@ -581,7 +586,7 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
                 fputs(tpl, f);
             } else {
                 const char *tpl =
-                    "-- GCL Lua ornegi (print)\n"
+                    "-- GCL Lua example (print)\n"
                     "print(\"Hello from Lua embedded in GCL!\")\n";
                 fputs(tpl, f);
             }
@@ -594,9 +599,9 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
         f = fopen(pp, "wb");
         if (f) {
             if (with_pyraylib) {
-                /* Python 2D örneği — gerçek Camera2D dict nesnesi (IDE ile aynı) */
+                /* Python 2D example — a real Camera2D dict object (same as the IDE) */
                 const char *tpl =
-                    "# GCL Python 2D ornegi\n"
+                    "# GCL Python 2D example\n"
                     "import raylib\n"
                     "import gcl\n"
                     "\n"
@@ -624,7 +629,7 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
                 fputs(tpl, f);
             } else {
                 const char *tpl =
-                    "# GCL Python ornegi (print)\n"
+                    "# GCL Python example (print)\n"
                     "print(\"Hello from Python embedded in GCL!\")\n";
                 fputs(tpl, f);
             }
@@ -634,15 +639,14 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
     printf("Project created: %s\n", path);
     return 0;
 }
-
 /* ---------- Build (-build) ---------- */
 #ifndef GCL_SKIP_BUNDLE
 static int build_project(const char *gcdata, const char *out_dir_arg) {
     if (!gcdata || !out_dir_arg) { fprintf(stderr, "Error: build requires project.gcdata and -o dir\n"); return 1; }
-    /* out_dir const parametresini yerel mutable buffer'a al — kırpma burada yapılır */
+    /* Copy the const out_dir parameter into a local mutable buffer — trimming happens here */
     char out_dir[4096];
     snprintf(out_dir, sizeof(out_dir), "%s", out_dir_arg);
-    /* project.gcdata'dan proje adını al (JSON: "project_name": "X") */
+    /* Read the project name from project.gcdata (JSON: "project_name": "X") */
     char *data = read_file(gcdata);
     char name[256] = "project";
     if (data) {
@@ -663,50 +667,50 @@ static int build_project(const char *gcdata, const char *out_dir_arg) {
         }
         free(data);
     }
-    /* Proje adı SADECE dosya adı olmalı — baştaki / \ yol ayraçlarını kırp.
-       Aksi halde out_dir içinde alt yol oluşur (örn. "test_project//_31_final.exe"). */
+    /* The project name must be ONLY a file name — trim leading / \ path separators.
+       Otherwise a subpath is created inside out_dir (e.g. "test_project//_31_final.exe"). */
     {
         char *nm = name;
         while (*nm == '/' || *nm == '\\' || *nm == '.') nm++;
         if (!*nm) nm = "project";
         memmove(name, nm, strlen(nm) + 1);
-        /* olmayan karakterleri de temizle: boşluk ve : ? * " < > | */
+        /* also clean invalid characters: space and : ? * " < > | */
         for (char *q = name; *q; q++) {
             if (*q == ' ' || *q == ':' || *q == '?' || *q == '*' || *q == '"' || *q == '<' || *q == '>' || *q == '|')
                 *q = '_';
         }
     }
-    /* out_dir sonundaki / yolları kırp */
+    /* trim trailing / from out_dir */
     {
         size_t odl = strlen(out_dir);
         while (odl > 1 && (out_dir[odl - 1] == '/' || out_dir[odl - 1] == '\\')) { out_dir[odl - 1] = '\0'; odl--; }
     }
-    /* proje kökü = gcdata'nın parent'ı */
+    /* project root = the parent of gcdata */
     char project_dir[4096];
     snprintf(project_dir, sizeof(project_dir), "%s", gcdata);
     char *slash = strrchr(project_dir, '\\');
     if (!slash) slash = strrchr(project_dir, '/');
     if (slash) *slash = '\0';
 
-    /* Çıktı dizinini oluştur (yoksa gcBundle yazılamaz) */
+    /* Create the output directory (otherwise the gcBundle cannot be written) */
     gcl_ensure_dir(out_dir);
 
-    /* Runtime dizini = çalışan gcl.exe'nin bulunduğu build/<os>/ (Library/ altında).
+    /* Runtime directory = build/<os>/ where the running gcl.exe lives (under Library/).
        Doc: ".gcBundle — all runtime and dll or so in this place". */
     char runtime_dir[4096] = "";
     get_exe_dir(runtime_dir, sizeof(runtime_dir));
 
-    /* gcBundle üret (proje + runtime/Library) */
-    printf("[Build] 1/5 Proje + runtime paketleniyor...\n");
+    /* Produce the gcBundle (project + runtime/Library) */
+    printf("[Build] 1/5 Packaging project + runtime...\n");
     fflush(stdout);
     if (gcb_build_project_runtime(project_dir, runtime_dir, name, out_dir) != 0) {
         fprintf(stderr, "Error: could not build project\n");
         return 1;
     }
-    printf("[Build] 2/5 Çalıştırılabilir kopyalanıyor...\n");
+    printf("[Build] 2/5 Copying the executable...\n");
     fflush(stdout);
 
-    /* Doc: Project_name.exe — mevcut çalışan gcl exe'yi out_dir'e kopyala */
+    /* Doc: Project_name.exe — copy the currently running gcl exe into out_dir */
     {
         const char *src_exe = (g_gcl_argc > 0 && g_gcl_argv && g_gcl_argv[0]) ? g_gcl_argv[0] : NULL;
         if (src_exe && src_exe[0]) {
@@ -732,7 +736,7 @@ static int build_project(const char *gcdata, const char *out_dir_arg) {
         }
     }
 
-    printf("[Build] 3/5 Tamamlandı.\n");
+    printf("[Build] 3/5 Done.\n");
     fflush(stdout);
     printf("Built: %s.gcBundle -> %s\n", name, out_dir);
     return 0;
@@ -776,18 +780,19 @@ int main(int argc, char **argv) {
     g_gcl_argv = argv;
 
 #ifdef _WIN32
-    /* Konsol çıktısını UTF-8 yap — Türkçe karakterler düzgün görünsün */
+    /* Make console output UTF-8 — so non-ASCII characters display correctly */
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
 #endif
 
-    /* Linux: Python embed kütüphanesini runtime'da bulmak için LD_LIBRARY_PATH'e
-       build çıktısındaki Embeded/Python_Runtime dizinini ekle. Embed.so, gcl.so vb.
-       libpython3.14.so.1.0'a DT_NEEDED bağımlılığı taşır; bu dizin yoksa dlopen
-       başarısız olur ve "unknown module 'Embed'" hatası alınır.
-       NOT: setenv dinamik linker başladıktan sonra etkisizdir — bu yüzden
-       libpython'u manuel dlopen(RTLD_GLOBAL) ile ön-yükleriz. Böylece
-       Embed.so ve gcl.so açılırken bağımlılık bellekte çözülmüş olur. */
+    /* Linux: to find the Python embed library at runtime, add the
+       Embeded/Python_Runtime directory from the build output to LD_LIBRARY_PATH.
+       Embed.so, gcl.so, etc. carry a DT_NEEDED dependency on
+       libpython3.14.so.1.0; without this directory dlopen fails and the
+       "unknown module 'Embed'" error occurs.
+       NOTE: setenv has no effect after the dynamic linker has started — so we
+       preload libpython manually with dlopen(RTLD_GLOBAL). That way the
+       dependency is already resolved in memory when Embed.so and gcl.so open. */
 #ifdef __linux__
     {
         char exe_dir[4096] = { 0 };
@@ -797,7 +802,7 @@ int main(int argc, char **argv) {
         snprintf(new_ld, sizeof(new_ld), "%s/Library/Embeded/Python_Runtime%s%s",
                  exe_dir, ld ? ":" : "", ld ? ld : "");
         setenv("LD_LIBRARY_PATH", new_ld, 1);
-        /* libpython'u manuel ön-yükle */
+        /* preload libpython manually */
         char py_lib[4096];
         snprintf(py_lib, sizeof(py_lib), "%s/Library/Embeded/Python_Runtime/libpython3.14.so.1.0", exe_dir);
         if (access(py_lib, 0) == 0) {
@@ -815,9 +820,9 @@ int main(int argc, char **argv) {
 #endif
 
     if (argc < 2) {
-        /* Build edilen proje exe'si (gcl.exe kopyası): yanında *.gcBundle varsa
-           bundle içindeki main.gcsf'i çalıştır — IDE'yi BAŞLATMAZ.
-           Normal gcl.exe argsız çalışınca IDE açılır (orijinal davranış). */
+        /* A built project exe (a copy of gcl.exe): if there is a *.gcBundle next
+           to it, run main.gcsf from the bundle — it does NOT start the IDE.
+           A normal gcl.exe with no args opens the IDE (original behavior). */
 #ifndef GCL_SKIP_BUNDLE
         char exe_dir[4096] = { 0 };
         get_exe_dir(exe_dir, sizeof(exe_dir));
@@ -826,7 +831,7 @@ int main(int argc, char **argv) {
             return run_bundle_program(bundle_path);
         }
 #endif
-        /* varsayılan: IDE */
+        /* default: IDE */
         return run_ide(NULL);
     }
 
@@ -834,7 +839,7 @@ int main(int argc, char **argv) {
         return run_ide(argc > 2 ? argv[2] : NULL);
     }
     if (strcmp(argv[1], "-run") == 0 && argc >= 3) {
-        /* GCL script argümanları: gcl -run file.gcsf a1 a2 → argc/argv a1,a2 */
+        /* GCL script arguments: gcl -run file.gcsf a1 a2 → argc/argv a1,a2 */
         return run_gcl(argv[2], argc - 3, argv + 3);
     }
     if (strcmp(argv[1], "-debug") == 0 && argc >= 4 && strcmp(argv[2], "-run") == 0) {
@@ -874,7 +879,7 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "-pyhost") == 0 && argc >= 3) {
         return pyhost(argv[2]);
     }
-    /* "language ..." — simple_doc.md: gcl language <dirs> → build (makefile.py delege) */
+    /* "language ..." — simple_doc.md: gcl language <dirs> → build (delegates to makefile.py) */
     if (strcmp(argv[1], "language") == 0) {
         const char *cmd =
 #ifdef _WIN32

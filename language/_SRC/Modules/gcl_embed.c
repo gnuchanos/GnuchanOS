@@ -16,6 +16,7 @@
 #include "gcl_embed_python.h"
 #include "gcl_embed_lua.h"
 #include "gcl_shared_state.h"
+#include "gcl_terminal_spawn.h"   /* _SRC/include — ayri terminal penceresi */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,7 +82,17 @@ static int spawn_runner(const char *type) {
     memset(&si, 0, sizeof(si));
     memset(&pi, 0, sizeof(pi));
     si.cb = sizeof(si);
-    if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+    /* #pragma commandline terminal uygulaması: ana program GCL_TERMINAL=1 ile
+       işaretlenmişse Lua/Python KENDİ terminal penceresinde açılır (ornek dosya:
+       "eger Embeded.run ile python ve lua var ise onlar icinde ayri terminal
+       acilir ve orada baslatilir"). CREATE_NEW_CONSOLE vermezsek çocuk süreç
+       ana terminali paylaşır ve aynı pencerede karışır. */
+    DWORD flags = 0;
+    {
+        const char *term = getenv(GCL_TERMINAL_ENV);
+        if (term && term[0] && strcmp(term, "0") != 0) flags = CREATE_NEW_CONSOLE;
+    }
+    if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, flags, NULL, NULL, &si, &pi))
         return 0;
     CloseHandle(pi.hThread);
     if (strcmp(type, "python") == 0) g_child_python = pi.hProcess;
@@ -122,14 +133,32 @@ static int spawn_runner(const char *type) {
     ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
     if (n > 0) exe[n] = '\0';
 
-    pid_t pid = fork();
-    if (pid < 0) return 0;
-    if (pid == 0) {
-        if (strcmp(type, "python") == 0)
-            execlp(exe, exe, "-pyrun", script, (char *)NULL);
-        else
-            execlp(exe, exe, "-luarun", script, (char *)NULL);
-        _exit(127);
+    pid_t pid;
+    {
+        const char *term = getenv(GCL_TERMINAL_ENV);
+        if (term && term[0] && strcmp(term, "0") != 0) {
+            /* #pragma commandline terminal uygulaması: Lua/Python KENDİ terminal
+               penceresinde başlatılır (gcl_term_spawn_argv bir terminal emülatörü
+               bulup argv'yi onun içinde çalıştırır). */
+            const char *cargv[4];
+            int cargc = 0;
+            cargv[cargc++] = exe;
+            cargv[cargc++] = (strcmp(type, "python") == 0) ? "-pyrun" : "-luarun";
+            cargv[cargc++] = script;
+            cargv[cargc] = NULL;
+            pid = gcl_term_spawn_argv(cargc, cargv);
+            if (pid <= 0) return 0;
+        } else {
+            pid = fork();
+            if (pid < 0) return 0;
+            if (pid == 0) {
+                if (strcmp(type, "python") == 0)
+                    execlp(exe, exe, "-pyrun", script, (char *)NULL);
+                else
+                    execlp(exe, exe, "-luarun", script, (char *)NULL);
+                _exit(127);
+            }
+        }
     }
     if (strcmp(type, "python") == 0) g_child_python = pid;
     else g_child_lua = pid;

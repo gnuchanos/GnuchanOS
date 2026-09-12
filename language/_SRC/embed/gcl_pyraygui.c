@@ -1,11 +1,11 @@
 /*
  * gcl_pyraygui.c — GCL Embed Python + Raygui binding (FULL).
  *
- * Python tarafında `import raygui` ile kullanılır:
+ * Used on the Python side with `import raygui`:
  *   import raygui
  *   raygui.GuiStatusBar((0, 0, 800, 30), "text")
  *
- * Rectangle, gcl_pyraylib.c'de tuple olarak döner; burada aynı tuple alınır.
+ * Rectangle is returned as a tuple from gcl_pyraylib.c; the same tuple is accepted here.
  * Color, packed 32-bit unsigned int (R|G<<8|B<<16|A<<24).
  *
  * Python C extension module: PyInit_raygui (raygui.pyd|.so).
@@ -26,7 +26,7 @@
 #define GCL_PY_EXPORT __attribute__((visibility("default")))
 #endif
 
-/* ---------- Yardımcılar ---------- */
+/* ---------- Helpers ---------- */
 
 static unsigned int color_to_uint(Color c) {
     return ((unsigned int)c.r) |
@@ -69,7 +69,7 @@ static int parse_args(PyObject *args, Rectangle *rec, const char **text) {
     return *text ? 1 : 0;
 }
 
-/* ---------- Temel (mevcut) ---------- */
+/* ---------- Basic (existing) ---------- */
 
 static PyObject *py_gui_status_bar(PyObject *self, PyObject *args) {
     (void)self;
@@ -274,7 +274,7 @@ static PyObject *py_gui_color_bar_hue(PyObject *self, PyObject *args) { (void)se
 static PyObject *py_gui_color_picker_hsv(PyObject *self, PyObject *args) { (void)self;Rectangle r;const char*t="";Vector3 c;if(PyTuple_GET_SIZE(args)<5)return NULL;if(!parse_rect(PyTuple_GET_ITEM(args,0),&r))return NULL;if(PyTuple_GET_SIZE(args)>=2&&PyTuple_GET_ITEM(args,1)!=Py_None)t=PyUnicode_AsUTF8(PyTuple_GET_ITEM(args,1));c.x=(float)PyFloat_AsDouble(PyTuple_GET_ITEM(args,2));c.y=(float)PyFloat_AsDouble(PyTuple_GET_ITEM(args,3));c.z=(float)PyFloat_AsDouble(PyTuple_GET_ITEM(args,4));GuiColorPickerHSV(r,t,&c);return Py_BuildValue("(fff)",c.x,c.y,c.z); }
 static PyObject *py_gui_color_panel_hsv(PyObject *self, PyObject *args) { (void)self;Rectangle r;const char*t="";Vector3 c;if(PyTuple_GET_SIZE(args)<5)return NULL;if(!parse_rect(PyTuple_GET_ITEM(args,0),&r))return NULL;if(PyTuple_GET_SIZE(args)>=2&&PyTuple_GET_ITEM(args,1)!=Py_None)t=PyUnicode_AsUTF8(PyTuple_GET_ITEM(args,1));c.x=(float)PyFloat_AsDouble(PyTuple_GET_ITEM(args,2));c.y=(float)PyFloat_AsDouble(PyTuple_GET_ITEM(args,3));c.z=(float)PyFloat_AsDouble(PyTuple_GET_ITEM(args,4));GuiColorPanelHSV(r,t,&c);return Py_BuildValue("(fff)",c.x,c.y,c.z); }
 
-/* ---------- Metot tablosu ---------- */
+/* ---------- Method table ---------- */
 
 static PyMethodDef raygui_methods[] = {
     {"GuiStatusBar", py_gui_status_bar, METH_VARARGS, "Status bar"},

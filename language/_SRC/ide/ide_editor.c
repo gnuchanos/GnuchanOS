@@ -33,6 +33,73 @@ int editor_is_word_char(char c) {
     return editor_is_ident_char(c) || c == '#';
 }
 
+/* Trim leading/trailing blanks IN PLACE.
+   gcl_lsp_trim() allocates and RETURNS a new string; calling it and throwing
+   the result away leaves "    Stdio" (indented) untouched, so
+   strcmp(module_name, "Stdio") never matched and member completion stayed
+   empty for every indented line (todo #4). */
+static void editor_trim_inplace(char *s) {
+    if (!s) return;
+    char *a = s;
+    while (*a == ' ' || *a == '\t') a++;
+    if (a != s) memmove(s, a, strlen(a) + 1);
+    size_t n = strlen(s);
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t')) s[--n] = '\0';
+}
+
+/* Cursor's lexical context: is it inside a string/char literal or inside a
+   comment? The scan starts at the beginning of the buffer, so multi-line block
+   comments and unterminated strings are detected correctly. Auto-completion
+   must never open in these contexts (todo item: the "there is no ..." popup
+   used to appear while typing inside a string literal). */
+typedef struct {
+    int in_string;
+    int in_comment;
+} EditorLexContext;
+
+static void editor_lex_context_at(const char *text, size_t cursor, EditorLexContext *ctx) {
+    ctx->in_string = 0;
+    ctx->in_comment = 0;
+    if (!text) return;
+    int block = 0;         /* 1 = block comment, 2 = GCL #| ... |# comment */
+    int line_comment = 0;
+    char quote = 0;
+    for (size_t i = 0; i < cursor; i++) {
+        char c = text[i];
+        if (line_comment) {
+            if (c == '\n') line_comment = 0;
+            continue;
+        }
+        if (block == 1) {
+            if (c == '*' && i + 1 < cursor && text[i + 1] == '/') { block = 0; i++; }
+            continue;
+        }
+        if (block == 2) {
+            if (c == '|' && i + 1 < cursor && text[i + 1] == '#') { block = 0; i++; }
+            continue;
+        }
+        if (quote) {
+            if (c == '\\' && i + 1 < cursor) { i++; continue; }
+            if (c == quote) quote = 0;
+            continue;
+        }
+        if (c == '/' && i + 1 < cursor && text[i + 1] == '/') { line_comment = 1; i++; continue; }
+        if (c == '/' && i + 1 < cursor && text[i + 1] == '*') { block = 1; i++; continue; }
+        if (c == '#' && i + 1 < cursor && text[i + 1] == '|') { block = 2; i++; continue; }
+        if (c == '"' || c == '\'') quote = c;
+    }
+    ctx->in_string = quote != 0;
+    ctx->in_comment = (block != 0) || line_comment;
+}
+
+/* Is the current line a preprocessor line (first non-blank char is '#')?
+   Preprocessor lines keep their own completion rules (#include "..." etc.). */
+static int editor_line_is_preproc(const char *line, size_t col) {
+    size_t i = 0;
+    while (i < col && (line[i] == ' ' || line[i] == '\t')) i++;
+    return i < col && line[i] == '#';
+}
+
 void editor_handle_bracket_close(Editor *ed, char open_char, char close_char) {
     gcl_ide_buffer_insert_char(&CURP, open_char);
     gcl_ide_buffer_insert_char(&CURP, close_char);
@@ -87,19 +154,9 @@ static int add_members_for(LspSymbol *syms, int count, const char *type_name,
 static const char **gcl_primitive_types = gcl_builtin_types;
 
 /* #native modül üyeleri — Math., Stdio., Embed. erişimi */
-static const char *gcl_native_math_members[] = {
-    "randInt","randint","randFloat","randfloat","min","max","abs","floor","ceil","round",
-    "sqrt","pow","sin","cos","tan","asin","acos","atan","log","log10","exp","clamp","sign",
-    "randBool","randChoice","randSign", NULL
-};
-static const char *gcl_native_stdio_members[] = {
-    "printf","scanf","openFile","openfile","writeFile","writefile","readFile","readfile",
-    "closeFile","closefile","appendFile","appendfile","fileExists","fileexists","deleteFile",
-    "deletefile","renameFile","renamefile","fileSize","filesize","flushFile","flushfile", NULL
-};
-static const char *gcl_native_embed_members[] = {
-    "Run","Stop","IsActive","GetValue","SendValue", NULL
-};
+/* Üye listeleri (gcl_native_math_members / _stdio_ / _embed_) ve
+   gcl_native_modules artık gcl_lsp_internal.h'da paylaşılıyor — LSP
+   tarayıcısı da #native <X> modüllerini tanısın diye (todo #2). */
 
 /* Native üye imza (parametre) bilgisi — tamamlama penceresinde görünür */
 static const char *native_member_params(const char *name) {
@@ -263,7 +320,80 @@ static int editor_match_cur(const char *name, const char *cur_word) {
     return editor_fuzzy_match(name, cur_word);
 }
 
-/* Dosya kökeni sıralama için aktif dosya yolu (qsort context sağlayamaz). */
+/* Native modül adları (gcl_native_modules) ve gcl_is_native_module artık
+   gcl_lsp_internal.h'da paylaşılıyor — LSP tarayıcısı da aynı listeyi
+   kullansın diye (todo #2). */
+static int editor_is_native_module(const char *name) {
+    return gcl_is_native_module(name);
+}
+
+/* Add the members of a native module (Math./Stdio./Embed./Raylib./Raygui.)
+   to the completion list. Returns 1 when 'module_name' is a native module. */
+static int editor_add_native_members(Editor *ed, int *cap, const char *module_name,
+                                     const char *cur_word, const char *file) {
+    if (!module_name || !module_name[0]) return 0;
+
+    if (strcmp(module_name, "Math") == 0) {
+        for (int mi = 0; gcl_native_math_members[mi]; mi++) {
+            if (cur_word[0] && !editor_match_cur(gcl_native_math_members[mi], cur_word)) continue;
+            lsp_list_add(&ed->completions, &ed->completion_count, cap,
+                         gcl_native_math_members[mi], LSP_KIND_FUNC, LSP_VIS_PUBLIC,
+                         "Math member", native_member_params(gcl_native_math_members[mi]), file);
+        }
+        return 1;
+    }
+    if (strcmp(module_name, "Stdio") == 0) {
+        for (int mi = 0; gcl_native_stdio_members[mi]; mi++) {
+            if (cur_word[0] && !editor_match_cur(gcl_native_stdio_members[mi], cur_word)) continue;
+            lsp_list_add(&ed->completions, &ed->completion_count, cap,
+                         gcl_native_stdio_members[mi], LSP_KIND_FUNC, LSP_VIS_PUBLIC,
+                         "Stdio member", native_member_params(gcl_native_stdio_members[mi]), file);
+        }
+        return 1;
+    }
+    if (strcmp(module_name, "Embed") == 0) {
+        for (int mi = 0; gcl_native_embed_members[mi]; mi++) {
+            if (cur_word[0] && !editor_match_cur(gcl_native_embed_members[mi], cur_word)) continue;
+            lsp_list_add(&ed->completions, &ed->completion_count, cap,
+                         gcl_native_embed_members[mi], LSP_KIND_FUNC, LSP_VIS_PUBLIC,
+                         "Embed member", native_member_params(gcl_native_embed_members[mi]), file);
+        }
+        return 1;
+    }
+    if (strcmp(module_name, "Raylib") == 0) {
+        for (int ri = 0; gcl_Raylib_types[ri]; ri++) {
+            const char *n = gcl_Raylib_types[ri];
+            if (!n || !n[0]) continue;
+            if (cur_word[0] && !editor_match_cur(n, cur_word)) continue;
+            int is_type = 0;
+            for (int ti = 0; gcl_Raylib_type_names[ti]; ti++) {
+                if (strcmp(n, gcl_Raylib_type_names[ti]) == 0) { is_type = 1; break; }
+            }
+            lsp_list_add(&ed->completions, &ed->completion_count, cap,
+                         n, is_type ? LSP_KIND_TYPE : LSP_KIND_FUNC, LSP_VIS_PUBLIC,
+                         is_type ? "Raylib type" : "Raylib function", NULL, file);
+        }
+        return 1;
+    }
+    if (strcmp(module_name, "Raygui") == 0) {
+        for (int gi = 0; gcl_Raygui_types[gi]; gi++) {
+            const char *n = gcl_Raygui_types[gi];
+            if (!n || !n[0]) continue;
+            if (cur_word[0] && !editor_match_cur(n, cur_word)) continue;
+            int is_type = 0;
+            for (int ti = 0; gcl_Raygui_type_names[ti]; ti++) {
+                if (strcmp(n, gcl_Raygui_type_names[ti]) == 0) { is_type = 1; break; }
+            }
+            lsp_list_add(&ed->completions, &ed->completion_count, cap,
+                         n, is_type ? LSP_KIND_TYPE : LSP_KIND_FUNC, LSP_VIS_PUBLIC,
+                         is_type ? "Raygui type" : "Raygui function", NULL, file);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/* Active file path for completion sorting (qsort cannot take a context). */
 static const char *g_sort_current_file = NULL;
 
 /* Dosya kökeni önceliği: yerel dosya > include/proje > builtin.
@@ -304,25 +434,52 @@ static int editor_cmp_completion(const void *a, const void *b) {
 static int editor_inside_arguments(const char *prefix) {
     int depth = 0;
     char quote = 0;
+    int line_comment = 0;
+    int block_comment = 0;  /* 1 = C block comment, 2 = GCL #| ... |# */
     for (const char *p = prefix; *p; p++) {
-        if (quote) {
-            if (*p == quote && p[-1] != '\\') quote = 0;
+        char c = *p;
+        if (line_comment) {
+            if (c == '\n') line_comment = 0;
             continue;
         }
-        if (*p == '"' || *p == '\'') { quote = *p; continue; }
-        if (*p == '(') depth++;
-        else if (*p == ')') { if (depth > 0) depth--; }
+        if (block_comment == 1) {
+            if (c == '*' && p[1] == '/') { block_comment = 0; p++; }
+            continue;
+        }
+        if (block_comment == 2) {
+            if (c == '|' && p[1] == '#') { block_comment = 0; p++; }
+            continue;
+        }
+        if (quote) {
+            if (c == '\\' && p[1]) { p++; continue; }
+            if (c == quote) quote = 0;
+            continue;
+        }
+        if (c == '/' && p[1] == '/') { line_comment = 1; p++; continue; }
+        if (c == '/' && p[1] == '*') { block_comment = 1; p++; continue; }
+        if (c == '#' && p[1] == '|') { block_comment = 2; p++; continue; }
+        if (c == '"' || c == '\'') { quote = c; continue; }
+        if (c == '(') depth++;
+        else if (c == ')') { if (depth > 0) depth--; }
     }
     return depth > 0;
 }
 
-void editor_show_completion(Editor *ed) {
+void editor_show_completion(Editor *ed, int manual) {
+    /* Once ESC dismisses the popup it stays closed until a NEW deliberate
+       trigger. Only a typed '.' and Ctrl+Space reset completion_dismissed
+       in the caller, so this single check stops the popup from popping back
+       up (the old code set the flag but never read it - todo items 5 and 17). */
+    if (ed->completion_dismissed && !manual) return;
     /* eski listeyi temizle */
     lsp_list_clear(&ed->completions, &ed->completion_count);
     ed->completion_selected = 0;
     ed->completion_visible = 0;
     ed->completion_no_match = 0;
     ed->completion_message[0] = '\0';
+    /* manual = 1 → kullanıcı açıkça istedi (Ctrl+Space): eşleşme yoksa
+       "there is no 'X'" mesajı gösterilir. manual = 0 → '.' üzerine otomatik
+       açıldı: mesaj gösterilmez, yalnızca gerçek öneriler listelenir. */
 
     if (ed->tab_count <= 0 || ed->active_tab < 0 || ed->active_tab >= ed->tab_count) return;
 
@@ -357,8 +514,22 @@ void editor_show_completion(Editor *ed) {
         wlen++;
     }
     cur_word[wlen] = '\0';
-    /* Rakam veya özel karakterle başlayan yazım tamamlama kelimesi sayılmaz (0, 123...) */
+    /* A word that starts with a digit or symbol is not a completion word (0, 123...) */
     if (cur_word[0] && !gcl_lsp_is_ident_start(cur_word[0])) cur_word[0] = '\0';
+
+    /* Lexical guard: never complete inside a string/char literal or a comment.
+       Preprocessor lines are excluded — #include "..." has its own rules. */
+    if (!editor_line_is_preproc(line_str, col)) {
+        EditorLexContext lex;
+        editor_lex_context_at(text, b->cursor, &lex);
+        if (lex.in_string || lex.in_comment) {
+            free(text);
+            ed->completion_visible = 0;
+            ed->completion_no_match = 0;
+            ed->completion_message[0] = '\0';
+            return;
+        }
+    }
 
     /* tam metni workspace-aware tara: aktif dosya + #include recursive */
     LspSymbol *syms = NULL;
@@ -380,7 +551,7 @@ void editor_show_completion(Editor *ed) {
                 if (mod_len >= sizeof(module_name)) mod_len = sizeof(module_name) - 1;
                 memcpy(module_name, prefix, mod_len);
                 module_name[mod_len] = '\0';
-                gcl_lsp_trim(module_name);
+                editor_trim_inplace(module_name);
 
                 if (strcmp(module_name, "raylib") == 0 || strcmp(module_name, "rl") == 0) {
                     for (int pi = 0; gcl_python_raylib_names[pi]; pi++) {
@@ -509,7 +680,12 @@ void editor_show_completion(Editor *ed) {
 
             /* # veya kısmi direktif adı yazıldıysa direktif adlarını öner */
             {
-                static const char *directives[] = {"include","native","extern","register","define", NULL};
+                /* Every GCL preprocessor directive (simple_doc.md). */
+                static const char *directives[] = {
+                    "include","lib","native","extern","register","define","undef",
+                    "if","ifdef","ifndef","elif","else","endif",
+                    "pragma","warning","error","debug", NULL
+                };
                 int is_partial = 1;
                 if (dname[0] != '\0') {
                     is_partial = 1;
@@ -532,17 +708,51 @@ void editor_show_completion(Editor *ed) {
             }
 
             if (strcmp(dname, "native") == 0) {
-                static const char *native_mods[] = {"Math","Stdio","Embed","Raylib","Raygui", NULL};
+                /* '#native <Math>'  → module names inside the angle brackets.
+                   '#native <Math>.randInt' → members of the closed module. */
+                const char *lt = strchr(prefix, '<');
+                const char *gt = lt ? strchr(lt, '>') : NULL;
+                char module_name[256] = {0};
+                if (lt) {
+                    const char *ms = lt + 1;
+                    const char *me = gt ? gt : prefix + strlen(prefix);
+                    while (ms < me && (*ms == ' ' || *ms == '\t')) ms++;
+                    while (me > ms && (me[-1] == ' ' || me[-1] == '\t')) me--;
+                    size_t ml = (size_t)(me - ms);
+                    if (ml >= sizeof(module_name)) ml = sizeof(module_name) - 1;
+                    memcpy(module_name, ms, ml);
+                    module_name[ml] = '\0';
+                }
+                const char *dot_after = gt ? strchr(gt, '.') : NULL;
+                if (gt && dot_after) {
+                    /* <Mod>.member → module members */
+                    editor_add_native_members(ed, &cap, module_name, cur_word, b->path);
+                } else if (gt) {
+                    /* module is already closed — nothing to suggest on this line */
+                } else {
+                    const char *filter = in_angle ? cur_dval : cur_word;
+                    for (int mi = 0; gcl_native_modules[mi]; mi++) {
+                        if (filter[0] && strncmp(gcl_native_modules[mi], filter, strlen(filter)) != 0) continue;
+                        lsp_list_add(&ed->completions, &ed->completion_count, &cap,
+                                     gcl_native_modules[mi], LSP_KIND_TYPE, LSP_VIS_PUBLIC,
+                                     "native module", NULL, b->path);
+                    }
+                }
+                handle = 1;
+            } else if (strcmp(dname, "pragma") == 0) {
+                /* #pragma commandline — marks the program as a terminal app. */
+                static const char *pragma_names[] = {"commandline","commendline","cmdline", NULL};
                 const char *filter = in_angle ? cur_dval : cur_word;
-                for (int mi = 0; native_mods[mi]; mi++) {
-                    if (filter[0] && strncmp(native_mods[mi], filter, strlen(filter)) != 0) continue;
+                for (int pi = 0; pragma_names[pi]; pi++) {
+                    if (filter[0] && strncmp(pragma_names[pi], filter, strlen(filter)) != 0) continue;
                     lsp_list_add(&ed->completions, &ed->completion_count, &cap,
-                                 native_mods[mi], LSP_KIND_TYPE, LSP_VIS_PUBLIC,
-                                 "native module", NULL, b->path);
+                                 pragma_names[pi], LSP_KIND_TYPE, LSP_VIS_PUBLIC,
+                                 "pragma", NULL, b->path);
                 }
                 handle = 1;
             } else if (strcmp(dname, "include") == 0 ||
-                       strcmp(dname, "extern") == 0) {
+                       strcmp(dname, "extern") == 0 ||
+                       strcmp(dname, "lib") == 0) {
                 const char *filter = in_angle ? cur_dval : cur_word;
                 if (strcmp(dname, "include") == 0) {
                     char dirpath[2048];
@@ -563,7 +773,8 @@ void editor_show_completion(Editor *ed) {
                         closedir(d);
                     }
                     handle = 1;
-                } else { /* extern */
+                } else if (strcmp(dname, "extern") == 0) {
+                    /* #extern <raylib.dll> → shared libraries in external/ */
                     char dirpath[2048];
                     snprintf(dirpath, sizeof(dirpath), "%s/external", ed->cwd);
                     DIR *d = opendir(dirpath);
@@ -573,11 +784,32 @@ void editor_show_completion(Editor *ed) {
                             const char *name = ent->d_name;
                             if (name[0] == '.') continue;
                             const char *e = strrchr(name, '.');
-                            if (!e || (strcmp(e, ".dll") != 0 && strcmp(e, ".so") != 0)) continue;
+                            if (!e || (strcmp(e, ".dll") != 0 && strcmp(e, ".so") != 0 &&
+                                       strcmp(e, ".dylib") != 0)) continue;
                             if (filter[0] && strncmp(name, filter, strlen(filter)) != 0) continue;
                             lsp_list_add(&ed->completions, &ed->completion_count, &cap,
                                          name, LSP_KIND_TYPE, LSP_VIS_PUBLIC,
                                          "external library", NULL, b->path);
+                        }
+                        closedir(d);
+                    }
+                    handle = 1;
+                } else {
+                    /* #lib <x.gclib> → library scripts in lib/ */
+                    char dirpath[2048];
+                    snprintf(dirpath, sizeof(dirpath), "%s/lib", ed->cwd);
+                    DIR *d = opendir(dirpath);
+                    if (d) {
+                        struct dirent *ent;
+                        while ((ent = readdir(d)) != NULL) {
+                            const char *name = ent->d_name;
+                            if (name[0] == '.') continue;
+                            const char *e = strrchr(name, '.');
+                            if (!e || strcmp(e, ".gclib") != 0) continue;
+                            if (filter[0] && strncmp(name, filter, strlen(filter)) != 0) continue;
+                            lsp_list_add(&ed->completions, &ed->completion_count, &cap,
+                                         name, LSP_KIND_TYPE, LSP_VIS_PUBLIC,
+                                         "library file", NULL, b->path);
                         }
                         closedir(d);
                     }
@@ -621,7 +853,7 @@ void editor_show_completion(Editor *ed) {
             }
             lsp_list_clear(&syms, &sym_count);
             free(text);
-            if (ed->completion_count == 0 && cur_word[0]) {
+            if (ed->completion_count == 0 && cur_word[0] && manual) {
                 snprintf(ed->completion_message, sizeof(ed->completion_message),
                          "there is no '%s'", cur_word);
                 ed->completion_no_match = 1;
@@ -650,7 +882,7 @@ void editor_show_completion(Editor *ed) {
         if (mod_len >= sizeof(module_name)) mod_len = sizeof(module_name) - 1;
         memcpy(module_name, prefix, mod_len);
         module_name[mod_len] = '\0';
-        gcl_lsp_trim(module_name);
+        editor_trim_inplace(module_name);
 
         /* #native modül üyeleri (Math., Stdio., Embed., Raylib., Raygui.) */
         int native_found = 0;
@@ -775,6 +1007,19 @@ void editor_show_completion(Editor *ed) {
                              gcl_builtin_types[pi], LSP_KIND_TYPE, LSP_VIS_PUBLIC,
                              "type", NULL, b->path);
             }
+            /* #native modülleri (Math/Stdio/Embed/Raylib/Raygui) normal kod
+               içinde de tanınsın: 'Stdio' yazıp Ctrl+Space denildiğinde eskiden
+               "there is no 'Stdio'" çıkıyordu; modül adı yalnızca `#native <X>`
+               satırında görünüyordu (todo #2). Üye erişimi (Stdio.printf) için
+               bkz. editor_add_native_members / last_dot dalı. */
+            for (int nmi = 0; gcl_native_modules[nmi]; nmi++) {
+                if (!editor_is_native_module(gcl_native_modules[nmi])) continue;
+                if (is_value_assign || is_type_decl) continue;  /* değer/tip bağlamında namespace önerilmez */
+                if (cur_word[0] && !editor_match_cur(gcl_native_modules[nmi], cur_word)) continue;
+                lsp_list_add(&ed->completions, &ed->completion_count, &cap,
+                             gcl_native_modules[nmi], LSP_KIND_TYPE, LSP_VIS_PUBLIC,
+                             "native module", NULL, b->path);
+            }
         }
 
         for (int i = 0; i < sym_count; i++) {
@@ -782,6 +1027,10 @@ void editor_show_completion(Editor *ed) {
             if (cur_word[0] && !editor_match_cur(syms[i].name, cur_word)) continue;
             if (syms[i].vis == LSP_VIS_PRIVATE &&
                 syms[i].file && b->path && strcmp(syms[i].file, b->path) != 0) continue;
+            /* #native modülleri zaten yukarıdaki native loop ile eklendi.
+               Tarayıcı da aynı modülü TYPE olarak ürettiği için burada tekrar
+               eklemeyelim — çift "Stdio" girdisini önler (todo #2). */
+            if (gcl_is_native_module(syms[i].name)) continue;
             /* Fonksiyon çağrısı içinde DEĞER öner — fonksiyon/tip adı gösterme */
             if (in_args && syms[i].kind != LSP_KIND_VAR && syms[i].kind != LSP_KIND_MACRO) continue;
             /* "Type var = " → SADECE değer (var + macro) */
@@ -794,8 +1043,10 @@ void editor_show_completion(Editor *ed) {
         }
     }
 
-    /* Eşleşme yoksa "there is no 'X'" göster — AMA değer oluşturma bağlamında GİZLE */
-    if (ed->completion_count == 0) {
+    /* Eşleşme yoksa "there is no 'X'" göster — yalnızca KULLANICI açıkça istediyse
+       (manual) ve değer oluşturma bağlamında DEĞİLSE. Otomatik/dot tetiklemesinde
+       bu mesaj gösterilmez (kullanıcı geri bildirimi: alakasız "there is no"). */
+    if (ed->completion_count == 0 && manual) {
         int is_decl = editor_is_declaration_context(line_str, col, cur_word,
                                                     syms, sym_count);
         if (!is_decl && cur_word[0]) {
@@ -937,22 +1188,240 @@ void editor_cut(Editor *ed) {
 }
 
 void editor_paste(Editor *ed) {
-    /* Önce sistem panosundan al; yoksa iç clip buffer kullan. */
+    /* Seçili metin varsa yapıştırılan metin onun ÜZERİNE yazılır. */
+    if (selection_active(ed)) {
+        size_t s0 = sel_start(ed), s1 = sel_end(ed);
+        buffer_delete_range(&CURP, s0, s1);
+        ed->sel_anchor = CURP.cursor;
+    }
+    /* Önce sistem panosundan al; yoksa iç clip buffer kullan.
+       Windows pano metnindeki '\r' (CRLF) editörde '?'/kare olarak görünüyordu;
+       CR atlanır, yalnızca LF korunur. */
     char *sys_text = gcl_ide_clipboard_get_text();
     if (sys_text) {
-        for (const char *p = sys_text; *p; p++) gcl_ide_buffer_insert_char(&CURP, *p);
+        for (const char *p = sys_text; *p; p++) {
+            if (*p == '\r') continue;
+            gcl_ide_buffer_insert_char(&CURP, *p);
+        }
         ed->sel_anchor = CURP.cursor;
         free(sys_text);
         return;
     }
     if (!ed->clip_text || ed->clip_len == 0) return;
-    for (size_t i = 0; i < ed->clip_len; i++) gcl_ide_buffer_insert_char(&CURP, ed->clip_text[i]);
+    for (size_t i = 0; i < ed->clip_len; i++) {
+        if (ed->clip_text[i] == '\r') continue;
+        gcl_ide_buffer_insert_char(&CURP, ed->clip_text[i]);
+    }
     ed->sel_anchor = CURP.cursor;
 }
 
 void editor_select_all(Editor *ed) {
     ed->sel_anchor = 0;
     CURP.cursor = CURP.size;
+}
+
+/* Belirli bir bayt offset'inin kaçıncı satırda olduğunu döndür. */
+static size_t editor_line_of_byte(const GclIdeBuffer *b, size_t pos) {
+    size_t line = 0;
+    if (pos > b->size) pos = b->size;
+    for (size_t i = 0; i < pos; i++) {
+        if (b->content[i] == '\n') line++;
+    }
+    return line;
+}
+
+/* Belirli bir satırın başlangıç bayt offset'ini döndür. */
+static size_t editor_line_start_byte(const GclIdeBuffer *b, size_t line) {
+    size_t cur = 0, start = 0;
+    for (size_t i = 0; i < b->size; i++) {
+        if (cur == line) return start;
+        if (b->content[i] == '\n') { cur++; start = i + 1; }
+    }
+    return start;
+}
+
+/* Dosya SEKME (TAB) karakteriyle mi girintilenmiş? Satır başında '\t' varsa
+   evet. Python dosyaları sekme ile girintilenebilir; Tab tuşu ve otomatik
+   girinti bu dosyalarda '\t' yazar (todo #1: "IDE python sekmelerini
+   desteklemiyor"). */
+static int editor_uses_tab_indent(const GclIdeBuffer *b) {
+    if (!b || !b->content) return 0;
+    size_t i = 0;
+    while (i < b->size) {
+        if (b->content[i] == '\t') return 1;
+        while (i < b->size && b->content[i] != '\n') i++;
+        i++;
+    }
+    return 0;
+}
+
+/* Girinti birimi: sekme kullanan dosyada '\t', aksi halde 4 boşluk. */
+static void editor_indent_unit(const GclIdeBuffer *b, char *out, size_t outsz, size_t *out_len) {
+    if (outsz == 0) return;
+    if (editor_uses_tab_indent(b)) {
+        out[0] = '\t';
+        if (outsz > 1) out[1] = '\0';
+        if (out_len) *out_len = 1;
+        return;
+    }
+    const char *sp = "    ";
+    size_t n = strlen(sp);
+    if (n >= outsz) n = outsz - 1;
+    memcpy(out, sp, n);
+    out[n] = '\0';
+    if (out_len) *out_len = n;
+}
+
+/* Sekme tuşu — seçim YOKKEN imlece girinti ekler. Eskiden Tab yalnızca satır
+   girintiliyordu ve imleç satır başına sıçradığı için yazılan metin girintinin
+   SOLUNA düşüyordu ("tab çalışmıyor" geri bildirimi). */
+void editor_insert_tab(Editor *ed) {
+    GclIdeBuffer *b = &CURP;
+    if (!b) return;
+    char unit[8];
+    size_t un = 0;
+    editor_indent_unit(b, unit, sizeof(unit), &un);
+    for (size_t i = 0; i < un; i++) gcl_ide_buffer_insert_char(b, unit[i]);
+    ed->sel_anchor = b->cursor;
+}
+
+/* Enter: yeni satır + otomatik gövde girintisi (Python/GCL).
+   - Geçerli satırın baştaki boşluğu kopyalanır.
+   - Satırın imlece kadarki son anlamlı karakteri ':' ise bir girinti birimi eklenir.
+   - İmleçten sonraki ilk anlamlı karakter kapatıcıysa ({ } ) ]) girinti eklenmez.
+   - Satır else/elif/except/finally ise girinti bir birim azaltılır. */
+void editor_insert_newline_autoindent(Editor *ed) {
+    GclIdeBuffer *b = &CURP;
+    if (!b || !b->content || b->size == 0) {
+        gcl_ide_buffer_insert_newline(b);
+        if (ed) ed->sel_anchor = b->cursor;
+        return;
+    }
+    size_t line = gcl_ide_buffer_line_of_cursor(b);
+    size_t l = 0;
+    const char *ls = gcl_ide_buffer_line_at(b, line, &l);
+    size_t line_off = (size_t)(ls - b->content);
+
+    size_t ind = 0;
+    while (ind < l && (ls[ind] == ' ' || ls[ind] == '\t')) ind++;
+    char indent[512];
+    if (ind >= sizeof(indent)) ind = sizeof(indent) - 1;
+    memcpy(indent, ls, ind);
+    indent[ind] = '\0';
+
+    size_t curcol = (b->cursor > line_off) ? b->cursor - line_off : 0;
+    if (curcol > l) curcol = l;
+
+    int opens = 0;
+    for (size_t i = curcol; i-- > 0; ) {
+        char c = ls[i];
+        if (c == ' ' || c == '\t' || c == '\r') continue;
+        opens = (c == ':');
+        break;
+    }
+    int closes = 0;
+    for (size_t i = curcol; i < l; i++) {
+        char c = ls[i];
+        if (c == ' ' || c == '\t' || c == '\r') continue;
+        closes = (c == '}' || c == ')' || c == ']');
+        break;
+    }
+    int dedent_kw = 0;
+    {
+        static const char *kw[] = { "else", "elif", "except", "finally", NULL };
+        char word[32];
+        size_t wl = 0;
+        size_t i = ind;
+        while (i < l && gcl_lsp_is_ident_char(ls[i]) && wl < sizeof(word) - 1) word[wl++] = ls[i++];
+        word[wl] = '\0';
+        for (int k = 0; kw[k]; k++) {
+            if (wl > 0 && strcmp(word, kw[k]) == 0) { dedent_kw = 1; break; }
+        }
+    }
+
+    char unit[8];
+    size_t un = 0;
+    editor_indent_unit(b, unit, sizeof(unit), &un);
+
+    size_t n = ind;
+    if (dedent_kw) {
+        if (n > 0 && indent[n - 1] == '\t') n -= 1;
+        else n = (n >= 4) ? n - 4 : 0;
+    }
+
+    char out[600];
+    if (n > sizeof(out) - 1) n = sizeof(out) - 1;
+    memcpy(out, indent, n);
+    size_t on = n;
+    if (opens && !closes && un > 0 && on + un < sizeof(out)) {
+        memcpy(out + on, unit, un);
+        on += un;
+    }
+    out[on] = '\0';
+
+    gcl_ide_buffer_insert_char(b, '\n');
+    for (size_t i = 0; i < on; i++) gcl_ide_buffer_insert_char(b, out[i]);
+    ed->sel_anchor = b->cursor;
+}
+
+/* Tab: seçili satırları (yoksa imleç satırını) girintiler.
+   Shift+Tab (outdent): satır başındaki bir TAB veya en fazla 4 boşluğu kaldırır.
+   İmleç ve seçim çapası, girintiden sonra satır içi konumlarını KORUR
+   (eskiden ikisi de satır başına sıçrıyordu). */
+void editor_indent_selection(Editor *ed, int outdent) {
+    GclIdeBuffer *b = &CURP;
+    if (!b || !b->content || b->size == 0) return;
+    size_t sel0 = sel_start(ed), sel1 = sel_end(ed);
+    size_t first = editor_line_of_byte(b, sel0);
+    size_t last  = editor_line_of_byte(b, sel1);
+    /* Seçim bir satırın başında bitiyorsa son satırı dahil etme. */
+    if (sel0 != sel1 && sel1 > 0 && b->content[sel1 - 1] == '\n' && last > first) last--;
+
+    /* İmleç ve çapanın satır içi offset'lerini sakla. */
+    size_t cursor_line = editor_line_of_byte(b, b->cursor);
+    size_t cursor_off  = b->cursor - editor_line_start_byte(b, cursor_line);
+    size_t anchor_line = editor_line_of_byte(b, ed->sel_anchor);
+    size_t anchor_off  = ed->sel_anchor - editor_line_start_byte(b, anchor_line);
+
+    char unit[8];
+    size_t unit_len = 0;
+    editor_indent_unit(b, unit, sizeof(unit), &unit_len);
+
+    long cursor_shift = 0, anchor_shift = 0;
+    /* Sondan başa doğru işle — offset kayması önceki satırları etkilemesin. */
+    for (size_t ln = last + 1; ln-- > first; ) {
+        size_t ls = editor_line_start_byte(b, ln);
+        b->cursor = ls;
+        long delta = 0;
+        if (outdent) {
+            if (ls < b->size && b->content[ls] == '\t') {
+                gcl_ide_buffer_delete(b);
+                delta = -1;
+            } else {
+                for (int k = 0; k < 4 && b->cursor < b->size &&
+                     b->content[b->cursor] == ' '; k++) {
+                    gcl_ide_buffer_delete(b);
+                    delta -= 1;
+                }
+            }
+        } else {
+            for (size_t k = 0; k < unit_len; k++) gcl_ide_buffer_insert_char(b, unit[k]);
+            delta = (long)unit_len;
+        }
+        if (ln == cursor_line) cursor_shift = delta;
+        if (ln == anchor_line) anchor_shift = delta;
+    }
+    /* İmleç/çapa konumlarını geri yükle (satır içi offset korunur). */
+    {
+        long off = (long)cursor_off + cursor_shift;
+        if (off < 0) off = 0;
+        b->cursor = editor_line_start_byte(b, cursor_line) + (size_t)off;
+        if (b->cursor > b->size) b->cursor = b->size;
+        long aoff = (long)anchor_off + anchor_shift;
+        if (aoff < 0) aoff = 0;
+        ed->sel_anchor = editor_line_start_byte(b, anchor_line) + (size_t)aoff;
+        if (ed->sel_anchor > b->size) ed->sel_anchor = b->size;
+    }
 }
 
 /* ---------------------------------------------
@@ -962,9 +1431,20 @@ void editor_select_all(Editor *ed) {
 void editor_process_typing(Editor *ed, int ctrl, int shift) {
     int ch;
     int typed_any = 0;
+    int typed_dot = 0;
+    int last_char = 0;
     while ((ch = GetCharPressed()) != 0) {
         if (ctrl) continue;  /* Ctrl+harf kombinasyonlarını metin olarak ekleme */
         if (shift && ch == ' ') continue; /* Shift+Space: boşluk yazma (kısayol toggle) */
+        last_char = ch;
+        /* Seçili metin varken yazılan karakter seçimin ÜZERİNE yazar:
+           önce seçimi sil, sonra karakteri ekle. */
+        if (selection_active(ed)) {
+            size_t s0 = sel_start(ed), s1 = sel_end(ed);
+            buffer_delete_range(&CURP, s0, s1);
+            ed->sel_anchor = CURP.cursor;
+        }
+        if (ch == '.') typed_dot = 1;
         if (ch == '\r' || ch == '\n') {
         } else if (ch == '(') { editor_handle_bracket_close(ed, '(', ')'); }
         else if (ch == ')') {
@@ -1042,9 +1522,23 @@ void editor_process_typing(Editor *ed, int ctrl, int shift) {
         ed->last_typed_key = GetTime();
         ed->edited_this_frame = 1;
         if (ed->typewriter) editor_typewriter_sound(ed, 0); /* normal daktilo sesi */
-        /* VSCode benzeri: yazarken tamamlama DEBOUNCE ile açılır (200ms gecikme).
-           Hızlı yazmada popup sürekli açılıp kapanmaz; yazma DURUNCA açılır.
-           Ctrl+Space yine anında zorla açar (ide_main.c'de). */
-        ed->completion_debounce_until = GetTime() + 0.2;
+        ed->completion_dismissed = 0; /* yeni yazım — ESC durumu sıfırlanır */
+    }
+    /* Otomatik tamamlama YALNIZCA bilinçli tetikleyicilerle açılır:
+       - '.' yazıldığında (nesne.üye / #native <Mod>.üye)
+       - Ctrl+Space (ide_main.c)
+       Normal harf yazımında kendiliğinden AÇILMAZ; ESC ile kapatıldığında
+       tekrar açılmaz (kullanıcı geri bildirimi: popup sürekli açılıyordu). */
+    if (typed_dot) {
+        ed->completion_dismissed = 0;
+        editor_show_completion(ed, 0);
+    } else if (ed->completion_visible && last_char) {
+        if (editor_is_ident_char((char)last_char)) {
+            editor_show_completion(ed, 0);  /* açık popup'ın üye önekini canlı filtrele */
+        } else {
+            ed->completion_visible = 0;
+            ed->completion_no_match = 0;
+            ed->completion_message[0] = '\0';
+        }
     }
 }

@@ -59,6 +59,14 @@ void gcl_draw_text_f(const char *text, float posX, int posY, int fontSize, Color
 int gcl_measure_text(const char *text, int fontSize);
 float gcl_measure_text_f(const char *text, int fontSize); /* gerçek float genişlik — chunk çiziminde kayma birikmesini önler */
 
+/* Sekme (TAB) duyarlı çizim/ölçüm. '\t' Python dosyalarında girinti olarak
+   kullanılır; çizim ve ölçüm aynı tab duraklarını kullanmazsa imleç metinden
+   kayar. 'start_col' metnin başladığı hücre (kolon) sayısıdır. */
+#define GCL_TAB_SIZE 4
+void gcl_draw_text_col(const char *text, float posX, int posY, int fontSize, Color color, int start_col);
+float gcl_measure_text_col(const char *text, int fontSize, int start_col);
+int gcl_text_cells(const char *text, int start_col);
+
 /* raylib'in DrawText/MeasureText fonksiyonlarını kendi wrapper'ımızla değiştir. */
 #undef DrawText
 #undef MeasureText
@@ -117,7 +125,12 @@ typedef enum {
     CTX_RENAME,
     CTX_COPY,
     CTX_PASTE,
-    CTX_DELETE
+    CTX_DELETE,
+    /* Explorer context menu order MUST match the items[] array in ide_main.c.
+       Copy Path / Copy Name copy the absolute path / the base name to the
+       system clipboard (todo #5). */
+    CTX_COPY_PATH,
+    CTX_COPY_NAME
 } CtxItem;
 
 typedef struct {
@@ -151,6 +164,7 @@ typedef struct Editor {
     int completion_private;        /* private erişim uyarısı göster */
     int completion_empty;          /* eşleşme yok — "there is no" göster */
     int completion_no_match;       /* "there is no '<word>'" gösteriliyor */
+    int completion_dismissed;      /* ESC ile kapatıldı — yeni tetikleyene kadar açılmaz */
     double completion_debounce_until; /* yazma durduktan sonra otomatik açılma (Faz 4 debounce) */
     char completion_error[256];    /* private erişim mesajı */
     char completion_message[256];  /* "there is no '<word>'" mesajı */
@@ -342,6 +356,9 @@ void fs_copy_dir_rec(const char *src, const char *dst);
 void fs_remove_rec(const char *p);
 void fs_parent_dir(const char *path, char *out, size_t outsz);
 const char *path_basename(const char *p);
+/* Mutlak (absolute) yol — arama kutusu/Explorer "Copy Path" içindir (todo #5).
+   Sistem çağrısı başarısız olursa verilen yolu aynen kopyalar. */
+void fs_absolute_path(const char *path, char *out, size_t outsz);
 
 /* tab */
 void tab_add(Editor *ed, const char *path);
@@ -365,8 +382,14 @@ int editor_is_word_char(char c);
 void editor_handle_bracket_close(Editor *ed, char open_char, char close_char);
 
 /* otomatik tamamlama (LSP) */
-void editor_show_completion(Editor *ed);
+void editor_show_completion(Editor *ed, int manual);
 void editor_accept_completion(Editor *ed);
+/* Tab/Shift+Tab: seçili satırları (yoksa imleç satırını) girintiler/temizler. */
+void editor_indent_selection(Editor *ed, int outdent);
+/* Sekme tuşu (seçim yokken): imlece girinti ekler (sekme kullanan dosyada '\t'). */
+void editor_insert_tab(Editor *ed);
+/* Enter: yeni satır + otomatik gövde girintisi (Python/GCL). */
+void editor_insert_newline_autoindent(Editor *ed);
 
 /* GCL workspace-aware sembol tarayıcı (gcl_lsp_scan.c) */
 int gcl_lsp_scan(const char *path, const char *text, size_t len,

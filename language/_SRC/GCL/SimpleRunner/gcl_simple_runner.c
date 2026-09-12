@@ -10,6 +10,7 @@
 #include "gcl_parser.h"
 #include "gcl_runner.h"
 #include "gcl_error.h"
+#include "gcl_terminal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -891,6 +892,14 @@ static void collect_register(const char *src, const char **recs, int *count) {
 int gcl_simple_run_source(const char *src, size_t len, const char *base_dir,
                           int argc, char **argv) {
     if (!src) return -1;
+
+    /* #pragma commandline — terminal uygulaması. Konsol yoksa (IDE/GUI çocuk
+       süreci) program OTOMATİK olarak yeni bir terminal penceresinde yeniden
+       başlatılır: 11_scanf_commandline_test.gcsf gibi Stdio.scanf kullanan
+       programlar IDE içinden de çalışır. */
+    if (gcl_terminal_pragma_present(src)) {
+        if (gcl_terminal_enter()) return 0;
+    }
 
     /* #native modül adlarını topla */
     const char *native_modules[MAX_MODULES] = {0};

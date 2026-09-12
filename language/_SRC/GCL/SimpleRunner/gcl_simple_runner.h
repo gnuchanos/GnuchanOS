@@ -1,5 +1,5 @@
 /*
- * gcl_simple_runner.h — GCL dosyasını lexer→parser→runner pipeline'ından geçirir.
+ * gcl_simple_runner.h — Runs a GCL file through the lexer→parser→runner pipeline.
  */
 
 #ifndef GCL_SIMPLE_RUNNER_H
@@ -7,7 +7,7 @@
 
 #include <stddef.h>
 
-/* Kaynağı çalıştırır. Başarı: 0, hata: -1. */
+/* Runs the source. Success: 0, error: -1. */
 int gcl_simple_run_source(const char *src, size_t len, const char *base_dir,
                           int argc, char **argv);
 
