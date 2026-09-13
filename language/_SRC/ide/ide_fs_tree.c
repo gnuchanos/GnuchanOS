@@ -155,7 +155,7 @@ void tab_add(Editor *ed, const char *path) {
                 ed->active_tab = i;
                 /* Sync the selection anchor to the new active buffer's cursor: otherwise a
                    random blue selection appears from 0 to the cursor. */
-                ed->sel_anchor = editor_cur(ed)->cursor;
+                editor_cur(ed)->sel_anchor = editor_cur(ed)->cursor;
                 return;
             }
         }
@@ -168,7 +168,7 @@ void tab_add(Editor *ed, const char *path) {
     if (path && path[0]) gcl_ide_buffer_load(nb, path);
     ed->tab_count++;
     ed->active_tab = ed->tab_count - 1;
-    ed->sel_anchor = editor_cur(ed)->cursor;
+    editor_cur(ed)->sel_anchor = editor_cur(ed)->cursor;
 }
 
 void tab_close(Editor *ed, int idx) {
@@ -178,17 +178,17 @@ void tab_close(Editor *ed, int idx) {
     ed->tab_count--;
     if (ed->tab_count == 0) {
         ed->active_tab = -1;
-        ed->sel_anchor = 0;
+        ed->blank_tab.sel_anchor = 0;
         return;
     }
     if (ed->active_tab >= ed->tab_count) ed->active_tab = ed->tab_count - 1;
-    ed->sel_anchor = editor_cur(ed)->cursor;
+    editor_cur(ed)->sel_anchor = editor_cur(ed)->cursor;
 }
 
 void tab_activate(Editor *ed, int idx) {
     if (idx < 0 || idx >= ed->tab_count) return;
     ed->active_tab = idx;
-    ed->sel_anchor = editor_cur(ed)->cursor;
+    editor_cur(ed)->sel_anchor = editor_cur(ed)->cursor;
 }
 
 /* ---------------------------------------------

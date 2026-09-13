@@ -79,6 +79,11 @@ FREEFONT_DIR = _plat_temp() / "FreeFont"
 # farkı build'i kırar; bu yüzden tüm yollar _SRC/ + doğru case ile kullanılır.
 FREEFONT_EMBED = ROOT / "_SRC" / "embed_freemono.c"
 
+# Varsayılan proje ikonu (gnuchan logosu). `gcl -new` bu PNG'yi yeni projenin
+# assets/icon.png'si olarak yazar; build'de de exe ikonu olur (gcl_icon.c).
+DEFAULT_ICON_PNG = REPO_ROOT / "assets" / "icon.png"
+ICON_EMBED = ROOT / "_SRC" / "embed_icon.c"
+
 # ---------- Program (CLI) kaynakları — IDE ayrı DLL'e taşındı (Programs/ide.dll) ----------
 GCL_SRCS = [
     "_SRC/build/gcbundle_reader.c",
@@ -91,6 +96,8 @@ GCL_SRCS = [
     "_SRC/GCL/SimpleRunner/gcl_simple_runner.c",
     "_SRC/GCL/SimpleRunner/gcl_terminal.c",
     "_SRC/gcl_os.c",
+    "_SRC/gcl_icon.c",
+    "_SRC/embed_icon.c",
     "_SRC/gcl_main.c",
 ]
 
@@ -111,11 +118,25 @@ IDE_SRCS = [
     "_SRC/ide/ide_settings.c",
     "_SRC/ide/gcl_settings_panel.c",
     "_SRC/ide/gcl_lsp_scan.c",
+    "_SRC/ide/ide_complete_ui.c",
+    # SMART completion engine (language/_SRC/complete) — bağımsız modüller.
+    "_SRC/complete/gcl_complete.c",
+    "_SRC/complete/complete_context.c",
+    "_SRC/complete/complete_scope.c",
+    "_SRC/complete/complete_type.c",
+    "_SRC/complete/complete_native.c",
+    "_SRC/complete/complete_native_db.c",
+    "_SRC/complete/complete_project.c",
+    "_SRC/complete/complete_rank.c",
+    "_SRC/complete/complete_index.c",
+    "_SRC/complete/complete_diag.c",
     "_SRC/build/gcbundle_reader.c",
     "_SRC/build/gcbundle_pack.c",
     "_SRC/build/gcbundle_build.c",
     "_SRC/embed_freemono.c",
+    "_SRC/embed_icon.c",
     "_SRC/gcl_os.c",
+    "_SRC/gcl_icon.c",
 ]
 
 # simple_doc.md: Library/Math.dll|.so, Stdio.dll|.so, Embed.dll|.so
@@ -389,6 +410,38 @@ def embed_font() -> Path:
     FREEFONT_EMBED.write_text(content, encoding="utf-8")
     print(f"[gcl] font embedded: {FREEFONT_EMBED}", flush=True)
     return FREEFONT_EMBED
+
+
+def embed_icon() -> Path:
+    """assets/icon.png → _SRC/embed_icon.c (gcl_embed_icon_png byte array).
+
+    `gcl -new` bu byte'ları yeni projenin assets/icon.png'si olarak yazar
+    (gcl_icon_write_default), böylece varsayılan gnuchan logosu her zaman
+    hazırdır. İçerik değişmediyse dosya YENİDEN YAZILMAZ (embed_font ile aynı
+    MK-3 kuralı) — gereksiz yeniden derleme olmaz.
+    """
+    if not DEFAULT_ICON_PNG.exists():
+        print(f"[gcl] uyarı: varsayılan ikon yok, atlanıyor: {DEFAULT_ICON_PNG}", flush=True)
+        return ICON_EMBED
+    data = DEFAULT_ICON_PNG.read_bytes()
+    parts = ["/* generated: assets/icon.png embedded byte array */\n",
+             "const unsigned char gcl_embed_icon_png[] = {\n"]
+    for i in range(0, len(data), 12):
+        parts.append("    " + ",".join(str(b) for b in data[i:i + 12]) + ",\n")
+    parts.append("    0\n};\n")
+    parts.append(f"const unsigned int gcl_embed_icon_png_size = {len(data)};\n")
+    content = "".join(parts)
+    if ICON_EMBED.exists():
+        try:
+            if ICON_EMBED.read_text(encoding="utf-8") == content:
+                print(f"[gcl] icon embed güncel (yeniden yazılmadı): {ICON_EMBED}", flush=True)
+                return ICON_EMBED
+        except OSError:
+            pass
+    ICON_EMBED.parent.mkdir(parents=True, exist_ok=True)
+    ICON_EMBED.write_text(content, encoding="utf-8")
+    print(f"[gcl] icon embedded: {ICON_EMBED}", flush=True)
+    return ICON_EMBED
 
 
 def raylib_arch_matches(lib_path: Path) -> bool:
@@ -891,6 +944,7 @@ def build_ide(build_dir: Path) -> None:
            "-Wno-discarded-qualifiers",
            "-shared", "-fPIC", "-D_POSIX_C_SOURCE=200809L",
            "-I", "_SRC/ide", "-I", "_SRC/build",
+           "-I", "_SRC/complete",
            "-I", "_SRC/SharedPipeline", "-I", "_SRC/GCL/SimpleRunner",
            "-I", "_SRC/Modules", "-I", "_SRC/include", "-I", "_SRC/embed",
            "-I", str(RAYLIB_SRC),
@@ -928,6 +982,7 @@ def build_gcl() -> Path:
     clone_python_embed()
     download_freefont()
     embed_font()
+    embed_icon()
     raylib_src = build_raylib()
 
     build_dir = BUILD_ROOT / os_name()
@@ -940,10 +995,12 @@ def build_gcl() -> Path:
     build_python_runtime(build_dir)
     # IDE kaynakları eksikse build'i KIRMA (CI geçsin) ama NET UYARI ver.
     # Programs/ide.so ancak language/_SRC/ide/ + _SRC/build/ kaynakları repo'da
-    # olduğunda üretilir. embed_freemono.c OTOMATİK üretilir (embed_font());
-    # CI'da git'te olmasa bile build sırasında oluşur — o yüzden hariç tutulur.
+    # olduğunda üretilir. embed_freemono.c / embed_icon.c OTOMATİK üretilir
+    # (embed_font()/embed_icon()); CI'da git'te olmasalar bile build sırasında
+    # oluşurlar — o yüzden hariç tutulurlar.
+    generated = {"_SRC/embed_freemono.c", "_SRC/embed_icon.c"}
     missing_ide = [s for s in IDE_SRCS
-                   if s != "_SRC/embed_freemono.c" and not (ROOT / s).exists()]
+                   if s not in generated and not (ROOT / s).exists()]
     if not missing_ide:
         build_ide(build_dir)
     else:

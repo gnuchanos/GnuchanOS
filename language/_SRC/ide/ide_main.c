@@ -1,81 +1,5 @@
 #include "gcl_ide_internal.h"
 
-/* Draws the signature/detail window for the selected completion item.
-   VSCode signature-help style: name(parameters) + detail. Wraps long signatures. */
-static void draw_completion_signature(const LspSymbol *s, int px, int py, int pw,
-                                      int efont, const GclIdeTheme *t, int *out_h) {
-    if (!s || !s->name) { if (out_h) *out_h = 0; return; }
-    char sig[512];
-    if (s->params && s->params[0])
-        snprintf(sig, sizeof(sig), "%s(%s)", s->name, s->params);
-    else
-        snprintf(sig, sizeof(sig), "%s", s->name);
-
-    int cw = MeasureText("M", efont);
-    if (cw < 1) cw = 1;
-    int max_chars = (pw - 16) / cw;
-    if (max_chars < 10) max_chars = 10;
-
-    char lines[8][256];
-    size_t line_offsets[8];
-    int nlines = 0;
-    size_t idx = 0;
-    size_t slen = strlen(sig);
-    while (idx < slen && nlines < 8) {
-        int taken = 0;
-        while (idx < slen && taken < max_chars) {
-            lines[nlines][taken++] = sig[idx++];
-        }
-        /* do not cut mid-word — back up until a separator/space is found */
-        if (idx < slen) {
-            while (taken > 1 && lines[nlines][taken-1] != ' ' && lines[nlines][taken-1] != ','
-                   && lines[nlines][taken-1] != '(' && lines[nlines][taken-1] != ')') {
-                taken--; idx--;
-            }
-        }
-        line_offsets[nlines] = idx - (size_t)taken;
-        lines[nlines][taken] = '\0';
-        nlines++;
-    }
-    if (nlines == 0) { lines[0][0] = '\0'; nlines = 1; }
-
-    int line_h = efont + 2;
-    int h = nlines * line_h + 8;
-    if (s->detail && s->detail[0]) h += line_h;
-
-    DrawRectangle(px, py, pw, h, t->popup_bg);
-    DrawRectangleLinesEx((Rectangle){ (float)px, (float)py, (float)pw, (float)h }, 1.0f, t->accent);
-
-    /* Parameter highlighting: the function name (s->name) is drawn normally,
-       while parameters and parentheses are highlighted (t->accent). When a long
-       signature is split into lines, we track which character corresponds to a
-       parameter via line_offsets. */
-    size_t name_len = strlen(s->name);
-    int y = py + 4;
-    for (int i = 0; i < nlines; i++) {
-        size_t lo = (i < 8) ? line_offsets[i] : 0;
-        size_t ll = strlen(lines[i]);
-        size_t name_end_in_line = (name_len > lo) ? name_len - lo : 0;
-        char part[256];
-        if (name_end_in_line < ll) {
-            /* name part */
-            memcpy(part, lines[i], name_end_in_line);
-            part[name_end_in_line] = '\0';
-            if (part[0]) DrawText(part, px + 8, y, efont - 1, t->accent);
-            /* parameter part */
-            DrawText(lines[i] + name_end_in_line, px + 8 + MeasureText(part, efont - 1), y,
-                     efont - 1, t->text);
-        } else {
-            DrawText(lines[i], px + 8, y, efont - 1, t->accent);
-        }
-        y += line_h;
-    }
-    if (s->detail && s->detail[0]) {
-        DrawText(s->detail, px + 8, y, efont - 2, t->gutter);
-    }
-    if (out_h) *out_h = h;
-}
-
 /* Hold-to-repeat for editing keys (Backspace/Delete): fires on the first press,
    then repeats after 'first_delay' seconds at 'rate' intervals while held.
    Uses its own state so it never conflicts with arrow-key navigation repeat. */
@@ -93,6 +17,23 @@ static int key_repeat_fire(int key, double first_delay, double rate) {
         return 1;
     }
     return 0;
+}
+
+/* Tek bir ok-tuÅŸu adÄ±mÄ±. Åift'siz bir ok tuÅŸu seÃ§im varken basÄ±lÄ±rsa imleÃ§
+   seÃ§imin yakÄ±n kenarÄ±na toplanÄ±r (editor_collapse_selection); bÃ¶ylece geride
+   hayalet secim kalmaz, sonraki Delete/Backspace yanlis araligini silmez
+   (todo #6). Åift basÄ±lÄ±yken seÃ§im geniÅŸletilir (Ã§apa sabit kalÄ±r). */
+static void editor_nav_step(Editor *ed, int nav_key, int shift) {
+    if (!shift && selection_active(ed)) {
+        editor_collapse_selection(ed, nav_key == KEY_LEFT || nav_key == KEY_UP);
+        return;
+    }
+    GclIdeBuffer *b = editor_cur(ed);
+    if (nav_key == KEY_LEFT) gcl_ide_buffer_cursor_left(b);
+    else if (nav_key == KEY_RIGHT) gcl_ide_buffer_cursor_right(b);
+    else if (nav_key == KEY_UP) gcl_ide_buffer_cursor_up(b);
+    else if (nav_key == KEY_DOWN) gcl_ide_buffer_cursor_down(b);
+    if (!shift) b->sel_anchor = b->cursor;
 }
 
 int gcl_ide_run(const char *path) {
@@ -167,7 +108,6 @@ int gcl_ide_run(const char *path) {
     ed.theme_dropdown_open = 0;
     ed.sidebar_visible = 1;
     ed.menu_open = 0;
-    ed.sel_anchor = 0;
     ed.clip_text = NULL;
     ed.clip_len = 0;
     ed.text_caret_name = 0;
@@ -510,6 +450,35 @@ int gcl_ide_run(const char *path) {
                 editor_show_completion(&ed, 1);
             }
 
+            /* ---- ESC: tamamlama kaplamalarini kapat ----
+               Popup ACIKKEN de, yalnizca seritler gorunurken de calisir.
+               Kok neden: imza seridi (complete_draw_signature_help) ve tan seridi
+               (complete_draw_diagnostic) popup'tan BAGIMSIZ cizilir; ikisi de
+               yalnizca kendi bayraklarina bakar (completion_have_sig /
+               completion_have_diag). Bu bayraklari yalnizca bir sonraki
+               editor_show_completion() sifirlar.
+               Popup bircok yoldan kapatilabiliyor (fonksiyon kabulu, ';',
+               aday olmayan Tab) ve bu yollar bayraklari temizlemiyor. Eskiden
+               ESC yalnizca "popup acikken" dalinda isleniyordu; popup kapali
+               ama serit ekranda kalinca ESC hicbir sey yapmiyordu -> kullanici
+               "parametre gosteren pencereyi kapatamiyorum" diyordu.
+               Artik tek yerde, her durumda: popup + imza + tani birlikte kapanir
+               ve yeni bir bilincli tetikleyene kadar kapali kalir
+               (completion_dismissed). Seritler sonraki tetikleyicide yeniden hesaplanir. */
+            if (IsKeyPressed(KEY_ESCAPE) &&
+                (ed.completion_visible || ed.completion_have_sig || ed.completion_have_diag)) {
+                ed.completion_visible = 0;
+                ed.completion_no_match = 0;
+                ed.completion_message[0] = '\0';
+                ed.completion_have_sig = 0;
+                ed.completion_sig_label[0] = '\0';
+                ed.completion_sig_params[0] = '\0';
+                ed.completion_sig_active = 0;
+                ed.completion_have_diag = 0;
+                ed.completion_diag[0] = '\0';
+                ed.completion_dismissed = 1;
+            }
+
             if (!(ed.completion_visible && (ed.completion_count > 0 || ed.completion_no_match))) {
                 if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
                     /* Yeni satır + otomatik gövde girintisi (Python/GCL):
@@ -528,14 +497,16 @@ int gcl_ide_run(const char *path) {
                 }
                 /* Backspace/Delete: hold-to-repeat (no more mashing the key). */
                 if (key_repeat_fire(KEY_BACKSPACE, 0.40, 0.03)) {
-                    if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); ed.sel_anchor=CUR.cursor; }
-                    else { gcl_ide_buffer_backspace(&CUR); ed.sel_anchor = CUR.cursor; }
+                    if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); }
+                    else { gcl_ide_buffer_backspace(&CUR); }
+                    CUR.sel_anchor = CUR.cursor;
                     if (ed.typewriter) editor_typewriter_sound(&ed, 2); /* Backspace: high-pitched pop */
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
                 }
                 if (key_repeat_fire(KEY_DELETE, 0.40, 0.03)) {
-                    if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); ed.sel_anchor=CUR.cursor; }
+                    if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); }
                     else { gcl_ide_buffer_delete(&CUR); }
+                    CUR.sel_anchor = CUR.cursor;
                     if (ed.typewriter) editor_typewriter_sound(&ed, 2); /* Delete: high-pitched pop */
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
                 }
@@ -551,39 +522,27 @@ int gcl_ide_run(const char *path) {
                     if (first_press || ed.nav_repeat_key != nav_key) {
                         ed.nav_repeat_key = nav_key;
                         ed.nav_repeat_time = now_t;
-                        if (nav_key == KEY_LEFT) { gcl_ide_buffer_cursor_left(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                        else if (nav_key == KEY_RIGHT) { gcl_ide_buffer_cursor_right(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                        else if (nav_key == KEY_UP) { gcl_ide_buffer_cursor_up(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                        else if (nav_key == KEY_DOWN) { gcl_ide_buffer_cursor_down(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
+                        editor_nav_step(&ed, nav_key, shift);
                         ed.nav_repeat_time = now_t + 0.40;  /* start repeating after 400ms */
                     } else if (now_t >= ed.nav_repeat_time) {
-                        if (nav_key == KEY_LEFT) { gcl_ide_buffer_cursor_left(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                        else if (nav_key == KEY_RIGHT) { gcl_ide_buffer_cursor_right(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                        else if (nav_key == KEY_UP) { gcl_ide_buffer_cursor_up(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                        else if (nav_key == KEY_DOWN) { gcl_ide_buffer_cursor_down(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
+                        editor_nav_step(&ed, nav_key, shift);
                         ed.nav_repeat_time = now_t + 0.03;  /* ~30ms rate */
                     }
                 } else {
                     ed.nav_repeat_key = 0;
                     ed.nav_repeat_time = 0.0;
                 }
-                if (IsKeyPressed(KEY_HOME)) { gcl_ide_buffer_cursor_line_start(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                if (IsKeyPressed(KEY_END)) { gcl_ide_buffer_cursor_line_end(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                if (IsKeyPressed(KEY_PAGE_UP)) { for (int i=0;i<20;i++) gcl_ide_buffer_cursor_up(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
-                if (IsKeyPressed(KEY_PAGE_DOWN)) { for (int i=0;i<20;i++) gcl_ide_buffer_cursor_down(&CUR); if (!shift) ed.sel_anchor = CUR.cursor; }
+                if (IsKeyPressed(KEY_HOME)) { gcl_ide_buffer_cursor_line_start(&CUR); if (!shift) CUR.sel_anchor = CUR.cursor; }
+                if (IsKeyPressed(KEY_END)) { gcl_ide_buffer_cursor_line_end(&CUR); if (!shift) CUR.sel_anchor = CUR.cursor; }
+                if (IsKeyPressed(KEY_PAGE_UP)) { for (int i=0;i<20;i++) gcl_ide_buffer_cursor_up(&CUR); if (!shift) CUR.sel_anchor = CUR.cursor; }
+                if (IsKeyPressed(KEY_PAGE_DOWN)) { for (int i=0;i<20;i++) gcl_ide_buffer_cursor_down(&CUR); if (!shift) CUR.sel_anchor = CUR.cursor; }
             } else {
                 /* auto-completion navigation */
                 if (ctrl && IsKeyPressed(KEY_SPACE)) { ed.completion_dismissed = 0; editor_show_completion(&ed, 1); }
                 if (IsKeyPressed(KEY_UP)) { if (ed.completion_selected > 0) ed.completion_selected--; }
                 if (IsKeyPressed(KEY_DOWN)) { if (ed.completion_selected < ed.completion_count - 1) ed.completion_selected++; }
-                if (IsKeyPressed(KEY_ESCAPE)) {
-                    /* A SINGLE ESC closes the popup and keeps it closed until a new
-                       deliberate trigger — no more pressing ESC 4-5 times. */
-                    ed.completion_visible = 0;
-                    ed.completion_no_match = 0;
-                    ed.completion_message[0] = '\0';
-                    ed.completion_dismissed = 1;
-                }
+                /* ESC is handled globally above this if/else — it must also work
+                   when the popup is closed but a strip is still on screen. */
                 if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) || IsKeyPressed(KEY_TAB)) {
                     /* Tab/Enter gerçek bir aday varsa tamamlar. Aday yoksa
                        (yalnızca "there is no 'X'" uyarısı görünüyorsa) Tab
@@ -600,15 +559,17 @@ int gcl_ide_run(const char *path) {
                     }
                 }
                 if (IsKeyPressed(KEY_BACKSPACE)) {
-                    if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); ed.sel_anchor=CUR.cursor; }
-                    else { gcl_ide_buffer_backspace(&CUR); ed.sel_anchor = CUR.cursor; }
+                    if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); }
+                    else { gcl_ide_buffer_backspace(&CUR); }
+                    CUR.sel_anchor = CUR.cursor;
                     if (ed.typewriter) editor_typewriter_sound(&ed, 2);
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
                     editor_show_completion(&ed, 0);
                 }
                 if (IsKeyPressed(KEY_DELETE)) {
-                    if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); ed.sel_anchor=CUR.cursor; }
+                    if (selection_active(&ed)) { size_t s0=sel_start(&ed),s1=sel_end(&ed); buffer_delete_range(&CUR,s0,s1); }
                     else { gcl_ide_buffer_delete(&CUR); }
+                    CUR.sel_anchor = CUR.cursor;
                     if (ed.typewriter) editor_typewriter_sound(&ed, 2);
                     editor_spawn_particles_at_cursor(&ed, editor_rect);
                     editor_show_completion(&ed, 0);
@@ -968,7 +929,7 @@ int gcl_ide_run(const char *path) {
                             }
                         }
                         CUR.cursor = off + col;
-                        if (!shift) ed.sel_anchor = CUR.cursor;
+                        if (!shift) CUR.sel_anchor = CUR.cursor;
                     }
                 }
             }
@@ -993,67 +954,8 @@ int gcl_ide_run(const char *path) {
             }
         }
 
-        /* completion window */
-        if (ed.completion_visible && (ed.completion_count > 0 || ed.completion_no_match)) {
-            int px = (int)editor_rect.x + GUTTER_W;
-            int py = (int)editor_rect.y + 4 + (int)(gcl_ide_buffer_line_of_cursor(&CUR) - CUR.scroll_y) * LINE_H + LINE_H;
-            int pw = 280, ph = 28;
-            if (ed.completion_no_match) {
-                pw = MeasureText(ed.completion_message, efont) + 24;
-                if (pw < 240) pw = 240;
-            } else {
-                int max_w = 0;
-                for (int i = 0; i < ed.completion_count; i++) {
-                    const char *lb = ed.completions[i].name ? ed.completions[i].name : "";
-                    int lw = MeasureText(lb, efont) + 48;
-                    if (lw > max_w) max_w = lw;
-                }
-                pw = max_w > 280 ? max_w : 280;
-                ph = ed.completion_count * 20 + 4;
-                if (ph > 200) ph = 200;
-            }
-            /* The window opens RIGHT BELOW the cursor; it stays within the editor area.
-               If a long list overflows below the screen it is scrolled up —
-               BUT the editor_rect.y offset is taken into account so it does not overlap the cursor line. */
-            /* X: stay within the editor */
-            if (px + pw > (int)(editor_rect.x + editor_rect.width)) px = (int)(editor_rect.x + editor_rect.width) - pw;
-            if (px < (int)editor_rect.x) px = (int)editor_rect.x;
-            /* The window first opens BELOW the cursor; if it does not fit below, it moves ABOVE it —
-               it never overlaps the line being typed. */
-            if (py + ph > (int)(editor_rect.y + editor_rect.height)) {
-                py = (int)editor_rect.y + 4 + (int)(gcl_ide_buffer_line_of_cursor(&CUR) - CUR.scroll_y) * LINE_H - ph - 4;
-                if (py < (int)editor_rect.y) py = (int)editor_rect.y;
-            }
-            DrawRectangle(px, py, pw, ph, t.popup_bg);
-            DrawRectangleLines((float)px, (float)py, (float)pw, (float)ph, t.accent);
-            if (ed.completion_no_match) {
-                DrawText(ed.completion_message, px + 8, py + 4, efont, t.error);
-            } else {
-                int start = 0;
-                if (ed.completion_selected >= 10) start = ed.completion_selected - 9;
-                for (int i = start; i < ed.completion_count && i < start + 10; i++) {
-                    int y = py + 2 + (i - start) * 20;
-                    bool sel = (i == ed.completion_selected);
-                    if (sel) DrawRectangle(px + 1, y, pw - 2, 20, t.selection);
-                    const char *lb = ed.completions[i].name ? ed.completions[i].name : "";
-                    const char *dt = ed.completions[i].detail ? ed.completions[i].detail : "";
-                    DrawText(lb, px + 6, y + 2, efont - 1, sel ? WHITE : t.text);
-                    if (dt[0]) DrawText(dt, px + pw - MeasureText(dt, efont - 2) - 8, y + 4, efont - 2, t.gutter);
-                }
-            }
-            /* signature/parameter window — the selected item's signature appears BELOW the list (VSCode-like) */
-            if (ed.completion_selected >= 0 && ed.completion_selected < ed.completion_count) {
-                int sig_h = 0;
-                draw_completion_signature(&ed.completions[ed.completion_selected],
-                                          px, py + ph, pw, efont, &t, &sig_h);
-                ph += sig_h;
-            }
-            /* If it overflows off-screen, scroll the popup up (VSCode behavior) */
-            if (py + ph > (int)editor_rect.y + (int)editor_rect.height - 4) {
-                py = (int)editor_rect.y + 4 + (int)(cur_line - CUR.scroll_y) * LINE_H - ph;
-                if (py < (int)editor_rect.y + 4) py = (int)editor_rect.y + 4;
-            }
-        }
+        /* completion window + signature help (ide_complete_ui.c, §13) */
+        ide_complete_ui_draw(&ed, editor_rect, efont, &t);
 
         /* name dialog (New File / New Directory / Rename) — modal drawing.
            NOTE: input handling exists (lines 299-302) but there was NO drawing code.

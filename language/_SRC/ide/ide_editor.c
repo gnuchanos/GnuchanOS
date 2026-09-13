@@ -1,5 +1,6 @@
 #include "gcl_ide_internal.h"
 #include "gcl_ide_clipboard.h"
+#include "gcl_complete.h"
 #include <dirent.h>
 
 /* ---------------------------------------------
@@ -16,11 +17,18 @@ char *editor_buffer_text_cstr(const GclIdeBuffer *b) {
 
 void buffer_delete_range(GclIdeBuffer *b, size_t start, size_t end) {
     if (end <= start || !b->content) return;
+    if (start > b->size) start = b->size;
     if (end > b->size) end = b->size;
+    if (end <= start) return;
+    /* Silme de geri alinabilsin: mutasyondan ONCE undo anlik goruntusu it.
+       Eskiden hic snapshot alinmiyordu; secimi silip Ctrl+Z yapinca undo,
+       silmeyi atlayip cok eski bir duruma sicriyordu (todo #6). */
+    gcl_ide_buffer_snapshot(b);
     memmove(b->content + start, b->content + end, b->size - end);
     b->size -= end - start;
     if (b->size < b->cap) b->content[b->size] = '\0';
     b->cursor = start;
+    b->sel_anchor = b->cursor;
     b->dirty = 1;
 }
 
@@ -104,7 +112,7 @@ void editor_handle_bracket_close(Editor *ed, char open_char, char close_char) {
     gcl_ide_buffer_insert_char(&CURP, open_char);
     gcl_ide_buffer_insert_char(&CURP, close_char);
     gcl_ide_buffer_cursor_left(&CURP);
-    ed->sel_anchor = CURP.cursor;
+    CURP.sel_anchor = CURP.cursor;
 }
 
 /* ==== Otomatik tamamlama (yalnızca gcl_lsp_inscript_scan) ==== */
@@ -465,7 +473,7 @@ static int editor_inside_arguments(const char *prefix) {
     return depth > 0;
 }
 
-void editor_show_completion(Editor *ed, int manual) {
+static void editor_show_completion_legacy(Editor *ed, int manual) {
     /* Once ESC dismisses the popup it stays closed until a NEW deliberate
        trigger. Only a typed '.' and Ctrl+Space reset completion_dismissed
        in the caller, so this single check stops the popup from popping back
@@ -1126,9 +1134,13 @@ void editor_accept_completion(Editor *ed) {
        AMA dosya adları (#include <test.gcsf>) ve direktif isimleri için
        dot-split UYGULANMAZ — aksi halde "test.gcsf" → "gcsf" yazılır. */
     const char *insert_name = s->name;
+    /* Dosya adları/lib/tanı öğeleri dot-split EDİLMEZ — aksi halde
+       "player.png" → "png" yazılırdı (asset yolu tamamlaması, §Faz 6). */
     int is_external_name = (s->detail &&
                             (strstr(s->detail, "include file") != NULL ||
                              strstr(s->detail, "external library") != NULL ||
+                             strstr(s->detail, "library file") != NULL ||
+                             strstr(s->detail, "asset file") != NULL ||
                              strstr(s->detail, "directive") != NULL));
     if (!is_external_name) {
         char *dot_in_name = strrchr(s->name, '.');
@@ -1136,7 +1148,13 @@ void editor_accept_completion(Editor *ed) {
     }
     for (const char *q = insert_name; *q; q++) gcl_ide_buffer_insert_char(b, *q);
 
-    /* fonksiyon ise () ekle */
+    /* fonksiyon ise () ekle — parametre biliniyorsa ilk parametre yer tutucusu
+       (S8): "SetWindowTitle(▮title)". Yer tutucu SEÇİLİ bırakılır; ilk yazılan
+       karakter seçimi silip üzerine yazar (editor_process_typing). */
+    /* Fonksiyon kabulunde YALNIZCA "()" eklenir ve imleç parantez içine alinir.
+       Eski S8 parametre yer tutucusu ("DrawFPS(posX)") KALDIRILDI: yalnizca ilk
+       parametreyi yaziyor ve kullaniciya gereksiz parametre metni birakiyordu.
+       Artik parametreyi kullanici kendisi yazar; imza zaten ust seritte gorunur. */
     if (s->kind == LSP_KIND_FUNC) {
         gcl_ide_buffer_insert_char(b, '(');
         gcl_ide_buffer_insert_char(b, ')');
@@ -1146,7 +1164,9 @@ void editor_accept_completion(Editor *ed) {
     ed->completion_visible = 0;
     ed->completion_no_match = 0;
     ed->completion_message[0] = '\0';
-    ed->sel_anchor = b->cursor;
+    b->sel_anchor = b->cursor;
+
+    gcl_ide_buffer_end_edit(b);
 }
    
 /* ---------------------------------------------
@@ -1154,15 +1174,44 @@ void editor_accept_completion(Editor *ed) {
    --------------------------------------------- */
 
 size_t sel_start(Editor *ed) {
-    return ed->sel_anchor < CURP.cursor ? ed->sel_anchor : CURP.cursor;
+    /* Capa bayat olabilir (icerik kuculmus olabilir); daima buffer'a kelepcele. */
+    size_t a = CURP.sel_anchor;
+    if (a > CURP.size) a = CURP.size;
+    return a < CURP.cursor ? a : CURP.cursor;
 }
 
 size_t sel_end(Editor *ed) {
-    return ed->sel_anchor < CURP.cursor ? CURP.cursor : ed->sel_anchor;
+    size_t a = CURP.sel_anchor;
+    if (a > CURP.size) a = CURP.size;
+    return a < CURP.cursor ? CURP.cursor : a;
 }
 
 int selection_active(Editor *ed) {
-    return ed->sel_anchor != CURP.cursor;
+    size_t a = CURP.sel_anchor;
+    if (a > CURP.size) a = CURP.size;
+    return a != CURP.cursor;
+}
+
+/* Seçili metni (varsa) sil ve çapayı imlece eşitler. Çağıran bir undo grubu
+   (begin_edit...end_edit) içindeyse ek snapshot alınmaz; böylece "seçimi sil +
+   yaz" gibi işlemler TEK Ctrl+Z ile geri alınır (todo #6). */
+static void editor_clear_selection(Editor *ed) {
+    if (!selection_active(ed)) return;
+    size_t s0 = sel_start(ed), s1 = sel_end(ed);
+    buffer_delete_range(&CURP, s0, s1);
+    CURP.sel_anchor = CURP.cursor;
+}
+
+/* Şift'siz bir ok tuşu seçim varken basılırsa seçim "toplanır": imleç
+   seçimin yakın kenarına taşınır, çapa ona eşitlenir. Eskiden imleç
+   seçimin bir ucundan tek karakter adım atıp geride bir karakterlik
+   hayalet seçim bırakıyordu; sonraki Delete/Backspace bu hayalet
+   aralığı silip metni bozuyordu (todo #6). */
+void editor_collapse_selection(Editor *ed, int to_start) {
+    if (!selection_active(ed)) return;
+    size_t s0 = sel_start(ed), s1 = sel_end(ed);
+    CURP.cursor = to_start ? s0 : s1;
+    CURP.sel_anchor = CURP.cursor;
 }
 
 void editor_copy(Editor *ed) {
@@ -1184,7 +1233,7 @@ void editor_cut(Editor *ed) {
     editor_copy(ed);
     size_t s0 = sel_start(ed), s1 = sel_end(ed);
     buffer_delete_range(&CURP, s0, s1);
-    ed->sel_anchor = CURP.cursor;
+    CURP.sel_anchor = CURP.cursor;
 }
 
 void editor_paste(Editor *ed) {
@@ -1192,7 +1241,7 @@ void editor_paste(Editor *ed) {
     if (selection_active(ed)) {
         size_t s0 = sel_start(ed), s1 = sel_end(ed);
         buffer_delete_range(&CURP, s0, s1);
-        ed->sel_anchor = CURP.cursor;
+        CURP.sel_anchor = CURP.cursor;
     }
     /* Önce sistem panosundan al; yoksa iç clip buffer kullan.
        Windows pano metnindeki '\r' (CRLF) editörde '?'/kare olarak görünüyordu;
@@ -1203,7 +1252,7 @@ void editor_paste(Editor *ed) {
             if (*p == '\r') continue;
             gcl_ide_buffer_insert_char(&CURP, *p);
         }
-        ed->sel_anchor = CURP.cursor;
+        CURP.sel_anchor = CURP.cursor;
         free(sys_text);
         return;
     }
@@ -1212,11 +1261,11 @@ void editor_paste(Editor *ed) {
         if (ed->clip_text[i] == '\r') continue;
         gcl_ide_buffer_insert_char(&CURP, ed->clip_text[i]);
     }
-    ed->sel_anchor = CURP.cursor;
+    CURP.sel_anchor = CURP.cursor;
 }
 
 void editor_select_all(Editor *ed) {
-    ed->sel_anchor = 0;
+    CURP.sel_anchor = 0;
     CURP.cursor = CURP.size;
 }
 
@@ -1281,8 +1330,12 @@ void editor_insert_tab(Editor *ed) {
     char unit[8];
     size_t un = 0;
     editor_indent_unit(b, unit, sizeof(unit), &un);
+    /* Tek girinti = tek undo adımı (4 boşluk = 4 snapshot DEĞİL, todo #6). */
+    gcl_ide_buffer_begin_edit(b);
+    editor_clear_selection(ed);
     for (size_t i = 0; i < un; i++) gcl_ide_buffer_insert_char(b, unit[i]);
-    ed->sel_anchor = b->cursor;
+    b->sel_anchor = b->cursor;
+    gcl_ide_buffer_end_edit(b);
 }
 
 /* Enter: yeni satır + otomatik gövde girintisi (Python/GCL).
@@ -1294,7 +1347,7 @@ void editor_insert_newline_autoindent(Editor *ed) {
     GclIdeBuffer *b = &CURP;
     if (!b || !b->content || b->size == 0) {
         gcl_ide_buffer_insert_newline(b);
-        if (ed) ed->sel_anchor = b->cursor;
+        if (ed) b->sel_anchor = b->cursor;
         return;
     }
     size_t line = gcl_ide_buffer_line_of_cursor(b);
@@ -1361,7 +1414,7 @@ void editor_insert_newline_autoindent(Editor *ed) {
 
     gcl_ide_buffer_insert_char(b, '\n');
     for (size_t i = 0; i < on; i++) gcl_ide_buffer_insert_char(b, out[i]);
-    ed->sel_anchor = b->cursor;
+    b->sel_anchor = b->cursor;
 }
 
 /* Tab: seçili satırları (yoksa imleç satırını) girintiler.
@@ -1380,8 +1433,8 @@ void editor_indent_selection(Editor *ed, int outdent) {
     /* İmleç ve çapanın satır içi offset'lerini sakla. */
     size_t cursor_line = editor_line_of_byte(b, b->cursor);
     size_t cursor_off  = b->cursor - editor_line_start_byte(b, cursor_line);
-    size_t anchor_line = editor_line_of_byte(b, ed->sel_anchor);
-    size_t anchor_off  = ed->sel_anchor - editor_line_start_byte(b, anchor_line);
+    size_t anchor_line = editor_line_of_byte(b, b->sel_anchor);
+    size_t anchor_off  = b->sel_anchor - editor_line_start_byte(b, anchor_line);
 
     char unit[8];
     size_t unit_len = 0;
@@ -1419,9 +1472,10 @@ void editor_indent_selection(Editor *ed, int outdent) {
         if (b->cursor > b->size) b->cursor = b->size;
         long aoff = (long)anchor_off + anchor_shift;
         if (aoff < 0) aoff = 0;
-        ed->sel_anchor = editor_line_start_byte(b, anchor_line) + (size_t)aoff;
-        if (ed->sel_anchor > b->size) ed->sel_anchor = b->size;
+        b->sel_anchor = editor_line_start_byte(b, anchor_line) + (size_t)aoff;
+        if (b->sel_anchor > b->size) b->sel_anchor = b->size;
     }
+    gcl_ide_buffer_end_edit(b);
 }
 
 /* ---------------------------------------------
@@ -1442,7 +1496,7 @@ void editor_process_typing(Editor *ed, int ctrl, int shift) {
         if (selection_active(ed)) {
             size_t s0 = sel_start(ed), s1 = sel_end(ed);
             buffer_delete_range(&CURP, s0, s1);
-            ed->sel_anchor = CURP.cursor;
+            CURP.sel_anchor = CURP.cursor;
         }
         if (ch == '.') typed_dot = 1;
         if (ch == '\r' || ch == '\n') {
@@ -1450,40 +1504,40 @@ void editor_process_typing(Editor *ed, int ctrl, int shift) {
         else if (ch == ')') {
             if (CURP.cursor < CURP.size && CURP.content[CURP.cursor] == ')') {
                 gcl_ide_buffer_cursor_right(&CURP);
-                ed->sel_anchor = CURP.cursor;
+                CURP.sel_anchor = CURP.cursor;
             } else {
                 gcl_ide_buffer_insert_char(&CURP, ')');
-                ed->sel_anchor = CURP.cursor;
+                CURP.sel_anchor = CURP.cursor;
             }
         }
         else if (ch == '{') editor_handle_bracket_close(ed, '{', '}');
         else if (ch == '}') {
             if (CURP.cursor < CURP.size && CURP.content[CURP.cursor] == '}') {
                 gcl_ide_buffer_cursor_right(&CURP);
-                ed->sel_anchor = CURP.cursor;
+                CURP.sel_anchor = CURP.cursor;
             } else {
                 gcl_ide_buffer_insert_char(&CURP, '}');
-                ed->sel_anchor = CURP.cursor;
+                CURP.sel_anchor = CURP.cursor;
             }
         }
         else if (ch == '[') editor_handle_bracket_close(ed, '[', ']');
         else if (ch == ']') {
             if (CURP.cursor < CURP.size && CURP.content[CURP.cursor] == ']') {
                 gcl_ide_buffer_cursor_right(&CURP);
-                ed->sel_anchor = CURP.cursor;
+                CURP.sel_anchor = CURP.cursor;
             } else {
                 gcl_ide_buffer_insert_char(&CURP, ']');
-                ed->sel_anchor = CURP.cursor;
+                CURP.sel_anchor = CURP.cursor;
             }
         }
-        else if (ch == '"') { gcl_ide_buffer_insert_char(&CURP, '"'); gcl_ide_buffer_insert_char(&CURP, '"'); gcl_ide_buffer_cursor_left(&CURP); ed->sel_anchor = CURP.cursor; }
-        else if (ch == '\'') { gcl_ide_buffer_insert_char(&CURP, '\''); gcl_ide_buffer_insert_char(&CURP, '\''); gcl_ide_buffer_cursor_left(&CURP); ed->sel_anchor = CURP.cursor; }
+        else if (ch == '"') { gcl_ide_buffer_insert_char(&CURP, '"'); gcl_ide_buffer_insert_char(&CURP, '"'); gcl_ide_buffer_cursor_left(&CURP); CURP.sel_anchor = CURP.cursor; }
+        else if (ch == '\'') { gcl_ide_buffer_insert_char(&CURP, '\''); gcl_ide_buffer_insert_char(&CURP, '\''); gcl_ide_buffer_cursor_left(&CURP); CURP.sel_anchor = CURP.cursor; }
         else {
             /* Tamamlama penceresi açıkken ';' yazınca pencereyi KAPAT.
                Otomatik tamamlama yazarken açılmaz; yalnızca açıkken ';' kapatır. */
             if (ed->completion_visible && ch == ';') {
                 gcl_ide_buffer_insert_char(&CURP, ';');
-                ed->sel_anchor = CURP.cursor;
+                CURP.sel_anchor = CURP.cursor;
                 ed->completion_visible = 0;
                 ed->completion_no_match = 0;
                 ed->completion_message[0] = '\0';
@@ -1515,8 +1569,9 @@ void editor_process_typing(Editor *ed, int ctrl, int shift) {
                 u8s[ulen] = '\0';
                 gcl_ide_buffer_insert_utf8(&CURP, u8s);
             }
-            typed_any = 1; ed->sel_anchor = CURP.cursor;
+            typed_any = 1; CURP.sel_anchor = CURP.cursor;
         }
+        gcl_ide_buffer_end_edit(&CURP);
     }
     if (typed_any) {
         ed->last_typed_key = GetTime();
@@ -1540,5 +1595,126 @@ void editor_process_typing(Editor *ed, int ctrl, int shift) {
             ed->completion_no_match = 0;
             ed->completion_message[0] = '\0';
         }
+    }
+}
+/* ==================================================================
+   SMART tamamlama — complete/ motoru sarmalayıcısı (§3).
+   Bağlam analizi + tip çözümü + kapsam + sıralama motorda yapılır; editör
+   yalnızca imleç/buffer verir ve dönen listeyi `ed->completions`'a taşır.
+   ================================================================== */
+void editor_show_completion(Editor *ed, int manual) {
+    /* ESC sonrası yeni bir bilinçli tetikleyene kadar kapalı kalır (todo #5/#17). */
+    if (ed->completion_dismissed && !manual) return;
+
+    lsp_list_clear(&ed->completions, &ed->completion_count);
+    ed->completion_selected = 0;
+    ed->completion_visible = 0;
+    ed->completion_no_match = 0;
+    ed->completion_message[0] = '\0';
+    /* İmza yardımı (S6): her sorguda motordan tazelenir; aksi halde eski şerit
+       ekranda kalır. */
+    ed->completion_have_sig = 0;
+    ed->completion_sig_label[0] = '\0';
+    ed->completion_sig_params[0] = '\0';
+    ed->completion_sig_active = 0;
+
+    if (ed->tab_count <= 0 || ed->active_tab < 0 || ed->active_tab >= ed->tab_count) return;
+
+    GclIdeBuffer *b = &ed->tabs[ed->active_tab];
+
+    /* GCL dışı diller (Lua/Python) için kapsam/tip motoru devrede değil;
+       eski satır-bazlı yola düşülür (opsiyonel faz, §9). */
+    if (b->path) {
+        const char *ext = strrchr(b->path, '.');
+        if (ext && (strcmp(ext, ".py") == 0 || strcmp(ext, ".lua") == 0)) {
+            editor_show_completion_legacy(ed, manual);
+            return;
+        }
+    }
+
+    char *text = editor_buffer_text_cstr(b);
+    if (!text) return;
+
+    GclCompletionResult res;
+    gcl_complete_query(b->path, text, b->size, b->cursor, ed->cwd, &res);
+
+    /* Motor tanısı (§5.4) — popup KAPALI olsa bile gösterilir (ör. imleç
+       printf kapanışındayken). ide_complete_ui.c uyarı şeridi olarak çizer. */
+    ed->completion_have_diag = res.have_diagnostic;
+    if (res.have_diagnostic)
+        snprintf(ed->completion_diag, sizeof(ed->completion_diag), "%s",
+                 res.diag_message);
+    else
+        ed->completion_diag[0] = '\0';
+
+    if (res.suppressed) {
+        /* String/yorum/çözümsüz üye → listede hiçbir şey yok, mesaj da yok. */
+        gcl_complete_result_free(&res);
+        free(text);
+        ed->completion_visible = 0;
+        return;
+    }
+
+    /* Aktif sözcüğü (mesaj için) imleçten geriye doğru çıkar. */
+    char cur_word[256];
+    cur_word[0] = '\0';
+    {
+        size_t ws = b->cursor;
+        while (ws > 0 && gclc_ident_char(text[ws - 1])) ws--;
+        size_t n = b->cursor - ws;
+        if (n >= sizeof(cur_word)) n = sizeof(cur_word) - 1;
+        if (n && gclc_ident_start(text[ws])) {
+            memcpy(cur_word, text + ws, n);
+            cur_word[n] = '\0';
+        }
+    }
+
+    int cap = 0;
+    for (int i = 0; i < res.count; i++) {
+        const GclItem *it = &res.items[i];
+        LspKind lk;
+        switch (it->kind) {
+            case CIK_FUNC:     lk = LSP_KIND_FUNC;  break;
+            case CIK_TYPE:     lk = LSP_KIND_TYPE;  break;
+            case CIK_MODULE:   lk = LSP_KIND_TYPE;  break;
+            case CIK_KEYWORD:  lk = LSP_KIND_TYPE;  break;
+            case CIK_MACRO:    lk = LSP_KIND_MACRO; break;
+            case CIK_FILE:     lk = LSP_KIND_TYPE;  break;
+            default:           lk = LSP_KIND_VAR;   break;
+        }
+        const char *detail = NULL;
+        if (it->signature && it->signature[0])      detail = it->signature;
+        else if (it->type && it->type[0])           detail = it->type;
+        else if (it->doc && it->doc[0])             detail = it->doc;
+        lsp_list_add(&ed->completions, &ed->completion_count, &cap,
+                     it->label, lk, LSP_VIS_PUBLIC, detail,
+                     (it->params && it->params[0]) ? it->params : NULL,
+                     it->origin_file);
+    }
+
+    /* İmza yardımı (S6): motordan gelen imzayı editöre aktar — üstteki ince
+       şerit ide_complete_ui.c tarafından çizilir. */
+    if (res.have_signature) {
+        ed->completion_have_sig = 1;
+        snprintf(ed->completion_sig_label, sizeof(ed->completion_sig_label),
+                 "%s", res.sig_label);
+        snprintf(ed->completion_sig_params, sizeof(ed->completion_sig_params),
+                 "%s", res.sig_params);
+        ed->completion_sig_active = res.sig_active_param;
+    }
+
+    int best = res.best_index;
+    gcl_complete_result_free(&res);
+    free(text);
+
+    if (ed->completion_count > 0) {
+        if (best < 0 || best >= ed->completion_count) best = 0;
+        ed->completion_selected = best;
+        ed->completion_visible = 1;
+    } else if (manual && cur_word[0]) {
+        snprintf(ed->completion_message, sizeof(ed->completion_message),
+                 "there is no '%s'", cur_word);
+        ed->completion_no_match = 1;
+        ed->completion_visible = 1;
     }
 }

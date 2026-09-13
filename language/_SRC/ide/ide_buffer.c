@@ -103,10 +103,40 @@ static void history_push(GclIdeHistory *h, const char *content, size_t size, siz
     h->count++;
 }
 
-/* Mutasyondan ÖNCE çağrılır: mevcut durumu undo'ya it, redo'yu temizle. */
+/* Mutasyondan ÖNCE çağrılır: mevcut durumu undo'ya it, redo'yu temizle.
+   Bir düzenleme grubu (begin_edit...end_edit) açıksa, grup içindeki İLK
+   gerçek mutasyonda yalnızca BİR kez snapshot alınır (undo_armed); sonraki
+   ara mutasyonlar atlanır. Böylece "seçimi sil + yaz", yapıştırma, otomatik
+   girinti gibi çok adımlı işlemler TEK Ctrl+Z ile geri alınır (todo #6). */
 static void buffer_snapshot_before(GclIdeBuffer *b) {
+    if (b->undo_suspend > 0) {
+        if (!b->undo_armed) return;   /* bu düzenleme için snapshot zaten alındı */
+        b->undo_armed = 0;             /* tam olarak bir snapshot al */
+    }
     history_push(&b->undo, b->content ? b->content : "", b->size, b->cursor);
     history_free(&b->redo);
+}
+
+/* Public sarmalayıcı: ide_editor.c'deki buffer_delete_range gibi alt seviye
+   değişiklikler de Ctrl+Z ile geri alınabilsin diye (todo #6). */
+void gcl_ide_buffer_snapshot(GclIdeBuffer *b) {
+    if (!b) return;
+    buffer_snapshot_before(b);
+}
+
+/* Düzenleme grubu başlat: ilk gerçek mutasyonda bir snapshot alınmasını işaretle.
+   İç içe çağrılar sayılır; snapshot yalnızca en dıştaki grup için (bir kez) alınır. */
+void gcl_ide_buffer_begin_edit(GclIdeBuffer *b) {
+    if (!b) return;
+    if (b->undo_suspend == 0) b->undo_armed = 1;
+    b->undo_suspend++;
+}
+
+/* Düzenleme grubunu bitir. */
+void gcl_ide_buffer_end_edit(GclIdeBuffer *b) {
+    if (!b) return;
+    if (b->undo_suspend > 0) b->undo_suspend--;
+    if (b->undo_suspend == 0) b->undo_armed = 0;
 }
 
 static int ensure_cap(GclIdeBuffer *b, size_t extra) {
@@ -124,6 +154,7 @@ static int ensure_cap(GclIdeBuffer *b, size_t extra) {
 void gcl_ide_buffer_init(GclIdeBuffer *b) {
     memset(b, 0, sizeof(*b));
     b->cursor = 0;
+    b->sel_anchor = 0;
     b->scroll_y = 0;
     b->scroll_x = 0;
     b->dirty = 0;
@@ -137,6 +168,7 @@ void gcl_ide_buffer_free(GclIdeBuffer *b) {
     b->size = 0;
     b->cap = 0;
     b->cursor = 0;
+    b->sel_anchor = 0;
     b->scroll_y = 0;
     b->dirty = 0;
     history_free(&b->undo);
@@ -157,9 +189,12 @@ int gcl_ide_buffer_load(GclIdeBuffer *b, const char *path) {
     b->content[rd] = '\0';
     b->size = rd;
     b->cursor = 0;
+    b->sel_anchor = 0;
     b->scroll_y = 0;
     b->scroll_x = 0;
     b->dirty = 0;
+    b->undo_suspend = 0;   /* açık bir düzenleme grubu yeni dosyaya taşınmaz */
+    b->undo_armed = 0;
     free(b->path);
     b->path = gcl_strdup(path);
     /* \r\n -> \n normalize */
@@ -200,6 +235,7 @@ void gcl_ide_buffer_insert_char(GclIdeBuffer *b, char c) {
     b->content[b->cursor] = c;
     b->size += 1;
     b->cursor += 1;
+    b->sel_anchor = b->cursor;   /* yazım seçimi iptal eder */
     b->dirty = 1;
 }
 
@@ -216,6 +252,7 @@ void gcl_ide_buffer_insert_utf8(GclIdeBuffer *b, const char *utf8) {
     memcpy(b->content + b->cursor, utf8, len);
     b->size += len;
     b->cursor += len;
+    b->sel_anchor = b->cursor;   /* yazım seçimi iptal eder */
     b->dirty = 1;
 }
 
@@ -233,6 +270,7 @@ void gcl_ide_buffer_backspace(GclIdeBuffer *b) {
     memmove(b->content + start, b->content + b->cursor, b->size - b->cursor);
     b->size -= clen;
     b->cursor = start;
+    b->sel_anchor = b->cursor;   /* silme seçimi iptal eder */
     b->dirty = 1;
 }
 
@@ -242,6 +280,7 @@ void gcl_ide_buffer_delete(GclIdeBuffer *b) {
     size_t clen = utf8_char_len_at(b, b->cursor);
     memmove(b->content + b->cursor, b->content + b->cursor + clen, b->size - b->cursor - clen);
     b->size -= clen;
+    b->sel_anchor = b->cursor;   /* silme seçimi iptal eder */
     b->dirty = 1;
 }
 
@@ -392,6 +431,10 @@ void gcl_ide_buffer_undo(GclIdeBuffer *b) {
     b->size = snap->size;
     b->cap = b->size + 1;             /* kapasiteyi yeniden ayarla */
     b->cursor = snap->cursor > b->size ? b->size : snap->cursor;
+    /* Geri alınan durumda seçim YOK: çapa imlece eşitlenir. Aksi halde imleç
+       geri sıçrarken çapa eski yerinde kalıp hayalet seçim oluşturuyor ve
+       sonraki Delete/Backspace seçili sanıp yanlış aralığı siliyordu (todo #6). */
+    b->sel_anchor = b->cursor;
     snap->content = NULL;             /* artık buffer'da */
     b->undo.count--;
     b->dirty = 1;
@@ -406,6 +449,7 @@ void gcl_ide_buffer_redo(GclIdeBuffer *b) {
     b->size = snap->size;
     b->cap = b->size + 1;
     b->cursor = snap->cursor > b->size ? b->size : snap->cursor;
+    b->sel_anchor = b->cursor;   /* yinelemede de seçim yok (todo #6) */
     snap->content = NULL;
     b->redo.count--;
     b->dirty = 1;

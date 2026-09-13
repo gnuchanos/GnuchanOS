@@ -36,6 +36,7 @@ Build/
 ``` gcl -new project_name
 Project_name/
     assets/ --> raylib de kullanilicak gcl, lua, python otomatik gorebilmesi gerekiyor
+        icon.png --> default gnuchan logo
     external/ -> .so, .dll gibi seyleri burada ariycak gcl python lua ozellikle #external <file.dll>
     include/ .gcsf #include
     lib/ .gclib #lib
@@ -50,6 +51,7 @@ Project_name/
   "project_name": "Demo",
   "developer_name": "developer",
   "version": 0.100,
+  "icon": "assets/icon.png", #// D:\GnuchanOS\assets\icon.png
   "open_lua": true,
   "open_python": true,
   "lua_main_file": "main.lua",

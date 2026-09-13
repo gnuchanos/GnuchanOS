@@ -10,6 +10,8 @@
 nul
 todo.md
 _temp/
+tests/
+
 
 
 # GCL build çıktısı (language/build/)

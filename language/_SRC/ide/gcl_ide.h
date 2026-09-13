@@ -25,12 +25,23 @@ typedef struct {
     size_t size;
     size_t cap;
     size_t cursor;
+    /* Secim capasi (anchor) - imlec ile birlikte secimi tanimlar. Eskiden
+       Editor icinde tek bir alandi; bu yuzden sekmeler arasi siziyor ve
+       undo/redo capayi guncellemediginde hayalet secim olusup Delete yanlis
+       metni siliyordu (todo #6). Artik her buffer kendi capasini tutar. */
+    size_t sel_anchor;
     size_t scroll_y;
     size_t scroll_x;
     int dirty;
     char *path;
     GclIdeHistory undo;
     GclIdeHistory redo;
+    /* Duzenleme grubu (begin_edit..end_edit) durumu: ic ice gruplar sayilir
+       (undo_suspend) ve grup icindeki ilk gercek degisiklikte yalnizca BIR
+       kez snapshot alinir (undo_armed). Cok adimli islemler (secimi sil+yaz,
+       yapistir, otomatik girinti) tek Ctrl+Z ile geri alinir (todo #6). */
+    int undo_suspend;
+    int undo_armed;
 } GclIdeBuffer;
 
 /* buffer API */
@@ -58,5 +69,15 @@ void gcl_ide_buffer_scroll_up(GclIdeBuffer *b);
 void gcl_ide_buffer_scroll_down(GclIdeBuffer *b);
 void gcl_ide_buffer_undo(GclIdeBuffer *b);
 void gcl_ide_buffer_redo(GclIdeBuffer *b);
+/* Mutasyondan ONCE mevcut durumu undo'ya iter (delete_range gibi alt
+   seviye degisiklikleri de Ctrl+Z ile geri alinabilsin diye). */
+void gcl_ide_buffer_snapshot(GclIdeBuffer *b);
+/* Duzenleme grubu: begin...end arasindaki TUM mutasyonlar TEK undo adimi
+   olur. begin_edit ilk gercek degisiklikte (arm) bir kez snapshot alir;
+   grup icindeki insert/delete cagrilari ek snapshot almaz. Ic ice gruplar
+   desteklenir (sayac). Boylece secim uzerine yazma, yapistirma ve otomatik
+   girinti tek Ctrl+Z ile geri alinir (todo #6). */
+void gcl_ide_buffer_begin_edit(GclIdeBuffer *b);
+void gcl_ide_buffer_end_edit(GclIdeBuffer *b);
 
 #endif /* GCL_IDE_H */

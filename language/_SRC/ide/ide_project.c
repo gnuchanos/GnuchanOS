@@ -1,5 +1,7 @@
 #include "gcl_ide_internal.h"
 #include <sys/stat.h>
+/* Project icon — default icon for new projects + build-time exe icon. */
+#include "gcl_icon.h"
 
 #ifdef _WIN32
 /* windows.h's CloseWindow/ShowCursor functions clash with raylib.h.
@@ -27,6 +29,20 @@ static void str_copy_fixed(char *dst, size_t dstsz, const char *src) {
     if (n >= dstsz) n = dstsz - 1;
     memcpy(dst, src, n);
     dst[n] = '\0';
+}
+
+/* Appends one build line to <project>/project.gclog.
+   Opening/closing per line (mode "ab") is what keeps the file readable while
+   the build thread runs: the old code held a single FILE* open and never
+   flushed it, so project.gclog stayed empty until the IDE exited. */
+static void build_log_append(const Editor *ed, const char *text) {
+    if (!ed || !text || !text[0] || !ed->build_base_dir[0]) return;
+    char path[8192];
+    snprintf(path, sizeof(path), "%s/project.gclog", ed->build_base_dir);
+    FILE *f = fopen(path, "ab");
+    if (!f) return;
+    fputs(text, f);
+    fclose(f);
 }
 
 /* ---------------------------------------------
@@ -64,18 +80,22 @@ static void *build_thread_fn(void *arg) {
     ed->build_step[sizeof(ed->build_step) - 1] = '\0';
 
     const char *src_exe = getenv("GCL_EXE_PATH");
+    /* Path of the copied executable — filled by the platform branch below and
+       then used to stamp the project icon onto it. */
+    char dest[4096];
+    dest[0] = '\0';
     if (src_exe && src_exe[0]) {
 #ifdef _WIN32
-        char dest[4096];
         snprintf(dest, sizeof(dest), "%s\\%s.exe", ed->build_out_dir, ed->build_name);
         if (CopyFileA(src_exe, dest, FALSE)) {
             char ok[512];
             snprintf(ok, sizeof(ok), "Built: %s\n", dest);
             strncpy(ed->build_step, ok, sizeof(ed->build_step) - 1);
             ed->build_step[sizeof(ed->build_step) - 1] = '\0';
+        } else {
+            dest[0] = '\0';
         }
 #else
-        char dest[4096];
         snprintf(dest, sizeof(dest), "%s/%s", ed->build_out_dir, ed->build_name);
         char cp_cmd[8192];
         snprintf(cp_cmd, sizeof(cp_cmd), "cp \"%s\" \"%s\"", src_exe, dest);
@@ -84,11 +104,26 @@ static void *build_thread_fn(void *arg) {
             snprintf(ok, sizeof(ok), "Built: %s\n", dest);
             strncpy(ed->build_step, ok, sizeof(ed->build_step) - 1);
             ed->build_step[sizeof(ed->build_step) - 1] = '\0';
+        } else {
+            dest[0] = '\0';
         }
 #endif
     }
 
-    snprintf(step, sizeof(step), "[Build] 3/5 Done.\n");
+    /* The project's "icon" (project.gcdata) becomes the icon of the built exe:
+       Windows — PE RT_ICON/RT_GROUP_ICON; Linux — <name>.png + <name>.desktop. */
+    int icon_applied = 0;
+    if (dest[0])
+        icon_applied = (gcl_icon_apply_project(ed->build_base_dir, dest,
+                                               ed->build_name) == 0);
+
+    if (icon_applied)
+        snprintf(step, sizeof(step), "[Build] 3/5 Done. Icon applied: %s\n", ed->build_name);
+    else if (dest[0])
+        snprintf(step, sizeof(step), "[Build] 3/5 Done. Icon NOT applied (%s)\n",
+                 gcl_icon_last_error());
+    else
+        snprintf(step, sizeof(step), "[Build] 3/5 Done.\n");
     strncpy(ed->build_step, step, sizeof(ed->build_step) - 1);
     ed->build_step[sizeof(ed->build_step) - 1] = '\0';
     ed->build_done = 1;
@@ -106,6 +141,13 @@ void editor_build_poll(Editor *ed) {
             ed->output_len += strlen(ed->build_step);
             ed->output[ed->output_len] = '\0';
         }
+        /* Mirror the step into <project>/project.gclog as well. */
+        build_log_append(ed, ed->build_step);
+        /* CONSUME the step: the worker writes a new string only when it moves
+           on, so without clearing here the SAME line was re-appended every
+           frame ("[Build] 1/5 Packing Project + runtime..." x N) and the
+           16 KB output buffer filled up before the final "Done" line. */
+        ed->build_step[0] = '\0';
     }
     if (ed->build_done) {
         ed->build_running = 0;
@@ -124,6 +166,7 @@ void editor_build_poll(Editor *ed) {
             ed->output_len += strlen(done);
             ed->output[ed->output_len] = '\0';
         }
+        build_log_append(ed, done);
         ed->build_fail = 0;
     }
 }
@@ -260,11 +303,18 @@ void run_project_dialog(Editor *ed) {
     /* The IDE creates the project skeleton ITSELF — gcl -new is NOT called.
        Directories + main.gcsf + project.gcdata + scripts/main.{lua,py} are generated. */
     {
-        const char *dirs[] = { "scripts", "assets", "include", "external", "out", NULL };
+        const char *dirs[] = { "scripts", "assets", "include", "external", "lib", "out", NULL };
         for (int i = 0; dirs[i]; i++) {
             char dp[8192];
             snprintf(dp, sizeof(dp), "%s/%s", full, dirs[i]);
             gcl_ensure_dir(dp);
+        }
+        /* Default icon — embedded gnuchan logo written as assets/icon.png.
+           It is also the icon the build stamps onto the produced executable. */
+        {
+            char icon_path[8192];
+            snprintf(icon_path, sizeof(icon_path), "%s/%s", full, GCL_ICON_REL_PATH);
+            gcl_icon_write_default(icon_path);
         }
         char main_path[8192];
         snprintf(main_path, sizeof(main_path), "%s/main.gcsf", full);
@@ -408,6 +458,8 @@ void run_project_dialog(Editor *ed) {
             fprintf(gf, "  \"project_name\": \"%s\",\n", ed->project_name_input);
             fprintf(gf, "  \"developer_name\": \"developer\",\n");
             fprintf(gf, "  \"version\": 0.100,\n");
+            /* Build-time exe icon (Windows PE resource / Linux .desktop). */
+            fprintf(gf, "  \"icon\": \"%s\",\n", GCL_ICON_REL_PATH);
             fprintf(gf, "  \"open_lua\": %s,\n", ed->new_project_open_lua ? "true" : "false");
             fprintf(gf, "  \"open_lua_raylib\": %s,\n", lua_raylib ? "true" : "false");
             fprintf(gf, "  \"open_python\": %s,\n", ed->new_project_open_python ? "true" : "false");
@@ -681,11 +733,18 @@ void editor_build_project(Editor *ed) {
     }
     if (!runtime_dir[0]) snprintf(runtime_dir, sizeof(runtime_dir), ".");
 
-    /* .gclog — build output is also written here */
+    /* .gclog — build output is also written here. The handle is closed right
+       away: keeping it open (and never flushing) left project.gclog empty.
+       editor_build_poll appends every step afterwards via build_log_append. */
     char log_path[8192];
     snprintf(log_path, sizeof(log_path), "%s/project.gclog", base_dir);
-    FILE *logf = fopen(log_path, "wb");
-    if (logf) fputs("=== Build started ===\n", logf);
+    {
+        FILE *logf = fopen(log_path, "wb");
+        if (logf) {
+            fputs("=== Build started ===\n", logf);
+            fclose(logf);
+        }
+    }
 
     /* Fill the fields for the thread (used by build_thread_fn) */
     str_copy_fixed(ed->build_base_dir, sizeof(ed->build_base_dir), base_dir);

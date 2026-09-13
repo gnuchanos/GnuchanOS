@@ -15,6 +15,7 @@
 #include "gcl_ide_settings.h"
 #include "gcl_settings_panel.h"
 #include "gcl_lsp_internal.h"
+#include "ide_complete_ui.h"
 #include "raylib.h"
 #include "rlgl.h"
 #include <sys/stat.h>
@@ -161,6 +162,17 @@ typedef struct Editor {
     int completion_count;
     int completion_selected;
     int completion_visible;
+    /* Signature help (SS11.2): aktif cagrinin imzasi ve aktif parametresi.
+       Motordan (GclCompletionResult) editor_show_completion aktarir;
+       ide_complete_ui.c cizer. */
+    int  completion_have_sig;
+    char completion_sig_label[256];
+    char completion_sig_params[256];
+    int  completion_sig_active;
+    /* Motor tanısı (§5.4): ör. printf {} yer-tutucu sayısı uyuşmazlığı.
+       Motordan (GclCompletionResult) aktarılır; ide_complete_ui.c çizer. */
+    int  completion_have_diag;
+    char completion_diag[192];
     int completion_private;        /* private erişim uyarısı göster */
     int completion_empty;          /* eşleşme yok — "there is no" göster */
     int completion_no_match;       /* "there is no '<word>'" gösteriliyor */
@@ -206,7 +218,9 @@ typedef struct Editor {
     int sidebar_visible;
     int menu_open;
 
-    size_t sel_anchor;
+    /* NOT: secim capasi (sel_anchor) artik burada degil, GclIdeBuffer icinde
+       tutulur (gcl_ide.h). Boylece her sekme kendi secimini tasir; undo/redo
+       ve sekme degisimi capayi bozmaz (todo #6). */
 
     char *clip_text;
     size_t clip_len;
@@ -399,6 +413,9 @@ int gcl_lsp_scan(const char *path, const char *text, size_t len,
 size_t sel_start(Editor *ed);
 size_t sel_end(Editor *ed);
 int selection_active(Editor *ed);
+/* Şift'siz ok tuşu seçim varken: seçimi yakın kenara toplar (VSCode gibi).
+   to_start=1 → sol/üst kenara, to_start=0 → sağ/alt kenara. */
+void editor_collapse_selection(Editor *ed, int to_start);
 void editor_copy(Editor *ed);
 void editor_cut(Editor *ed);
 void editor_paste(Editor *ed);

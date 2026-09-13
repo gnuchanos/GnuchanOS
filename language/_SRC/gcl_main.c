@@ -43,6 +43,9 @@ extern int gcl_debug;
 /* Embedded runtimes (-luarun / -pyrun CLI modes) — now loaded DYNAMICALLY from Embed.dll */
 #include "gcl_shared_state.h"
 
+/* Project icon — default icon for `gcl -new` + build-time exe icon (gcl_icon.c) */
+#include "gcl_icon.h"
+
 /* IDE — loaded as a separate DLL (Programs/ide.dll|.so). This keeps gcl.exe small. */
 #ifdef _WIN32
 typedef int (*GclIdeRunFn)(const char *path);
@@ -472,21 +475,34 @@ static int run_python(const char *path) {
 /* simple_doc.md: gcl -new project_name
    Project_name/
        assets/         --> also used by raylib (gcl, lua, python must find it automatically)
+           icon.png    --> default gnuchan logo; becomes the built exe's icon
        external/       --> looks for .so, .dll and similar here (#external <file.dll>)
-       include/        --> .gcsf
+       include/        --> .gcsf   (#include)
+       lib/            --> .gclib  (#lib)
        out/            --> project_name, project_name.gcBundle
        scripts/        --> lua, python files
        main.gcsf
-       project.gcdata  --> JSON (schema below)
+       project.gcdata  --> JSON (schema below, incl. "icon")
 */
+/* GCL_ICON_REL_PATH ("assets/icon.png") now lives in gcl_icon.h so the IDE
+   (ide_project.c) and this CLI share the same project-icon location. */
+
 static int new_project(const char *path, int with_lua, int with_luaraylib, int with_python, int with_pyraylib) {
     if (!path || !path[0]) { fprintf(stderr, "Error: project path required\n"); return 1; }
     gcl_ensure_dir(path);
-    const char *dirs[] = { "scripts", "assets", "include", "external", "out", NULL };
+    const char *dirs[] = { "scripts", "assets", "include", "external", "lib", "out", NULL };
     for (int i = 0; dirs[i]; i++) {
         char buf[4096];
         snprintf(buf, sizeof(buf), "%s/%s", path, dirs[i]);
         gcl_ensure_dir(buf);
+    }
+    /* Default icon — the embedded gnuchan logo, written as assets/icon.png.
+       It is also the icon `gcl -build` stamps onto the produced executable. */
+    {
+        char icon_path[4096];
+        snprintf(icon_path, sizeof(icon_path), "%s/%s", path, GCL_ICON_REL_PATH);
+        if (gcl_icon_write_default(icon_path) != 0)
+            fprintf(stderr, "Warning: could not write the default project icon '%s'\n", icon_path);
     }
     const char *proj_name = strrchr(path, '\\') ? strrchr(path, '\\') + 1 : (strrchr(path, '/') ? strrchr(path, '/') + 1 : "project");
 
@@ -536,6 +552,8 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
         fprintf(f, "  \"project_name\": \"%s\",\n", proj_name);
         fprintf(f, "  \"developer_name\": \"developer\",\n");
         fprintf(f, "  \"version\": 0.100,\n");
+        /* Build-time exe icon (Windows PE resource / Linux .desktop). */
+        fprintf(f, "  \"icon\": \"%s\",\n", GCL_ICON_REL_PATH);
         fprintf(f, "  \"open_lua\": %s,\n", with_lua ? "true" : "false");
         fprintf(f, "  \"open_lua_raylib\": %s,\n", with_luaraylib ? "true" : "false");
         fprintf(f, "  \"open_python\": %s,\n", with_python ? "true" : "false");
@@ -719,6 +737,12 @@ static int build_project(const char *gcdata, const char *out_dir_arg) {
             snprintf(dest, sizeof(dest), "%s\\%s.exe", out_dir, name);
             if (CopyFileA(src_exe, dest, FALSE)) {
                 printf("Built: %s\n", dest);
+                /* The project's "icon" (project.gcdata) becomes the exe icon. */
+                if (gcl_icon_apply_project(project_dir, dest, name) == 0)
+                    printf("Icon applied: %s\n", name);
+                else
+                    fprintf(stderr, "Warning: could not apply the project icon: %s\n",
+                            gcl_icon_last_error());
             } else {
                 fprintf(stderr, "Warning: could not copy %s -> %s\n", src_exe, dest);
             }
@@ -729,6 +753,12 @@ static int build_project(const char *gcdata, const char *out_dir_arg) {
             snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", src_exe, dest);
             if (system(cmd) == 0) {
                 printf("Built: %s\n", dest);
+                /* Linux: icon PNG + .desktop launcher next to the executable. */
+                if (gcl_icon_apply_project(project_dir, dest, name) == 0)
+                    printf("Icon applied: %s\n", name);
+                else
+                    fprintf(stderr, "Warning: could not apply the project icon: %s\n",
+                            gcl_icon_last_error());
             } else {
                 fprintf(stderr, "Warning: could not copy %s -> %s\n", src_exe, dest);
             }
