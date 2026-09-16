@@ -1117,7 +1117,20 @@ def run_test_suite(name: str, sources: list[str], include_dir: str) -> bool:
 
     Derleme/koşma hataları AÇIK olarak raporlanır: derlenemeyen bir test
     sessizce "her şey yolunda" gibi görünmemelidir. Çalışma dizini repo
-    köküdür; test_complete proje taklidi dosyaları _temp/ctest/ altına yazar.
+    köküdür; test_complete proje taklidi dosyaları _temp/gcl_ctest/proj
+    altına yazar.
+
+    İki ayrıntı Windows'ta görünmez, Linux'ta ise testi düşürür:
+      * Derleme satırı, üretim derlemelerinin kullandığı
+        -D_POSIX_C_SOURCE=200809L bayrağını da geçirir. -std=c99 tek başına
+        strict ANSI modudur ve POSIX bildirimlerini kapatır; strdup() gibi
+        fonksiyonlar dolaylı olarak bildirilir, int döner ve 64 bit'te
+        pointer'ı KIRPAR (ptest bu yüzden exit=-11 ile düşüyordu).
+      * İkili _temp/tests/ altına kurulur, doğrudan _temp/ içine DEĞİL. Aksi
+        halde _temp/ctest ikilisinin kendisi ile testin kurduğu _temp/ctest/
+        fixture klasörü aynı yola düşer; Linux'ta (".exe" son eki yok) mkdir
+        EEXIST ile başarısız olur, bütün fixture yazımları ENOTDIR verir ve
+        ctest "proje kurulumu" adımında düşer.
     """
     missing = [s for s in sources if not (REPO_ROOT / s).exists()]
     if missing:
@@ -1125,10 +1138,14 @@ def run_test_suite(name: str, sources: list[str], include_dir: str) -> bool:
               f"{', '.join(missing)}", file=sys.stderr, flush=True)
         return True
 
-    TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+    # İkili ile test fixture'ları AYRI ağaçlarda kalmalı — bkz. docstring.
+    bin_dir = TEMP_ROOT / "tests"
+    bin_dir.mkdir(parents=True, exist_ok=True)
     ext = ".exe" if os_name() == "windows" else ""
-    exe = TEMP_ROOT / f"{name}{ext}"
-    cmd = ["gcc", "-std=c99", "-I", include_dir] + sources + ["-o", str(exe), "-lm"]
+    exe = bin_dir / f"{name}{ext}"
+    # Üretim derlemeleriyle aynı feature sözleşmesi (bkz. docstring).
+    cmd = ["gcc", "-std=c99", "-D_POSIX_C_SOURCE=200809L",
+           "-I", include_dir] + sources + ["-o", str(exe), "-lm"]
     if not run_optional(cmd, cwd=REPO_ROOT):
         print(f"[gcl] ERROR: {name} derlenemedi (test paketi çalıştırılamadı)",
               file=sys.stderr, flush=True)

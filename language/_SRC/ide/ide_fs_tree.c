@@ -1,3 +1,12 @@
+/* realpath() needs an XSI/misc declaration request — see the note in gcl_icon.c.
+ * Without it the call was implicitly declared, the pointer return was truncated
+ * on LP64 and the NULL check in fs_absolute_path() could never fail, so
+ * "Copy Path" copied an empty string instead of falling back to the input path.
+ * _GNU_SOURCE is the mechanism gcl_main.c already uses for realpath(). */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "gcl_ide_internal.h"
 
 #include <dirent.h>

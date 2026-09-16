@@ -19,6 +19,20 @@
  * by makefile.py from the repository's assets/icon.png (embed_icon()).
  */
 
+/*
+ * realpath() is declared by glibc only when XSI/misc declarations are asked for
+ * (its prototype is NOT part of base POSIX.1-2008, which is all that the build's
+ * -D_POSIX_C_SOURCE=200809L enables). Without a request the call was implicitly
+ * declared, its pointer return was TRUNCATED to int on LP64 and the NULL check
+ * in icon_absolute_path() could never fail: a failed realpath() silently left an
+ * empty path in the generated .desktop launcher.
+ * _GNU_SOURCE is the same mechanism gcl_main.c uses for its realpath() calls
+ * (glibc makes it imply _XOPEN_SOURCE 700, which is what declares the prototype).
+ */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "gcl_icon.h"
 
 #include <stdio.h>

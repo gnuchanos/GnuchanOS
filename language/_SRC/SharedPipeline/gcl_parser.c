@@ -7,6 +7,15 @@
  *   member access (obj.field), call (fn(args)), binary ops.
  */
 
+/* strdup() is POSIX.1-2008, not C99 — see the note in gcl_lexer.c. Without an
+ * explicit feature-test macro the implicit declaration truncates the returned
+ * pointer on LP64 and every duplicated name/type is silently corrupted. Asking
+ * for POSIX here makes the unit self-sufficient; the guard yields to a
+ * command-line -D_POSIX_C_SOURCE=200809L. */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "gcl_parser.h"
 #include "gcl_lexer.h"
 

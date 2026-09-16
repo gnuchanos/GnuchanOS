@@ -6,6 +6,20 @@
  *   #new/#include, if/else/switch/for/while, struct/enum/typedef, &&/||, ++, +=, ...
  */
 
+/*
+ * strdup() is POSIX.1-2008, not C99. Under -std=c99 glibc declares it only when
+ * a feature-test macro asks for POSIX; otherwise the compiler falls back to an
+ * implicit declaration whose int return TRUNCATES the pointer on LP64 — every
+ * duplicated string is silently corrupted (the headless parser test segfaulted
+ * exactly this way when it was compiled without the build's -D flag).
+ * Requesting POSIX here keeps this translation unit self-sufficient whatever
+ * flags the build passes; a command-line -D_POSIX_C_SOURCE=200809L still wins
+ * because the guard below then skips the define.
+ */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "gcl_lexer.h"
 
 #include <stdlib.h>

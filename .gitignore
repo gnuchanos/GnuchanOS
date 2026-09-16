@@ -10,10 +10,8 @@
 nul
 todo.md
 _temp/
-tests/
-# `tests/` yukarida yalnizca URETILEN test klasorlerini disliyor; projenin
-# kendi motor test paketi (language/tests/complete) kaynak koddur ve
-# repoda TAKIP EDILMELIDIR — aksi halde regresyon testleri commit edilemez.
+language/tests/*
+
 !language/tests/
 # GCL build output (language/build/)
 language/build/
