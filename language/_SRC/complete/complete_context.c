@@ -103,6 +103,24 @@ static void parse_chain(const char *text, size_t ls, size_t dot_index,
             is_call = 1;
         } else {
             idend = end;
+            /* Alt simge: "people[i]" / "m[i][j]" → TABAN tanımlayıcıya in.
+               Eskiden ']' bir tanımlayıcı karakteri OLMADIĞI için tanımlayıcı
+               hiç bulunamıyor, zincir çözülemiyor ve "people[i]." için liste
+               boş kalıyordu (örnek: 8_typedef_struct.gcsf → people[i].id). */
+            for (;;) {
+                if (idend <= ls || text[idend - 1] != ']') break;
+                int br = 0;
+                size_t bk = idend;
+                while (bk > ls) {
+                    bk--;
+                    if (text[bk] == ']') br++;
+                    else if (text[bk] == '[') { br--; if (br == 0) break; }
+                }
+                if (br != 0) break;      /* eşleşmeyen '[' → alt simge değil */
+                idend = bk;
+                while (idend > ls && (text[idend - 1] == ' ' ||
+                                      text[idend - 1] == '\t')) idend--;
+            }
             idstart = idend;
             while (idstart > ls && gclc_ident_char(text[idstart - 1])) idstart--;
         }

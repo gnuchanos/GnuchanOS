@@ -16,13 +16,13 @@ static void copy_fixed(char *dst, size_t dstsz, const char *src) {
 const char *g_menu_titles[] = { "File", "View", "Project", "Help", NULL };
 const char *g_menu_items[4][8] = {
     { "Open File...", "Open Directory...", "Save", "Save As...", "Run", NULL },
-    { "Toggle Explorer", "Output", "Settings...", "About", NULL },
+    { "Toggle Explorer", "Output", "Split On", "Settings...", "About", NULL },
     { "New Project...", "Open Project...", "Run Project", "Build Project...", NULL },
     { "Keyboard Shortcuts", NULL }
 };
 MenuAction g_menu_actions[4][8] = {
     { MACT_OPEN_FILE, MACT_OPEN_DIRECTORY, MACT_SAVE, MACT_SAVE_AS, MACT_RUN },
-    { MACT_TOGGLE_EXPLORER, MACT_TOGGLE_OUTPUT, MACT_SETTINGS, MACT_ABOUT },
+    { MACT_TOGGLE_EXPLORER, MACT_TOGGLE_OUTPUT, MACT_TOGGLE_SPLIT_VIEW, MACT_SETTINGS, MACT_ABOUT },
     { MACT_NEW_PROJECT, MACT_OPEN_PROJECT, MACT_RUN_PROJECT, MACT_BUILD_PROJECT },
     { MACT_HELP }
 };
@@ -119,6 +119,34 @@ void menu_action_run(Editor *ed, MenuAction a) {
             break;
         case MACT_TOGGLE_EXPLORER: ed->sidebar_visible = !ed->sidebar_visible; break;
         case MACT_TOGGLE_OUTPUT: ed->output_visible = !ed->output_visible; break;
+        case MACT_TOGGLE_SPLIT_VIEW:
+            ed->split_enabled = !ed->split_enabled;
+            ed->split_ratio = 0.5f;
+            if (ed->split_enabled) {
+                /* Split ON: the LEFT pane takes over the tab that is being edited right
+                   now and the right pane keeps its own (usually empty) list.
+                   The old code reused a stale split_left_tab, so after a previous split
+                   the left pane showed some other file than the active one, leaving
+                   split_left_tab and active_tab disagreeing (todo bug #1). */
+                ed->split_left_tab = (ed->active_tab >= 0 && ed->active_tab < ed->tab_count)
+                                     ? ed->active_tab : -1;
+                ed->split_right_tab = (ed->split_right_tab_count > 0)
+                                      ? ed->split_right_tab_count - 1 : -1;
+                ed->split_left_tab_scroll = 0.0f;
+                ed->split_right_tab_scroll = 0.0f;
+                ed->split_focus = (ed->split_left_tab >= 0) ? 0
+                                  : (ed->split_right_tab_count > 0 ? 1 : 0);
+            } else {
+                /* Split OFF: pull the right pane's tabs into the single view so the
+                   file the user was editing there stays open. Without this the tab
+                   silently disappeared and the editor jumped to an unrelated tab
+                   (todo bug #1/#23: split-merge). tab_fold_split_into_main() also
+                   focuses the tab that was being edited. */
+                tab_fold_split_into_main(ed);
+                ed->split_left_tab_scroll = 0.0f;
+                ed->split_right_tab_scroll = 0.0f;
+            }
+            break;
         case MACT_SETTINGS:
             gcl_settings_panel_open(ed);
             break;

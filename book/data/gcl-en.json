@@ -14,7 +14,7 @@
           "paragraphs": [
             "GCL is a <strong>C-based</strong> programming language at the center of the GnuchanOS project. Its goal is to provide a simple and readable syntax for both education and game development.",
             "It is written in small <code class=\"inline\">.c</code> files, making the source easy to read and understand.",
-            "The current focus is <strong>GCL</strong>. Lua and Python support also exists (see <code class=\"inline\">#native <Embed></code>), but the current book chapters are for GCL."
+            "The book has three tracks: <strong>GCL</strong>, <strong>Lua</strong> and <strong>Python</strong>. Each track starts from zero and ends with a runnable raylib project; the Lua and Python tracks are driven from GCL through the <code class=\"inline\">Embed</code> module."
           ],
           "notes": [
             {
@@ -323,14 +323,35 @@
           }
         },
         {
-          "title": "#lib",
+          "title": "How a native module is found",
           "paragraphs": [
-            "<code class=\"inline\">#lib <Test></code> loads the <code class=\"inline\">Test.gclib</code> library and its members can be called."
+            "<code class=\"inline\">#native <Name></code> loads <code class=\"inline\">Name.dll</code> (Windows) or <code class=\"inline\">Name.so</code> (Linux). The runtime searches in this order: the executable's own <code class=\"inline\">Library/</code> directory, <code class=\"inline\">base_dir/Library/</code>, <code class=\"inline\">Library/</code> in the working directory, then the system search path. The first hit wins.",
+            "A module exports exactly one symbol, <code class=\"inline\">gcl_<name>_get_functions</code> (the name lowercased), which returns a table of <code class=\"inline\">{ name, fn }</code> entries. Every member receives its arguments as an array of strings and returns a single <code class=\"inline\">double</code> &mdash; the module ABI is <em>text in, one value out</em>.",
+            "Because a module only sees strings, a value that cannot be expressed as text travels through a module-side slot instead: a call writes the struct into a scratch global and separate read-back members (<code class=\"inline\">Last*</code>) publish its components. Handles work the same way &mdash; an image, font or sound is returned as an integer index into the module's registry."
+          ]
+        },
+        {
+          "title": "Callbacks &mdash; letting C call back into GCL",
+          "paragraphs": [
+            "Some raylib members take a C function pointer: <code class=\"inline\">SetTraceLogCallback</code>, the four <code class=\"inline\">SetLoadFile*Callback</code> / <code class=\"inline\">SetSaveFile*Callback</code> members, <code class=\"inline\">SetAudioStreamCallback</code> and the <code class=\"inline\">Attach*Processor</code> pair. A GCL function cannot be passed as a C pointer, so these members take the <strong>name</strong> of a GCL function, and the module resolves it through a host table the runtime hands it when the module is loaded.",
+            "That host table (<code class=\"inline\">GclHostApi</code>) is optional and versioned: a module that does not export <code class=\"inline\">gcl_module_set_host</code> behaves exactly as before, so the ABI stays backward compatible. Arguments are typed &mdash; text or number &mdash; because GCL binds a parameter as a string only when it is actually given a string.",
+            "Thread safety is the interesting part. The interpreter's environment is shared state, so it may only be touched from the main thread. The trace log and file callbacks are invoked by raylib on the calling thread, so they call GCL directly. The <strong>audio</strong> callback runs on its own thread and never enters GCL: it only pops samples from a lock-free ring buffer, while the main thread produces them inside <code class=\"inline\">gcl_module_tick</code>, which the runtime runs before every native module call &mdash; once per frame in a game loop. An empty buffer yields silence instead of a glitch."
           ],
           "code": {
-            "file": "lib.gcsf",
-            "src": "#lib <Test>\n\nint main() {\n    Test.member();\n    return 0;\n}"
-          }
+            "file": "callbacks.gcsf",
+            "src": "#native <Stdio>\n#native <Raylib>\n\nint traceCalls = 0;\n\n// The callback is named by a string.\nvoid onTrace(int level, gcChar text) {\n    traceCalls = traceCalls + 1;\n    Stdio.printf(\"[cb] level={} text={}\\n\", level, text);\n}\n\nint main() {\n    Raylib.SetTraceLogCallback(\"onTrace\");\n    Raylib.TraceLog(3, \"hello from GCL\");\n    Raylib.SetTraceLogCallback(\"\");   // an empty name removes the callback\n    return 0;\n}"
+          },
+          "output": "[cb] level=3 text=hello from GCL",
+          "notes": [
+            {
+              "type": "tip",
+              "text": "Audio works the same way in reverse: the generator is called with the number of frames to produce and pushes samples with <code class=\"inline\">AudioPush(v)</code>; <code class=\"inline\">AudioQueued()</code> reports the current buffer level."
+            },
+            {
+              "type": "info",
+              "text": "File callbacks move bytes through a module-side buffer: a read callback pushes bytes with <code class=\"inline\">FileDataPush(v)</code> and the module hands raylib a copy; a write callback exposes the incoming bytes with <code class=\"inline\">FileDataAt(i)</code>."
+            }
+          ]
         },
         {
           "title": "#extern + #register",
@@ -598,8 +619,14 @@
           ],
           "code": {
             "file": "terminal",
-            "src": "gcl -new Demo\n\nDemo/\n    assets/       # automatically visible for raylib\n    external/     # .so, .dll (gcl python lua searches here)\n    include/      # .gcsf\n    lib/          # .gclib\n    out/          # Demo, Demo.gcBundle\n    scripts/      # lua, python files\n    main.gcsf\n    project.gcdata"
-          }
+            "src": "gcl -new Demo\n\nDemo/\n    assets/       # automatically visible for raylib\n    external/     # .so, .dll files (searched by gcl, python and lua)\n    include/      # .gcsf files found by #include\n    lib/          # configured by gcl_lib_path\n    out/          # Demo, Demo.gcBundle\n    scripts/      # main.lua / main.py\n    main.gcsf\n    project.gcdata"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The skeleton always contains <code>main.gcsf</code> and <code>project.gcdata</code>. Depending on the Lua/Python switches it also writes <code>scripts/main.lua</code> and/or <code>scripts/main.py</code>, each already a runnable raylib window (Empty, 2D or 3D scene)."
+            }
+          ]
         },
         {
           "title": "project.gcdata",
@@ -608,7 +635,7 @@
           ],
           "code": {
             "file": "project.gcdata",
-            "src": "{\n  \"project_name\": \"Demo\",\n  \"developer_name\": \"developer\",\n  \"version\": 0.100,\n  \"open_lua\": true,\n  \"open_python\": true,\n  \"single_bundle\": false,\n  \"gcl_dirs\": [],\n  \"gcl_scripts\": [],\n  \"lua_dirs\": [],\n  \"lua_scripts\": [],\n  \"python_dirs\": [],\n  \"python_scripts\": [],\n  \"lua_main_file\": \"main.lua\",\n  \"python_main_file\": \"main.py\",\n  \"gcl_include_path\": \"include\",\n  \"gcl_lib_path\": \"lib\",\n  \"gcl_external_path\": \"external\",\n  \"python_import_path\": \"scripts\",\n  \"lua_import_path\": \"scripts\",\n  \"raylib_asset_directory_path\": \"assets\"\n}"
+            "src": "{\n  \"project_name\": \"Demo\",\n  \"developer_name\": \"developer\",\n  \"version\": 0.100,\n  \"icon\": \"assets/icon.png\",\n  \"open_lua\": true,\n  \"open_lua_raylib\": true,\n  \"open_python\": true,\n  \"open_python_raylib\": true,\n  \"single_bundle\": false,\n  \"lua_main_file\": \"main.lua\",\n  \"python_main_file\": \"main.py\",\n  \"gcl_include_path\": \"include\",\n  \"gcl_lib_path\": \"lib\",\n  \"gcl_external_path\": \"external\",\n  \"python_import_path\": \"scripts\",\n  \"lua_import_path\": \"scripts\",\n  \"raylib_asset_directory_path\": \"assets\"\n}"
           }
         },
         {
@@ -628,8 +655,1300 @@
           ],
           "code": {
             "file": "terminal",
-            "src": "Build/\n    windows/\n        Library/\n            Math.dll\n            Stdio.dll\n            Embed.dll\n            Lsp.dll\n            Raylib.dll\n            Raygui.dll\n            Embeded/\n                Lua_Runtime/\n                Python_Runtime/\n        Programs/\n            ide.dll\n        gcl.exe\n    gnuLinux/\n        Library/\n            Math.so\n            Stdio.so\n            Embed.so\n            Lsp.so\n            Raylib.so\n            Raygui.so\n            Embeded/\n                Lua_Runtime/\n                Python_Runtime/\n        Programs/\n            ide.so\n        gcl"
+            "src": "Build/\n    windows/\n        Library/\n            Math.dll\n            Stdio.dll\n            Embed.dll\n            Raylib.dll\n            Raygui.dll\n            LuaRaylib.dll\n            LuaRaygui.dll\n            Embeded/\n                Lua_Runtime/\n                    lua.dll\n                    LuaRaylib.dll\n                    LuaRaygui.dll\n                Python_Runtime/\n                    Python.dll\n                    gcl.pyd\n                    raylib.pyd\n                    raygui.pyd\n        Programs/\n            ide.dll\n        gcl.exe\n    gnuLinux/\n        Library/\n            Math.so\n            Stdio.so\n            Embed.so\n            Raylib.so\n            Raygui.so\n            LuaRaylib.so\n            LuaRaygui.so\n            Embeded/\n                Lua_Runtime/\n                Python_Runtime/\n        Programs/\n            ide.so\n        gcl"
           }
+        }
+      ]
+    },
+    {
+      "id": "mimari",
+      "title": "How GCL Works — Internals",
+      "sections": [
+        {
+          "title": "The Big Picture",
+          "paragraphs": [
+            "GCL is <strong>not a compiler</strong>. It is a <strong>tree-walking interpreter</strong> written in C: a <code class=\"inline\">.gcsf</code> file is read, transformed and executed inside the same process, and output appears immediately.",
+            "Every run travels through four stages — <strong>preprocess → lex → parse → run</strong> — glued together by one function: <code class=\"inline\">gcl_simple_run_source()</code> in <code class=\"inline\">language/_SRC/GCL/SimpleRunner/gcl_simple_runner.c</code>. That file is the spine of the language; every other file is a specialist module hanging off it.",
+            "The design rule of the whole project is: <em>many small .c files instead of one big file</em>. The lexer knows nothing about the parser, the parser knows nothing about the runner, and the runner never opens a file by itself."
+          ],
+          "table": {
+            "headers": ["Stage", "Source file", "Responsibility"],
+            "rows": [
+              ["Directive scan", "<code>gcl_simple_runner.c</code>", "Collects <code>#native</code>, <code>#extern</code>, <code>#register</code> lines before anything else runs"],
+              ["Preprocess", "<code>gcl_simple_runner.c</code>", "Macros, <code>#include</code>, conditional compilation, colored diagnostics"],
+              ["Lex", "<code>SharedPipeline/gcl_lexer.c</code>", "Turns text into a flat token list"],
+              ["Parse", "<code>SharedPipeline/gcl_parser.c</code>", "Turns tokens into an AST (<code>GclProgram</code>)"],
+              ["Run", "<code>GCL/SimpleRunner/gcl_runner.c</code>", "Walks the AST, holds variables, loads modules, calls native code"]
+            ]
+          }
+        },
+        {
+          "title": "Stage 0 — Directives Are Collected First",
+          "paragraphs": [
+            "Before a single macro is expanded, three small scanners walk the raw source line by line and collect the directives that describe the <em>outside world</em>:",
+            "<code class=\"inline\">collect_native()</code> gathers every <code class=\"inline\">#native <Name></code> into a module name list, <code class=\"inline\">collect_extern()</code> gathers every <code class=\"inline\">#extern <file.dll></code>, and <code class=\"inline\">collect_register()</code> records each <code class=\"inline\">#register</code> signature as a compact <code class=\"inline\">ret|name|params</code> string.",
+            "They run first on purpose: the module list is needed <em>before</em> the program is executed, and the preprocessor would otherwise comment away or expand the very lines that declare the modules."
+          ],
+          "code": {
+            "file": "gcl_simple_runner.c (shape of the pipeline)",
+            "src": "#native <Stdio>\n#native <Math>\n\nint main() {\n    printf(\"a={} b={}\\n\", 1, 2);\n    return 0;\n}\n\n/* passes */\n1. collect_native()      -> [\"Stdio\", \"Math\"]\n2. collect_extern()      -> []\n3. collect_register()    -> []\n4. pp_process()          -> macro-expanded text\n5. gcl_lex()             -> GclTokenList\n6. gcl_parse()           -> GclProgram (AST)\n7. gcl_run_program()     -> executes"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Limits are compile-time constants: at most <code>32</code> native modules, <code>16</code> extern DLLs, <code>64</code> registered functions, <code>256</code> macros, <code>32</code> include directories."
+            }
+          ]
+        },
+        {
+          "title": "Stage 1 — The Preprocessor",
+          "paragraphs": [
+            "The preprocessor is a <strong>line-oriented</strong> text transformer, not a full C preprocessor. It walks the source line by line, keeps a macro table and a conditional stack, and writes an expanded buffer that the lexer will read.",
+            "Normal lines go through <code class=\"inline\">pp_expand_line()</code>, which expands object-like macros and function-like macros — while deliberately <em>skipping anything inside a string literal</em>, so <code class=\"inline\">printf(\"PI\")</code> never becomes the value of <code class=\"inline\">PI</code>."
+          ],
+          "code": {
+            "file": "macros.gcsf",
+            "src": "#define PI 3.14159\n#define AREA(r) ((r) * (r) * PI)\n\nint main() {\n    double a = AREA(2.0);   // ((2.0) * (2.0) * 3.14159)\n    return 0;\n}"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "Function-like macro arguments are split on commas at bracket depth 0, so <code>max(a, f(x, y))</code> is split correctly into two arguments."
+            }
+          ]
+        },
+        {
+          "title": "Stage 1b — #include Resolution",
+          "paragraphs": [
+            "<code class=\"inline\">#include</code> accepts both <code class=\"inline\"><file.gcsf></code> and <code class=\"inline\">\"file.gcsf\"</code>. The file name is resolved against a search path that is prepared once, in <code class=\"inline\">pp_init()</code>, from the directory of the running file.",
+            "Both <code class=\"inline\">/</code> and <code class=\"inline\">\\</code> separators are tried, so a project built on Windows and opened on Linux resolves the same include."
+          ],
+          "code": {
+            "file": "include search order",
+            "src": "<base_dir>        # the folder of the running .gcsf file\n<base_dir>/include # project include folder\n<base_dir>/lib     # project lib folder"
+          }
+        },
+        {
+          "title": "Stage 1c — #if / #ifdef and Colored Diagnostics",
+          "paragraphs": [
+            "Conditional compilation uses a small <strong>Pratt expression evaluator</strong> (<code class=\"inline\">cond_parse_expr</code>) that understands the full operator precedence ladder: <code class=\"inline\">||</code>, <code class=\"inline\">&&</code>, <code class=\"inline\">== !=</code>, <code class=\"inline\">< > <= >=</code>, <code class=\"inline\">+ -</code>, <code class=\"inline\">* / %</code>, unary <code class=\"inline\">! - + ~</code> and <code class=\"inline\">defined(X)</code> / <code class=\"inline\">defined X</code>.",
+            "A macro whose value is not a pure number is treated as <em>defined</em> and evaluates to <code class=\"inline\">1</code>; an undefined identifier evaluates to <code class=\"inline\">0</code>. Frames track both whether a branch is active and whether any earlier branch was already taken, so <code class=\"inline\">#elif</code> chains behave exactly like C."
+          ],
+          "table": {
+            "headers": ["Directive", "Behaviour"],
+            "rows": [
+              ["<code>#define X v</code>", "Object-like macro"],
+              ["<code>#define F(a, b) ...</code>", "Function-like macro with argument substitution"],
+              ["<code>#undef X</code>", "Removes the macro from the table"],
+              ["<code>#ifdef</code> / <code>#ifndef</code> / <code>#if</code> / <code>#elif</code> / <code>#else</code> / <code>#endif</code>", "Conditional compilation with nesting"],
+              ["<code>#warning ...</code>", "Yellow diagnostic to stderr"],
+              ["<code>#error ...</code>", "Red diagnostic to stderr"],
+              ["<code>#debug ...</code>", "Blue diagnostic to stderr"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Colors are produced with <code>SetConsoleTextAttribute</code> on Windows and ANSI escape codes on POSIX. Diagnostics are suppressed inside an inactive <code>#if</code> branch."
+            },
+            {
+              "type": "tip",
+              "text": "GCL also has its own multi-line comment: <code>#| ... |#</code>. The preprocessor skips it before deciding whether a line is a directive, so documentation blocks that <em>mention</em> a directive are never mistaken for one."
+            }
+          ]
+        },
+        {
+          "title": "Stage 2 — The Lexer",
+          "paragraphs": [
+            "The lexer (<code class=\"inline\">gcl_lex</code>) is a single <code class=\"inline\">while</code> loop with a position, a line and a column counter. It produces a growable array of <code class=\"inline\">GclToken</code>. Crucially, each token stores a <strong>pointer into the source</strong> plus a length — the text is never copied, which is why the expanded buffer must stay alive until the program has finished running.",
+            "Identifiers are classified in two steps: first against the keyword table, then against the type-name table. That is why <code class=\"inline\">int</code> and <code class=\"inline\">gcChar</code> arrive at the parser as <code class=\"inline\">TOK_TYPE_NAME</code> rather than as ordinary identifiers."
+          ],
+          "table": {
+            "headers": ["Token class", "Examples"],
+            "rows": [
+              ["Keywords", "<code>if else while for switch case default break continue return struct enum typedef const public private global local inline sizeof strlen true false null</code>"],
+              ["Type names", "<code>int8 int16 int32 int64 int128 uint8..uint128 float16..float128 char short int long float double unsigned void bool gcChar</code>"],
+              ["Numbers", "Decimal, fractional, hexadecimal (<code>0x</code>) and suffixes <code>L</code>, <code>LL</code>, <code>U</code>, <code>F</code>"],
+              ["Strings", "Double <em>and</em> single quotes, with <code>\\</code> escape awareness"],
+              ["GCL operator", "<code>=></code> is lexed as the same token as <code>>=</code>"],
+              ["Preprocessor", "Any line starting with <code>#</code> becomes one <code>TOK_PREPROC</code> token"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Comments are consumed and discarded: <code>//</code> to end of line, <code>/* ... */</code> blocks, and the GCL-native <code>#| ... |#</code> block."
+            },
+            {
+              "type": "warn",
+              "text": "An unknown character is a hard lexer error — <code>unexpected character at line:col</code>. The token list is discarded and nothing is executed."
+            }
+          ]
+        },
+        {
+          "title": "Stage 3 — The Parser and the AST",
+          "paragraphs": [
+            "The parser is a recursive-descent parser. Its whole vocabulary is two types from <code class=\"inline\">gcl_parser.h</code>: <code class=\"inline\">GclStmt</code> for statements and <code class=\"inline\">GclExpr</code> for expressions. A program is simply an array of statements — there is no separate bytecode form.",
+            "Because the AST is the public contract between the parser and the runner, the two halves of the language can be developed and tested independently. That is exactly what <code class=\"inline\">language/tests/parser/test_parser.c</code> does."
+          ],
+          "table": {
+            "headers": ["Statement kinds", "Expression kinds"],
+            "rows": [
+              ["<code>STMT_EXPR</code>, <code>STMT_VAR_DECL</code>", "<code>AST_EXPR_INT</code>, <code>AST_EXPR_FLOAT</code>, <code>AST_EXPR_STRING</code>"],
+              ["<code>STMT_IF</code>, <code>STMT_WHILE</code>, <code>STMT_FOR</code>, <code>STMT_SWITCH</code>", "<code>AST_EXPR_VAR</code>, <code>AST_EXPR_BINOP</code>, <code>AST_EXPR_UNOP</code>"],
+              ["<code>STMT_BREAK</code>, <code>STMT_CONTINUE</code>, <code>STMT_RETURN</code>", "<code>AST_EXPR_CALL</code>, <code>AST_EXPR_ASSIGN</code>"],
+              ["<code>STMT_BLOCK</code>, <code>STMT_FUNC_DECL</code>", "<code>AST_EXPR_MEMBER</code>, <code>AST_EXPR_ARRAY</code>, <code>AST_EXPR_INIT_LIST</code>"],
+              ["<code>STMT_TYPEDEF</code>, <code>STMT_ENUM</code>, <code>STMT_STRUCT_DECL</code>", "<code>OP_ADD .. OP_SHR</code>, <code>OP_BITAND</code>, <code>OP_BITNOT</code>"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "<code>AST_EXPR_INIT_LIST</code> is what makes brace initialisation work — <code>Hello b = { 20, 30.5, \"world\", \"ALPHA\" }</code> arrives as one init-list node and is filled in by the runner."
+            }
+          ]
+        },
+        {
+          "title": "Stage 4 — The Runner",
+          "paragraphs": [
+            "The runner (<code class=\"inline\">gcl_run_program</code> in <code class=\"inline\">gcl_runner.c</code>) is a classic recursive tree walker. It owns a <code class=\"inline\">GclEnv</code> — the environment — and a <code class=\"inline\">Runner</code> cursor carrying control-flow flags: <code class=\"inline\">return_flag</code>, <code class=\"inline\">return_value</code>, <code class=\"inline\">break_flag</code>, <code class=\"inline\">continue_flag</code>.",
+            "Execution happens in <strong>two passes</strong>. The first pass walks the top level and executes only declarations — functions, typedefs, enums and structs. The second pass executes everything else. This is why a function may be called on line 1 even though it is defined on line 40."
+          ],
+          "code": {
+            "file": "two-pass execution (gcl_run_program)",
+            "src": "/* pass 1 — declarations are registered first */\nfor each top-level statement:\n    if kind is FUNC_DECL, TYPEDEF, ENUM or STRUCT_DECL:\n        exec_stmt(...)\n\n/* pass 2 — real code runs */\nfor each top-level statement:\n    if kind is a declaration: skip\n    exec_stmt(...)\n\n/* finally, main() is called automatically if it exists */"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "<code>main()</code> is not magic syntax — the runner simply looks it up with <code>find_func(&env, \"main\")</code> after the top level has run. If it is missing, the program still succeeds; only its top-level statements execute."
+            }
+          ]
+        },
+        {
+          "title": "The Variable Environment",
+          "paragraphs": [
+            "A variable is a <code class=\"inline\">Var</code> node in a singly linked list. Each node can hold a number, a string, a fixed-size numeric array, an array of strings, an array of structs, or an inline struct value — all in one struct. The <code class=\"inline\">decl_type</code> field remembers what the variable was <em>declared</em> as, which is what enables clamping and cross-language marshalling later.",
+            "Lookup is a linear scan. For an educational language with small programs this is deliberate: it keeps the data structure readable, and the code that operates on it obvious."
+          ],
+          "code": {
+            "file": "Var (gcl_runner.c, abridged)",
+            "src": "typedef struct Var {\n    char  *name;\n    double num;          /* numeric value           */\n    char  *str;          /* string value            */\n    int    is_string;\n    char  *decl_type;    /* \"int8\", \"gcChar\", ...   */\n    int    array_size;   /* 0 = scalar, -1 = [], N   */\n    int    is_pointer;   /* char *p                 */\n    int    is_const;\n    double *arr_vals;    /* int a[] = {...}         */\n    char  **arr_strs;    /* char a[3][20]           */\n    struct GclStructValue *members;  /* struct variable */\n    struct Var *next;\n} Var;"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Every numeric value in GCL is a <code>double</code> at runtime. Integer behaviour is produced by <code>truncate_to_declared_type()</code> at assignment time, not by separate integer storage."
+            }
+          ]
+        },
+        {
+          "title": "Types, Clamping and Truncation",
+          "paragraphs": [
+            "Because storage is a <code class=\"inline\">double</code>, GCL emulates the fixed-width types at the boundary. Whenever a value is written to a variable, <code class=\"inline\">truncate_to_declared_type(val, decl_type)</code> converts it according to the declared type: integers are rounded, <code class=\"inline\">uint8</code> wraps into <code class=\"inline\">0..255</code>, <code class=\"inline\">int8</code> into <code class=\"inline\">-128..127</code>, <code class=\"inline\">int16</code>/<code class=\"inline\">uint16</code> and the <code class=\"inline\">int32</code> family follow the same rule, and the <code class=\"inline\">float32</code> family is rounded to single precision.",
+            "<code class=\"inline\">gcChar</code> is the exception on purpose: it keeps a real UTF-8 string, so <code class=\"inline\">strlen</code> is not the way to measure it."
+          ],
+          "table": {
+            "headers": ["Declared type", "Runtime behaviour"],
+            "rows": [
+              ["<code>char</code>", "Single character; marshalled to native modules as a one-character string"],
+              ["<code>int8</code> / <code>uint8</code>", "Wrapped into <code>-128..127</code> / <code>0..255</code>"],
+              ["<code>int16</code> / <code>uint16</code>, <code>int32</code> / <code>uint32</code>", "Wrapped into the corresponding bit-width range"],
+              ["<code>int64</code>, <code>uint64</code>, <code>int128</code>, <code>uint128</code>", "Kept as a width-checked value"],
+              ["<code>float16</code>, <code>float32</code>", "Rounded to the smaller precision"],
+              ["<code>gcChar</code>", "UTF-8 string with real length"]
+            ]
+          }
+        },
+        {
+          "title": "Structs, Enums and Typedefs",
+          "paragraphs": [
+            "Three registries live in the environment: <code class=\"inline\">TypedefDef</code> (alias → base type), <code class=\"inline\">StructDef</code> (member names + member types) and <code class=\"inline\">EnumDef</code> (constant names). They are filled in pass one, so a struct can be used by a function defined above it.",
+            "A struct value is a linked list of <code class=\"inline\">GclStructValue</code> nodes — each node holds a name, a numeric value or a string, the member's <em>declared type</em> (so clamping still applies per field), and optionally a nested member list. Because <code class=\"inline\">clone_struct_members()</code> exists, <code class=\"inline\">Hello f = e;</code> performs a real copy instead of aliasing."
+          ],
+          "code": {
+            "file": "struct.gcsf",
+            "src": "typedef struct {\n    int   id;\n    float score;\n    gcChar name;\n} Player;\n\nPlayer p = { .id = 1, .score = 9.5, .name = \"Ada\" };\nPlayer copy = p;              // deep copy, not an alias\n\nprintf(\"{} {}\\n\", p.id, copy.name);"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "All four initialisation styles from the language guide — positional braces, designated <code>.member = value</code>, partial, and variable-based — are filled by the same helper: <code>fill_members_from_init_list()</code>."
+            }
+          ]
+        },
+        {
+          "title": "Functions, Scope and main()",
+          "paragraphs": [
+            "User functions are stored as <code class=\"inline\">FuncDef</code> nodes holding a name, a parameter name list and a pointer to the body statement. Calling one copies the current <code class=\"inline\">Runner</code>, binds the parameters as environment variables, executes the body block, then reads <code class=\"inline\">return_value</code> and clears the control-flow flags.",
+            "<code class=\"inline\">global</code> and <code class=\"inline\">inline</code> change where a variable is written. Block-scoped variables (for example a <code class=\"inline\">for</code> init variable) are removed from the environment when their block ends, using <code class=\"inline\">env_remove_var()</code>."
+          ],
+          "code": {
+            "file": "main() with arguments",
+            "src": "int main(int argc, char **argv) {\n    for (int i = 0; i < argc; i++) {\n        printf(\"argv[{}] = {}\\n\", i, argv[i]);\n    }\n    return 0;\n}\n\n// gcl -run app.gcsf hello world\n// argv[0] = hello\n// argv[1] = world"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "<code>argc</code> is bound as a number and <code>argv</code> reads from <code>env->arg_vals</code>, which the CLI fills from <code>gcl -run file.gcsf a1 a2</code>."
+            }
+          ]
+        },
+        {
+          "title": "Native Modules — #native",
+          "paragraphs": [
+            "<code class=\"inline\">#native <Math></code> does not link anything at compile time. At run time <code class=\"inline\">native_load()</code> searches for a shared library and opens it with <code class=\"inline\">LoadLibraryA</code> (Windows) or <code class=\"inline\">dlopen</code> (Linux).",
+            "The search order is fixed and tries the most specific location first, which is what allows the same source to run from the build tree, from a project folder, or from a built bundle."
+          ],
+          "code": {
+            "file": "native_load() search order",
+            "src": "1. <exe_dir>/Library/<Name>.dll        # next to gcl.exe (the normal case)\n2. <base_dir>/Library/<Name>.dll       # the folder of the running .gcsf\n3. Library/<Name>.dll                  # relative to the working directory\n4. <Name>.dll                          # whatever the OS loader can find"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "A module exports exactly one symbol: <code>gcl_<name>_get_functions(int *count)</code>, lowercased. It returns a table of <code>{ name, function pointer }</code> entries — the interface in <code>include/gcl_module.h</code>."
+            },
+            {
+              "type": "tip",
+              "text": "Every argument crossing the boundary is serialised to a string. That is why a native function signature is <code>double f(int argc, const char **argv)</code> — numbers are parsed with <code>atof</code> inside the module, strings are used directly."
+            }
+          ]
+        },
+        {
+          "title": "The Struct → Native Bridge",
+          "paragraphs": [
+            "Passing a struct to a native function is the most interesting piece of marshalling in GCL. <code class=\"inline\">flatten_struct_members()</code> walks the struct value in <em>declaration order</em> and appends every member as a separate string argument.",
+            "This is what makes raylib work: <code class=\"inline\">Camera3D camera; Raylib.BeginMode3D(camera);</code> becomes eleven string arguments — <code class=\"inline\">position.x, position.y, position.z, target.x ... fovy, projection</code> — exactly the flattened C struct raylib expects. Taking the address of a struct (<code class=\"inline\">&camera</code>) flattens it the same way."
+          ],
+          "code": {
+            "file": "3d_camera.gcsf",
+            "src": "#native <Raylib>\n\ntypedef struct {\n    float x;\n    float y;\n    float z;\n} Vector3;\n\ntypedef struct {\n    Vector3 position;\n    Vector3 target;\n    Vector3 up;\n    float   fovy;\n    int     projection;\n} Camera3D;\n\nint main() {\n    Camera3D cam;\n    cam.position = { 0.0, 3.0, 6.0 };\n    cam.target   = { 0.0, 0.0, 0.0 };\n    cam.up       = { 0.0, 1.0, 0.0 };\n    cam.fovy     = 60.0;\n    cam.projection = 0;\n\n    Raylib.BeginMode3D(cam);   // -> 11 string arguments\n}"
+          }
+        },
+        {
+          "title": "#extern and #register — Arbitrary DLLs",
+          "paragraphs": [
+            "<code class=\"inline\">#extern <raylib.dll></code> loads a library that was <em>not</em> written for GCL, and <code class=\"inline\">#register</code> teaches the runner the type of each parameter so it can marshal values correctly.",
+            "The parser turns a registration line into a compact string — <code class=\"inline\">ret|name|params</code> — and <code class=\"inline\">extern_register_parse()</code> converts it into a <code class=\"inline\">GclExternReg</code> record with a return type and up to eight parameter types. At call time <code class=\"inline\">call_extern_func()</code> resolves the symbol with <code class=\"inline\">GetProcAddress</code>/<code class=\"inline\">dlsym</code> and builds the call from those types."
+          ],
+          "code": {
+            "file": "extern.gcsf",
+            "src": "#extern <raylib.dll>\n#register void InitWindow(int width, int height, const char *title);\n#register void DrawCircle(int x, int y, float radius, int color);\n\nint main() {\n    InitWindow(800, 600, \"GCL\");\n    return 0;\n}"
+          },
+          "table": {
+            "headers": ["Registered type", "Marshalled as"],
+            "rows": [
+              ["<code>void</code>", "<code>GCL_EXT_VOID</code> — no return value is read"],
+              ["<code>int</code>", "<code>GCL_EXT_INT</code> — integer argument"],
+              ["<code>double</code> / <code>float</code>", "<code>GCL_EXT_DOUBLE</code> — floating point argument"],
+              ["<code>const char *</code>", "<code>GCL_EXT_STRING</code> — pointer to the GCL string"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "warn",
+              "text": "A maximum of <strong>eight</strong> parameters is remembered per registered function. Registering more than eight will silently ignore the extras — wrap such a call in a GCL function instead."
+            }
+          ]
+        },
+        {
+          "title": "The {} Format Engine and Safe Input",
+          "paragraphs": [
+            "GCL has no <code class=\"inline\">%s</code> / <code class=\"inline\">%d</code>. Its formatter lives in the Stdio module: <code class=\"inline\">fn_printf</code> scans the format string character by character and, on every <code class=\"inline\">{}</code>, prints the next argument as-is. <code class=\"inline\">{.2f}</code> switches that argument to fixed-point output.",
+            "Because printf is also available unqualified, the runner resolves a bare <code class=\"inline\">printf(...)</code> by lazily loading the built-in <code class=\"inline\">Stdio</code> module — the same code path as <code class=\"inline\">Stdio.printf(...)</code>."
+          ],
+          "code": {
+            "file": "formatting.gcsf",
+            "src": "printf(\"name: {} age: {}\\n\", name, age);   // plain substitution\nprintf(\"score: {.2f}\\n\", 87.5);              // 87.50\nprintf(\"raw {.0f}\\n\", 3.9);                  // 4"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "<code>scanf</code> is intentionally not <code>scanf</code>: the runner's <code>do_scanf()</code> reads a whole line, parses it according to the target variable's declared type and writes it into the environment. There is no <code>&</code>, no format specifier and no buffer-overflow surface."
+            },
+            {
+              "type": "info",
+              "text": "The completion engine can warn about this at edit time: it compares the number of <code>{}</code> placeholders with the number of arguments (see the Diagnostics section of the IDE chapter)."
+            }
+          ]
+        },
+        {
+          "title": "Cross-Process Variables — the Shared Store",
+          "paragraphs": [
+            "Lua and Python run in <strong>separate processes</strong> (see the Embed chapter), so they cannot share GCL's memory. <code class=\"inline\">gcl_shared_state.h</code> bridges them with a real <strong>memory-mapped file</strong>: a fixed array of 64 slots, each holding a key and a value, guarded by a spinlock.",
+            "Every process maps the same file — the path comes from the <code class=\"inline\">GCL_SHARED_FILE</code> environment variable — and a single read or write is one memory access plus a very short critical section. This is what makes a shared variable in a game loop fast enough to be usable every frame."
+          ],
+          "code": {
+            "file": "shared_memory.gcsf",
+            "src": "#native <Embed>\n\nEmbed.SendValue(type=\"python\", name=\"ball_x\", value=\"800\");\n\nwhile (running) {\n    double x = Embed.GetValue(type=\"python\", name=\"ball_x\");\n    // use x this frame\n}"
+          },
+          "notes": [
+            {
+              "type": "warn",
+              "text": "The store is bounded: <code>64</code> keys, key length <code>64</code>, value length <code>128</code>. Values are stored as text and converted with <code>atof</code> on the way out."
+            },
+            {
+              "type": "info",
+              "text": "An earlier version rewrote a whole file and renamed it on every set — producing disk lag and a \"teleport\" effect when two processes overwrote each other with stale snapshots. The mapped-memory version was the fix."
+            }
+          ]
+        },
+        {
+          "title": "Debug Mode and Debug Gates",
+          "paragraphs": [
+            "<code class=\"inline\">gcl -debug -run file.gcsf</code> sets a single global flag, <code class=\"inline\">gcl_debug</code>. Every internal trace line goes through one gate function, <code class=\"inline\">gcl_debugf()</code>, which returns immediately when the flag is off.",
+            "That single gate is what keeps a normal run clean while still allowing step-by-step tracing when something goes wrong."
+          ],
+          "code": {
+            "file": "terminal",
+            "src": "gcl -run app.gcsf          # normal: silent internals\ngcl -debug -run app.gcsf    # prints gcl_run_program: start / return 0 and module traces"
+          }
+        },
+        {
+          "title": "Terminal Programs — #pragma commandline",
+          "paragraphs": [
+            "The IDE is a GUI application and starts child processes without a console, so a program that waits for input would hang. <code class=\"inline\">#pragma commandline</code> solves this: when the pragma is present, <code class=\"inline\">gcl_terminal_enter()</code> re-launches the program in <strong>its own terminal window</strong>.",
+            "On Windows the re-launch goes through <code class=\"inline\">cmd /k</code>, so the window stays open after the program ends and the output remains readable. On POSIX a terminal emulator is located (respecting <code class=\"inline\">GCL_TERMINAL_CMD</code>) and the program is started inside it. The <code class=\"inline\">GCL_TERMINAL=1</code> marker is inherited by child processes, so <code class=\"inline\">Embed.Run(type=\"lua\")</code> opens a separate terminal of its own."
+          ],
+          "code": {
+            "file": "calc.gcsf",
+            "src": "#pragma commandline\n#native <Stdio>\n\nint main() {\n    int a = 0;\n    Stdio.printf(\"Enter a number: \");\n    Stdio.scanf(a);            // real interactive input\n    Stdio.printf(\"twice = {}\\n\", a * 2);\n    return 0;\n}"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "All three spellings are accepted: <code>commandline</code>, <code>cmdline</code> and the historical <code>commendline</code>. Pragmas written inside a <code>#| ... |#</code> documentation block are ignored."
+            }
+          ]
+        },
+        {
+          "title": "Memory Model and Ownership Rules",
+          "paragraphs": [
+            "There is no garbage collector. Ownership is explicit and follows three rules that run through the whole codebase: <em>whoever allocates, frees</em>; <em>token lexemes point into the source, so the source must outlive the token list</em>; and <em>the environment frees everything at exit</em> through <code class=\"inline\">env_cleanup()</code>.",
+            "The second rule is the one that bites. <code class=\"inline\">gcl_simple_run_source()</code> therefore keeps the preprocessed buffer allocated until <code class=\"inline\">gcl_run_program()</code> has fully returned, and frees tokens and the AST only afterwards."
+          ],
+          "code": {
+            "file": "lifetime in gcl_simple_run_source()",
+            "src": "processed = pp_process(pp, src);      // owns the text\nfree(pp table);                        // macros are no longer needed\n\ntokens = gcl_lex(processed, ...);       // tokens POINT INTO processed\nprog   = gcl_parse(tokens, ...);        // AST owns its own strings\n\nrc = gcl_run_program(prog, ...);        // processed must still be alive\n\ngcl_program_free(prog);\ngcl_token_free(tokens);\nfree(processed);                        // freed LAST"
+          },
+          "notes": [
+            {
+              "type": "warn",
+              "text": "The bundle runner shares this rule from the other side: a blob read out of a <code>.gcBundle</code> is not null-terminated, so it is copied into a terminated buffer before lexing. Reading it directly used to produce random-data lexer errors."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ide",
+      "title": "How the GCL IDE Works",
+      "sections": [
+        {
+          "title": "The IDE Is a Plugin, Not a Program",
+          "paragraphs": [
+            "The IDE is <strong>not part of gcl.exe</strong>. It is built as a separate shared library — <code class=\"inline\">Programs/ide.dll</code> on Windows, <code class=\"inline\">Programs/ide.so</code> on Linux — and <code class=\"inline\">gcl.exe</code> loads it on demand.",
+            "<code class=\"inline\">run_ide()</code> in <code class=\"inline\">gcl_main.c</code> finds its own directory, builds the path <code class=\"inline\"><exe_dir>/Programs/ide.dll</code>, opens it with <code class=\"inline\">LoadLibraryA</code> / <code class=\"inline\">dlopen</code> and resolves one symbol: <code class=\"inline\">gcl_ide_run</code>. That single entry point takes the path the IDE should open and returns an exit code.",
+            "The split exists for a practical reason: the IDE pulls in raylib, the whole completion engine and the build sources, while <code class=\"inline\">gcl.exe</code> must stay small enough to be copied as the base of every built game."
+          ],
+          "code": {
+            "file": "gcl_main.c (run_ide, abridged)",
+            "src": "snprintf(ide_path, sizeof(ide_path), \"%s/Programs/ide.so\", exe_dir);\nvoid *h = dlopen(ide_path, RTLD_NOW);\nGclIdeRunFn ide_run = (GclIdeRunFn)dlsym(h, \"gcl_ide_run\");\nint rc = ide_run(path);   // path = file, directory, or NULL"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Before loading the IDE, <code>gcl.exe</code> exports its own path through the <code>GCL_EXE_PATH</code> environment variable. The IDE cannot see <code>argv</code>, so this is how it later runs <code>gcl -run</code> and copies itself as a build output."
+            },
+            {
+              "type": "warn",
+              "text": "If <code>Programs/ide.dll</code> is missing, the build did not include the IDE sources. The CLI prints a clear message instead of failing silently."
+            }
+          ]
+        },
+        {
+          "title": "Launching the IDE",
+          "paragraphs": [
+            "<code class=\"inline\">gcl_ide_run(path)</code> accepts three kinds of argument, and the workspace root (called <code class=\"inline\">ed.cwd</code>) is decided from it.",
+            "This matters more than it looks: the explorer tree is built from <code class=\"inline\">ed.cwd</code>, so getting it wrong makes the IDE show the wrong folder even though the right file is open."
+          ],
+          "table": {
+            "headers": ["Command", "Workspace root", "Result"],
+            "rows": [
+              ["<code>gcl -ide</code>", "the process working directory", "IDE with no tabs open"],
+              ["<code>gcl -ide D:/MyGame</code>", "<code>D:/MyGame</code>", "Explorer shows the project, no tabs open"],
+              ["<code>gcl -ide D:/MyGame/main.gcsf</code>", "<code>D:/MyGame</code>", "File opens as a tab <em>and</em> the explorer shows its project"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "For a file argument the parent directory is derived with <code>fs_parent_dir()</code>. A bare file name yields an empty string, which falls back to the working directory."
+            }
+          ]
+        },
+        {
+          "title": "Window, Frame Loop and the Font",
+          "paragraphs": [
+            "The IDE opens a raylib window of <strong>1200 × 760</strong>, makes it resizable, pins the frame rate to <strong>60 FPS</strong> and disables raylib's default ESC-to-exit behaviour (<code class=\"inline\">SetExitKey(KEY_NULL)</code>), because ESC is used to dismiss popups and panels.",
+            "Text is drawn with <strong>GNU FreeFont FreeMono</strong> — a monospace font under the SIL OFL 1.1 licence — compiled into the binary as a byte array in <code class=\"inline\">embed_freemono.c</code>. Loading from memory rather than from a file path removes an entire class of \"font not found\" problems: the IDE works no matter where it is started from."
+          ],
+          "code": {
+            "file": "ide_main.c (window + font)",
+            "src": "InitWindow(1200, 760, \"GCL IDE\");\nSetWindowState(FLAG_WINDOW_RESIZABLE);\nSetTargetFPS(60);\nSetExitKey(KEY_NULL);          // ESC no longer closes the window\n\n/* the font texture is generated at 48 px and scaled down by DrawTextEx */\nFont f = LoadFontFromMemory(\".ttf\", gcl_embed_freemono_ttf,\n                            (int)gcl_embed_freemono_ttf_size, 48, NULL, 0);\nSetTextureFilter(f.texture, TEXTURE_FILTER_BILINEAR);"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "Generating the atlas at 48 px and scaling down with a bilinear filter keeps small code readable. Generating it at 16 px and scaling <em>up</em> would produce hard pixel edges."
+            }
+          ]
+        },
+        {
+          "title": "The Buffer — the Unit of Editing",
+          "paragraphs": [
+            "Everything the user types goes into a <code class=\"inline\">GclIdeBuffer</code> (<code class=\"inline\">ide_buffer.c</code>). A buffer owns its text, its cursor, its scroll offsets, its dirty flag, its file path — and, importantly, <strong>its own selection anchor</strong> and its own undo/redo history.",
+            "Keeping the selection anchor in the buffer rather than in one shared editor field is a deliberate fix: with a single shared anchor, switching tabs leaked a selection across files and <code class=\"inline\">Delete</code> could erase the wrong range."
+          ],
+          "table": {
+            "headers": ["Field", "Purpose"],
+            "rows": [
+              ["<code>content</code>, <code>size</code>, <code>cap</code>", "The text itself, with a growable capacity"],
+              ["<code>cursor</code>, <code>sel_anchor</code>", "Insertion point and the other end of the selection"],
+              ["<code>scroll_x</code>, <code>scroll_y</code>", "Per-buffer viewport offsets"],
+              ["<code>dirty</code>", "Unsaved changes marker for the title bar and close prompt"],
+              ["<code>path</code>", "The file on disk this buffer is bound to"],
+              ["<code>undo</code>, <code>redo</code>", "Two stacks of full snapshots"],
+              ["<code>undo_suspend</code>, <code>undo_armed</code>", "Edit-group bookkeeping (see below)"]
+            ]
+          }
+        },
+        {
+          "title": "Undo as Edit Groups",
+          "paragraphs": [
+            "Undo is snapshot-based: <code class=\"inline\">gcl_ide_buffer_snapshot()</code> pushes a copy of the current text onto the undo stack before a mutation. Used naively that would make pasting a paragraph undo one character at a time.",
+            "<strong>Edit groups</strong> solve this. <code class=\"inline\">begin_edit()</code> raises a counter and <code class=\"inline\">end_edit()</code> lowers it; inside the group, the first real change takes exactly one snapshot and every following one is suppressed. Replacing a selection, pasting, and auto-indent therefore each undo as a single step. Groups nest correctly."
+          ],
+          "code": {
+            "file": "edit group (gcl_ide.h / ide_buffer.c)",
+            "src": "gcl_ide_buffer_begin_edit(b);\n    buffer_delete_range(b, sel_start, sel_end);   // no extra snapshot\n    gcl_ide_buffer_insert_utf8(b, text);           // no extra snapshot\ngcl_ide_buffer_end_edit(b);\n/* result: ONE Ctrl+Z restores the whole operation */"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Because the snapshot stores the whole buffer, <code>undo_suspend</code> exists to make the cost proportional to real edits rather than to every intermediate keystroke."
+            }
+          ]
+        },
+        {
+          "title": "Tabs and Split View",
+          "paragraphs": [
+            "The editor supports two independent panes. Pane <strong>0</strong> is the main list (<code class=\"inline\">ed->tabs</code> / <code class=\"inline\">active_tab</code>); pane <strong>1</strong> owns a second list (<code class=\"inline\">split_right_tabs</code>). Each pane has its own tab strip, its own scroll position and its own focused tab.",
+            "The pane state helpers (<code class=\"inline\">editor_pane_empty</code>, <code class=\"inline\">editor_pane_cur</code>, <code class=\"inline\">editor_set_split_focus</code>, <code class=\"inline\">editor_ensure_valid_split_focus</code>, <code class=\"inline\">tab_fold_split_into_main</code>) deliberately contain <strong>no drawing code</strong>. That is what allows them to be driven by a headless test instead of only being reachable through a running window."
+          ],
+          "code": {
+            "file": "pane contract (gcl_ide_internal.h)",
+            "src": "pane 0 = ed->tabs            + ed->active_tab\npane 1 = ed->split_right_tabs + ed->split_right_tab\n\n/* per-pane cursor tracking: */\nsize_t last_cursor[2];\n\n/* off  -> tab_fold_split_into_main() merges the right pane back,\n          so the file being edited in it stays open */"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "<code>last_cursor[]</code> is an array for a reason: with one shared field, moving the caret in one pane made the other pane believe its caret had moved and reset the user's manual scroll position."
+            }
+          ]
+        },
+        {
+          "title": "The Explorer and the Context Menu",
+          "paragraphs": [
+            "The file tree is a flat <code class=\"inline\">TreeModel</code>: an array of <code class=\"inline\">TreeNode</code> records, each holding a path, an <code class=\"inline\">is_dir</code> flag and an indent depth. Expansion state is kept as a list of expanded directory paths (<code class=\"inline\">expanded_dirs</code>) rather than as a flag inside the node, so a rescan never loses which folders the user opened.",
+            "The tree is rebuilt by <code class=\"inline\">tree_rescan()</code>, which is throttled through <code class=\"inline\">ed.last_tree_scan</code> so a large project is not re-read on every frame. Only files with supported extensions appear."
+          ],
+          "table": {
+            "headers": ["Context menu item", "Effect"],
+            "rows": [
+              ["New File / New Folder", "Creates inside the selected directory"],
+              ["Rename", "Renames the selected entry"],
+              ["Copy / Paste", "Internal clipboard held in <code>ed.clipboard_path</code>"],
+              ["Delete", "Recursive removal through <code>fs_remove_rec()</code>"],
+              ["Copy Path", "Absolute path to the system clipboard"],
+              ["Copy Name", "Base name to the system clipboard"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "Copy Path uses <code>fs_absolute_path()</code>; if the system call fails it copies the given path unchanged, so the menu item never produces an empty clipboard."
+            }
+          ]
+        },
+        {
+          "title": "Editing Behaviour",
+          "paragraphs": [
+            "The editor is designed to feel like a normal code editor, which means a number of details that are easy to miss.",
+            "Automatic block indentation on Enter is implemented by <code class=\"inline\">editor_insert_newline_autoindent()</code>, which knows about GCL and Python blocks. Tab and Shift+Tab call <code class=\"inline\">editor_indent_selection()</code>: with a selection they indent or outdent whole lines, without one they insert a tab. Files that use tabs are recognised, and the drawing code shares the same tab-stop arithmetic with the measuring code — if they disagreed, the caret would visibly drift away from the text. Typing a closing bracket when an opener is already there calls <code class=\"inline\">editor_handle_bracket_close()</code>, which skips over the existing character instead of inserting a duplicate.",
+            "Key repeat is handled by two separate helpers. Arrow-key navigation repeat uses its own timer, while editing keys (Backspace, Delete) use <code class=\"inline\">key_repeat_fire()</code> with a short first delay followed by a fast rate. Pressing an arrow key while a selection exists collapses the selection to the nearest edge — VSCode behaviour — so the next Delete removes a predictable range."
+          ],
+          "table": {
+            "headers": ["Behaviour", "Implementation"],
+            "rows": [
+              ["Auto-indent on Enter", "<code>editor_insert_newline_autoindent()</code>"],
+              ["Tab / Shift+Tab", "<code>editor_indent_selection()</code>, <code>editor_insert_tab()</code>"],
+              ["Bracket closing", "<code>editor_handle_bracket_close()</code>"],
+              ["Selection collapse on arrow", "<code>editor_collapse_selection()</code>"],
+              ["System clipboard", "<code>ide_clipboard.c</code> — <code>gcl_ide_clipboard_set_text</code> / <code>get_text</code>"],
+              ["Hold-to-repeat editing keys", "<code>key_repeat_fire()</code>"]
+            ]
+          }
+        },
+        {
+          "title": "Syntax Highlighting",
+          "paragraphs": [
+            "Highlighting is line-based and driven by a small tokenizer, <code class=\"inline\">gcl_token_type(line, len, start, &tok_len, lang)</code>. It classifies the token starting at an offset, and <code class=\"inline\">gcl_token_color()</code> maps that class to a color from the active <code class=\"inline\">GclIdeTheme</code>.",
+            "The keyword list is language-aware: <code class=\"inline\">gcl_is_keyword_for(word, lang)</code> lets the same editor highlight GCL, Lua and Python files correctly. The theme carries a separate color for every token class, so switching themes recolors code, comments and the gutter together."
+          ],
+          "table": {
+            "headers": ["Theme slot", "Used for"],
+            "rows": [
+              ["<code>bg</code>, <code>line_bg</code>", "Editor background and the current-line band"],
+              ["<code>text</code>, <code>gutter</code>", "Code text and the line-number column"],
+              ["<code>cursor</code>, <code>selection</code>, <code>accent</code>", "Caret, selection rectangle, UI accent"],
+              ["<code>menu_bg</code>, <code>status_bg</code>, <code>status_text</code>", "Menu bar and status bar"],
+              ["<code>panel_bg</code>, <code>popup_bg</code>", "Panels, dialogs and completion popup"],
+              ["<code>error</code>, <code>ok</code>", "Diagnostic colors"],
+              ["<code>tree_bg</code>", "Explorer background"]
+            ]
+          }
+        },
+        {
+          "title": "The Completion Engine — Architecture",
+          "paragraphs": [
+            "The most substantial subsystem in the IDE is not the editor — it is the completion engine under <code class=\"inline\">language/_SRC/complete/</code>. It is written as <strong>independent modules with no raylib dependency at all</strong>, which is why it can be unit-tested headlessly by <code class=\"inline\">language/tests/complete/test_complete.c</code>.",
+            "The editor only supplies two things: the buffer text and the cursor offset. Everything else — which suggestions exist, in what order, and whether the popup should appear at all — is decided by the engine."
+          ],
+          "table": {
+            "headers": ["Module", "Responsibility"],
+            "rows": [
+              ["<code>gcl_complete.c</code>", "The facade: <code>gcl_complete_query()</code>, result lifetime, dedup table"],
+              ["<code>complete_context.c</code>", "What is under the cursor: string, comment, member access, call, preprocessor line"],
+              ["<code>complete_scope.c</code>", "Symbol and type tables extracted from the source"],
+              ["<code>complete_type.c</code>", "Type inference and member resolving for <code>X.</code> chains"],
+              ["<code>complete_native.c</code> / <code>complete_native_db.c</code>", "The native module API database"],
+              ["<code>complete_project.c</code>", "Reads <code>project.gcdata</code> and scans the project"],
+              ["<code>complete_rank.c</code>", "Matching, scoring and choosing the default entry"],
+              ["<code>complete_index.c</code>", "mtime-based file cache and parse-result cache"],
+              ["<code>complete_diag.c</code>", "Diagnostics such as <code>printf</code> placeholder counting"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The engine is deliberately separate from <code>gcl_lsp_scan.c</code>, which is the older, simpler project symbol scanner used as a fallback."
+            }
+          ]
+        },
+        {
+          "title": "Completion — Context, Scope and Type Resolution",
+          "paragraphs": [
+            "The engine answers a query in three steps.",
+            "<strong>Context</strong> (<code class=\"inline\">gcl_context_analyze</code>) decides what kind of place the cursor is in and returns a <code class=\"inline\">GclContextKind</code>: <code class=\"inline\">CTX_NONE</code>, <code class=\"inline\">CTX_MEMBER</code>, <code class=\"inline\">CTX_IDENT</code>, <code class=\"inline\">CTX_CALL_ARGS</code>, <code class=\"inline\">CTX_TYPE_DECL</code>, <code class=\"inline\">CTX_VALUE_ASSIGN</code>, <code class=\"inline\">CTX_PREPROC</code>, <code class=\"inline\">CTX_NATIVE_MODULE</code>, <code class=\"inline\">CTX_INCLUDE</code>, <code class=\"inline\">CTX_EXTERN</code>, <code class=\"inline\">CTX_LIB</code>, <code class=\"inline\">CTX_REGISTER</code>, <code class=\"inline\">CTX_DOC_COMMENT</code> or <code class=\"inline\">CTX_STRING_PATH</code>. It also extracts the member chain — up to 16 links — so <code class=\"inline\">a.b.c.</code> is understood, not only <code class=\"inline\">a.</code>.",
+            "<strong>Scope</strong> (<code class=\"inline\">complete_scope.c</code>) extracts symbols and user types from the text, tagging each with a <code class=\"inline\">scope_rank</code> — 0 local, 1 parameter, 2 global, 3 included file, 4 builtin. Symbol insertion and lookup go through an open-addressed hash table, which is what keeps a 43 KB file responsive: the earlier linear insertion was O(n²) per keystroke.",
+            "<strong>Type resolution</strong> (<code class=\"inline\">complete_type.c</code>) turns the chain into members. <code class=\"inline\">Raylib.GetMousePosition().</code> resolves because the native database records the return type <code class=\"inline\">Vector2</code> and the <code class=\"inline\">Vector2</code> struct fields are known. If a chain cannot be resolved, the list stays <strong>empty and the popup closes</strong> — showing the members of some unrelated struct would be worse than showing nothing."
+          ],
+          "code": {
+            "file": "chain resolution",
+            "src": "Raylib.              -> all Raylib module members (°)\nRaylib.GetMousePosition().  -> Vector2 -> .x / .y\ncamera.              -> members of the camera variable's declared type\nunknownThing.        -> unresolved -> popup CLOSED (never a guessed list)"
+          },
+          "notes": [
+            {
+              "type": "warn",
+              "text": "The <code>Raylib.</code> list alone contains around <strong>670</strong> members. Deduplication therefore uses a hash table, not a linear scan — the naive version performed roughly 224,000 string comparisons for a single query."
+            }
+          ]
+        },
+        {
+          "title": "Completion — Native API Database",
+          "paragraphs": [
+            "The Raylib and Raygui completion tables are <strong>generated</strong>, not hand-written. <code class=\"inline\">tools/gen_native_db.py</code> parses <code class=\"inline\">Modules/gcl_raylib.c</code> and <code class=\"inline\">Modules/gcl_raygui.c</code> and emits <code class=\"inline\">complete_native_db.c</code>.",
+            "This is a consistency guarantee, not a convenience: because the tables are derived from the bindings that are actually compiled, a function whose binding changed cannot keep suggesting its old signature. The generator is idempotent — it does not rewrite the file when the content is unchanged — so a no-op run does not force the IDE DLL to be rebuilt."
+          ],
+          "code": {
+            "file": "terminal",
+            "src": "python tools/gen_native_db.py\n# reads : _SRC/Modules/gcl_raylib.c, _SRC/Modules/gcl_raygui.c\n# writes: _SRC/complete/complete_native_db.c\n# also  : cross-checks every binding against raylib.h / raygui.h"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The build runs the generator automatically (<code>ensure_native_db()</code> in <code>makefile.py</code>) before compiling the IDE."
+            }
+          ]
+        },
+        {
+          "title": "Completion — Caching, Ranking and Diagnostics",
+          "paragraphs": [
+            "Re-parsing the buffer on every keystroke is the classic way to make an editor feel slow, so the engine has two caches.",
+            "<code class=\"inline\">complete_index.c</code> caches file contents together with their modification time, and — more importantly — caches the <em>parsed scope</em> keyed by a hash of the buffer text. Moving the cursor or refreshing the popup does not change the text, so nothing is re-parsed. A separate <code class=\"inline\">gcl_index_generation()</code> counter increases only when a file is genuinely re-read, which forces dependent scans to be rebuilt so symbols deleted from a file actually disappear.",
+            "<code class=\"inline\">complete_rank.c</code> then scores everything: exact match, prefix match, CamelCase acronym (<code class=\"inline\">GMP</code> → <code class=\"inline\">GetMousePosition</code>), scope proximity, kind priority for the current context, and which file the symbol came from. It sorts, filters and sets <code class=\"inline\">best_index</code> — the entry Enter will accept.",
+            "<code class=\"inline\">complete_diag.c</code> runs independently of the popup: if the cursor is inside a closed <code class=\"inline\">printf</code> call it counts the <code class=\"inline\">{}</code> placeholders and compares them with the argument count, producing a warning strip when they disagree."
+          ],
+          "code": {
+            "file": "rank signals",
+            "src": "exact match      \"DrawLine\" == \"DrawLine\"        strongest\nprefix           \"Draw\"     -> \"DrawLine\"\nCamelCase        \"GMP\"      -> \"GetMousePosition\"\nscope proximity  local > param > global > include > builtin\nkind priority    functions get a bonus inside f( )\norigin file      symbols from the active file rank higher"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "The popup itself is drawn by <code>ide_complete_ui.c</code>, which is a pure renderer: it draws the list, the documentation panel for the selected item, and the signature strip for the call the cursor is inside. Type icons are drawn as vector glyphs, never emoji."
+            }
+          ]
+        },
+        {
+          "title": "Run — How the IDE Executes a Project",
+          "paragraphs": [
+            "Running a project is not the same as running a file, and the difference is one environment variable.",
+            "<code class=\"inline\">editor_run_project()</code> locates <code class=\"inline\">project.gcdata</code>, derives the project root, checks that <code class=\"inline\">main.gcsf</code> exists, warns when a default project folder is missing, and then sets <code class=\"inline\">GCL_PROJECT_DIR</code> to the project root and <code class=\"inline\">GCL_SHARED_FILE</code> next to it. Only then does it start the process.",
+            "That variable is essential: <code class=\"inline\">Embed.Run(type=\"lua\")</code> looks for <code class=\"inline\"><GCL_PROJECT_DIR>/scripts/main.lua</code>. Without it, the child process would resolve the script against the workspace and open the wrong file. The child process inherits the value, and a standalone <code class=\"inline\">gcl -run</code> preserves an externally set value instead of overwriting it."
+          ],
+          "code": {
+            "file": "editor_run_project() (shape)",
+            "src": "find project.gcdata\nbase_dir   = parent of project.gcdata\nmain_gcsf  = <base_dir>/main.gcsf      -> must exist\nwarn if a default folder is missing\n\nGCL_PROJECT_DIR = <base_dir>\nGCL_SHARED_FILE = <base_dir>/gcl_shared.state\n\ncmd = \"<GCL_EXE_PATH>\" -run \"<main_gcsf>\" 2>&1\ngcl_ide_proc_start(ed, cmd, main_gcsf, logf)"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "A single <code>.gcsf</code> file that is not part of a project is run through the editor's own Run command, which uses the file's directory as <code>base_dir</code> — the same rule as the CLI."
+            }
+          ]
+        },
+        {
+          "title": "The Asynchronous Process Layer",
+          "paragraphs": [
+            "The IDE must never block. Running a child process with a synchronous <code class=\"inline\">popen</code> and reading it with <code class=\"inline\">fgets</code> freezes the whole window until the program exits, and because the child's handle is never kept, closing the IDE leaves the program running.",
+            "<code class=\"inline\">ide_proc.c</code> solves both problems. On Windows it uses <code class=\"inline\">CreateProcess</code> with anonymous pipes and puts the process in a <strong>Job Object</strong>, so terminating the job kills the whole process tree — <code class=\"inline\">cmd.exe</code> and the <code class=\"inline\">gcl.exe</code> it started — in one call. On POSIX it uses <code class=\"inline\">fork</code> + <code class=\"inline\">exec</code> with a pipe. Output is collected once per frame and appended to both the IDE output panel and the project's <code class=\"inline\">project.gclog</code> file.",
+            "There is one subtle platform detail worth knowing: on Windows a <code class=\"inline\">ReadFile</code> on a pipe blocks when no data is available, which would freeze the IDE anyway. The reader therefore calls <code class=\"inline\">PeekNamedPipe</code> first and only reads when bytes are actually waiting."
+          ],
+          "table": {
+            "headers": ["Concern", "Windows", "POSIX"],
+            "rows": [
+              ["Start", "<code>CreateProcess</code> + anonymous pipe", "<code>fork</code> + <code>exec</code> + pipe"],
+              ["Non-blocking read", "<code>PeekNamedPipe</code> then <code>ReadFile</code>", "non-blocking pipe read"],
+              ["Kill the tree", "Job Object — <code>TerminateJobObject</code>", "process group / <code>kill</code>"],
+              ["Output sink", "<code>ed->output</code> and <code>project.gclog</code>", "same"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The redirection <code>2>&1</code> in the command line is what merges compiler and runtime errors into the same output panel."
+            }
+          ]
+        },
+        {
+          "title": "Build From Inside the IDE",
+          "paragraphs": [
+            "Build is started by <code class=\"inline\">editor_build_project()</code> but executed on a <strong>background thread</strong>, so the window keeps drawing and the output panel keeps scrolling while packaging runs.",
+            "The IDE does <em>not</em> shell out to <code class=\"inline\">gcl -build</code>. It calls <code class=\"inline\">gcb_build_project_runtime()</code> directly: in the IDE process <code class=\"inline\">GCL_EXE_PATH</code> and <code class=\"inline\">argv</code> differ from a normal CLI launch, and an external invocation used to fail for that reason. Calling the library function directly removes the whole problem.",
+            "The output directory is always the project's own <code class=\"inline\">out/</code> folder. It is created if missing and <strong>cleared</strong> before writing, so a build never leaves stale artifacts from a previous one. The base executable is copied from <code class=\"inline\">GCL_EXE_PATH</code>, renamed to the project name, and finally stamped with the project icon."
+          ],
+          "code": {
+            "file": "build_thread_fn() (three reported steps)",
+            "src": "[Build] 1/3 Packaging project + runtime...\n        gcb_build_project_runtime(base_dir, runtime_dir, name, out_dir)\n[Build] 2/3 Copying executable...\n        copy GCL_EXE_PATH -> <out_dir>/<name>.exe\n[Build] 3/3 Done.\n        gcl_icon_apply_project(base_dir, dest, name)"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "Each line is appended to <code>project.gclog</code> with its own <code>fopen</code>/<code>fclose</code>. Holding one handle open and never flushing it is exactly why an earlier version left the log empty until the IDE exited."
+            },
+            {
+              "type": "warn",
+              "text": "A build cannot be started twice: while <code>build_running</code> is set the second request only produces the status message \"Build already in progress...\"."
+            }
+          ]
+        },
+        {
+          "title": "The New Project Panel",
+          "paragraphs": [
+            "<code class=\"inline\">ide_new_project.c</code> creates a project without invoking <code class=\"inline\">gcl -new</code> — the IDE writes the skeleton itself, so it can offer choices the CLI flag set does not express.",
+            "GCL is always the core of a project. Lua and Python are independent toggles, and each of them has its own scene template: <em>Empty</em>, <em>2D</em> or <em>3D</em>, plus a separate \"use raylib\" option. Choosing 2D for Python, for example, writes a <code class=\"inline\">scripts/main.py</code> that opens a real raylib window with a <code class=\"inline\">Camera2D</code> and draws a circle — a starting point that runs immediately instead of an empty file."
+          ],
+          "table": {
+            "headers": ["Choice", "Written to the project"],
+            "rows": [
+              ["GCL core scene", "<code>main.gcsf</code>, possibly with a <code>#native <Raylib></code> window loop"],
+              ["Open Lua", "<code>scripts/main.lua</code>"],
+              ["Open Python", "<code>scripts/main.py</code>"],
+              ["Lua 2D / Python 2D", "A window + <code>Camera2D</code> + <code>DrawCircle</code> example"],
+              ["Open LuaRaylib / PyRaylib", "Adds <code>#native <Raylib></code> to <code>main.gcsf</code> as well"],
+              ["Icon", "<code>assets/icon.png</code> — the default gnuchan logo"]
+            ]
+          }
+        },
+        {
+          "title": "Settings, Themes and Effects",
+          "paragraphs": [
+            "Settings live in a plain text file, <code class=\"inline\">ide.gcsettings</code>, one <code class=\"inline\">key=value</code> per line. Its keys map one-to-one onto the <code class=\"inline\">GclIdeSettings</code> struct, so reading and writing are symmetric and the file stays human-editable.",
+            "There are <strong>eight themes</strong>: Purple (the default), Black, White, Blue, Orange, Green, Red and Gray. Each theme supplies the full color set listed in the syntax-highlighting table above.",
+            "The IDE also has a set of deliberately theatrical visual effects, each with an independent strength slider from 0 to 100: VHS distortion, CRT curvature, screen shake, typewriter sound, pixel particles and text bloom. The screen shake uses an <strong>ease-out</strong> envelope rather than a linear one, the typewriter sound rises in pitch with each keystroke and fades over time instead of repeating one click, and the particle bursts are pixel-art style squares."
+          ],
+          "code": {
+            "file": "ide.gcsettings",
+            "src": "font=23\ntheme=0\nsyntax_highlight=1\nvhs=1\ncrt=1\nscreen_shake=1\ntypewriter=1\nparticles=1\nblink_cursor=1\ntext_bloom=1\nbloom_strength=100\nshake_strength=100\nparticle_strength=100\nvhs_strength=100\ncrt_strength=100\nsound=1"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Defaults are chosen to protect readability: only <code>syntax_highlight</code> and <code>blink_cursor</code> are on by default in code. The heavy effects default to off and to modest strengths, and the bloom only affects text when <code>text_bloom</code> is enabled."
+            },
+            {
+              "type": "tip",
+              "text": "The settings path can be overridden with the <code>GCL_IDE_SETTINGS</code> environment variable — useful for screenshots and automated runs that must not touch the real file."
+            }
+          ]
+        },
+        {
+          "title": "The Settings Panel Is Its Own Module",
+          "paragraphs": [
+            "<code class=\"inline\">gcl_settings_panel.c</code> is intentionally self-contained. It keeps its own state — selected tab, scroll offset, open dropdown — inside the module and writes nothing into the <code class=\"inline\">Editor</code> struct while it is open.",
+            "The reason is a lesson learned the hard way: when UI state was scattered across the shared editor struct, the panel repeatedly came back corrupted after unrelated changes. Keeping the panel's state private gives it a clean lifecycle — <code class=\"inline\">open()</code> copies values out of <code class=\"inline\">ed.settings</code> into a scratch copy, <code class=\"inline\">input()</code> handles ESC and Ctrl+S, <code class=\"inline\">draw()</code> renders, and <code class=\"inline\">close()</code> either commits or discards."
+          ],
+          "code": {
+            "file": "gcl_settings_panel.h",
+            "src": "void gcl_settings_panel_open(Editor *ed);\nvoid gcl_settings_panel_close(Editor *ed);\nint  gcl_settings_panel_is_open(void);\nint  gcl_settings_panel_input(Editor *ed, int ctrl);\nvoid gcl_settings_panel_draw(Editor *ed, int w, int h, int font_sz, GclIdeTheme *t);"
+          }
+        },
+        {
+          "title": "The Output Panel",
+          "paragraphs": [
+            "Program output and build output share one panel backed by a fixed 16 KB character buffer (<code class=\"inline\">ed.output</code>) with a length and a scroll offset.",
+            "The scroll convention is worth remembering: <strong>0 means \"follow\"</strong> — pinned to the bottom, showing the newest line — and a positive value scrolls upward into history. Long-running programs therefore behave the way people expect without any special-case logic."
+          ],
+          "table": {
+            "headers": ["Field", "Meaning"],
+            "rows": [
+              ["<code>output[16384]</code>", "The text buffer"],
+              ["<code>output_len</code>", "Number of bytes in use"],
+              ["<code>output_visible</code>", "Whether the panel is shown"],
+              ["<code>output_scroll</code>", "<code>0</code> = follow the bottom, <code>>0</code> = scrolled up"],
+              ["<code>running</code>", "A child process is currently alive"]
+            ]
+          }
+        },
+        {
+          "title": "Verification Hooks",
+          "paragraphs": [
+            "Because a GUI is hard to test from a script, the IDE ships with environment-variable hooks that let an automated run drive it into a specific state and capture it. They are inert unless the variable is set, so normal use is unaffected."
+          ],
+          "table": {
+            "headers": ["Variable", "Effect"],
+            "rows": [
+              ["<code>GCL_IDE_SPLIT</code>", "Starts with the split view already enabled, so the split layout and per-pane tab strips can be captured"],
+              ["<code>GCL_IDE_COMPLETE</code>", "Programmatically opens the completion popup after a number of frames"],
+              ["<code>GCL_IDE_SHOT</code>", "Captures a screenshot after <code>SHOT_AFTER_FRAMES</code> frames"],
+              ["<code>GCL_IDE_SETTINGS</code>", "Points the settings file at a temporary location"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The snapshot is taken after about 20 frames on purpose: the placeholder textures, the embedded font and the first layout all have to exist before the picture is meaningful."
+            }
+          ]
+        },
+        {
+          "title": "IDE Source Map",
+          "paragraphs": [
+            "Every file in <code class=\"inline\">language/_SRC/ide/</code> has one job. When something in the IDE misbehaves, this table is the fastest way to find where to look."
+          ],
+          "table": {
+            "headers": ["File", "Responsibility"],
+            "rows": [
+              ["<code>ide_main.c</code>", "Entry point <code>gcl_ide_run()</code>, window, frame loop, layout, pane drawing"],
+              ["<code>ide_buffer.c</code>", "Text buffer, cursor, selection, undo/redo, edit groups"],
+              ["<code>ide_editor.c</code>", "Editor interaction: typing, keys, completion triggering, auto-indent"],
+              ["<code>ide_font.c</code>", "Embedded font wrapper, TAB-aware drawing and measurement"],
+              ["<code>ide_fs_tree.c</code>", "File tree scan, filesystem helpers, tab and pane state helpers"],
+              ["<code>ide_widgets.c</code>", "Reusable UI widgets: button, checkbox, slider, textbox, panel frame"],
+              ["<code>ide_menu.c</code>", "Menu bar definition and dispatch"],
+              ["<code>ide_project.c</code>", "Project discovery, Run, Build, build thread, project log"],
+              ["<code>ide_new_project.c</code>", "The New Project panel and skeleton generation"],
+              ["<code>ide_proc.c</code>", "Asynchronous child process with pipes and output collection"],
+              ["<code>ide_clipboard.c</code>", "System clipboard access"],
+              ["<code>ide_native_dialog.c</code>", "Native open/save file and folder dialogs"],
+              ["<code>ide_complete_ui.c</code>", "Completion popup, documentation panel and signature strip rendering"],
+              ["<code>ide_settings.c</code>", "Theme palettes and <code>ide.gcsettings</code> load/save"],
+              ["<code>gcl_settings_panel.c</code>", "Settings and About panels, with private state"],
+              ["<code>gcl_lsp_scan.c</code>", "Simple project symbol scanner"],
+              ["<code>gcl_ide_internal.h</code>", "The <code>Editor</code> struct and every internal declaration"]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "build",
+      "title": "How the Build Works",
+      "sections": [
+        {
+          "title": "One Command, Everything Built",
+          "paragraphs": [
+            "The whole toolchain is driven by a single Python script: <code class=\"inline\">language/makefile.py</code>. It is invoked either directly (<code class=\"inline\">python language/makefile.py</code>) or through the CLI, which simply forwards to it.",
+            "Running it with no arguments downloads what is missing, generates the sources that must be generated, then compiles the compiler, the IDE plugin, every native module and both embedded language runtimes. There is no separate <em>configure</em> step and no platform makefile: the script decides everything from <code class=\"inline\">platform.system()</code>."
+          ],
+          "code": {
+            "file": "terminal",
+            "src": "python language/makefile.py\n\n# or through the CLI:\ngcl language\n\n# -> build/<os>/   (windows or gnuLinux)"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The platform name comes from <code>os_name()</code>: <code>linux</code> is renamed to <code>gnuLinux</code>, everything else keeps its system name. That string is what <code>gcl_os_name()</code> in <code>gcl_os.c</code> returns too, so the CLI and the build agree on the folder name."
+            }
+          ]
+        },
+        {
+          "title": "What the Build Produces",
+          "paragraphs": [
+            "Everything lands under <code class=\"inline\">language/build/<os>/</code>. This layout is not cosmetic: the interpreter finds native modules by looking in <code class=\"inline\"><exe_dir>/Library/</code>, the IDE is loaded from <code class=\"inline\"><exe_dir>/Programs/</code>, and a built game copies this whole tree into its bundle."
+          ],
+          "code": {
+            "file": "language/build/<os>/",
+            "src": "build/<os>/\n    gcl.exe | gcl                # the language: lexer, parser, runner, bundler\n    Programs/\n        ide.dll | ide.so         # the IDE plugin (loaded by gcl on demand)\n    Library/\n        Math.dll | Math.so\n        Stdio.dll | Stdio.so\n        Embed.dll | Embed.so     # Lua + Python runtime + bindings\n        Raylib.dll | Raylib.so\n        Raygui.dll | Raygui.so\n        libraylib.a              # Windows: import lib from Raylib.dll\n        Embeded/\n            Lua_Runtime/\n                lua.dll | lua.so\n                LuaRaylib.dll | LuaRaylib.so\n                LuaRaygui.dll | LuaRaygui.so\n            Python_Runtime/\n                Python.dll | Python.so\n                libpython3.14.so.1.0     # Linux only\n                gcl.so | gcl.pyd         # Python side: import gcl\n                raylib.so | raylib.pyd   # Python side: import raylib\n                raygui.so | raygui.pyd   # Python side: import raygui\n                PyRaylib.dll | PyRaylib.so\n                PyRaygui.dll | PyRaygui.so\n                Python/                  # Python standard library\n    Assets/\n        FreeMono.ttf"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "The Linux filename <code>gnuLinux</code> is case-sensitive on purpose. Earlier code used <code>src/IDE</code> on a tree that had <code>_SRC/ide</code>, and the mismatch broke the build on Linux while Windows never noticed."
+            }
+          ]
+        },
+        {
+          "title": "Dependencies Are Fetched Into _temp/<os>/",
+          "paragraphs": [
+            "Nothing is vendored in the repository. Each dependency is downloaded or cloned into <code class=\"inline\">_temp/<os>/</code> the first time it is needed, and reused afterwards. The per-platform folder means a Windows checkout and a Linux checkout can never mix their binaries.",
+            "Each downloader checks first and returns early if the dependency is already present, so a rebuild after a code change does not re-download anything."
+          ],
+          "table": {
+            "headers": ["Dependency", "Source", "Used for"],
+            "rows": [
+              ["Lua", "<code>git clone --depth 1 github.com/lua/lua</code>", "Compiled directly into <code>Embed</code> and the Lua runtime modules"],
+              ["Raylib", "<code>git clone --depth 1 github.com/raysan5/raylib</code> + static build", "The <code>Raylib</code> module and every binding"],
+              ["Raygui", "<code>git clone --depth 1 github.com/raysan5/raygui</code>", "The <code>Raygui</code> module (header-only library)"],
+              ["Python 3.14", "<code>astral-sh/python-build-standalone</code> latest release", "The embedded Python runtime and its standard library"],
+              ["GNU FreeFont", "<code>ftp.gnu.org/gnu/freefont/freefont-ttf-20120503.zip</code>", "The IDE's embedded <code>FreeMono.ttf</code>"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The Python runtime is downloaded on Linux too, not taken from the system. Previously Linux used the system <code>python3-dev</code>, which sometimes produced a build output with no <code>Python/</code> directory at all."
+            }
+          ]
+        },
+        {
+          "title": "Platform Correctness in the Dependency Layer",
+          "paragraphs": [
+            "Two details in the dependency layer prevent failures that would otherwise look completely unrelated.",
+            "<strong>Archive architecture checking.</strong> A prebuilt <code>libraylib.a</code> is inspected before it is used: the first member of the archive is extracted and its magic bytes are checked — <code>64 86</code> for a Windows COFF AMD64 object, <code>7F 45 4C 46</code> (<code>\u007fELF</code>) for a Linux object. If the archive belongs to the other platform it is deleted, along with the stale <code>.o</code> files, and raylib is rebuilt locally. Without this check, a MinGW archive left in the tree would be silently reused on Linux and fail at link time.",
+            "<strong>Symlink-free extraction.</strong> The Python standalone archive contains symlinks, which cannot be created on an NTFS drive mounted from WSL. Extraction therefore filters out symlink and hardlink members instead of aborting with <code>ELOOP</code>. As a follow-up, <code>_ensure_python_so()</code> recreates the missing <code>libpython3.14.so</code> as a real copy of <code>libpython3.14.so.1.0</code>, because the linker needs the unversioned name."
+          ],
+          "code": {
+            "file": "makefile.py (raylib architecture check)",
+            "src": "ar t libraylib.a          -> first member name\nar p libraylib.a <member>  -> member bytes\n\nWindows : data[0] == 0x64 && data[1] == 0x86   (COFF AMD64)\nLinux   : data[:4] == b\"\\x7fELF\"                (ELF)\n\nmismatch -> delete *.a and *.o, rebuild with make/mingw32-make"
+          }
+        },
+        {
+          "title": "Generated Sources",
+          "paragraphs": [
+            "Three C files used by the build are generated rather than written by hand. All three follow the same idempotency rule: if the generated content is identical to what is already on disk, the file is <strong>not rewritten</strong>. That matters because rewriting it would change its modification time and force a full recompile of the IDE DLL for nothing.",
+            "<code class=\"inline\">embed_freemono.c</code> turns <code>FreeMono.ttf</code> into a byte array; <code class=\"inline\">embed_icon.c</code> turns <code>assets/icon.png</code> into a byte array that becomes the default icon of every new project; and <code class=\"inline\">complete_native_db.c</code> is generated from the module bindings by <code class=\"inline\">tools/gen_native_db.py</code>."
+          ],
+          "table": {
+            "headers": ["Generated file", "Produced from", "Consumer"],
+            "rows": [
+              ["<code>_SRC/embed_freemono.c</code>", "<code>_temp/<os>/FreeFont/FreeMono.ttf</code>", "The IDE font"],
+              ["<code>_SRC/embed_icon.c</code>", "<code>assets/icon.png</code>", "<code>gcl -new</code> and the build-time exe icon"],
+              ["<code>_SRC/complete/complete_native_db.c</code>", "<code>Modules/gcl_raylib.c</code> + <code>gcl_raygui.c</code>", "The IDE completion engine"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Because the completion tables are derived from the bindings that are actually compiled, a changed function cannot keep suggesting its old signature — and the generator also cross-checks every binding against the real <code>raylib.h</code>."
+            }
+          ]
+        },
+        {
+          "title": "The Modules — Library/",
+          "paragraphs": [
+            "Every native module implements the same tiny interface from <code class=\"inline\">include/gcl_module.h</code>: it exports one function that returns a table of <code>{ name, function pointer }</code>. Arguments cross the boundary as strings, and numbers are parsed inside the module with <code class=\"inline\">atof</code>.",
+            "<code class=\"inline\">Math</code> and <code class=\"inline\">Stdio</code> are pure C with no external dependency. <code class=\"inline\">Embed</code> is the heavy one: it embeds the whole Lua source tree statically, links the Lua raylib and raygui bindings, and — when a Python embed is available — also builds the Python backend."
+          ],
+          "code": {
+            "file": "module build shape (abridged)",
+            "src": "gcc -std=c99 -shared -fPIC -D_POSIX_C_SOURCE=200809L \\\n    -I _SRC/include -I _SRC/embed -I <lua_src> \\\n    <module sources> \\\n    -o Library/<Name>.dll|so"
+          },
+          "table": {
+            "headers": ["Module", "Sources", "Notes"],
+            "rows": [
+              ["<code>Math</code>", "<code>Modules/gcl_math.c</code>", "Pure C, no dependencies"],
+              ["<code>Stdio</code>", "<code>Modules/gcl_stdio.c</code>", "Pure C, the <code>{}</code> formatter lives here"],
+              ["<code>Embed</code>", "<code>gcl_embed.c</code> + Lua + LuaRaylib + LuaRaygui (+ Python backend)", "Links <code>libraylib.a</code> and the system GL/X11 libraries"],
+              ["<code>Raylib</code>", "<code>Modules/gcl_raylib.c</code> + <code>libraylib.a</code>", "The full raylib binding"],
+              ["<code>Raygui</code>", "<code>Modules/gcl_raygui.c</code> with <code>RAYGUI_IMPLEMENTATION</code>", "Linked against <code>Raylib</code>, never its own raylib"]
+            ]
+          }
+        },
+        {
+          "title": "The Single-Raylib-Instance Rule",
+          "paragraphs": [
+            "This is the most important linking rule in the project, and getting it wrong produces a very confusing crash: the window simply does not appear, or the program dies on the second frame.",
+            "Raygui, LuaRaylib and LuaRaygui all need raylib. If each of them linked its own static <code>libraylib.a</code>, every one would contain its own copy of raylib's global state. The module that called <code>InitWindow</code> would initialize <em>its</em> copy, while a widget calling <code>GuiButton</code> would read a second, uninitialised copy — and raylib is not designed for that.",
+            "The fix on Windows is to build an <strong>import library</strong>: <code>gendef</code> dumps the exports of <code>Raylib.dll</code> into a <code>.def</code> file, and <code>dlltool</code> turns that into <code>libraylib.a</code>. Every consumer then links against that import library, so they all resolve to the one raylib instance inside <code>Raylib.dll</code>."
+          ],
+          "code": {
+            "file": "Windows import library step",
+            "src": "gendef - Raylib.dll                  > Library/raylib.def\ndlltool -d Library/raylib.def \\\n        -l Library/libraylib.a -D Raylib.dll"
+          },
+          "notes": [
+            {
+              "type": "warn",
+              "text": "On Linux the static archive is used instead. That is intentional and does not cause the same problem there, because the modules are loaded into a single process and the raylib symbols resolve to one definition."
+            }
+          ]
+        },
+        {
+          "title": "gcl.exe — the Language Only",
+          "paragraphs": [
+            "<code class=\"inline\">gcl.exe</code> contains the GCL language and nothing else: the lexer, the parser, the runner, the module loader and the gcBundle reader/packer. It is deliberately kept small — around 660 KB with the icon resource — because it is <em>copied</em> as the base executable of every built game.",
+            "The Lua, Python and raylib runtimes were removed from it entirely. <code class=\"inline\">gcl -luarun</code> and <code class=\"inline\">gcl -pyrun</code> load <code class=\"inline\">Library/Embed.dll</code> dynamically and call <code class=\"inline\">gcl_lua_run_file</code> / <code class=\"inline\">gcl_py_run_file</code> from it. That also means <code class=\"inline\">-luarun</code> will not work if the <code class=\"inline\">Library/</code> directory is missing — which is exactly why a bundle always embeds it."
+          ],
+          "code": {
+            "file": "gcl.exe link step (abridged)",
+            "src": "gcc -std=c99 -Wall -Wextra ... -D_POSIX_C_SOURCE=200809L \\\n    -I _SRC/ide -I _SRC/build -I _SRC/SharedPipeline \\\n    -I _SRC/GCL/SimpleRunner -I _SRC/Modules -I _SRC/include -I _SRC/embed \\\n    <GCL_SRCS> -lm \\\n    -o build/<os>/gcl[.exe]"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "If <code>_SRC/build/gcbundle_reader.c</code> is missing — for example in a partial CI checkout — the script adds <code>-DGCL_SKIP_BUNDLE</code>, which compiles the bundle code out of <code>gcl_main.c</code> instead of failing the build."
+            }
+          ]
+        },
+        {
+          "title": "ide.dll — the Plugin",
+          "paragraphs": [
+            "The IDE is compiled as a shared library and linked against raylib, the whole completion engine, and the bundle sources — because the IDE performs builds itself. Compiler warnings are deliberately relaxed for it (<code class=\"inline\">-Wno-unused-parameter</code>, <code class=\"inline\">-Wno-unused-function</code>, and similar) since it consumes a great deal of third-party header code.",
+            "The build verifies that the IDE sources actually exist before attempting it. If any are missing it prints exactly which files are absent and skips <code class=\"inline\">Programs/</code> rather than emitting a broken plugin — the CLI then reports clearly that the IDE is unavailable."
+          ],
+          "code": {
+            "file": "build_ide() (abridged)",
+            "src": "missing = [s for s in IDE_SRCS if not (ROOT / s).exists()]\nif not missing:\n    ensure_native_db()      # regenerate the completion tables FIRST\n    build_ide(build_dir)    # then compile Programs/ide.dll|so\nelse:\n    warn: IDE sources missing -> Programs/ not generated"
+          }
+        },
+        {
+          "title": "Linux — Why libpython Is Preloaded",
+          "paragraphs": [
+            "On Linux, <code class=\"inline\">Embed.so</code> and the Python-side modules carry a <code class=\"inline\">DT_NEEDED</code> entry for <code class=\"inline\">libpython3.14.so.1.0</code>. The dynamic linker resolves those entries when the library is opened.",
+            "Changing <code class=\"inline\">LD_LIBRARY_PATH</code> from inside the program does not help, because the linker has already started. <code class=\"inline\">gcl_main.c</code> therefore resolves its own directory, then opens the Python library explicitly with <code class=\"inline\">dlopen(..., RTLD_GLOBAL)</code> before any module is loaded. By the time <code class=\"inline\">Embed.so</code> is opened, the dependency is already mapped. The same preload is repeated in <code class=\"inline\">native_load()</code> in the runner, so a locally run script behaves identically."
+          ],
+          "code": {
+            "file": "gcl_main.c (Linux preload)",
+            "src": "snprintf(py_lib, ..., \"%s/Library/Embeded/Python_Runtime/libpython3.14.so.1.0\", exe_dir);\nif (access(py_lib, 0) == 0)\n    dlopen(py_lib, RTLD_NOW | RTLD_GLOBAL);\n\n/* fallbacks: libpython3.14.so, then libpython3.so */"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Without this, the failure message is the misleading <code>unknown module 'Embed'</code> — the module is found, but its dependency cannot be resolved."
+            }
+          ]
+        },
+        {
+          "title": "Building a Project — gcl -build",
+          "paragraphs": [
+            "<code class=\"inline\">gcl -build</code> turns a project folder into a runnable, self-contained program. It accepts either the project directory or the <code class=\"inline\">project.gcdata</code> file itself, which is worth knowing because passing a directory to a naive reader would fail.",
+            "The project root is the parent of <code class=\"inline\">project.gcdata</code>. If no <code class=\"inline\">-o</code> is given, the output goes to the project's own <code class=\"inline\">out/</code> folder — <em>never</em> to the current working directory, which is what an earlier version did, wiping a repository-level <code>build/</code> directory as a side effect."
+          ],
+          "code": {
+            "file": "build_project() (order of operations)",
+            "src": "1. gcdata_path = <arg>/project.gcdata if arg is a directory\n2. name        = \"project_name\" value read out of the JSON\n                  -> leading separators trimmed\n                  -> space : ? * \" < > | replaced with _\n3. project_dir = parent of project.gcdata\n4. out_dir     = <project_dir>/out   (when -o is absent)\n5. gcl_ensure_dir(out_dir)\n   gcl_clear_dir_contents(out_dir)   # no stale artifacts\n6. runtime_dir = <exe_dir>            # build/<os>/\n7. gcb_build_project_runtime(project_dir, runtime_dir, name, out_dir)\n8. copy the running gcl executable -> <out_dir>/<name>.exe\n9. gcl_icon_apply_project(project_dir, dest, name)"
+          },
+          "notes": [
+            {
+              "type": "warn",
+              "text": "The project name is sanitised before it is used as a file name. A name containing a path separator used to create a subpath inside the output directory, and a stray <code>\"</code> or <code>:</code> produced an unopenable file."
+            },
+            {
+              "type": "tip",
+              "text": "The runtime directory is derived from <em>the path of the running executable</em>, not from the current directory. That is what lets <code>gcl -build</code> be run from anywhere."
+            }
+          ]
+        },
+        {
+          "title": "The gcBundle Format",
+          "paragraphs": [
+            "A <code class=\"inline\">.gcBundle</code> is a single file that contains the project <em>and</em> the runtime. Its layout is deliberately simple — one header, a table of entries, then the file data as one blob.",
+            "The structs are declared with a portable packing macro. GCC and Clang use <code class=\"inline\">__attribute__((packed))</code>; MSVC does not understand that attribute at all (it is a compile error there) and uses <code class=\"inline\">#pragma pack(1)</code> instead. Both produce byte-identical layouts, so a bundle written on Windows reads correctly on Linux, and the offsets in the file are always written with the compiler's own <code class=\"inline\">sizeof()</code>."
+          ],
+          "code": {
+            "file": "gcBundle binary layout",
+            "src": "[ GcbHeader ]\n  magic[4]        \"GCBL\"\n  version u16     1\n  flags   u16     0\n  name[64]        project name\n  entry_count u32\n  entry_offset u32   offset of the entry table\n  blob_offset  u32   offset of the file data\n\n[ GcbEntryHeader x entry_count ]\n  path[512]\n  type u32        0 = FILE, 1 = DIR\n  offset u32      file data offset\n  size u32        file size\n\n[ blob ]            file contents, back to back"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Every path <em>inside</em> a bundle is stored with <code>/</code>, even when the bundle was produced on Windows. Windows separators are only used while walking the local filesystem."
+            },
+            {
+              "type": "warn",
+              "text": "The format uses 32-bit offsets, so the whole bundle must fit in 4 GB. The packer computes the total size first and refuses with a clear message instead of silently overflowing into corruption."
+            }
+          ]
+        },
+        {
+          "title": "What Goes Into a Bundle — and What Does Not",
+          "paragraphs": [
+            "A first naive implementation embedded the runtime directory as-is and produced a <strong>1.26 GB</strong> bundle. After pruning it lands around <strong>176 MB</strong>. The pruning is not cosmetic; it decides whether the format is usable at all.",
+            "Files are filtered by suffix (case-insensitively on both platforms, so a Windows-produced <code>.LIB</code> is skipped on Linux too), by directory name, and — for the Python standard library — by package name. The package filter has to look past the platform-specific prefix (<code class=\"inline\">Lib/</code> on Windows versus <code class=\"inline\">lib/python3.X/</code> on Linux) and test <em>every</em> path component, so nested test directories such as <code class=\"inline\">xml/test</code> are removed as well."
+          ],
+          "table": {
+            "headers": ["Skipped", "Reason"],
+            "rows": [
+              ["<code>.pyc</code>, <code>.pyo</code>, <code>__pycache__</code>", "Recompilable artifacts"],
+              ["<code>.a</code>, <code>.lib</code>, <code>.o</code>, <code>.def</code>, <code>.pdb</code>, <code>.exp</code>", "Build-time link artifacts"],
+              ["<code>.h</code>", "Headers are not needed at run time"],
+              ["<code>Python/Scripts</code>, <code>Python/libs</code>", "Windows embed by-products"],
+              ["<code>test</code>, <code>tests</code>, <code>tkinter</code>, <code>turtle</code>, <code>idlelib</code>, <code>ensurepip</code>, <code>curses</code>, <code>dbm</code>, <code>lib2to3</code>, <code>venv</code>, <code>wsgiref</code>, <code>site-packages</code>, <code>turtledemo</code>, <code>distutils</code>, <code>setuptools</code>, <code>pip</code>, <code>unittest2</code>", "Not needed to run a project"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Robustness rules in the packer: paths longer than <code>GCB_PATH_MAX</code> are skipped with a message, buffer sizes are checked <em>before</em> <code>snprintf</code> so a truncation can never silently stat the wrong path, and recursion is capped at depth 64 to stop a symlink or junction loop."
+            },
+            {
+              "type": "tip",
+              "text": "An unreadable file or an unlistable directory is skipped on <em>both</em> platforms rather than aborting the build. Only a real out-of-memory condition is treated as an error."
+            }
+          ]
+        },
+        {
+          "title": "How a Built Program Runs",
+          "paragraphs": [
+            "The built executable is a copy of <code class=\"inline\">gcl.exe</code> renamed to the project name, with a <code class=\"inline\">.gcBundle</code> sitting next to it. With no arguments, <code>gcl_main.c</code> checks its own directory for a bundle <em>before</em> falling back to the IDE — that check is what turns the copy into a game.",
+            "The bundle is then opened, its files are extracted next to the executable, and <code class=\"inline\">main.gcsf</code> is read out of the bundle and executed. This is the same idea as Godot's PCK: the archive contains the runtime and the scripts; on first run they are materialised on disk so native modules and <code class=\"inline\">Embed.Run</code> children can find them."
+          ],
+          "code": {
+            "file": "run_bundle_program() (order)",
+            "src": "1. gcb_open(bundle_path)\n2. gcb_extract_all(b, <dir of the bundle>)     # Library/, scripts/, assets/\n3. src = gcb_read_path(b, \"main.gcsf\", &size)\n4. copy src into a NUL-terminated buffer        # the blob is NOT terminated\n5. set GCL_PROJECT_DIR / GCL_SHARED_FILE\n6. gcl_simple_run_source(src, strlen(src), base_dir, 0, NULL)\n7. gcl_shared_cleanup(); gcb_close(b)"
+          },
+          "notes": [
+            {
+              "type": "warn",
+              "text": "Step 4 is not optional. The lexer reads up to a null terminator; feeding it the raw blob made it read past the end of the file's data into whatever followed, producing an <code>unexpected character</code> lexer error from random bytes."
+            },
+            {
+              "type": "info",
+              "text": "<code>Programs/</code> is never part of a bundle — a game does not need the IDE. Only the scripts, the assets and <code>Library/</code> are packaged."
+            }
+          ]
+        },
+        {
+          "title": "gcbmod — Inspecting a Bundle",
+          "paragraphs": [
+            "The bundle code ships with its own small command-line tool, built from <code class=\"inline\">build/gcbundle_cli.c</code>. It is the quickest way to answer \"is this bundle correct?\" without running the game.",
+            "<code class=\"inline\">read</code> writes raw bytes to stdout, and on Windows it explicitly switches stdout to binary mode first — text mode would translate <code>\\n</code> and treat the <code>0x1A</code> byte as end-of-file, quietly corrupting any binary content it extracts."
+          ],
+          "code": {
+            "file": "terminal",
+            "src": "gcbmod pack <dir> <name> <out.gcBundle>\ngcbmod info <module.gcBundle>\ngcbmod read <module.gcBundle> <path>"
+          }
+        },
+        {
+          "title": "Build and Run Logs",
+          "paragraphs": [
+            "Both the CLI and the IDE write a log next to the project: <code class=\"inline\">project.gclog</code>.",
+            "The IDE appends each line by opening and closing the file for that single line. It looks wasteful and it is deliberate: holding one handle open without flushing it left the log empty until the IDE exited, which made a failed build impossible to diagnose from the file."
+          ],
+          "code": {
+            "file": "project.gclog",
+            "src": "=== Build started ===\n[Build] 1/3 Packaging project + runtime...\n[Build] 2/3 Copying the executable...\nBuilt: <out>/<name>.exe\nIcon applied: <name>\n[Build] 3/3 Done."
+          }
+        },
+        {
+          "title": "Tests in the Build Tree",
+          "paragraphs": [
+            "Two test programs live beside the sources and are compiled the same way as everything else. They exist because both halves of the system have a real interface that can be verified without opening a window.",
+            "<code class=\"inline\">tests/parser/test_parser.c</code> drives the lexer and parser directly and checks the resulting AST — the same contract the parser/tests chapter of this book describes. <code class=\"inline\">tests/complete/test_complete.c</code> drives the completion engine through its public facade <code class=\"inline\">gcl_complete_query()</code>, which is possible precisely because the engine has no raylib dependency."
+          ],
+          "table": {
+            "headers": ["Test", "Covers"],
+            "rows": [
+              ["<code>language/tests/parser/test_parser.c</code>", "Tokenising and AST construction for the documented language"],
+              ["<code>language/tests/complete/test_complete.c</code>", "Context detection, scope building, member resolution, ranking"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The pane-state helpers used by the IDE's split view are also written to be testable headlessly for the same reason: no drawing code, only state."
+            }
+          ]
+        },
+        {
+          "title": "Build Troubleshooting",
+          "paragraphs": [
+            "A few failure messages are worth recognising, because the underlying cause is rarely what the message suggests."
+          ],
+          "table": {
+            "headers": ["Symptom", "Real cause"],
+            "rows": [
+              ["<code>unknown module 'Embed'</code> on Linux", "The Python shared library was not preloaded — check <code>Library/Embeded/Python_Runtime/libpython3.14.so.1.0</code>"],
+              ["<code>Programs/ide.dll is missing</code>", "The build did not include the IDE sources; the CLI can run scripts but cannot open the IDE"],
+              ["Raylib links but crashes on the first frame", "Two raylib instances — the import library (<code>gendef</code> + <code>dlltool</code>) was not created"],
+              ["<code>unexpected character</code> when running a bundle", "The <code>main.gcsf</code> blob was not copied into a null-terminated buffer"],
+              ["<code>libpython3.14.so</code> not found at link time", "The unversioned <code>.so</code> was not created from <code>.so.1.0</code> (WSL/DrvFs cannot create symlinks)"],
+              ["A bundle is far too large", "The Python stdlib filter is not matching — the prefix differs between <code>Lib/</code> and <code>lib/python3.X/</code>"]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "platform",
+      "title": "The Platform — Source Map and Overview",
+      "sections": [
+        {
+          "title": "The Three Layers",
+          "paragraphs": [
+            "GnuchanOS's language and platform work as three layers that know as little about each other as possible. Understanding which layer owns a problem is the fastest way to find where it lives.",
+            "<strong>The language</strong> is <code class=\"inline\">gcl.exe</code>: it reads <code class=\"inline\">.gcsf</code>, executes it, loads native modules and packages projects. <strong>The platform</strong> is the runtime that surrounds it — the native modules in <code class=\"inline\">Library/</code>, the embedded Lua and Python runtimes, and the shared cross-process state. <strong>The tooling</strong> is the IDE plugin and the build script, neither of which the language depends on at run time."
+          ],
+          "table": {
+            "headers": ["Layer", "Ships as", "Depends on"],
+            "rows": [
+              ["Language", "<code>gcl.exe</code> / <code>gcl</code>", "Nothing but the C standard library"],
+              ["Platform", "<code>Library/*.dll|so</code>, <code>Library/Embeded/</code>", "raylib, Lua, Python"],
+              ["Tooling", "<code>Programs/ide.dll|so</code>, <code>makefile.py</code>, <code>gen_native_db.py</code>", "raylib, the language's bundle API"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "A useful test of this separation: delete <code>Programs/</code> and <code>gcl</code> still runs scripts. Delete <code>Library/</code> and it still parses and runs programs that use no <code>#native</code> module."
+            }
+          ]
+        },
+        {
+          "title": "Directory Map",
+          "paragraphs": [
+            "Everything written by a human lives under <code class=\"inline\">language/_SRC/</code>. Everything else is generated, downloaded or built.",
+            "The underscore prefix on <code class=\"inline\">_SRC</code> is not decoration: the folder used to be called <code class=\"inline\">src</code> while include statements referred to <code class=\"inline\">_SRC/...</code>. Windows ignored the difference, Linux did not, and the build broke only on Linux. All paths now use <code class=\"inline\">_SRC/</code> with matching case."
+          ],
+          "code": {
+            "file": "repository layout",
+            "src": "language/\n    _SRC/                       # all hand-written sources\n        SharedPipeline/         # the language itself\n            gcl_lexer.c  gcl_lexer.h\n            gcl_parser.c gcl_parser.h\n            gcl_error.c  gcl_error.h\n        GCL/SimpleRunner/       # the interpreter\n            gcl_simple_runner.c  gcl_runner.c\n            gcl_terminal.c       gcl_runner.h\n        build/                  # the gcBundle format and packer\n            gcbundle.h  gcbundle_internal.h\n            gcbundle_reader.c  gcbundle_pack.c\n            gcbundle_build.c   gcbundle_cli.c\n        Modules/                # #native modules\n            gcl_math.c  gcl_stdio.c  gcl_embed.c\n            gcl_raylib.c  gcl_raygui.c\n        embed/                  # embedded Lua / Python runtimes\n            gcl_embed_lua.c  gcl_embed_python.c\n            gcl_luaraylib.c  gcl_luaraygui.c\n            gcl_pyraylib.c   gcl_pyraygui.c  gcl_pygcl.c\n            gcl_shared_state.h\n        ide/                    # the IDE plugin\n            ide_main.c  ide_editor.c  ide_buffer.c  ide_font.c\n            ide_fs_tree.c  ide_widgets.c  ide_menu.c  ide_project.c\n            ide_new_project.c  ide_proc.c  ide_clipboard.c\n            ide_native_dialog.c  ide_complete_ui.c  ide_settings.c\n            gcl_settings_panel.c  gcl_lsp_scan.c\n            gcl_ide.h  gcl_ide_internal.h  gcl_ide_settings.h\n        complete/               # the completion engine (no raylib)\n            gcl_complete.c  gcl_complete.h\n            complete_context.c  complete_scope.c  complete_type.c\n            complete_native.c   complete_native_db.c\n            complete_project.c  complete_rank.c\n            complete_index.c    complete_diag.c\n        include/                # shared public headers\n            gcl_module.h  gcl_terminal_spawn.h\n            gcl_lsp_internal.h  gcl_icon.h\n        gcl_main.c              # CLI entry point\n        gcl_os.c                # directory helpers\n        gcl_icon.c              # default icon + exe icon stamping\n    examples/                   # runnable sample programs\n    tests/parser/            tests/complete/\n    makefile.py                 # the whole build\n    build/<os>/                 # build output (generated)\n_temp/<os>/                     # downloaded dependencies (generated)\ntools/gen_native_db.py          # generates the completion database\nassets/icon.png                 # the default project icon\nbook/                           # this documentation"
+          }
+        },
+        {
+          "title": "How a Script Runs — End to End",
+          "paragraphs": [
+            "Tracing one command end to end shows how the pieces connect."
+          ],
+          "code": {
+            "file": "gcl -run app.gcsf name",
+            "src": "gcl_main.c\n  read_file(app.gcsf)\n  base_dir = absolute folder of app.gcsf\n  GCL_PROJECT_DIR  = base_dir           (if not already set)\n  GCL_SHARED_FILE  = base_dir/gcl_shared.state\n  gcl_simple_run_source(src, len, base_dir, argc=1, argv=[\"name\"])\n\ngcl_simple_runner.c\n  collect_native / collect_extern / collect_register\n  pp_process          -> macro-expanded text\n  gcl_lex             -> tokens (point into the expanded text)\n  gcl_parse           -> AST\n  gcl_run_program\n      load every #native module from Library/\n      pass 1: register functions, typedefs, enums, structs\n      pass 2: run top-level statements\n      call main(argc, argv) if it exists\n  free AST, tokens, expanded text   (in that reverse order)\n\ngcl_main.c\n  gcl_shared_cleanup()"
+          }
+        },
+        {
+          "title": "How a Project Becomes a Game — End to End",
+          "paragraphs": [
+            "The second trace is the one that produces something you can hand to another person."
+          ],
+          "code": {
+            "file": "gcl -build MyGame   (or Build in the IDE)",
+            "src": "read MyGame/project.gcdata\n  name        = \"project_name\"\n  project_dir = MyGame/\n  out_dir     = MyGame/out/\n\nensure + clear out_dir\n\npack:\n  walk project_dir            -> main.gcsf, scripts/, assets/, ...\n  walk <exe_dir> as \"Library\" -> Math, Stdio, Embed, Raylib, Raygui,\n                                 Embeded/Lua_Runtime, Embeded/Python_Runtime\n  filter out .a .lib .o .h .pyc, test/tkinter/pip, __pycache__\n  write  header + entry table + blob  ->  MyGame/out/MyGame.gcBundle\n\ncopy <exe_dir>/gcl.exe  ->  MyGame/out/MyGame.exe\napply MyGame/assets/icon.png to MyGame.exe\n\n--- later, on another machine ---\n\nMyGame.exe (no arguments)\n  no *.gcBundle next to it?  -> open the IDE\n  *.gcBundle found           -> run it:\n      extract Library/, scripts/, assets/ next to the exe\n      read main.gcsf from the bundle\n      set GCL_PROJECT_DIR / GCL_SHARED_FILE\n      run it like any other script"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The extracted files are why a built game can still open Lua/Python windows: the child processes are started as <code>gcl -luarun scripts/main.lua</code>, which needs <code>Library/Embed</code> on disk."
+            }
+          ]
+        },
+        {
+          "title": "Where Lua and Python Fit",
+          "paragraphs": [
+            "Lua and Python are not alternative front ends to GCL. They are <strong>guest runtimes</strong> started from GCL, each in its own process, with raylib exposed to them through C extension modules.",
+            "GCL stays the conductor: it starts the guests, shares variables with them through the memory-mapped store, and waits for them to finish. That design keeps the language small and gives each guest its own window, since raylib only supports one window per process."
+          ],
+          "table": {
+            "headers": ["Guest", "Started by", "Entry point in the script"],
+            "rows": [
+              ["Lua", "<code>Embed.Run(type=\"lua\")</code>", "<code>gcl.init()</code> then <code>raylib.*</code>"],
+              ["Python", "<code>Embed.Run(type=\"python\")</code>", "<code>import gcl</code>, <code>import raylib</code>, <code>gcl.init()</code>"],
+              ["Standalone Lua", "<code>gcl -luarun file.lua</code>", "<code>gcl_lua_run_file</code> in <code>Embed</code>"],
+              ["Standalone Python", "<code>gcl -pyrun file.py</code>", "<code>gcl_py_run_file</code> in <code>Embed</code>"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The full worked example is <code>language/examples/demo_pong_lua_vs_python/</code>: one GCL <code>main.gcsf</code> starts both guests, seeds the shared ball state, and waits for both windows to close."
+            }
+          ]
+        },
+        {
+          "title": "Cross-Platform Invariants",
+          "paragraphs": [
+            "The project targets Windows and GNU/Linux only, and a handful of rules are applied uniformly so behaviour does not diverge between them. These matter because breaking one usually produces a bug on exactly one platform.",
+            "Paths inside a bundle always use <code class=\"inline\">/</code>. When more than one path separator appears in a string, the <em>last</em> one decides the split — preferring a backslash over a later forward slash truncated mixed paths incorrectly, which is why the same mistake appears fixed in several files. Directory creation normalises separators and skips roots that already exist. Bundle contents are filtered case-insensitively, so filtering does not depend on which platform produced the files."
+          ],
+          "table": {
+            "headers": ["Invariant", "Why it matters"],
+            "rows": [
+              ["Bundle paths use <code>/</code>", "A bundle written on one platform reads on the other"],
+              ["Split at the <em>last</em> separator", "Mixed paths like <code>_temp/x/Demo/project.gcdata</code> split correctly"],
+              ["Sources live in <code>_SRC/</code> with exact case", "Linux is case-sensitive; <code>src/IDE</code> vs <code>_SRC/ide</code> broke the build"],
+              ["One raylib instance (import library)", "Two copies of raylib state crash on the second frame"],
+              ["Python shared library preloaded on Linux", "Otherwise modules fail with the misleading <code>unknown module</code> error"],
+              ["A build never writes to the working directory", "Output goes to <code><project>/out</code>, so building cannot clobber unrelated folders"]
+            ]
+          }
+        },
+        {
+          "title": "Source Conventions",
+          "paragraphs": [
+            "Reading the C sources is meant to be part of the learning experience, so the code follows a small set of habits consistently.",
+            "Each file begins with a comment stating its single responsibility. Comments explain <em>why</em>, and many of them record the specific bug the line exists to prevent. Section banners divide long files, and the forward declarations at the top of each file act as its table of contents."
+          ],
+          "table": {
+            "headers": ["Habit", "Reason"],
+            "rows": [
+              ["One responsibility per file", "Any file can be read on its own"],
+              ["A header comment naming that responsibility", "You know where you are within three lines"],
+              ["Comments record the bug a line prevents", "Prevents well-meaning regressions"],
+              ["Small functions", "A reader can hold one function in their head"],
+              ["Forward declarations as a table of contents", "The shape of the file is visible up front"],
+              ["Turkish and English comments coexist", "The project is written by its maintainers in both"]
+            ]
+          }
+        },
+        {
+          "title": "Status — What \"Ready\" Means Here",
+          "paragraphs": [
+            "The project README draws a line: the <em>distro</em> is not ready, while the <strong>language and platform</strong> are. That distinction is precise and worth stating in full, because the two halves of the project have very different maturity.",
+            "<strong>Ready</strong> means: GCL parses and executes the documented language; native modules load and call into C; structs survive the boundary into native code; Lua and Python guests start, run, share variables and exit; projects are created, run, packaged into a single bundle and run again from that bundle; and the IDE loads, edits, completes and builds. All of that is implemented in the files this chapter maps.",
+            "<strong>Not ready</strong> refers to the surrounding operating-system distribution — the shell environment, the package set and the desktop that would carry these tools as a supported product."
+          ],
+          "notes": [
+            {
+              "type": "info",
+              "text": "The GCL language chapters and these internals chapters together cover the whole implemented surface: how to write GCL, and how the thing that runs it is built."
+            },
+            {
+              "type": "tip",
+              "text": "To follow the source in the order it executes, read <code>gcl_main.c</code>, then <code>gcl_simple_runner.c</code>, then <code>gcl_lexer.c</code>, <code>gcl_parser.c</code> and finally <code>gcl_runner.c</code>. That is the same route a <code>.gcsf</code> file takes."
+            }
+          ]
         }
       ]
     }

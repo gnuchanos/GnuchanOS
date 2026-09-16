@@ -60,7 +60,7 @@ static void *build_thread_fn(void *arg) {
     Editor *ed = (Editor *)arg;
     char step[512];
 
-    snprintf(step, sizeof(step), "[Build] 1/5 Packing project + runtime...\n");
+    snprintf(step, sizeof(step), "[Build] 1/3 Packaging project + runtime...\n");
     strncpy(ed->build_step, step, sizeof(ed->build_step) - 1);
     ed->build_step[sizeof(ed->build_step) - 1] = '\0';
 
@@ -75,7 +75,7 @@ static void *build_thread_fn(void *arg) {
         return 0;
     }
 
-    snprintf(step, sizeof(step), "[Build] 2/5 Copying executable...\n");
+    snprintf(step, sizeof(step), "[Build] 2/3 Copying executable...\n");
     strncpy(ed->build_step, step, sizeof(ed->build_step) - 1);
     ed->build_step[sizeof(ed->build_step) - 1] = '\0';
 
@@ -118,12 +118,12 @@ static void *build_thread_fn(void *arg) {
                                                ed->build_name) == 0);
 
     if (icon_applied)
-        snprintf(step, sizeof(step), "[Build] 3/5 Done. Icon applied: %s\n", ed->build_name);
+        snprintf(step, sizeof(step), "[Build] 3/3 Done. Icon applied: %s\n", ed->build_name);
     else if (dest[0])
-        snprintf(step, sizeof(step), "[Build] 3/5 Done. Icon NOT applied (%s)\n",
+        snprintf(step, sizeof(step), "[Build] 3/3 Done. Icon NOT applied (%s)\n",
                  gcl_icon_last_error());
     else
-        snprintf(step, sizeof(step), "[Build] 3/5 Done.\n");
+        snprintf(step, sizeof(step), "[Build] 3/3 Done.\n");
     strncpy(ed->build_step, step, sizeof(ed->build_step) - 1);
     ed->build_step[sizeof(ed->build_step) - 1] = '\0';
     ed->build_done = 1;
@@ -721,14 +721,19 @@ void editor_build_project(Editor *ed) {
             out_dir[--odl] = '\0';
     }
     gcl_ensure_dir(out_dir);
+    gcl_clear_dir_contents(out_dir);
 
     /* runtime dir = parent of GCL_EXE_PATH (build/<os>/) */
     char runtime_dir[4096] = "";
     const char *gcl_exe = getenv("GCL_EXE_PATH");
     if (gcl_exe && gcl_exe[0]) {
         snprintf(runtime_dir, sizeof(runtime_dir), "%s", gcl_exe);
+        /* Take the LAST of the two separator kinds: the previous form preferred
+           a backslash even when a forward slash came later, so a mixed path was
+           cut at the wrong place and the runtime dir pointed at the wrong folder. */
         char *rs = strrchr(runtime_dir, '\\');
-        if (!rs) rs = strrchr(runtime_dir, '/');
+        char *fs = strrchr(runtime_dir, '/');
+        if (!rs || (fs && fs > rs)) rs = fs;
         if (rs) *rs = '\0';
     }
     if (!runtime_dir[0]) snprintf(runtime_dir, sizeof(runtime_dir), ".");

@@ -238,9 +238,9 @@ static const char *gcl_native_math_members[] = {
 };
 
 static const char *gcl_native_stdio_members[] = {
-    "printf","scanf","openFile","openfile","writeFile","writefile","readFile","readfile",
-    "closeFile","closefile","appendFile","appendfile","fileExists","fileexists","deleteFile",
-    "deletefile","renameFile","renamefile","fileSize","filesize","flushFile","flushfile", NULL
+    "printf","scanf","openfile","writefile","readfile",
+    "closefile","appendfile","fileexists","deletefile","renamefile",
+    "filesize","flushfile", NULL
 };
 
 static const char *gcl_native_embed_members[] = {

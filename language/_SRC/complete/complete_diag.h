@@ -1,11 +1,11 @@
 /*
- * complete_diag.h — Motor tanıları (diagnostic, §5.4).
+ * complete_diag.h — Engine diagnostics (diagnostic, §5.4).
  *
- * GCL'de printf yer-tutucusu `{}`'tir (`%s` yok): `printf("a={} b={}", x, y)`.
- * Bu modül, imleç bir printf çağrısının argümanları içindeyken `{}` sayısı ile
- * takip eden argüman sayısını karşılaştırır ve uyuşmazlığı bildirir.
+ * In GCL, the printf placeholder is `{}` (`%s` does not exist): `printf("a={} b={}", x, y)`.
+ * This module compares the number of `{}` placeholders with the number of following
+ * arguments when the cursor is inside a printf call and reports any mismatch.
  *
- * Tanı, popup/liste durumundan BAĞIMSIZDIR (CTX_NONE olsa da üretilebilir).
+ * Diagnostics are INDEPENDENT of the popup/list state (they can still be produced even if CTX_NONE).
  */
 #ifndef GCL_COMPLETE_DIAG_H
 #define GCL_COMPLETE_DIAG_H
@@ -17,10 +17,10 @@ extern "C" {
 #endif
 
 /*
- * printf {} yer-tutucu denetimi (§5.4). İmleç, kalıp string'i KAPANMIŞ bir
- * printf çağrısının içindeyse `{}` sayısı ile argüman sayısını karşılaştırır.
- * Uyuşmazlıkta out->have_diagnostic = 1 ve out->diag_message doldurulur.
- * Aksi halde out'un tanı alanlarına DOKUNMAZ.
+ * printf {} placeholder check (§5.4). If the cursor is inside a closed printf call,
+ * this compares the number of `{}` placeholders with the number of arguments.
+ * On mismatch, out->have_diagnostic = 1 and out->diag_message is filled in.
+ * Otherwise it leaves the diagnostic fields in out unchanged.
  */
 void gcl_diag_check_printf(const char *text, size_t text_len, size_t cursor,
                            GclCompletionResult *out);

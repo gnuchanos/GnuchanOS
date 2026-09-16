@@ -159,6 +159,7 @@ int gcb_build_project_runtime(const char *project_dir, const char *runtime_dir,
 /* Platform helpers */
 const char *gcl_os_name(void);
 int gcl_ensure_dir(const char *dir);
+int gcl_clear_dir_contents(const char *dir);
 
 /* ---------- Read file ---------- */
 static int path_is_dir(const char *p) {
@@ -169,6 +170,20 @@ static int path_is_dir(const char *p) {
     struct stat st;
     return (stat(p, &st) == 0 && S_ISDIR(st.st_mode));
 #endif
+}
+
+/* Pointer to the LAST path separator ('/' or '\') in p, or NULL when the path
+   has no directory part. The idiom this replaces —
+      char *s = strrchr(p, '\\'); if (!s) s = strrchr(p, '/');
+   — prefers a BACKSLASH even when a FORWARD SLASH appears later in the same
+   string, so a mixed path like "_temp\e2e\Demo/project.gcdata" was truncated
+   at "_temp\e2e" (dropping the project's own directory). */
+static char *path_last_sep(char *p) {
+    char *bs = strrchr(p, '\\');
+    char *fs = strrchr(p, '/');
+    if (!bs) return fs;
+    if (!fs) return bs;
+    return (bs > fs) ? bs : fs;
 }
 
 static char *read_file(const char *path) {
@@ -241,8 +256,7 @@ static int run_gcl(const char *path, int script_argc, char **script_argv) {
     {
         char dir_tmp[4096];
         snprintf(dir_tmp, sizeof(dir_tmp), "%s", path);
-        char *slash = strrchr(dir_tmp, '\\');
-        if (!slash) slash = strrchr(dir_tmp, '/');
+        char *slash = path_last_sep(dir_tmp);
         if (slash) *slash = '\0';
         else {
             /* file name only → working directory */
@@ -324,8 +338,7 @@ static int run_bundle_program(const char *bundle_path) {
        embedded at build time). */
     char base_dir[4096];
     snprintf(base_dir, sizeof(base_dir), "%s", bundle_path);
-    char *slash = strrchr(base_dir, '\\');
-    if (!slash) slash = strrchr(base_dir, '/');
+    char *slash = path_last_sep(base_dir);
     if (slash) *slash = '\0';
     if (gcb_extract_all(b, base_dir) != 0) {
         fprintf(stderr, "Error: could not extract bundle to '%s'\n", base_dir);
@@ -504,7 +517,18 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
         if (gcl_icon_write_default(icon_path) != 0)
             fprintf(stderr, "Warning: could not write the default project icon '%s'\n", icon_path);
     }
-    const char *proj_name = strrchr(path, '\\') ? strrchr(path, '\\') + 1 : (strrchr(path, '/') ? strrchr(path, '/') + 1 : "project");
+    /* Project name = the LAST path component. Uses the LAST of '/' and '\':
+       the old form preferred a backslash even when a forward slash came later,
+       so a mixed path such as "a/b\c" produced a name still containing a
+       separator. */
+    const char *proj_name = "project";
+    {
+        const char *bs = strrchr(path, '\\');
+        const char *fs = strrchr(path, '/');
+        const char *last = bs;
+        if (!last || (fs && fs > bs)) last = fs;
+        if (last && last[1]) proj_name = last + 1;
+    }
 
     /* main.gcsf — simple_doc.md: #native <Stdio> + Stdio.printf
        If Lua/Python is selected, Embed.Run calls; if LuaRaylib/PyRaylib is
@@ -660,12 +684,30 @@ static int new_project(const char *path, int with_lua, int with_luaraylib, int w
 /* ---------- Build (-build) ---------- */
 #ifndef GCL_SKIP_BUNDLE
 static int build_project(const char *gcdata, const char *out_dir_arg) {
-    if (!gcdata || !out_dir_arg) { fprintf(stderr, "Error: build requires project.gcdata and -o dir\n"); return 1; }
-    /* Copy the const out_dir parameter into a local mutable buffer — trimming happens here */
+    if (!gcdata) { fprintf(stderr, "Error: build requires a project (project.gcdata)\n"); return 1; }
+    /* out_dir_arg == NULL means "no -o given": the output then goes to the PROJECT's own
+       out/ directory (resolved below, once the project root is known). It used to default
+       to the relative path "build", resolved against the CURRENT WORKING DIRECTORY and
+       CLEARED before writing — so `gcl -build <proj>` run from the repo root wiped ./build. */
     char out_dir[4096];
-    snprintf(out_dir, sizeof(out_dir), "%s", out_dir_arg);
+    out_dir[0] = '\0';
+    if (out_dir_arg && out_dir_arg[0]) snprintf(out_dir, sizeof(out_dir), "%s", out_dir_arg);
+    /* Accept a PROJECT DIRECTORY as well as the project.gcdata file itself.
+       A directory used to be passed straight to read_file(): fopen() on a
+       directory fails, so the name silently fell back to "project" AND the
+       project root became the PARENT of the given path — `gcl -build myproj`
+       packed the directory ABOVE the project and named the output project.exe. */
+    char gcdata_path[4096];
+    if (path_is_dir(gcdata))
+        snprintf(gcdata_path, sizeof(gcdata_path), "%s/project.gcdata", gcdata);
+    else
+        snprintf(gcdata_path, sizeof(gcdata_path), "%s", gcdata);
     /* Read the project name from project.gcdata (JSON: "project_name": "X") */
-    char *data = read_file(gcdata);
+    char *data = read_file(gcdata_path);
+    if (!data) {
+        fprintf(stderr, "Error: cannot read project file '%s'\n", gcdata_path);
+        return 1;
+    }
     char name[256] = "project";
     if (data) {
         char *p = strstr(data, "project_name");
@@ -703,15 +745,19 @@ static int build_project(const char *gcdata, const char *out_dir_arg) {
         size_t odl = strlen(out_dir);
         while (odl > 1 && (out_dir[odl - 1] == '/' || out_dir[odl - 1] == '\\')) { out_dir[odl - 1] = '\0'; odl--; }
     }
-    /* project root = the parent of gcdata */
+    /* project root = the parent of project.gcdata */
     char project_dir[4096];
-    snprintf(project_dir, sizeof(project_dir), "%s", gcdata);
-    char *slash = strrchr(project_dir, '\\');
-    if (!slash) slash = strrchr(project_dir, '/');
+    snprintf(project_dir, sizeof(project_dir), "%s", gcdata_path);
+    char *slash = path_last_sep(project_dir);
     if (slash) *slash = '\0';
 
-    /* Create the output directory (otherwise the gcBundle cannot be written) */
+    /* No -o given: build into the project's own out/ folder (never into the cwd). */
+    if (!out_dir[0]) snprintf(out_dir, sizeof(out_dir), "%s/out", project_dir);
+
+    /* Create the output directory (otherwise the gcBundle cannot be written)
+       and clear stale files from prior builds before writing a fresh bundle. */
     gcl_ensure_dir(out_dir);
+    gcl_clear_dir_contents(out_dir);
 
     /* Runtime directory = build/<os>/ where the running gcl.exe lives (under Library/).
        Doc: ".gcBundle — all runtime and dll or so in this place". */
@@ -719,13 +765,13 @@ static int build_project(const char *gcdata, const char *out_dir_arg) {
     get_exe_dir(runtime_dir, sizeof(runtime_dir));
 
     /* Produce the gcBundle (project + runtime/Library) */
-    printf("[Build] 1/5 Packaging project + runtime...\n");
+    printf("[Build] 1/3 Packaging project + runtime...\n");
     fflush(stdout);
     if (gcb_build_project_runtime(project_dir, runtime_dir, name, out_dir) != 0) {
         fprintf(stderr, "Error: could not build project\n");
         return 1;
     }
-    printf("[Build] 2/5 Copying the executable...\n");
+    printf("[Build] 2/3 Copying the executable...\n");
     fflush(stdout);
 
     /* Doc: Project_name.exe — copy the currently running gcl exe into out_dir */
@@ -766,7 +812,7 @@ static int build_project(const char *gcdata, const char *out_dir_arg) {
         }
     }
 
-    printf("[Build] 3/5 Done.\n");
+    printf("[Build] 3/3 Done.\n");
     fflush(stdout);
     printf("Built: %s.gcBundle -> %s\n", name, out_dir);
     return 0;
@@ -800,7 +846,7 @@ static void usage(void) {
         "  gcl -debug -run file.gcsf\n"
         "  gcl -luarun file.lua\n"
         "  gcl -pyrun file.py\n"
-        "  gcl -build project.gcdata -o dir\n"
+        "  gcl -build project.gcdata [-o dir]   (default: <project>/out)\n"
         "  gcl -new path [--lua] [--luaraylib] [--python] [--pyraylib]\n"
         "  gcl -pyhost <port>\n");
 }
@@ -888,7 +934,6 @@ int main(int argc, char **argv) {
         for (int i = 3; i < argc - 1; i++) {
             if (strcmp(argv[i], "-o") == 0) { out = argv[i + 1]; break; }
         }
-        if (!out) out = "build";
         return build_project(argv[2], out);
     }
 #endif

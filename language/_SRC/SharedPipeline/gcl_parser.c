@@ -1,7 +1,7 @@
 /*
  * gcl_parser.c — GCL AST parser.
  *
- * Desteklenen sözdizimi (simple_doc.md):
+ * Supported syntax (simple_doc.md):
  *   type variable = expr;  printf("{} {}", a, b);  if/else, while, for, switch,
  *   struct/enum/typedef, function decl, return, break, continue,
  *   member access (obj.field), call (fn(args)), binary ops.
@@ -42,7 +42,7 @@ static void set_err(Parser *p, const char *m) {
 }
 static char *tok_str(GclToken *t) {
     if (!t) return NULL;
-    /* String token'ında ilk/son tırnak karakterlerini kaldır */
+    /* Remove the opening/closing quote characters from a string token */
     size_t start = 0;
     size_t end = t->len;
     if (t->len >= 2 && (t->lexeme[0] == '"' || t->lexeme[0] == '\'') &&
@@ -87,17 +87,19 @@ static GclExpr *parse_primary(Parser *p) {
         if (e) e->str = tok_str(t);
         return e;
     }
-    /* Unary operator alias kontrolü: NOT, BIT_XOR (~) */
+    /* Unary operator alias check: NOT, BIT_XOR (~) */
     if (t->type == TOK_IDENT) {
         char *alias_name = tok_str(t);
         if (alias_name && (strcmp(alias_name, "NOT") == 0 || strcmp(alias_name, "BIT_XOR") == 0)) {
             advance(p);
-            GclExpr *right = parse_expr(p, 12);
+            /* 9 is one above the highest binary precedence (8), so the operand
+               stays a primary: `NOT a AND b` is (NOT a) AND b. */
+            GclExpr *right = parse_expr(p, 9);
             GclExpr *e = new_expr(AST_EXPR_UNOP);
             if (e) {
                 e->left = NULL;
                 e->right = right;
-                e->op = OP_BITNOT;  /* ~ — bitwise NOT veya BIT_XOR */
+                e->op = OP_BITNOT;  /* ~ — bitwise NOT or BIT_XOR */
             }
             free(alias_name);
             return e;
@@ -174,14 +176,14 @@ static GclExpr *parse_primary(Parser *p) {
             advance(p);
             GclExpr *bin = new_expr(AST_EXPR_BINOP);
             if (bin) {
-                /* KRİTİK: bin->left ve as->left AYNI pointer olamaz.
-                   Eski kod `bin->left = e; as->left = e;` yapıyordu — free_expr
-                   aynı Var'ı İKİ KEZ free ediyordu (for döngüsündeki i++ →
-                   segfault / double-free). bin->left için KOPYA var oluştur. */
+                /* CRITICAL: bin->left and as->left must not be the same pointer.
+                   Old code used `bin->left = e; as->left = e;` — free_expr would free
+                   the same Var twice (in the for loop's i++ → segfault / double-free).
+                   Create a CLONE for bin->left. */
                 GclExpr *var_clone = new_expr(AST_EXPR_VAR);
                 if (var_clone) {
-                    /* Her durumda heap'te yeni bir isim üret — string literal'i
-                       free etmek (eski kod) MSVCRT'de çökmeye yol açıyordu. */
+                    /* Always allocate a fresh name on the heap — freeing the string literal
+                       in the old code caused crashes under MSVCRT. */
                     var_clone->name = strdup((e->kind == AST_EXPR_VAR && e->name) ? e->name : "");
                     bin->left = var_clone;
                 }
@@ -197,10 +199,10 @@ static GclExpr *parse_primary(Parser *p) {
         return e;
     }
     if (t->type == TOK_LBRACE) {
-        /* struct init listesi:
-           { "John", 20 }                  → pozisyonel
-           { .testo = 30, .name = "BETA" } → designated (member adı ile)
-           {}                              → boş (default) */
+        /* struct init list:
+           { "John", 20 }                  → positional
+           { .testo = 30, .name = "BETA" } → designated (by member name)
+           {}                              → empty (default) */
         advance(p);
         GclExpr *e = new_expr(AST_EXPR_INIT_LIST);
         if (!e) return NULL;
@@ -248,8 +250,8 @@ static GclExpr *parse_primary(Parser *p) {
     if (t->type == TOK_LPAREN) {
         advance(p);
         int save = p->pos;
-        /* Compound literal cast: (Vector3){ 10, 20, 30 } → init list olarak parse et.
-           C'ye yakın sözdizimi: type adı + ')' + '{' görülürse compound literal. */
+        /* Compound literal cast: (Vector3){ 10, 20, 30 } → parse as an init list.
+           C-like syntax: if type name + ')' + '{' is seen, it is a compound literal. */
         if ((peek(p)->type == TOK_TYPE_NAME || peek(p)->type == TOK_IDENT)) {
             advance(p); /* type */
             if (match(p, TOK_RPAREN)) {
@@ -269,7 +271,13 @@ static GclExpr *parse_primary(Parser *p) {
         t->type == TOK_TILDE || t->type == TOK_AND) {
         GclTokenType op = t->type;
         advance(p);
-        GclExpr *right = parse_expr(p, 12);
+        /* 9 is one above the highest binary precedence (8). With the old floor
+           the operand swallowed every following binary operator:
+               -3 + 5   parsed as  -(3 + 5)  = -8
+               !a && b  parsed as  !(a && b)
+           The second one silently turned every `while (!WindowShouldClose() && ...)`
+           game loop into an infinite loop. */
+        GclExpr *right = parse_expr(p, 9);
         GclExpr *e = new_expr(AST_EXPR_UNOP);
         if (e) {
             e->left = NULL;
@@ -351,8 +359,8 @@ static char *operator_to_string(GclTokenType t) {
     }
 }
 
-/* Operator alias identifier'ını operator token'ına dönüştür
-   Örnek: "AND" -> TOK_AMPAMP, "OR" -> TOK_PIPEPIPE, "XOR" -> TOK_XOR */
+/* Convert an operator alias identifier to its operator token
+   Example: "AND" -> TOK_AMPAMP, "OR" -> TOK_PIPEPIPE, "XOR" -> TOK_XOR */
 static GclTokenType resolve_operator_alias(const char *name) {
     if (!name) return TOK_EOF;
     if (strcmp(name, "AND") == 0) return TOK_AMPAMP;      /* && */
@@ -364,10 +372,10 @@ static GclTokenType resolve_operator_alias(const char *name) {
     if (strcmp(name, "BIT_XOR") == 0) return TOK_XOR;     /* ^ */
     if (strcmp(name, "LEFT_SHIFT") == 0) return TOK_SHL;  /* << */
     if (strcmp(name, "RIGHT_SHIFT") == 0) return TOK_SHR; /* >> */
-    return TOK_EOF;  /* İşleç alias değil */
+    return TOK_EOF;  /* Not an operator alias */
 }
 
-/* binary expr: parse_primary + binary operatörler */
+/* binary expr: parse_primary + binary operators */
 static GclExpr *parse_expr_binary(Parser *p, int min_prec) {
     GclExpr *left = parse_primary(p);
     if (!left || p->err) return left;
@@ -375,11 +383,17 @@ static GclExpr *parse_expr_binary(Parser *p, int min_prec) {
         GclToken *t = peek(p);
         int prec = binop_prec(t->type);
         
-        /* Operator alias kontrolü: IDENT token'ı operator alias olabilir mi? */
+        /* Operator alias check: can this IDENT token be an operator alias? */
         GclTokenType resolved_op = TOK_EOF;
         if (t->type == TOK_IDENT && prec == 0) {
             char *alias_name = tok_str(t);
             resolved_op = resolve_operator_alias(alias_name);
+            /* tok_str() HEAP tahsis eder; eskiden bu deger HIC serbest
+               birakilmiyordu → "ifade IDENT" konumunun her denemesinde sizinti
+               (sicak yol: her ikili operator arasindan sonra calisir).
+               resolve_operator_alias yalnizca strcmp yapar, bu yuzden burada
+               hemen serbest birakmak guvenli. */
+            free(alias_name);
             if (resolved_op != TOK_EOF) {
                 prec = binop_prec(resolved_op);
                 t = &(GclToken){.type = resolved_op, .lexeme = "", .len = 0, .line = 0, .col = 0};
@@ -399,10 +413,10 @@ static GclExpr *parse_expr_binary(Parser *p, int min_prec) {
 }
 
 /* Deep copy of an expression tree.
-   parse_assign, `a += b` ifadesini `a = (a + b)` şekline çevirirken sol tarafın
-   BAĞIMSIZ bir kopyasına ihtiyaç duyar: e->left (assign.hedefi) ve bin->left
-   (toplamın sol operandı) AYNI işaretçi olursa gcl_program_free aynı Var düğümünü
-   iki kez serbest bırakır (double-free / segfault). */
+   When parse_assign rewrites `a += b` to `a = (a + b)`, the left-hand side needs
+   an INDEPENDENT copy: if e->left (the assignment target) and bin->left
+   (the left operand of the sum) are the same pointer, gcl_program_free will
+   release the same Var node twice (double-free / segfault). */
 static GclExpr *clone_expr(const GclExpr *e) {
     if (!e) return NULL;
     GclExpr *c = new_expr(e->kind);
@@ -453,15 +467,22 @@ static GclExpr *parse_assign(Parser *p) {
     return left;
 }
 
+/* min_prec is honoured. It used to be ignored (`return parse_assign(p)`), so a
+   unary operand was parsed with the LOWEST precedence floor and swallowed the
+   rest of the expression -- see the two call sites in parse_primary(). */
 static GclExpr *parse_expr(Parser *p, int min_prec) {
-    return parse_assign(p);
+    if (min_prec <= 1) return parse_assign(p);   /* top level: allow `a = b`, `a += b` */
+    return parse_expr_binary(p, min_prec);
 }
 
 /* ---------- Statements ---------- */
 
 static GclStmt *parse_stmt(Parser *p);
+/* Serbest birakma ileri bildirimi: switch govdesinde ayristirilip ATILAN
+   ifadeler icin gerekir (tanim dosyanin sonunda). */
+static void free_stmt(GclStmt *s);
 
-/* Çok kelimeli tip adı: "long int", "unsigned int", "long double", "long long int" ... */
+/* Multi-word type name: "long int", "unsigned int", "long double", "long long int" ... */
 static char *parse_type_name(Parser *p) {
     if (peek(p)->type != TOK_TYPE_NAME) return NULL;
     char buf[256] = "";
@@ -476,7 +497,7 @@ static char *parse_type_name(Parser *p) {
     return strdup(buf);
 }
 
-/* switch case body'sini topla: sonraki case/default/}'e kadar */
+/* collect a switch case body: until the next case/default/} */
 static GclStmt *parse_case_body(Parser *p) {
     GclStmt *blk = (GclStmt *)calloc(1, sizeof(GclStmt));
     if (!blk) return NULL;
@@ -527,16 +548,16 @@ static GclStmt *new_stmt(GclStmtKind k) {
 static GclStmt *parse_stmt(Parser *p) {
     GclToken *t = peek(p);
 
-    /* preprocessor satırı: atla */
+    /* preprocessor line: skip */
     if (t->type == TOK_PREPROC) {
         advance(p);
         return (GclStmt *)calloc(1, sizeof(GclStmt)); /* empty */
     }
 
-    /* modifier: const/public/private/global/local/inline — tüket ve devam et.
-       global: değişken kalıcı olur (fonksiyon dışına taşmaz),
-       local: değişken yerel olur (çağrı sonrası silinir),
-       inline: no-op, const: atanamaz. */
+    /* modifier: const/public/private/global/local/inline — consume and continue.
+       global: the variable persists (does not get hoisted out of the function),
+       local: the variable is local (deleted after the call),
+       inline: no-op, const: not assignable. */
     int mod_const = 0;
     int mod_global = 0;
     int mod_local = 0;
@@ -554,9 +575,9 @@ static GclStmt *parse_stmt(Parser *p) {
         t = peek(p);
     }
 
-    /* Typeless global/local listesi: "global g2, g_count;" veya "local local_x;"
-       — tip belirtilmez, sadece isimler. global: dışarıda tanımlı/kalıcı değişkene
-       bağlanır (yoksa 0 ile oluşturulur); local: çağrı sonrası silinen yerel. */
+    /* Typeless global/local list: "global g2, g_count;" or "local local_x;"
+       — no type is specified, only names. global: binds to an externally defined/persistent variable
+       (or creates it as 0 if absent); local: a local variable removed after the call. */
     if ((mod_global || mod_local) && t->type == TOK_IDENT) {
         GclStmt *head = NULL, *tail = NULL;
         while (t->type == TOK_IDENT) {
@@ -676,8 +697,12 @@ static GclStmt *parse_stmt(Parser *p) {
                 match(p, TOK_COLON);
                 s->u.switch_.default_case = parse_case_body(p);
             } else {
+                /* switch {} icinde case/default DISINDA kalan ifade: ayristirilir
+                   ve atilir. Eski `free(cs)` YALNIZ dugumu birakiyordu; ifade
+                   agacinin ve zincirin tum alt tahsisleri (isimler, arguman
+                   listeleri) siziyordu. */
                 GclStmt *cs = parse_stmt(p);
-                free(cs);
+                free_stmt(cs);
                 if (check(p, TOK_SEMI)) advance(p);
             }
         }
@@ -701,8 +726,8 @@ static GclStmt *parse_stmt(Parser *p) {
     if (t->type == TOK_KEYWORD && t->len == 8 && strncmp(t->lexeme, "continue", 8) == 0) {
         advance(p); GclStmt *s = new_stmt(STMT_CONTINUE); match(p, TOK_SEMI); return s;
     }
-    /* typedef int number;  veya  typedef struct { ... } Name;  veya  typedef enum { ... } Name;
-       veya operator alias: typedef && AND; typedef || OR; typedef << LEFT_SHIFT; */
+    /* typedef int number;  or  typedef struct { ... } Name;  or  typedef enum { ... } Name;
+       or operator alias: typedef && AND; typedef || OR; typedef << LEFT_SHIFT; */
     if (t->type == TOK_KEYWORD && strncmp(t->lexeme, "typedef", 7) == 0) {
         advance(p);
         GclStmt *s = new_stmt(STMT_TYPEDEF);
@@ -719,7 +744,7 @@ static GclStmt *parse_stmt(Parser *p) {
             GclTokenType op_type = peek(p)->type;
             advance(p);
             s->u.typedef_info.base_type = operator_to_string(op_type);
-            /* alias adı */
+            /* alias name */
             if (peek(p)->type == TOK_IDENT) {
                 s->u.typedef_info.alias_name = tok_str(peek(p));
                 advance(p);
@@ -734,14 +759,14 @@ static GclStmt *parse_stmt(Parser *p) {
             advance(p);
             char *sname = NULL;
             if (peek(p)->type == TOK_IDENT) { sname = tok_str(peek(p)); advance(p); }
-            if (!match(p, TOK_LBRACE)) { /* değilse: typedef struct Name; — basit, geç */ }
+            if (!match(p, TOK_LBRACE)) { /* otherwise: typedef struct Name; — simple pass-through */ }
             else {
-                /* gövdeyi gerçek parse et: member'ları topla */
+                /* parse the body actually: collect members */
                 GclStmt *sd = new_stmt(STMT_STRUCT_DECL);
                 if (sd) {
                     int cap = 0;
                     while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
-                        /* Member tipi: bilinen tip (TOK_TYPE_NAME) VEYA başka struct adı (TOK_IDENT) */
+                        /* Member type: known type (TOK_TYPE_NAME) OR another struct name (TOK_IDENT) */
                         GclToken *mtype_tok = peek(p);
                         char *mtype = NULL;
                         if (mtype_tok->type == TOK_TYPE_NAME) {
@@ -750,7 +775,7 @@ static GclStmt *parse_stmt(Parser *p) {
                             mtype = tok_str(mtype_tok);
                             advance(p);
                         } else {
-                            /* Geçersiz token — sonsuz döngüyü önle, atla */
+                            /* Invalid token — prevent an infinite loop, skip */
                             advance(p);
                             continue;
                         }
@@ -775,9 +800,9 @@ static GclStmt *parse_stmt(Parser *p) {
                     }
                     match(p, TOK_RBRACE);
                 }
-                /* struct adı: inline blokta typedef alias adı olacak */
+                /* struct name: in an inline block, this becomes the typedef alias name */
                 if (sname) free(sname);
-                /* alias adı daha sonra okunacak — sname'i sonraki IDENT olarak kullan */
+                /* alias name will be read next — use sname as the next IDENT */
                 if (peek(p)->type == TOK_IDENT) {
                     s->u.typedef_info.alias_name = tok_str(peek(p));
                     if (sd) sd->u.struct_info.struct_name = strdup(s->u.typedef_info.alias_name);
@@ -834,16 +859,16 @@ static GclStmt *parse_stmt(Parser *p) {
         match(p, TOK_SEMI);
         return s;
     }
-    /* enum Day { MONDAY, TUESDAY }; veya enum { ... } var; veya enum Day today; */
+    /* enum Day { MONDAY, TUESDAY }; or enum { ... } var; or enum Day today; */
     if (t->type == TOK_KEYWORD && strncmp(t->lexeme, "enum", 4) == 0) {
         advance(p);
-        /* enum adı olabilir: enum Day ... */
+        /* enum name may exist: enum Day ... */
         char *enum_name = NULL;
         if (peek(p)->type == TOK_IDENT) {
             enum_name = tok_str(peek(p));
             advance(p);
         }
-        /* enum tanımı: enum Day { ... }; */
+        /* enum definition: enum Day { ... }; */
         if (match(p, TOK_LBRACE)) {
             GclStmt *s = new_stmt(STMT_ENUM);
             if (s) {
@@ -887,7 +912,7 @@ static GclStmt *parse_stmt(Parser *p) {
         match(p, TOK_SEMI);
         return (GclStmt *)calloc(1, sizeof(GclStmt));
     }
-    /* struct Student { char name[20]; int age; };  veya  struct Student s1; */
+    /* struct Student { char name[20]; int age; };  or  struct Student s1; */
     if (t->type == TOK_KEYWORD && strncmp(t->lexeme, "struct", 6) == 0) {
         advance(p);
         char *struct_type = NULL;
@@ -896,7 +921,7 @@ static GclStmt *parse_stmt(Parser *p) {
             advance(p);
         }
         if (match(p, TOK_LBRACE)) {
-            /* struct tanımı */
+            /* struct definition */
             GclStmt *s = new_stmt(STMT_STRUCT_DECL);
             if (s) {
                 if (struct_type) {
@@ -1246,6 +1271,19 @@ static void free_stmt(GclStmt *s) {
         case STMT_CONTINUE:
             break;
     }
+    /* parse_stmt `next` ZINCIRI uretir (`typedef struct {...} X;` → typedef +
+       struct-decl; `global a, b;` → var_decl listesi). gcl_parse bu zinciri
+       PARCALAR: her dugumu prog->stmts'e AYRI girer ve next'i NULL yapar
+       (bkz. gcl_parse). Bu yuzden prog->stmts'teki dugumler icin bu satir
+       ETKISIZDIR — orada zaten sizinti yoktu.
+       Etkili oldugu tek yer: zincirin TAMAMEN atildigi yol. switch govdesinde
+       case/default DISINDA kalan ifade `free_stmt(cs)` ile atilir ve `cs` bir
+       zincirin basi OLABILIR; devami + tum alt tahsisleri (isimler, ifade
+       agaclari) yalnizca bu dolasma sayesinde serbest kalir. Tek dugum
+       serbest birakmak zincirin kalanini sizinti olarak birakirdi.
+       (Zinciri yalnizca parse_stmt kurar; ic ice ifadeler dizi/isaretci ile
+       tutulur ve `next` kullanmaz, bu yuzden burada dolasmak guvenli.) */
+    free_stmt(s->next);
     free(s);
 }
 

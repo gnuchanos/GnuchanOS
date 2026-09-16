@@ -12,10 +12,6 @@
     content: null
   };
 
-  /* Dil kavramı tamamen kaldırıldı — eski `gclbook-lang` localStorage kalıntısı
-     "tr" olsa bile artık okunmuyor. Temizlik için sil. */
-  localStorage.removeItem("gclbook-lang");
-
   function updateUrl() {
     const p = new URLSearchParams();
     p.set("tab", state.activeTab);
@@ -28,8 +24,8 @@
 
   /* ---------- Utilities ---------- */
 
-  /* Entity string'lerini runtime'da inşa ediyoruz; dosyada "<" gibi
-     literal yok, böylece editör/tool pipeline'i bozamaz. */
+  /* We build entity strings at runtime; there is no literal like "<"
+     in the file, so the editor/tool pipeline cannot corrupt it. */
   function ent(name) { return String.fromCharCode(38) + name; }
 
   function escapeHtml(s) {
@@ -41,22 +37,43 @@
       .replace(/'/g, ent("#39;"));
   }
 
-  /* Basit GCL sözdizimi vurgulama — HTML'e escape edilmiş metin üzerinde regex */
-  function highlight(src) {
+  /* Per-language highlighting profiles. GCL is the default, so any section that
+     does not set code.lang keeps rendering exactly as before. */
+  var HL = {
+    gcl: {
+      comment: /(\/\/[^\n]*|#[^\n]*)/g,
+      keywords: ["if","else","while","for","switch","case","default","break","continue","return","struct","enum","typedef","const","public","private","global","inline","sizeof","strlen","true","false","null","void","defined"],
+      types: ["int8","int16","int32","int64","int128","float16","float32","float64","float128","uint8","uint16","uint32","uint64","uint128","char","short","int","long","float","double","unsigned","bool","gcChar"]
+    },
+    lua: {
+      comment: /(--\[\[[\s\S]*?\]\]|--[^\n]*)/g,
+      keywords: ["and","break","do","else","elseif","end","false","for","function","goto","if","in","local","nil","not","or","repeat","return","then","true","until","while","self"],
+      types: []
+    },
+    python: {
+      comment: /(#[^\n]*)/g,
+      keywords: ["and","as","assert","async","await","break","class","continue","def","del","elif","else","except","False","finally","for","from","global","if","import","in","is","lambda","None","nonlocal","not","or","pass","raise","return","True","try","while","with","yield"],
+      types: ["int","float","str","bool","list","dict","tuple","set","bytes","range"]
+    }
+  };
+
+  /* Simple syntax highlighting — regex over HTML-escaped text */
+  function highlight(src, lang) {
+    var prof = HL[lang] || HL.gcl;
     let html = escapeHtml(src);
-    html = html.replace(/(\/\/[^\n]*|#[^\n]*)/g, '<span class="cm">$1</span>');
+    html = html.replace(prof.comment, '<span class="cm">$1</span>');
     var qs = ent("quot;");
     var as = ent("#39;");
     var strRe = new RegExp("(" + qs + "[^&]*?" + qs + "|" + as + "[^&]*?" + as + ")", "g");
     html = html.replace(strRe, '<span class="str">$1</span>');
     html = html.replace(/\b(\d[\d_.]*)([fFlL]?)\b/g, '<span class="num">$1$2</span>');
     html = html.replace(/(#[a-zA-Z_]+)/g, '<span class="pre">$1</span>');
-    const kws = ["if","else","while","for","switch","case","default","break","continue","return","struct","enum","typedef","const","public","private","global","inline","sizeof","strlen","true","false","null","void","defined"];
-    const kwRe = new RegExp("\\b(" + kws.join("|") + ")\\b", "g");
+    const kwRe = new RegExp("\\b(" + prof.keywords.join("|") + ")\\b", "g");
     html = html.replace(kwRe, '<span class="kw">$1</span>');
-    const types = ["int8","int16","int32","int64","int128","float16","float32","float64","float128","uint8","uint16","uint32","uint64","uint128","char","short","int","long","float","double","unsigned","bool","gcChar"];
-    const tyRe = new RegExp("\\b(" + types.join("|") + ")\\b", "g");
-    html = html.replace(tyRe, '<span class="ty">$1</span>');
+    if (prof.types.length) {
+      const tyRe = new RegExp("\\b(" + prof.types.join("|") + ")\\b", "g");
+      html = html.replace(tyRe, '<span class="ty">$1</span>');
+    }
     html = html.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g, '<span class="fn">$1</span>(');
     return html;
   }
@@ -116,7 +133,6 @@
       const btn = createElement("button", "tab");
       btn.dataset.tab = key;
       btn.textContent = ui.tabs[key];
-      if (key === "lua" || key === "python") btn.classList.add("coming");
       if (key === state.activeTab) btn.classList.add("active");
       btn.addEventListener("click", () => { setTab(key); });
       tabs.appendChild(btn);
@@ -137,10 +153,6 @@
     sidebar.appendChild(heading);
 
     if (!data || !data.chapters) {
-      const coming = createElement("div", "sidebar-coming");
-      coming.innerHTML = "<strong>" + escapeHtml(ui.sidebar.comingSoon) + "</strong><br>" +
-        escapeHtml(ui.sidebar.comingSoonDesc);
-      sidebar.appendChild(coming);
       return;
     }
 
@@ -153,11 +165,6 @@
       btn.addEventListener("click", () => setChapter(ch.id, true));
       sidebar.appendChild(btn);
     });
-
-    const coming = createElement("div", "sidebar-coming");
-    coming.innerHTML = "<strong>" + escapeHtml(ui.sidebar.comingSoon) + "</strong><br>" +
-      escapeHtml(ui.sidebar.comingSoonDesc);
-    sidebar.appendChild(coming);
   }
 
   function renderContent(data) {
@@ -166,12 +173,10 @@
     content.innerHTML = "";
 
     if (!data || !data.chapters) {
-      const card = createElement("div", "coming-card");
-      card.innerHTML = '<div class="big">\u{1F6A7}</div>' +
-        "<h1>" + escapeHtml(ui.comingCard.title) + "</h1>" +
-        "<p>" + escapeHtml(ui.comingCard.desc) + "</p>" +
-        '<span class="badge">' + escapeHtml(ui.comingCard.badge) + "</span>";
-      content.appendChild(card);
+      const empty = createElement("div", "coming-card");
+      empty.innerHTML = "<h1>" + escapeHtml(data && data.meta ? data.meta.title : "GnuchanOS") +
+        "</h1><p>" + escapeHtml(ui.comingCard.desc) + "</p>";
+      content.appendChild(empty);
       return;
     }
 
@@ -205,7 +210,7 @@
         head.innerHTML = '<span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>' +
           '<span class="fn">' + escapeHtml(sec.code.file || "code") + "</span>";
         const pre = createElement("pre");
-        pre.innerHTML = highlight(sec.code.src);
+        pre.innerHTML = highlight(sec.code.src, sec.code.lang || state.activeTab);
         block.appendChild(head);
         block.appendChild(pre);
         secEl.appendChild(block);

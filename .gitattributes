@@ -1,10 +1,10 @@
-# ── Satır sonu politikası ──────────────────────────────────
-# Windows'ta düzenlense bile repo'da dosyalar LF olarak saklansın.
-# Aksi halde script'ler Linux/CI'da CRLF yüzünden patlar (shebang bozulur).
+# ── Line ending policy ─────────────────────────────────────
+# Keep files in LF form in the repo even if edited on Windows.
+# Otherwise scripts break in Linux/CI due to CRLF line endings (shebang breaks).
 
 * text=auto
 
-# Shell ve boot script'leri daima LF
+# Shell and boot scripts must always use LF
 *.sh      text eol=lf
 os/boot/init    text eol=lf
 os/boot/initrc  text eol=lf

@@ -1,16 +1,16 @@
 /*
- * complete_native.c — Native modül API veritabanı (§4).
+ * complete_native.c — Native module API database (§4).
  *
- * Raylib/Raygui üyeleri ÜRETİLİR (complete_native_db.c). Math/Stdio/Embed
- * ve native struct alan listeleri (§4.5) burada elle tutulur.
+ * Raylib/Raygui members are generated (complete_native_db.c). The Math/Stdio/Embed
+ * and native struct field lists (§4.5) are kept here by hand.
  *
- * `ret` alanı zincirleme tamamlama içindir:
- *   Raylib.GetMousePosition() -> Vector2 => ".x / .y" önerilir (E4).
+ * The `ret` field is for chained completion:
+ *   Raylib.GetMousePosition() -> Vector2 => ".x / .y" is suggested (E4).
  */
 #include "complete_native.h"
 
 /* ------------------------------------------------------------------ */
-/* Yazım kolaylıkları                                                  */
+/* Convenience macros                                                   */
 /* ------------------------------------------------------------------ */
 #define M_FUNC(nm, rt, ps, cat)  { nm, rt, ps, cat, "", NF_FUNC }
 #define M_RET(nm, rt, ps, cat)   { nm, rt, ps, cat, "", NF_FUNC }
@@ -58,25 +58,15 @@ static const GclNativeMember gcl_math_members[] = {
 static const GclNativeMember gcl_stdio_members[] = {
     M_FUNC("printf",      "void",   "gcChar format, ...",              "io"),
     M_FUNC("scanf",       "void",   "gcChar name",                     "io"),
-    M_FUNC("openFile",    "void",   "gcChar path, gcChar mode",        "file"),
     M_FUNC("openfile",    "void",   "gcChar path, gcChar mode",        "file"),
-    M_FUNC("writeFile",   "void",   "gcChar path, gcChar content",     "file"),
     M_FUNC("writefile",   "void",   "gcChar path, gcChar content",     "file"),
-    M_FUNC("readFile",    "gcChar", "gcChar path",                     "file"),
     M_FUNC("readfile",    "gcChar", "gcChar path",                     "file"),
-    M_FUNC("closeFile",   "void",   "gcChar path",                     "file"),
     M_FUNC("closefile",   "void",   "gcChar path",                     "file"),
-    M_FUNC("appendFile",  "void",   "gcChar path, gcChar content",     "file"),
     M_FUNC("appendfile",  "void",   "gcChar path, gcChar content",     "file"),
-    M_FUNC("fileExists",  "int",    "gcChar path",                     "file"),
     M_FUNC("fileexists",  "int",    "gcChar path",                     "file"),
-    M_FUNC("deleteFile",  "void",   "gcChar path",                     "file"),
     M_FUNC("deletefile",  "void",   "gcChar path",                     "file"),
-    M_FUNC("renameFile",  "void",   "gcChar path, gcChar newName",     "file"),
     M_FUNC("renamefile",  "void",   "gcChar path, gcChar newName",     "file"),
-    M_FUNC("fileSize",    "int",    "gcChar path",                     "file"),
     M_FUNC("filesize",    "int",    "gcChar path",                     "file"),
-    M_FUNC("flushFile",   "void",   "gcChar path",                     "file"),
     M_FUNC("flushfile",   "void",   "gcChar path",                     "file"),
 };
 
@@ -92,11 +82,11 @@ static const GclNativeMember gcl_embed_members[] = {
 };
 
 /* ------------------------------------------------------------------ */
-/* Modül tablosu (Raylib/Raygui üretilen tablolardan)                  */
+/* Module table (generated from Raylib/Raygui tables)                   */
 /* ------------------------------------------------------------------ */
-/* Modül tablosu ÇALIŞMA ZAMANINDA kurulur: gcl_native_db_*_count bir
-   `const int` DEĞİŞKEN olduğundan (C'de sabit ifade değildir) statik
-   başlatıcıda kullanılamaz. Bu yüzden tablo lazy-init ile doldurulur. */
+/* The module table is initialized at runtime: because gcl_native_db_*_count is a
+   `const int` variable (not a constant expression in C), it cannot be used in a static
+   initializer. Therefore the table is filled via lazy init. */
 #define GCL_NATIVE_MODULE_COUNT 5
 static GclNativeModule g_native_modules_table[GCL_NATIVE_MODULE_COUNT];
 static int g_native_modules_ready = 0;
@@ -157,17 +147,17 @@ const GclNativeMember *gcl_native_find(const char *module, const char *member) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Struct alanları (§4.5)                                              */
+/* Struct fields (§4.5)                                                 */
 /* ------------------------------------------------------------------ */
 
-/* Skaler tipler — üyesi yoktur; zincir burada durur. */
+/* Scalar types — no fields; chaining stops here. */
 static const GclNativeField f_vec2[]  = { {"x","float"}, {"y","float"} };
 static const GclNativeField f_vec3[]  = { {"x","float"}, {"y","float"}, {"z","float"} };
 static const GclNativeField f_vec4[]  = { {"x","float"}, {"y","float"}, {"z","float"}, {"w","float"} };
 static const GclNativeField f_rect[]  = { {"x","float"}, {"y","float"}, {"width","float"}, {"height","float"} };
 static const GclNativeField f_color[] = { {"r","int"}, {"g","int"}, {"b","int"}, {"a","int"} };
 
-/* Camera3D ve Camera aynı 5 alana çözümlenir (raylib typedef Camera3D Camera). */
+/* Camera3D and Camera resolve to the same 5 fields (raylib typedef Camera3D Camera). */
 static const GclNativeField f_camera[] = {
     {"position","Vector3"}, {"target","Vector3"}, {"up","Vector3"},
     {"fovy","float"}, {"projection","int"}
@@ -212,9 +202,93 @@ static const GclNativeField f_image[] = {
 static const GclNativeField f_aevent[] = {
     {"frame","int"}, {"type","int"}, {"params","int"}
 };
+/* VrDeviceInfo — raylib 6.1 (HMD cihaz parametreleri) */
+static const GclNativeField f_vrdevice[] = {
+    {"hResolution","int"}, {"vResolution","int"},
+    {"hScreenSize","float"}, {"vScreenSize","float"},
+    {"eyeToScreenDistance","float"}, {"lensSeparationDistance","float"},
+    {"interpupillaryDistance","float"},
+    {"lensDistortionValues","void"}, {"chromaAbCorrection","void"}
+};
+/* VrStereoConfig — raylib 6.1 (matrisler + lens/ekran merkezleri + ölçek) */
 static const GclNativeField f_vrstereo[] = {
+    {"projection","Matrix"}, {"viewOffset","Matrix"},
     {"leftLensCenter","Vector2"}, {"rightLensCenter","Vector2"},
-    {"leftScreenCenter","Vector2"}, {"rightScreenCenter","Vector2"}
+    {"leftScreenCenter","Vector2"}, {"rightScreenCenter","Vector2"},
+    {"scale","Vector2"}, {"scaleIn","Vector2"}
+};
+/* Texture / TextureCubemap aynı düzene sahiptir (Texture2D ile aynı). */
+static const GclNativeField f_texture[] = {
+    {"id","int"}, {"width","int"}, {"height","int"}, {"mipmaps","int"}, {"format","int"}
+};
+static const GclNativeField f_rtexture[] = {
+    {"id","int"}, {"texture","Texture"}, {"depth","Texture"}
+};
+
+/* --- Kayitli (handle tablosunda tutulan) tipler ---
+   Bu tipler `reg_*(` cagrilariyla uretilir; tamamlama zincirinin calismasi
+   icin alan listeleri burada olmak ZORUNDADIR (aksi halde
+   `Raylib.LoadModel("x").transform.` gibi ifadeler sessizce bos doner). */
+static const GclNativeField f_quaternion[] = {
+    {"x","float"}, {"y","float"}, {"z","float"}, {"w","float"}
+};
+static const GclNativeField f_transform[] = {
+    {"translation","Vector3"}, {"rotation","Quaternion"}, {"scale","Vector3"}
+};
+/* Mesh — raylib 6.1 düzeni (boneIds -> boneIndices, boneCount eklendi) */
+static const GclNativeField f_mesh[] = {
+    {"vertexCount","int"}, {"triangleCount","int"},
+    {"vertices","void"}, {"texcoords","void"}, {"texcoords2","void"},
+    {"normals","void"}, {"tangents","void"}, {"colors","void"},
+    {"indices","void"},
+    {"boneCount","int"}, {"boneIndices","void"}, {"boneWeights","void"},
+    {"animVertices","void"}, {"animNormals","void"},
+    {"vaoId","int"}, {"vboId","void"}
+};
+static const GclNativeField f_materialmap[] = {
+    {"texture","Texture2D"}, {"color","Color"}, {"value","float"}
+};
+static const GclNativeField f_material[] = {
+    {"shader","Shader"}, {"maps","MaterialMap"}, {"params","void"}
+};
+/* BoneInfo — raylib 6.1: boneId -> parent */
+static const GclNativeField f_boneinfo[] = {
+    {"name","void"}, {"parent","int"}
+};
+/* ModelSkeleton — raylib 6.1'de Model'in içinde yaşar */
+static const GclNativeField f_modelskeleton[] = {
+    {"boneCount","int"}, {"bones","BoneInfo"}, {"bindPose","Transform"}
+};
+/* ModelAnimation — raylib 6.1 (transform/animFrameCount -> keyframeCount/keyframePoses) */
+static const GclNativeField f_modelanim[] = {
+    {"name","void"}, {"boneCount","int"}, {"keyframeCount","int"}, {"keyframePoses","Transform"}
+};
+/* Model — raylib 6.1 düzeni (bones/bindPose -> skeleton + currentPose/boneMatrices) */
+static const GclNativeField f_model[] = {
+    {"transform","Matrix"}, {"meshCount","int"}, {"materialCount","int"},
+    {"meshes","Mesh"}, {"materials","Material"}, {"meshMaterial","void"},
+    {"skeleton","ModelSkeleton"}, {"currentPose","Transform"}, {"boneMatrices","Matrix"}
+};
+static const GclNativeField f_wave[] = {
+    {"frameCount","int"}, {"sampleRate","int"}, {"sampleSize","int"},
+    {"channels","int"}, {"data","void"}
+};
+static const GclNativeField f_audiostream[] = {
+    {"sampleRate","int"}, {"sampleSize","int"}, {"channels","int"},
+    {"buffer","void"}, {"processor","void"}
+};
+static const GclNativeField f_sound[] = {
+    {"stream","AudioStream"}, {"frameCount","int"}
+};
+static const GclNativeField f_music[] = {
+    {"frameCount","int"}, {"looping","int"},
+    {"ctxType","int"}, {"ctxData","void"}
+};
+static const GclNativeField f_filepathlist[] = {
+    {"count","int"}, {"paths","void"}
+};
+static const GclNativeField f_aeventlist[] = {
+    {"capacity","int"}, {"count","int"}, {"events","AutomationEvent"}
 };
 
 static const GclNativeStruct gcl_native_structs[] = {
@@ -239,6 +313,27 @@ static const GclNativeStruct gcl_native_structs[] = {
     { "Image",           f_image,    (int)(sizeof(f_image)    / sizeof(f_image[0]))    },
     { "AutomationEvent", f_aevent,   (int)(sizeof(f_aevent)   / sizeof(f_aevent[0]))   },
     { "VrStereoConfig",  f_vrstereo, (int)(sizeof(f_vrstereo) / sizeof(f_vrstereo[0])) },
+    /* Kayitli (reg_*) tipler — bkz. yukaridaki alan listesi notu. */
+    { "Quaternion",         f_quaternion,  (int)(sizeof(f_quaternion)  / sizeof(f_quaternion[0]))  },
+    { "Transform",          f_transform,   (int)(sizeof(f_transform)   / sizeof(f_transform[0]))   },
+    { "Mesh",               f_mesh,        (int)(sizeof(f_mesh)        / sizeof(f_mesh[0]))        },
+    { "MaterialMap",        f_materialmap, (int)(sizeof(f_materialmap) / sizeof(f_materialmap[0])) },
+    { "Material",           f_material,    (int)(sizeof(f_material)    / sizeof(f_material[0]))    },
+    { "BoneInfo",           f_boneinfo,    (int)(sizeof(f_boneinfo)    / sizeof(f_boneinfo[0]))    },
+    { "Model",              f_model,       (int)(sizeof(f_model)       / sizeof(f_model[0]))       },
+    { "Wave",               f_wave,        (int)(sizeof(f_wave)        / sizeof(f_wave[0]))        },
+    { "AudioStream",        f_audiostream, (int)(sizeof(f_audiostream) / sizeof(f_audiostream[0])) },
+    { "Sound",              f_sound,       (int)(sizeof(f_sound)       / sizeof(f_sound[0]))       },
+    { "Music",              f_music,       (int)(sizeof(f_music)       / sizeof(f_music[0]))       },
+    { "FilePathList",       f_filepathlist,(int)(sizeof(f_filepathlist)/ sizeof(f_filepathlist[0]))},
+    { "AutomationEventList",f_aeventlist,  (int)(sizeof(f_aeventlist)  / sizeof(f_aeventlist[0]))  },
+    /* raylib 6.1 ek tipler */
+    { "Texture",            f_texture,      (int)(sizeof(f_texture)      / sizeof(f_texture[0]))      },
+    { "TextureCubemap",     f_texture,      (int)(sizeof(f_texture)      / sizeof(f_texture[0]))      },
+    { "RenderTexture",      f_rtexture,     (int)(sizeof(f_rtexture)     / sizeof(f_rtexture[0]))     },
+    { "ModelSkeleton",      f_modelskeleton,(int)(sizeof(f_modelskeleton)/ sizeof(f_modelskeleton[0]))},
+    { "ModelAnimation",     f_modelanim,    (int)(sizeof(f_modelanim)    / sizeof(f_modelanim[0]))    },
+    { "VrDeviceInfo",       f_vrdevice,     (int)(sizeof(f_vrdevice)     / sizeof(f_vrdevice[0]))     },
 };
 
 const GclNativeStruct *gcl_native_struct(const char *type) {
@@ -250,4 +345,21 @@ const GclNativeStruct *gcl_native_struct(const char *type) {
 
 int gcl_native_is_struct(const char *type) {
     return gcl_native_struct(type) != NULL;
+}
+
+/* Struct adlarını tek seferde indeksle (lazy init; tamamlama ve DB denetimi
+   aynı listeyi kullanır). */
+#define GCL_NATIVE_STRUCT_MAX 64
+
+const char *const *gcl_native_struct_names(void) {
+    static const char *names[GCL_NATIVE_STRUCT_MAX + 1];
+    static int ready = 0;
+    if (!ready) {
+        int n = (int)(sizeof(gcl_native_structs) / sizeof(gcl_native_structs[0]));
+        if (n > GCL_NATIVE_STRUCT_MAX) n = GCL_NATIVE_STRUCT_MAX;
+        for (int i = 0; i < n; i++) names[i] = gcl_native_structs[i].type;
+        names[n] = NULL;
+        ready = 1;
+    }
+    return names;
 }

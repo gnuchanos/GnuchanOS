@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <dirent.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -140,5 +141,45 @@ int gcl_ensure_dir(const char *dir) {
         if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
 #endif
     }
+    return 0;
+}
+/* Removes every file and subdirectory under dir, without deleting the root dir.
+   This is used before build to avoid stale outputs from prior builds. */
+int gcl_clear_dir_contents(const char *dir) {
+    if (!dir || !dir[0]) return 0;
+    if (gcl_ensure_dir(dir) != 0) return -1;
+
+    DIR *d = opendir(dir);
+    if (!d) return -1;
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) {
+            continue;
+        }
+
+        char path[4096];
+        snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);
+
+#ifdef _WIN32
+        struct _stat st;
+        if (_stat(path, &st) == 0 && (st.st_mode & _S_IFDIR)) {
+            if (gcl_clear_dir_contents(path) != 0) { closedir(d); return -1; }
+            if (_rmdir(path) != 0 && errno != ENOENT) { closedir(d); return -1; }
+        } else {
+            if (_unlink(path) != 0 && errno != ENOENT) { closedir(d); return -1; }
+        }
+#else
+        struct stat st;
+        if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+            if (gcl_clear_dir_contents(path) != 0) { closedir(d); return -1; }
+            if (rmdir(path) != 0 && errno != ENOENT) { closedir(d); return -1; }
+        } else {
+            if (unlink(path) != 0 && errno != ENOENT) { closedir(d); return -1; }
+        }
+#endif
+    }
+
+    closedir(d);
     return 0;
 }

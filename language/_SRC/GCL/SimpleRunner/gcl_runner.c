@@ -384,8 +384,78 @@ typedef struct {
     int continue_flag;
     int error;
     GclStructValue *return_struct;  /* struct return value */
-    GclExpr *return_init_list;      /* struct literal return (return { ... }) */
+    GclExpr *return_init_list;      /* struct literal return { ... } */
 } Runner;
+
+/* ---------- Host API: modüllerden GCL'e GERİ ÇAĞRI (callback köprüsü) ----------
+
+   Modüllere `const char **argv` gider; bu yüzden bir GCL fonksiyonu C'ye
+   geçirilemiyordu ve C işaretçisi alan raylib üyeleri (SetTraceLogCallback,
+   SetLoadFileDataCallback, SetAudioStreamCallback, ...) no-op stub'tı. Bu
+   blok, modülün ÇAĞRILACAK GCL fonksiyonunun ADINI alıp gerçekten
+   çağırabilmesini sağlar (bkz. include/gcl_module.h).
+
+   İŞ PARÇACICI GÜVENLİĞİ: call_gcl YORUMLAYICININ ORTAMINA girer, bu yüzden
+   YALNIZCA ANA iş parçacığından çağrılabilir. Ses callback'i ayrı bir iş
+   parçacığında koşar; modül orada ASLA call_gcl çağırmaz, örnekleri halka
+   tampona yazar, üretimi gcl_modules_tick() (ana iş parçacığı) üzerinden
+   bu fonksiyonla yapar. */
+
+static Runner        *g_active_runner = NULL;
+static GclHostApi     g_host_api;
+
+/* call_user_func aşağıda tanımlı; host köprüsü onu burada çağırdığı için
+   önden bildirilir (C99 örtük bildirime izin vermez). */
+static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args, int arg_count);
+
+static int host_call_gcl(void *host, const char *fn_name, int argc,
+                         const GclHostArg *argv, double *ret) {
+    (void)host;
+    if (ret) *ret = 0.0;
+    if (!fn_name || !g_active_runner) return -1;
+    FuncDef *fd = find_func(g_active_runner->env, fn_name);
+    if (!fd) return -1;
+
+    /* Argümanları AST düğümlerine çevir: call_user_func bağlamayı normal bir
+       çağrıdaki gibi yapar (AST_EXPR_STRING → metin parametresi). Düğümler
+       YIĞIN üzerindedir; call_user_func bunları yalnızca okur. */
+    GclExpr  nodes[16];
+    GclExpr *ptrs[16];
+    int n = argc;
+    if (n < 0) n = 0;
+    if (n > 16) n = 16;
+    if (n > fd->param_count) n = fd->param_count;   /* fazlası bağlanamaz */
+    for (int i = 0; i < n; i++) {
+        memset(&nodes[i], 0, sizeof(nodes[i]));
+        if (argv[i].is_string) {
+            nodes[i].kind = AST_EXPR_STRING;
+            nodes[i].str  = (char *)(argv[i].str ? argv[i].str : "");
+        } else {
+            nodes[i].kind = AST_EXPR_FLOAT;
+            nodes[i].num  = argv[i].num;
+        }
+        ptrs[i] = &nodes[i];
+    }
+    double v = call_user_func(g_active_runner, fd, ptrs, n);
+    if (ret) *ret = v;
+    return 0;
+}
+
+/* Tick: modüllerin ERTELENMİŞ işlerini (ses örneği üretimi gibi) ana iş
+   parçacığında çalıştırır. Tick içinde native bir çağrı olursa özyinelemeyi
+   keser — aksi hâlde tick → GCL → tick kilitlenirdi. */
+#define GCL_MAX_TICK_MODULES 16
+static GclModuleTickFn g_tick_fns[GCL_MAX_TICK_MODULES];
+static int             g_tick_count = 0;
+
+static void gcl_modules_tick(void) {
+    static int in_tick = 0;
+    if (in_tick) return;
+    in_tick = 1;
+    for (int i = 0; i < g_tick_count; i++)
+        if (g_tick_fns[i]) g_tick_fns[i](&g_host_api);
+    in_tick = 0;
+}
 
 /* eval_expr forward declaration */
 static double eval_expr(GclExpr *e, Runner *r);
@@ -621,6 +691,10 @@ static NativeModule *native_load(GclEnv *env, const char *name);
 /* Call a module function: Modul.member(args) */
 static double call_native_member(const char *module_name, const char *member,
                                  GclExpr **args, int arg_count, Runner *r) {
+    /* Ertelenmiş callback işlerini (ses üretimi) ana iş parçacığında koştur.
+       Modül çağrıları bir oyun döngüsünde her karede olduğu için bu, ses
+       tamponunun düzenli beslenmesi için doğal ve yeterli kancadır. */
+    gcl_modules_tick();
     NativeModule *mod = native_find(r->env, module_name);
     if (!mod) {
         /* If it is a built-in module (Math/Stdio/Embed), load lazily — for bare printf/scanf */
@@ -1035,6 +1109,33 @@ static NativeModule *native_load(GclEnv *env, const char *name) {
 #endif
     if (!gf) { free(m->name); free(m); return NULL; }
     m->entries = gf(&m->entry_count);
+
+    /* Host API'yi modüle ver (varsa). İhraç etmeyen modüller eskisi gibi
+       çalışır; bu yüzden ABI geriye uyumludur. */
+    {
+        GclModuleSetHostFn set_host = NULL;
+#ifdef _WIN32
+        void *sym = (void *)GetProcAddress(m->handle, "gcl_module_set_host");
+        memcpy(&set_host, &sym, sizeof(set_host));
+#else
+        set_host = (GclModuleSetHostFn)dlsym(m->handle, "gcl_module_set_host");
+#endif
+        if (set_host) set_host(&g_host_api);
+    }
+    /* Tick ihraç ediyorsa kaydet: ertelenmiş işler ana iş parçacığında
+       (her native çağrıdan önce) burada çalıştırılır. */
+    {
+        GclModuleTickFn tick = NULL;
+#ifdef _WIN32
+        void *sym = (void *)GetProcAddress(m->handle, "gcl_module_tick");
+        memcpy(&tick, &sym, sizeof(tick));
+#else
+        tick = (GclModuleTickFn)dlsym(m->handle, "gcl_module_tick");
+#endif
+        if (tick && g_tick_count < GCL_MAX_TICK_MODULES)
+            g_tick_fns[g_tick_count++] = tick;
+    }
+
     m->next = env->modules;
     env->modules = m;
     return m;
@@ -2251,6 +2352,14 @@ int gcl_run_program(GclProgram *prog,
     Runner r = { 0 };
     r.env = &env;
     if (base_dir) snprintf(env.base_dir, sizeof(env.base_dir), "%s", base_dir);
+
+    /* Host API'yi YÜKLEMEDEN ÖNCE hazırla: native_load modüllere bu tabloyu
+       verir, modüller de callback'leri bu yolla çağırır. */
+    g_host_api.abi_version = GCL_HOST_ABI_VERSION;
+    g_host_api.call_gcl    = host_call_gcl;
+    g_host_api.host        = &env;
+    g_active_runner        = &r;
+    g_tick_count           = 0;
 
     /* #native ile bildirilen modülleri yükle (Library/ dizininden) */
     for (int i = 0; i < native_count; i++) {

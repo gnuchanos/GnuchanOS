@@ -403,42 +403,41 @@ Stdio.flushFile(file="file"); Stdio.flushfile(file="file");
 
 #native <Embed> D:\GnuchanOS\language\src\Modules
 
-# // Python veya Lua runtime'ı başlat
+# // Start the Python or Lua runtime
 Embed.Run(type="python");
 Embed.Run(type="lua");
 
-# // Çalışan runtime'ı durdur
+# // Stop the active runtime
 Embed.Stop(type="python");
 Embed.Stop(type="lua"); 
 
-# // Runtime'ın aktif olup olmadığını kontrol et
+# // Check whether the runtime is active
 type isActive = Embed.IsActive(type="python");   # // 1 / 0
 type isActive = Embed.IsActive(type="lua");      # // 1 / 0
 
-# // Değişken alma ve gönderme
-# // GetValue(type, name) → adı verilen global değişkenin değerini okur (double döner)
-# // SendValue(type, name, value) → adı verilen global değişkene değer yazar
-# // Not: Python/Lua tarafında değişken __main__ globals içinde tanımlı olmalı.
+# // Get and send variables
+# // GetValue(type, name) → reads the value of the named global variable (returns a double)
+# // SendValue(type, name, value) → writes a value to the named global variable
+# // Note: on the Python/Lua side, the variable must be defined in __main__ globals.
 
 type value = type;
 
-# // Örnek: Python'a değer gönder
+# // Example: send a value to Python
 Embed.SendValue(type="python", name="myVar", value="42");
-# // Python'da: myVar = 42
+# // In Python: myVar = 42
 
-# // Örnek: Python'dan değer al
+# // Example: read a value from Python
 type val = Embed.GetValue(type="python", name="myVar");
 
-# // Örnek: Lua'ya değer gönder
+# // Example: send a value to Lua
 Embed.SendValue(type="lua", name="myVar", value="3.14");
-# // Lua'da: myVar = 3.14
+# // In Lua: myVar = 3.14
 
-# // Örnek: Lua'dan değer al
+# // Example: read a value from Lua
 type val = Embed.GetValue(type="lua", name="myVar");
 
-# // Gerçek zamanlı değişken paylaşımı (loop içinde kullanılabilir)
+# // Real-time variable sharing (usable inside a loop)
 
-# Warning: ileride int8, float16 gibi değerler olacak; fakat Python ve Lua'ya
-# gönderilecek değerler şimdilik sadece int, float, char ve ileride gelecek
-# gcChar olacak.
+# Warning: int8, float16, and similar types will be added later; for now the values sent to Python and Lua
+# are only int, float, char, and eventually gcChar.
 ```

@@ -1,8 +1,1277 @@
 {
   "meta": {
     "title": "Python Programming Language",
-    "subtitle": "Interacting with the Python runtime from GCL (coming soon)",
-    "badge": "Coming soon",
-    "coming": true
-  }
+    "subtitle": "From zero to a PyRaylib game — the second scripting language embedded in GnuchanOS.",
+    "badge": "Python 3 · PyRaylib · PyRaygui"
+  },
+  "chapters": [
+    {
+      "id": "python-intro",
+      "title": "Introduction",
+      "sections": [
+        {
+          "title": "Why Python?",
+          "paragraphs": [
+            "Python is the second language GnuchanOS embeds, next to Lua. Where Lua aims to be small and fast, Python aims to be <strong>readable</strong>: indentation replaces braces, and the standard library is enormous. The GCL runtime starts a CPython interpreter through the <code class=\"inline\">Embed</code> module and hands it a raylib window, so a Python script can open a window, draw and play sound with no build step.",
+            "The Python track has two halves, exactly like the Lua track. The first half teaches the <strong>language</strong>. The second half teaches <strong>PyRaylib</strong> and <strong>PyRaygui</strong>, the bindings that expose raylib and raygui to Python."
+          ],
+          "notes": [
+            {
+              "type": "info",
+              "text": "Everything here runs on the Python that ships with GnuchanOS (<code>Library/Embeded/Python_Runtime/Python.dll</code>) together with <code>PyRaylib.dll</code>, <code>PyRaygui.dll</code> and the helper module <code>gcl</code>."
+            }
+          ]
+        },
+        {
+          "title": "Your First Program",
+          "paragraphs": [
+            "<code class=\"inline\">print</code> is a function, not a statement. It accepts any number of values and separates them with a single space."
+          ],
+          "code": {
+            "file": "hello.py",
+            "lang": "python",
+            "src": "print(\"Hello from Python!\")\nprint(\"One line\", \"and another value\")"
+          },
+          "output": "Hello from Python!\nOne line and another value"
+        },
+        {
+          "title": "Indentation Is Syntax",
+          "paragraphs": [
+            "Python has no braces and no <code class=\"inline\">end</code>. A block is marked by indenting it. The convention is four spaces, and the only real rule is that a block must be indented consistently.",
+            "Mixing tabs and spaces in the same block is a syntax error. Most editors, including the GnuchanOS IDE, insert four spaces when you press Tab inside a <code class=\"inline\">.py</code> file."
+          ],
+          "code": {
+            "file": "blocks.py",
+            "lang": "python",
+            "src": "score = 7\n\nif score > 5:\n    print(\"good\")\n    print(\"really good\")   # still inside the if\n\nprint(\"done\")             # back outside"
+          },
+          "output": "good\nreally good\ndone"
+        },
+        {
+          "title": "Comments",
+          "paragraphs": [
+            "A comment starts with <code class=\"inline\">#</code> and runs to the end of the line.",
+            "Python has no block comment. A triple-quoted string standing on its own is not a comment, but it is ignored when nothing is assigned to it, so it is the usual way to park a paragraph of explanation."
+          ],
+          "code": {
+            "file": "comments.py",
+            "lang": "python",
+            "src": "# a full line comment\n\nx = 5  # a trailing comment\n\n\"\"\"\nA triple-quoted string standing on its own\nis ignored by the interpreter.\n\"\"\"\n\nprint(x)"
+          },
+          "output": "5"
+        },
+        {
+          "title": "Three Ways to Run Python",
+          "paragraphs": [
+            "The interpreter is always the same; only the entry point changes.",
+            "<strong>1. Standalone file.</strong> The GCL CLI can run a Python file directly.",
+            "<strong>2. From GCL.</strong> The <code class=\"inline\">Embed</code> module starts a Python process and can share variables with it.",
+            "<strong>3. From the IDE.</strong> A project created with the Python switch on already contains <code class=\"inline\">scripts/main.py</code>."
+          ],
+          "code": {
+            "file": "terminal",
+            "lang": "python",
+            "src": "# 1. run a file directly\ngcl -pyrun hello.py\n\n# 2. start Python from a GCL program\n#    (main.gcsf)\n#    #native <Embed>\n#    Embed.Run(type=\"python\");\n#    Embed.Stop(type=\"python\");\n\n# 3. build a project that opens a Python window\ngcl -build project.gcdata"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "When Python runs under GCL, the modules <code>raylib</code>, <code>raygui</code> and <code>gcl</code> are already importable. You still write the <code>import</code> line, but you never install anything: the runtime resolves them next to the interpreter."
+            },
+            {
+              "type": "warn",
+              "text": "Only one Python process at a time. <code>Embed.Run(type=\"python\")</code> twice starts nothing the second time. Python and Lua together is fine."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "python-values",
+      "title": "Values and Variables",
+      "sections": [
+        {
+          "title": "Names Are Labels",
+          "paragraphs": [
+            "Python is dynamically typed: a variable is a <em>name</em> bound to a value, and the value carries the type. Assigning a different type to the same name is fine.",
+            "<code class=\"inline\">type()</code> tells you what you are holding."
+          ],
+          "code": {
+            "file": "names.py",
+            "lang": "python",
+            "src": "x = 10\nprint(type(x))\n\nx = \"now a string\"\nprint(type(x))\n\ncount = 3\ncount = count + 1\nprint(count)"
+          },
+          "output": "<class 'int'>\n<class 'str'>\n4"
+        },
+        {
+          "title": "The Core Types",
+          "paragraphs": [
+            "Six types cover almost everything you write before reaching for a library."
+          ],
+          "table": {
+            "headers": ["Type", "Meaning", "Examples"],
+            "rows": [
+              ["<code>int</code>", "Whole number, unlimited size", "<code>42</code>, <code>-7</code>, <code>0x1F</code>"],
+              ["<code>float</code>", "Double-precision real", "<code>3.14</code>, <code>1e-3</code>"],
+              ["<code>str</code>", "Text, immutable", "<code>\"hello\"</code>, <code>'hi'</code>"],
+              ["<code>bool</code>", "Truth value", "<code>True</code>, <code>False</code>"],
+              ["<code>NoneType</code>", "The absence of a value", "<code>None</code>"],
+              ["<code>list</code>, <code>tuple</code>, <code>dict</code>, <code>set</code>", "Collections", "<code>[1, 2]</code>, <code>(1, 2)</code>, <code>{\"a\": 1}</code>, <code>{1, 2}</code>"]
+            ]
+          }
+        },
+        {
+          "title": "Numbers",
+          "paragraphs": [
+            "There are two number types to care about: <code class=\"inline\">int</code> and <code class=\"inline\">float</code>. Integers have no size limit, so <code class=\"inline\">2 ** 100</code> is exact.",
+            "<code class=\"inline\">/</code> always produces a float. <code class=\"inline\">//</code> is integer division and rounds toward negative infinity. <code class=\"inline\">%</code> is the remainder, and <code class=\"inline\">**</code> is the power operator."
+          ],
+          "code": {
+            "file": "numbers.py",
+            "lang": "python",
+            "src": "a = 7\nb = 2\n\nprint(a / b)     # true division\nprint(a // b)    # floor division\nprint(a % b)     # remainder\nprint(a ** b)    # power\nprint(2 ** 100)\n\nf = 0.1 + 0.2\nprint(f)\nprint(round(f, 2))"
+          },
+          "output": "3.5\n3\n1\n49\n1267650600228229401496703205376\n0.30000000000000004\n0.3"
+        },
+        {
+          "title": "Truth and None",
+          "paragraphs": [
+            "<code class=\"inline\">True</code> and <code class=\"inline\">False</code> are capitalised. Almost every value has a truth value: zero, empty text, empty collections and <code class=\"inline\">None</code> are <em>falsey</em>, everything else is truthy. You almost never need to compare against <code class=\"inline\">True</code> explicitly.",
+            "<code class=\"inline\">None</code> is a real value meaning \"nothing here\". A function that returns nothing returns <code class=\"inline\">None</code>. Test it with <code class=\"inline\">is None</code>, never with <code class=\"inline\">== None</code>."
+          ],
+          "code": {
+            "file": "truth.py",
+            "lang": "python",
+            "src": "print(bool(0), bool(1))\nprint(bool(\"\"), bool(\"x\"))\nprint(bool([]), bool([1]))\n\nresult = None\nif result is None:\n    print(\"nothing came back\")\n\nname = \"\"\nprint(\"anonymous\" if not name else name)"
+          },
+          "output": "False True\nFalse True\nFalse True\nnothing came back\nanonymous"
+        },
+        {
+          "title": "Text and f-strings",
+          "paragraphs": [
+            "Strings are immutable: every string operation produces a new string. Single and double quotes are equivalent; a backslash escapes.",
+            "An <strong>f-string</strong> is a string prefixed with <code class=\"inline\">f</code> in which <code class=\"inline\">{ }</code> is replaced by the value of the expression inside it. This is the normal way to build output; it replaces both concatenation and C-style placeholders."
+          ],
+          "code": {
+            "file": "text.py",
+            "lang": "python",
+            "src": "name = \"GnuChan\"\nscore = 42\nratio = 0.5\n\nprint(f\"{name} has {score} points\")\nprint(f\"ratio as percent: {ratio:.0%}\")\nprint(f\"padded: {score:5d}|{name:>10}|\")\nprint(\"a\" + \"b\", \"x\" * 3)\nprint(len(name))"
+          },
+          "output": "GnuChan has 42 points\nratio as percent: 50%\npadded:    42|   GnuChan|\nab xxx\n7"
+        }
+      ]
+    },
+{
+      "id": "python-operators",
+      "title": "Operators",
+      "sections": [
+        {
+          "title": "Arithmetic and Comparison",
+          "paragraphs": [
+            "The arithmetic operators are <code class=\"inline\">+ - * / // % **</code> and the augmented forms <code class=\"inline\">+= -= *= /= //= %= **=</code>.",
+            "Comparison uses <code class=\"inline\">== != < <= > >=</code>. You can chain them the way maths writes them: <code class=\"inline\">0 < x < 10</code> is one expression and means exactly what it says."
+          ],
+          "code": {
+            "file": "arithmetic.py",
+            "lang": "python",
+            "src": "x = 8\nx += 2\nprint(x)\n\nprint(0 < 5 < 10)\nprint(1 == 1.0)\nprint(\"abc\" == 'abc')\n\nprint(7 & 3, 7 | 3, 7 ^ 3, ~7, 1 << 4)"
+          },
+          "output": "10\nTrue\nTrue\nTrue\n3 7 4 -8 16"
+        },
+        {
+          "title": "Logic",
+          "paragraphs": [
+            "The boolean operators are the words <code class=\"inline\">and</code>, <code class=\"inline\">or</code> and <code class=\"inline\">not</code> — there is no <code class=\"inline\">&&</code> or <code class=\"inline\">||</code>.",
+            "<code class=\"inline\">and</code> and <code class=\"inline\">or</code> do not return booleans: they return one of their operands. That makes <code class=\"inline\">or</code> the standard default-value idiom."
+          ],
+          "code": {
+            "file": "logic.py",
+            "lang": "python",
+            "src": "print(True and False)\nprint(True or False)\nprint(not False)\n\n# 'or' returns the first truthy operand\nspeed = None\nspeed = speed or 5\nprint(speed)\n\n# short circuit: the right side never runs\nname = \"\"\nprint(name and name.upper())"
+          },
+          "output": "False\nTrue\nTrue\n5\n"
+        },
+        {
+          "title": "Membership and Identity",
+          "paragraphs": [
+            "<code class=\"inline\">in</code> asks whether a value is inside a collection or a string. <code class=\"inline\">not in</code> is its negation.",
+            "<code class=\"inline\">is</code> asks whether two names point at the <em>same object</em>. It is not the same question as <code class=\"inline\">==</code>, which asks whether two values are equal. Use <code class=\"inline\">is</code> only for <code class=\"inline\">None</code> and for booleans."
+          ],
+          "code": {
+            "file": "membership.py",
+            "lang": "python",
+            "src": "print(2 in [1, 2, 3])\nprint('ell' in 'hello')\nprint(9 not in [1, 2, 3])\n\nempty = []\nprint(empty is None)\nprint(empty == [])\n\ncopy = list(empty)\nprint(copy is empty)"
+          },
+          "output": "True\nTrue\nTrue\nFalse\nTrue\nFalse"
+        },
+        {
+          "title": "Conditional Expressions",
+          "paragraphs": [
+            "A conditional expression is a one-line <code class=\"inline\">if</code>: <code class=\"inline\">a if condition else b</code>. It is an expression, so it can sit on the right of an assignment or inside an f-string."
+          ],
+          "code": {
+            "file": "expressions.py",
+            "lang": "python",
+            "src": "score = 71\ngrade = \"pass\" if score >= 50 else \"fail\"\nprint(grade)\n\nlives = 0\nprint(f\"{lives} lives left\" if lives else \"game over\")"
+          },
+          "output": "pass\ngame over"
+        }
+      ]
+    },
+    {
+      "id": "python-control-flow",
+      "title": "Control Flow",
+      "sections": [
+        {
+          "title": "if, elif, else",
+          "paragraphs": [
+            "A condition is followed by a colon; the body is the indented block. There is no <code class=\"inline\">else if</code> — the keyword is <code class=\"inline\">elif</code>. The chain is checked top to bottom and the first true branch wins.",
+            "The condition needs no parentheses. Parentheses are only ever grouping in Python, never part of the syntax."
+          ],
+          "code": {
+            "file": "if.py",
+            "lang": "python",
+            "src": "temperature = 24\n\nif temperature > 30:\n    print(\"hot\")\nelif temperature > 20:\n    print(\"warm\")\nelif temperature > 10:\n    print(\"cool\")\nelse:\n    print(\"cold\")"
+          },
+          "output": "warm"
+        },
+        {
+          "title": "while",
+          "paragraphs": [
+            "<code class=\"inline\">while</code> repeats as long as its condition is true. A <code class=\"inline\">while True:</code> with a <code class=\"inline\">break</code> inside is the usual shape of a game loop."
+          ],
+          "code": {
+            "file": "while.py",
+            "lang": "python",
+            "src": "count = 0\n\nwhile count < 5:\n    count += 1\n    print(f\"tick {count}\")\n\nprint(f\"stopped at {count}\")"
+          },
+          "output": "tick 1\ntick 2\ntick 3\ntick 4\ntick 5\nstopped at 5"
+        },
+        {
+          "title": "for and range",
+          "paragraphs": [
+            "A Python <code class=\"inline\">for</code> is a <em>for-each</em>: it walks the items of a sequence. There is no counter to declare and no condition to write.",
+            "<code class=\"inline\">range(n)</code> produces the numbers <code class=\"inline\">0</code> to <code class=\"inline\">n-1</code>. It is lazy: nothing is stored. The three forms are <code class=\"inline\">range(stop)</code>, <code class=\"inline\">range(start, stop)</code> and <code class=\"inline\">range(start, stop, step)</code>."
+          ],
+          "code": {
+            "file": "for.py",
+            "lang": "python",
+            "src": "for name in [\"Ada\", \"Grace\", \"Alan\"]:\n    print(f\"hello {name}\")\n\nfor i in range(3):\n    print(i, end=\" \")\nprint()\n\nfor i in range(10, 0, -3):\n    print(i, end=\" \")\nprint()\n\ntotal = 0\nfor i in range(1, 101):\n    total += i\nprint(total)"
+          },
+          "output": "hello Ada\nhello Grace\nhello Alan\n0 1 2 \n10 7 4 1 \n5050"
+        },
+        {
+          "title": "break, continue, and the for-else",
+          "paragraphs": [
+            "<code class=\"inline\">break</code> leaves the loop immediately. <code class=\"inline\">continue</code> skips to the next iteration.",
+            "A <code class=\"inline\">for</code> may carry an <code class=\"inline\">else</code> block. It runs when the loop finishes <em>without</em> hitting a <code class=\"inline\">break</code>. It reads oddly at first and is genuinely useful for \"searched everything and found nothing\"."
+          ],
+          "code": {
+            "file": "loop_control.py",
+            "lang": "python",
+            "src": "for n in range(1, 10):\n    if n % 2 == 0:\n        continue          # skip the even ones\n    if n > 7:\n        break             # stop before 9\n    print(n, end=\" \")\nprint()\n\nfor n in [1, 3, 5]:\n    if n == 4:\n        print(\"found it\")\n        break\nelse:\n    print(\"4 was not in the list\")"
+          },
+          "output": "1 3 5 7 \n4 was not in the list"
+        },
+        {
+          "title": "Iterating with Index",
+          "paragraphs": [
+            "<code class=\"inline\">enumerate()</code> gives you the position and the value together, which removes the need for <code class=\"inline\">range(len(items))</code>.",
+            "<code class=\"inline\">zip()</code> walks several sequences in parallel and stops at the shortest."
+          ],
+          "code": {
+            "file": "iterate.py",
+            "lang": "python",
+            "src": "highscores = [120, 340, 90]\n\nfor i, value in enumerate(highscores):\n    print(f\"#{i + 1}: {value}\")\n\nnames = [\"Ada\", \"Grace\"]\nscores = [120, 340]\nfor name, score in zip(names, scores):\n    print(f\"{name} = {score}\")"
+          },
+          "output": "#1: 120\n#2: 340\n#3: 90\nAda = 120\nGrace = 340"
+        }
+      ]
+    },
+    {
+      "id": "python-functions",
+      "title": "Functions",
+      "sections": [
+        {
+          "title": "Defining a Function",
+          "paragraphs": [
+            "<code class=\"inline\">def</code> introduces a function. The body is the indented block. There is no return type to write, and a function may be defined after the code that calls it as long as the call itself happens later."
+          ],
+          "code": {
+            "file": "functions.py",
+            "lang": "python",
+            "src": "def greet(name):\n    print(f\"hello {name}\")\n\ndef add(a, b):\n    return a + b\n\ngreet(\"GnuChan\")\nprint(add(2, 3))\nprint(add(\"a\", \"b\"))   # + is overloaded for text"
+          },
+          "output": "hello GnuChan\n5\nab"
+        },
+        {
+          "title": "Return Values",
+          "paragraphs": [
+            "A function with no <code class=\"inline\">return</code>, or a bare <code class=\"inline\">return</code>, gives back <code class=\"inline\">None</code>.",
+            "A <code class=\"inline\">return</code> with several comma-separated values packs them into a tuple. The caller can unpack it straight into several names — this is the normal way to hand back more than one value."
+          ],
+          "code": {
+            "file": "returns.py",
+            "lang": "python",
+            "src": "def bounds(values):\n    return min(values), max(values)\n\ndef nothing():\n    pass\n\nprint(nothing())\n\nlo, hi = bounds([4, 9, 2])\nprint(lo, hi)\n\npair = bounds([4, 9, 2])\nprint(pair, type(pair))"
+          },
+          "output": "None\n2 9\n(2, 9) <class 'tuple'>"
+        },
+        {
+          "title": "Default and Keyword Arguments",
+          "paragraphs": [
+            "A parameter may declare a default. Arguments may then be passed by position or by name; naming them makes a call read like a sentence and lets you skip the ones in between.",
+            "Never use a mutable object such as a list as a default — it is created once and shared by every call. Use <code class=\"inline\">None</code> and build the value inside."
+          ],
+          "code": {
+            "file": "defaults.py",
+            "lang": "python",
+            "src": "def window(width, height, title=\"Untitled\", fps=60):\n    print(f\"{title}: {width}x{height} at {fps} fps\")\n\nwindow(800, 600)\nwindow(800, 600, \"Game\")\nwindow(height=600, width=800, fps=30)\n\ndef append_to(item, target=None):\n    if target is None:\n        target = []\n    target.append(item)\n    return target\n\nprint(append_to(1))\nprint(append_to(2))"
+          },
+          "output": "Untitled: 800x600 at 60 fps\nGame: 800x600 at 60 fps\nUntitled: 800x600 at 30 fps\n[1]\n[2]"
+        },
+        {
+          "title": "Variadic Arguments",
+          "paragraphs": [
+            "<code class=\"inline\">*args</code> collects extra positional arguments into a tuple. <code class=\"inline\">**kwargs</code> collects extra keyword arguments into a dictionary. The two names are a convention, not a requirement — the stars are what matter.",
+            "A star also <em>spreads</em> a sequence at the call site."
+          ],
+          "code": {
+            "file": "variadic.py",
+            "lang": "python",
+            "src": "def total(*numbers):\n    return sum(numbers)\n\ndef describe(**info):\n    for key, value in info.items():\n        print(f\"{key} = {value}\")\n\nprint(total(1, 2, 3, 4))\nprint(total())\n\nvalues = [10, 20, 30]\nprint(total(*values))\n\ndescribe(name=\"Ada\", score=120)"
+          },
+          "output": "10\n0\n60\nname = Ada\nscore = 120"
+        },
+        {
+          "title": "Scope",
+          "paragraphs": [
+            "A name assigned inside a function is local to that function. Reading an outer name works; assigning to it does not, unless you declare <code class=\"inline\">global</code> (module level) or <code class=\"inline\">nonlocal</code> (the enclosing function)."
+          ],
+          "code": {
+            "file": "scope.py",
+            "lang": "python",
+            "src": "counter = 0\n\ndef bump():\n    global counter\n    counter += 1\n\ndef peek():\n    return counter          # reading the outer name is fine\n\ndef shadow():\n    counter = 99           # a new local, the outer one is untouched\n    return counter\n\nbump()\nbump()\nprint(peek())\nprint(shadow())\nprint(counter)"
+          },
+          "output": "2\n99\n2"
+        },
+        {
+          "title": "Lambdas",
+          "paragraphs": [
+            "A <code class=\"inline\">lambda</code> is a function expression: parameters, then a colon, then a single expression that is returned. It has no body block and no statement inside it.",
+            "Its real home is a short callback passed to another function."
+          ],
+          "code": {
+            "file": "lambdas.py",
+            "lang": "python",
+            "src": "square = lambda n: n * n\nprint(square(6))\n\nscores = [(\"Ada\", 120), (\"Grace\", 340), (\"Alan\", 90)]\nscores.sort(key=lambda pair: pair[1], reverse=True)\nfor name, score in scores:\n    print(f\"{name}: {score}\")"
+          },
+          "output": "36\nGrace: 340\nAda: 120\nAlan: 90"
+        }
+      ]
+    },
+{
+      "id": "python-collections",
+      "title": "Collections",
+      "sections": [
+        {
+          "title": "Lists",
+          "paragraphs": [
+            "A list is an ordered, mutable sequence written with square brackets. Indexing starts at 0, and a negative index counts from the end: <code class=\"inline\">-1</code> is the last item.",
+            "A slice <code class=\"inline\">start:stop</code> takes a copy of a range, excluding the stop index. Leaving a side empty means \"from the beginning\" or \"to the end\".",
+            "The methods you will use constantly are <code class=\"inline\">append</code>, <code class=\"inline\">insert</code>, <code class=\"inline\">remove</code>, <code class=\"inline\">pop</code>, <code class=\"inline\">sort</code> and the built-ins <code class=\"inline\">len</code>, <code class=\"inline\">sum</code>, <code class=\"inline\">min</code>, <code class=\"inline\">max</code>, <code class=\"inline\">sorted</code>."
+          ],
+          "code": {
+            "file": "lists.py",
+            "lang": "python",
+            "src": "numbers = [3, 1, 4, 1, 5]\n\nprint(numbers[0], numbers[-1])\nprint(numbers[1:3])\n\nnumbers.append(9)\nnumbers[0] = 100\nprint(numbers)\nprint(len(numbers), sum(numbers), max(numbers))\n\nnumbers.remove(1)\nprint(numbers)\nprint(sorted(numbers))"
+          },
+          "output": "3 5\n[1, 4]\n[100, 1, 4, 1, 5, 9]\n6 120 100\n[100, 4, 1, 5, 9]\n[1, 4, 5, 9, 100]"
+        },
+        {
+          "title": "Tuples",
+          "paragraphs": [
+            "A tuple is an ordered sequence that cannot be changed after it is built. It is written with parentheses, and it is the type a function returns when it hands back several values at once.",
+            "Unpacking is the reason tuples are everywhere: <code class=\"inline\">x, y = point</code> assigns both names in one line.",
+            "A one-element tuple needs a trailing comma — <code class=\"inline\">(5,)</code> is a tuple, <code class=\"inline\">(5)</code> is just the number 5."
+          ],
+          "code": {
+            "file": "tuples.py",
+            "lang": "python",
+            "src": "point = (10, 20)\n\nx, y = point\nprint(x, y)\nprint(point[1])\n\nsingle = (5,)\nprint(type(single), single)\n\nnot_a_tuple = (5)\nprint(type(not_a_tuple))"
+          },
+          "output": "10 20\n20\n<class 'tuple'> (5,)\n<class 'int'>"
+        },
+        {
+          "title": "Dictionaries",
+          "paragraphs": [
+            "A dictionary maps keys to values, written <code class=\"inline\">{ key: value }</code>. Lookup is by key and is fast, which makes a dict the natural choice for a lookup table or a small record.",
+            "Reading a missing key with <code class=\"inline\">d[key]</code> raises <code class=\"inline\">KeyError</code>. <code class=\"inline\">d.get(key, default)</code> returns the default instead, and <code class=\"inline\">in</code> tests for a key without raising.",
+            "Iterating a dict walks its keys. <code class=\"inline\">.items()</code> walks key and value together, <code class=\"inline\">.keys()</code> and <code class=\"inline\">.values()</code> walk one side."
+          ],
+          "code": {
+            "file": "dicts.py",
+            "lang": "python",
+            "src": "player = {\"name\": \"Ada\", \"score\": 120}\n\nprint(player[\"name\"])\n\nplayer[\"score\"] = 200\nplayer[\"level\"] = 3\nprint(player.get(\"missing\", 0))\n\nfor key, value in player.items():\n    print(f\"{key}: {value}\")\n\nprint(\"name\" in player)\nprint(sorted(player.keys()))"
+          },
+          "output": "Ada\n0\nname: Ada\nscore: 200\nlevel: 3\nTrue\n['level', 'name', 'score']"
+        },
+        {
+          "title": "Sets",
+          "paragraphs": [
+            "A set holds unique values with no order. It is written with braces, and the set operators are the ones from maths: <code class=\"inline\">|</code> union, <code class=\"inline\">&</code> intersection, <code class=\"inline\">-</code> difference, <code class=\"inline\">^</code> symmetric difference.",
+            "Because a set is unordered, never print one and expect a particular sequence. Sort it first when the order matters."
+          ],
+          "code": {
+            "file": "sets.py",
+            "lang": "python",
+            "src": "a = {1, 2, 3}\nb = {3, 4}\n\nprint(sorted(a | b))\nprint(sorted(a & b))\nprint(sorted(a - b))\n\na.add(9)\nprint(9 in a)\nprint(len(a))\n\nprint(len({1, 1, 2, 2, 3}))"
+          },
+          "output": "[1, 2, 3, 4]\n[3]\n[1, 2]\nTrue\n4\n3"
+        },
+        {
+          "title": "Names, References, and Copies",
+          "paragraphs": [
+            "Assigning a list to a second name does <em>not</em> copy it — both names point at the same list, and changing it through one name is visible through the other.",
+            "To get an independent list, take a full slice <code class=\"inline\">a[:]</code>, call <code class=\"inline\">list(a)</code>, or use <code class=\"inline\">a.copy()</code>. Tuples and strings are immutable, so this never arises with them."
+          ],
+          "code": {
+            "file": "copies.py",
+            "lang": "python",
+            "src": "a = [1, 2]\nb = a            # the same list under another name\nb.append(3)\nprint(a)\n\nc = a[:]         # an independent copy\nc.append(9)\nprint(a)\nprint(c)"
+          },
+          "output": "[1, 2, 3]\n[1, 2, 3]\n[1, 2, 3, 9]"
+        }
+      ]
+    },
+    {
+      "id": "python-strings",
+      "title": "Strings",
+      "sections": [
+        {
+          "title": "Indexing and Slicing",
+          "paragraphs": [
+            "A string is a sequence of characters, so everything you learned about list indexing applies: <code class=\"inline\">[i]</code>, negative indexes, and slices.",
+            "A slice with a step of <code class=\"inline\">-1</code> reverses the text. Nothing is modified in place — every operation returns a new string."
+          ],
+          "code": {
+            "file": "slicing.py",
+            "lang": "python",
+            "src": "text = \"GnuchanOS\"\n\nprint(text[0], text[-1])\nprint(text[0:4])\nprint(text[4:])\nprint(text[::-1])\nprint(\"chan\" in text)\nprint(len(text))"
+          },
+          "output": "G S\nGnuc\nhanOS\nSOnahcunG\nTrue\n9"
+        },
+        {
+          "title": "The Common Methods",
+          "paragraphs": [
+            "Strings carry a large method set; these are the ones a game or a tool actually uses."
+          ],
+          "table": {
+            "headers": ["Call", "Does"],
+            "rows": [
+              ["<code>s.strip()</code>", "Remove whitespace from both ends"],
+              ["<code>s.lower()</code> / <code>s.upper()</code>", "Change case"],
+              ["<code>s.replace(a, b)</code>", "Replace every occurrence"],
+              ["<code>s.split(sep)</code>", "Cut into a list of parts"],
+              ["<code>sep.join(items)</code>", "Glue a list into one string"],
+              ["<code>s.startswith(t)</code> / <code>s.endswith(t)</code>", "Prefix / suffix test"],
+              ["<code>s.find(t)</code>", "Index of t, or -1"],
+              ["<code>s.count(t)</code>", "How many times t occurs"]
+            ]
+          },
+          "code": {
+            "file": "methods.py",
+            "lang": "python",
+            "src": "raw = \"  Hello World  \"\n\nprint(repr(raw.strip()))\nprint(raw.lower())\nprint(raw.upper())\nprint(\"a,b,c\".split(\",\"))\nprint(\"-\".join([\"a\", \"b\", \"c\"]))\nprint(\"hello\".replace(\"l\", \"L\"))\nprint(\"abc\".startswith(\"ab\"), \"abc\".endswith(\"z\"))\nprint(\"banana\".count(\"an\"))"
+          },
+          "output": "'Hello World'\n  hello world  \n  HELLO WORLD  \n['a', 'b', 'c']\na-b-c\nheLLo\nTrue False\n2"
+        },
+        {
+          "title": "Converting Between Text and Numbers",
+          "paragraphs": [
+            "<code class=\"inline\">int()</code> and <code class=\"inline\">float()</code> parse text, and <code class=\"inline\">str()</code> renders a value. Input that arrives from a file, a command line or a dialog is always text first.",
+            "An f-string can also format a number: <code class=\"inline\">{value:x}</code> is hexadecimal, <code class=\"inline\">{value:b}</code> is binary, <code class=\"inline\">{value:.3f}</code> fixes three decimals."
+          ],
+          "code": {
+            "file": "conversions.py",
+            "lang": "python",
+            "src": "print(int(\"42\") + 1)\nprint(float(\"3.5\") * 2)\nprint(str(7) + \"!\")\nprint(f\"{255:x} {255:b}\")\nprint(f\"{1/3:.3f}\")\nprint(f\"{1234567:,}\")"
+          },
+          "output": "43\n7.0\n7!\nff 11111111\n0.333\n1,234,567"
+        },
+        {
+          "title": "Escapes and Raw Strings",
+          "paragraphs": [
+            "Inside a normal string, a backslash introduces an escape: <code class=\"inline\">\\n</code>, <code class=\"inline\">\\t</code>, <code class=\"inline\">\\\\</code>, <code class=\"inline\">\\\"</code>.",
+            "A <strong>raw string</strong> is prefixed with <code class=\"inline\">r</code> and does not process escapes. This is what you want for Windows paths, where <code class=\"inline\">\\t</code> in <code class=\"inline\">C:\\temp</code> would otherwise become a tab.",
+            "A triple-quoted string may span several lines without any escape at all."
+          ],
+          "code": {
+            "file": "escapes.py",
+            "lang": "python",
+            "src": "print(\"line one\\nline two\")\nprint(\"col1\\tcol2\")\n\npath = r\"C:\\Games\\my project\"\nprint(path)\n\ntext = \"\"\"first\nsecond\nthird\"\"\"\nprint(text.count(\"\\n\") + 1)"
+          },
+          "output": "line one\nline two\ncol1\tcol2\nC:\\Games\\my project\n3"
+        }
+      ]
+    },
+{
+      "id": "python-modules",
+      "title": "Modules and the Standard Library",
+      "sections": [
+        {
+          "title": "import",
+          "paragraphs": [
+            "A module is a file of Python code. <code class=\"inline\">import name</code> makes it available under that name; <code class=\"inline\">from name import thing</code> pulls one member into the current namespace; <code class=\"inline\">import name as alias</code> renames it.",
+            "Imports belong at the top of the file. The interpreter finds the module on its search path, which the embedded runtime has already extended with the directory of your script and the runtime library directory — that is why <code class=\"inline\">import raylib</code> works with nothing installed."
+          ],
+          "code": {
+            "file": "imports.py",
+            "lang": "python",
+            "src": "import math\nfrom math import sqrt\nimport random as rng\n\nprint(math.pi)\nprint(sqrt(16))\nprint(rng.randint(1, 6) >= 1)"
+          },
+          "output": "3.141592653589793\n4.0\nTrue"
+        },
+        {
+          "title": "math and random",
+          "paragraphs": [
+            "<code class=\"inline\">math</code> works in radians, unlike the <code class=\"inline\">Math</code> module in GCL which takes degrees. <code class=\"inline\">pi</code> and <code class=\"inline\">e</code> are constants on the module.",
+            "<code class=\"inline\">random</code> produces pseudo-random numbers. Call <code class=\"inline\">random.seed(n)</code> when you want a run to be reproducible — for a game you usually do not."
+          ],
+          "table": {
+            "headers": ["Call", "Returns"],
+            "rows": [
+              ["<code>math.floor(x)</code> / <code>math.ceil(x)</code>", "Round down / up to an integer"],
+              ["<code>math.sqrt(x)</code> / <code>math.pow(a, b)</code>", "Square root / power"],
+              ["<code>math.sin(x)</code>, <code>cos</code>, <code>tan</code>, <code>atan2(y, x)</code>", "Trigonometry, in radians"],
+              ["<code>math.pi</code> / <code>math.e</code>", "Constants"],
+              ["<code>random.random()</code>", "A float in <code>[0.0, 1.0)</code>"],
+              ["<code>random.randint(a, b)</code>", "An int from a to b inclusive"],
+              ["<code>random.choice(seq)</code>", "One random item"],
+              ["<code>random.shuffle(seq)</code>", "Shuffles a list in place"]
+            ]
+          },
+          "code": {
+            "file": "math_random.py",
+            "lang": "python",
+            "src": "import math\nimport random\n\nprint(math.floor(3.7), math.ceil(3.2))\nprint(round(math.sin(0), 3))\n\nrandom.seed(7)\nroll = random.randint(1, 6)\nprint(1 <= roll <= 6)\nprint(random.choice([\"rock\", \"paper\", \"scissors\"]) in [\"rock\", \"paper\", \"scissors\"])"
+          },
+          "output": "3 4\n0.0\nTrue\nTrue"
+        },
+        {
+          "title": "os, time and json",
+          "paragraphs": [
+            "<code class=\"inline\">os.path</code> builds and splits paths correctly for the operating system you are on. This matters more than it looks: joining strings with a slash works on one platform and not the other.",
+            "<code class=\"inline\">time</code> gives you a monotonic clock, which is what a delta-time loop should use. <code class=\"inline\">json</code> turns dictionaries into text and back, which is the simplest way to save a settings file or a highscore table."
+          ],
+          "code": {
+            "file": "stdlib.py",
+            "lang": "python",
+            "src": "import os\nimport json\nimport time\n\nprint(os.path.join(\"assets\", \"icon.png\"))\nprint(os.path.splitext(\"game.py\"))\n\nstart = time.time()\ntime.sleep(0.01)\nprint(time.time() - start >= 0.01)\n\ndata = {\"name\": \"Ada\", \"score\": 120}\ntext = json.dumps(data, indent=2)\nprint(text)\nprint(json.loads(text) == data)"
+          },
+          "output": "assets\\icon.png\n('game', '.py')\nTrue\n{\n  \"name\": \"Ada\",\n  \"score\": 120\n}\nTrue"
+        },
+        {
+          "title": "Reading and Writing Files",
+          "paragraphs": [
+            "<code class=\"inline\">open(path, mode)</code> gives you a file object. The modes are <code class=\"inline\">\"r\"</code> read (the default), <code class=\"inline\">\"w\"</code> write and truncate, and <code class=\"inline\">\"a\"</code> append.",
+            "Always open a file inside a <code class=\"inline\">with</code> block. The block closes the file when it ends, even if an exception is raised inside it — without <code class=\"inline\">with</code> you would have to call <code class=\"inline\">close()</code> yourself and remember to do it on every path out.",
+            "Iterating a file yields one line at a time, each ending with a newline, so strip it before parsing."
+          ],
+          "code": {
+            "file": "files.py",
+            "lang": "python",
+            "src": "with open(\"scores.txt\", \"w\") as f:\n    f.write(\"Ada 120\\n\")\n    f.write(\"Grace 340\\n\")\n\ntotal = 0\nwith open(\"scores.txt\") as f:\n    for line in f:\n        name, score = line.split()\n        total += int(score)\n        print(name, score)\n\nprint(\"total\", total)"
+          },
+          "output": "Ada 120\nGrace 340\ntotal 460"
+        },
+        {
+          "title": "Your Own Modules",
+          "paragraphs": [
+            "Any <code class=\"inline\">.py</code> file next to your script is importable by its file name without the extension. In a GnuchanOS project the scripts live in <code class=\"inline\">scripts/</code>, and that directory is on the path, so <code class=\"inline\">scripts/player.py</code> is imported as <code class=\"inline\">import player</code>.",
+            "The one trap is the entry file itself. A file run directly is <code class=\"inline\">__main__</code>, so guard anything that should only run when the file is the entry point with <code class=\"inline\">if __name__ == \"__main__\":</code>."
+          ],
+          "code": {
+            "file": "scripts/player.py",
+            "lang": "python",
+            "src": "DEFAULT_SCORE = 0\n\ndef make(name):\n    return {\"name\": name, \"score\": DEFAULT_SCORE}\n\nif __name__ == \"__main__\":\n    print(make(\"Ada\"))"
+          },
+          "output": "{'name': 'Ada', 'score': 0}"
+        }
+      ]
+    },
+    {
+      "id": "python-classes",
+      "title": "Classes",
+      "sections": [
+        {
+          "title": "A Class",
+          "paragraphs": [
+            "<code class=\"inline\">class</code> defines a new type. The constructor is the method named <code class=\"inline\">__init__</code>, and its first parameter is <code class=\"inline\">self</code> — the instance being built. Every method takes <code class=\"inline\">self</code> first; Python passes it for you, you never pass it yourself.",
+            "Attributes are created simply by assigning them: <code class=\"inline\">self.name = name</code>. There is no declaration list."
+          ],
+          "code": {
+            "file": "class.py",
+            "lang": "python",
+            "src": "class Player:\n    def __init__(self, name, score=0):\n        self.name = name\n        self.score = score\n\n    def add(self, points):\n        self.score += points\n        return self.score\n\n    def __str__(self):\n        return f\"{self.name} ({self.score})\"\n\np = Player(\"Ada\")\np.add(10)\np.add(5)\nprint(p)\nprint(p.score)\nprint(p.name)"
+          },
+          "output": "Ada (15)\n15\nAda"
+        },
+        {
+          "title": "Dunder Methods",
+          "paragraphs": [
+            "Methods whose names begin and end with two underscores are called by the language itself, not by you. They are how a class plugs into operators, printing and built-ins.",
+            "<code class=\"inline\">__str__</code> decides what <code class=\"inline\">print</code> shows. <code class=\"inline\">__len__</code> makes <code class=\"inline\">len()</code> work. <code class=\"inline\">__eq__</code> decides what <code class=\"inline\">==</code> means."
+          ],
+          "table": {
+            "headers": ["Method", "Called by"],
+            "rows": [
+              ["<code>__init__</code>", "Building an instance"],
+              ["<code>__str__</code>", "<code>print()</code> and <code>str()</code>"],
+              ["<code>__len__</code>", "<code>len()</code>"],
+              ["<code>__eq__</code>", "<code>==</code>"],
+              ["<code>__getitem__</code>", "<code>obj[key]</code>"]
+            ]
+          },
+          "code": {
+            "file": "dunder.py",
+            "lang": "python",
+            "src": "class Bag:\n    def __init__(self, items):\n        self.items = list(items)\n\n    def __len__(self):\n        return len(self.items)\n\n    def __getitem__(self, index):\n        return self.items[index]\n\n    def __str__(self):\n        return \"Bag\" + str(self.items)\n\nb = Bag([\"sword\", \"shield\"])\nprint(b)\nprint(len(b))\nprint(b[1])"
+          },
+          "output": "Bag['sword', 'shield']\n2\nshield"
+        },
+        {
+          "title": "Inheritance",
+          "paragraphs": [
+            "A class may extend another by naming it in parentheses. The child inherits every method it does not replace, and <code class=\"inline\">super()</code> calls the parent's version of a method you are overriding.",
+            "<code class=\"inline\">isinstance(obj, ClassName)</code> is true for the class and for everything it inherits from."
+          ],
+          "code": {
+            "file": "inheritance.py",
+            "lang": "python",
+            "src": "class Player:\n    def __init__(self, name):\n        self.name = name\n\n    def describe(self):\n        return f\"player {self.name}\"\n\nclass Boss(Player):\n    def __init__(self, name, hitpoints):\n        super().__init__(name)\n        self.hitpoints = hitpoints\n\n    def describe(self):\n        return super().describe() + f\" with {self.hitpoints} hp\"\n\nb = Boss(\"Gnu\", 500)\nprint(b.describe())\nprint(isinstance(b, Player))"
+          },
+          "output": "player Gnu with 500 hp\nTrue"
+        }
+      ]
+    },
+    {
+      "id": "python-errors",
+      "title": "Errors and Exceptions",
+      "sections": [
+        {
+          "title": "try and except",
+          "paragraphs": [
+            "An error raises an exception. If nothing catches it the program stops and prints a traceback. <code class=\"inline\">try</code> marks the code that might fail; <code class=\"inline\">except</code> handles a particular kind of failure.",
+            "Catch the narrowest exception you can name. A bare <code class=\"inline\">except:</code> swallows everything, including the typing mistake you were trying to find."
+          ],
+          "code": {
+            "file": "try.py",
+            "lang": "python",
+            "src": "def parse(text):\n    try:\n        return int(text)\n    except ValueError:\n        return None\n\nprint(parse(\"42\"))\nprint(parse(\"abc\"))\n\ntry:\n    values = [1, 2]\n    print(values[5])\nexcept IndexError as e:\n    print(\"caught:\", type(e).__name__)\nfinally:\n    print(\"done\")"
+          },
+          "output": "42\nNone\ncaught: IndexError\ndone"
+        },
+        {
+          "title": "finally, else and raise",
+          "paragraphs": [
+            "<code class=\"inline\">finally</code> runs whether or not an exception happened — it is where cleanup belongs. <code class=\"inline\">else</code> runs only when no exception was raised, which keeps the <code class=\"inline\">try</code> block to the single line that can fail.",
+            "<code class=\"inline\">raise</code> throws an exception yourself. Raising with a message is how a function refuses input instead of returning a meaningless value."
+          ],
+          "code": {
+            "file": "raise.py",
+            "lang": "python",
+            "src": "def withdraw(balance, amount):\n    if amount > balance:\n        raise ValueError(\"insufficient funds\")\n    return balance - amount\n\ntry:\n    withdraw(10, 50)\nexcept ValueError as e:\n    print(\"error:\", e)\n\nsteps = []\ntry:\n    steps.append(\"try\")\nexcept Exception:\n    steps.append(\"except\")\nelse:\n    steps.append(\"else\")\nfinally:\n    steps.append(\"finally\")\nprint(steps)"
+          },
+          "output": "error: insufficient funds\n['try', 'else', 'finally']"
+        },
+        {
+          "title": "The Exceptions You Will Actually Meet",
+          "paragraphs": [
+            "Each of these names a real mistake, and the name is the fastest way to find it."
+          ],
+          "table": {
+            "headers": ["Exception", "Raised when"],
+            "rows": [
+              ["<code>ValueError</code>", "<code>int(\"abc\")</code> — right type, impossible value"],
+              ["<code>TypeError</code>", "<code>\"a\" + 1</code> — the operation does not apply to that type"],
+              ["<code>IndexError</code>", "A sequence index past the end"],
+              ["<code>KeyError</code>", "A dictionary lookup that does not exist"],
+              ["<code>ZeroDivisionError</code>", "<code>1 / 0</code>"],
+              ["<code>FileNotFoundError</code>", "<code>open()</code> on a path that is not there"],
+              ["<code>AttributeError</code>", "Calling a method the object does not have"],
+              ["<code>NameError</code>", "Using a name that was never assigned"]
+            ]
+          },
+          "code": {
+            "file": "names.py",
+            "lang": "python",
+            "src": "cases = [\n    lambda: int(\"abc\"),\n    lambda: \"a\" + 1,\n    lambda: [1][9],\n    lambda: {}[\"k\"],\n    lambda: 1 / 0,\n]\n\nfor fn in cases:\n    try:\n        fn()\n    except Exception as e:\n        print(type(e).__name__)"
+          },
+          "output": "ValueError\nTypeError\nIndexError\nKeyError\nZeroDivisionError"
+        }
+      ]
+    },
+    {
+      "id": "python-gcl-bridge",
+      "title": "The gcl Bridge",
+      "sections": [
+        {
+          "title": "Three Functions",
+          "paragraphs": [
+            "When Python runs under GCL there is one extra module: <code class=\"inline\">gcl</code>. It has exactly three members, and it is the whole bridge between the two languages."
+          ],
+          "table": {
+            "headers": ["Call", "Purpose"],
+            "rows": [
+              ["<code>gcl.init()</code>", "Connect to the shared state block"],
+              ["<code>gcl.get_state(name)</code>", "Read a shared value (number, or <code>None</code>)"],
+              ["<code>gcl.set_state(name, value)</code>", "Write a shared value (number)"]
+            ]
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "Shared values are numbers. Text travels by convention: store a length and a code, not a string."
+            }
+          ]
+        },
+        {
+          "title": "How the State Is Shared",
+          "paragraphs": [
+            "The state block is a small shared store that the GCL side also reaches through <code class=\"inline\">Embed.SendValue</code> and <code class=\"inline\">Embed.GetValue</code>. Both sides read and write the same named slots, so a Python script and a GCL program can exchange values without opening a socket or parsing a file.",
+            "Always call <code class=\"inline\">gcl.init()</code> before the first <code class=\"inline\">get_state</code> or <code class=\"inline\">set_state</code>."
+          ],
+          "code": {
+            "file": "bridge.gcsf",
+            "lang": "gcl",
+            "src": "#native <Embed>\n#native <Stdio>\n\nint main() {\n    /* seed two slots the Python side will read */\n    Embed.SendValue(type=\"python\", name=\"target\", 400.0);\n    Embed.SendValue(type=\"python\", name=\"speed\", 3.0);\n\n    Embed.Run(type=\"python\");       /* runs scripts/main.py */\n    Embed.Stop(type=\"python\");      /* waits for the window to close */\n\n    /* read back what Python wrote */\n    int score = Embed.GetValue(type=\"python\", name=\"score\");\n    Stdio.printf(\"score = {}\\n\", score);\n    return 0;\n}"
+          }
+        },
+        {
+          "title": "The Python Side",
+          "paragraphs": [
+            "The script reads with <code class=\"inline\">gcl.get_state</code> and writes with <code class=\"inline\">gcl.set_state</code>. Names must match on both sides — they are plain strings, so a typo reads <code class=\"inline\">None</code> instead of raising an error.",
+            "That <code class=\"inline\">None</code> is the one thing to guard. A slot that was never written comes back as <code class=\"inline\">None</code>, and adding to it would raise <code class=\"inline\">TypeError</code>. The idiom is <code class=\"inline\">value = gcl.get_state(\"x\") or 0.0</code>."
+          ],
+          "code": {
+            "file": "scripts/main.py",
+            "lang": "python",
+            "src": "import gcl\n\ngcl.init()\n\ntarget = gcl.get_state(\"target\") or 0.0\nspeed = gcl.get_state(\"speed\") or 1.0\n\nx = 0.0\nscore = 0\n\nwhile x < target:\n    x += speed\n    score += 1\n\n# publish the result for the GCL side\ngcl.set_state(\"score\", score)\nprint(f\"reached {x} in {score} steps\")"
+          },
+          "output": "reached 402.0 in 134 steps"
+        },
+        {
+          "title": "Two Processes, Two Windows",
+          "paragraphs": [
+            "GCL can run Python and Lua at the same time — each is one process with its own window, and they talk through the same shared values. That is exactly how the Pong example in the GCL track works: Lua owns the left half of the world, Python owns the right half, and only the ball state is shared.",
+            "The demo lives in <code class=\"inline\">language/examples/demo_pong_lua_vs_python/</code>; <code class=\"inline\">scripts/main.py</code> there is a complete, runnable example of this chapter."
+          ],
+          "notes": [
+            {
+              "type": "warn",
+              "text": "Only one process per type: <code>Embed.Run(type=\"python\")</code> twice starts nothing the second time. Python plus Lua together is fine."
+            }
+          ]
+        }
+      ]
+    },
+{
+      "id": "raylib-python-setup",
+      "title": "PyRaylib — First Window",
+      "sections": [
+        {
+          "title": "What PyRaylib Is",
+          "paragraphs": [
+            "PyRaylib is a Python extension module that registers raylib's functions into a module called <code class=\"inline\">raylib</code>. It is loaded for you: when GCL starts a Python script it adds the runtime directory to the search path and resolves <code class=\"inline\">raylib</code> and <code class=\"inline\">raygui</code> from there, so there is nothing to install and no build step.",
+            "The names are raylib's own names in CamelCase: <code class=\"inline\">InitWindow</code>, <code class=\"inline\">DrawText</code>, <code class=\"inline\">IsKeyDown</code>. If you know the C API, you already know this binding."
+          ],
+          "table": {
+            "headers": ["Artifact", "What it is"],
+            "rows": [
+              ["<code>PyRaylib.dll</code>", "raylib binding (<code>PyInit_raylib</code> → module <code>raylib</code>)"],
+              ["<code>PyRaygui.dll</code>", "raygui binding (<code>PyInit_raygui</code> → module <code>raygui</code>)"],
+              ["<code>Python.dll</code>", "The CPython interpreter itself"],
+              ["<code>gcl.pyd</code>", "The bridge module (<code>gcl.get_state</code> / <code>set_state</code>)"]
+            ]
+          }
+        },
+        {
+          "title": "The Game Loop",
+          "paragraphs": [
+            "Every raylib program has the same shape: open a window, loop until the user closes it, draw one frame per iteration, then close. In Python the loop is an ordinary <code class=\"inline\">while</code> and the condition is the return value of <code class=\"inline\">WindowShouldClose</code>, which the binding returns as a real <code class=\"inline\">bool</code>."
+          ],
+          "code": {
+            "file": "window.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(800, 600, \"My First PyRaylib Window\")\nraylib.SetTargetFPS(60)\n\nwhile not raylib.WindowShouldClose():\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.RAYWHITE)\n\n    raylib.DrawRectangle(50, 50, 200, 100, raylib.RED)\n    raylib.DrawText(\"Hello from Python + raylib\", 20, 20, 30, raylib.BLACK)\n    raylib.DrawFPS(10, 10)\n\n    raylib.EndDrawing()\n\nraylib.CloseWindow()"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "Everything after <code>InitWindow</code> belongs inside the loop except <code>CloseWindow</code>. Drawing outside <code>BeginDrawing</code> / <code>EndDrawing</code> has no effect."
+            }
+          ]
+        },
+        {
+          "title": "Colors and Key Constants",
+          "paragraphs": [
+            "A color is a single packed integer, not an object. Every raylib color is an attribute of the module: <code class=\"inline\">raylib.RED</code>, <code class=\"inline\">raylib.DARKPURPLE</code>, <code class=\"inline\">raylib.BLANK</code> and so on. Functions that want a color simply take that integer, and nothing has to be converted.",
+            "Key and mouse constants have the same shape and the same integer type: <code class=\"inline\">raylib.KEY_SPACE</code>, <code class=\"inline\">raylib.KEY_LEFT</code>, <code class=\"inline\">raylib.MOUSE_BUTTON_LEFT</code>.",
+            "The colors the binding publishes are listed below. <code class=\"inline\">Fade(color, alpha)</code> and <code class=\"inline\">ColorAlpha(color, alpha)</code> build a new color from an existing one, and <code class=\"inline\">Color(r, g, b, a)</code> builds one from components."
+          ],
+          "table": {
+            "headers": ["Constant", "Constant", "Constant", "Constant"],
+            "rows": [
+              ["<code>RAYWHITE</code>", "<code>LIGHTGRAY</code>", "<code>GRAY</code>", "<code>DARKGRAY</code>"],
+              ["<code>YELLOW</code>", "<code>GOLD</code>", "<code>ORANGE</code>", "<code>PINK</code>"],
+              ["<code>RED</code>", "<code>MAROON</code>", "<code>GREEN</code>", "<code>LIME</code>"],
+              ["<code>DARKGREEN</code>", "<code>SKYBLUE</code>", "<code>BLUE</code>", "<code>DARKBLUE</code>"],
+              ["<code>PURPLE</code>", "<code>VIOLET</code>", "<code>DARKPURPLE</code>", "<code>BEIGE</code>"],
+              ["<code>BROWN</code>", "<code>DARKBROWN</code>", "<code>WHITE</code>", "<code>BLACK</code>"],
+              ["<code>BLANK</code>", "<code>MAGENTA</code>", "", ""]
+            ]
+          },
+          "code": {
+            "file": "colors.py",
+            "lang": "python",
+            "src": "import raylib\n\nprint(type(raylib.RED).__name__)\nprint(raylib.RED > 0)\nprint(raylib.KEY_SPACE, raylib.KEY_ESCAPE)\n\nfaded = raylib.Fade(raylib.RED, 0.5)\nprint(faded != raylib.RED)"
+          },
+          "output": "int\nTrue\n32 256\nTrue"
+        }
+      ]
+    },
+    {
+      "id": "raylib-python-drawing",
+      "title": "Drawing",
+      "sections": [
+        {
+          "title": "Shapes",
+          "paragraphs": [
+            "Every shape function takes plain numbers and an integer color. Coordinates are in pixels with the origin at the <strong>top-left</strong> of the window, and y grows downwards.",
+            "The functions whose C version takes a <code class=\"inline\">Vector2</code> have been flattened here: <code class=\"inline\">DrawCircleV</code> in C becomes the same call as <code class=\"inline\">DrawCircle</code>, taking <code class=\"inline\">x</code>, <code class=\"inline\">y</code> as two numbers rather than a vector."
+          ],
+          "table": {
+            "headers": ["Call", "Draws"],
+            "rows": [
+              ["<code>DrawPixel(x, y, color)</code>", "One pixel"],
+              ["<code>DrawLine(x1, y1, x2, y2, color)</code>", "A 1px line"],
+              ["<code>DrawLineEx(x1, y1, x2, y2, thick, color)</code>", "A thick line"],
+              ["<code>DrawRectangle(x, y, w, h, color)</code>", "A filled rectangle"],
+              ["<code>DrawRectangleLines(x, y, w, h, color)</code>", "An outlined rectangle"],
+              ["<code>DrawRectangleLinesEx(x, y, w, h, thick, color)</code>", "A thick outline"],
+              ["<code>DrawRectangleRounded(x, y, w, h, roundness, segments, color)</code>", "A rounded rectangle"],
+              ["<code>DrawCircle(x, y, radius, color)</code>", "A filled circle"],
+              ["<code>DrawCircleLines(x, y, radius, color)</code>", "A circle outline"],
+              ["<code>DrawEllipse(x, y, rh, rv, color)</code>", "An ellipse"],
+              ["<code>DrawTriangle(x1, y1, x2, y2, x3, y3, color)</code>", "A triangle"],
+              ["<code>DrawPoly(x, y, sides, radius, rotation, color)</code>", "A regular polygon"]
+            ]
+          },
+          "code": {
+            "file": "shapes.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(640, 360, \"Shapes\")\nraylib.SetTargetFPS(60)\n\nwhile not raylib.WindowShouldClose():\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.RAYWHITE)\n\n    raylib.DrawRectangle(20, 20, 120, 80, raylib.RED)\n    raylib.DrawRectangleLines(20, 120, 120, 80, raylib.DARKBLUE)\n    raylib.DrawRectangleRounded(20, 220, 120, 80, 0.4, 8, raylib.GREEN)\n\n    raylib.DrawCircle(220, 60, 40, raylib.BLUE)\n    raylib.DrawCircleLines(220, 160, 40, raylib.DARKGREEN)\n\n    raylib.DrawLine(160, 300, 320, 240, raylib.MAROON)\n    raylib.DrawLineEx(340, 300, 500, 240, 3.0, raylib.PURPLE)\n\n    raylib.DrawTriangle(520, 300, 560, 140, 620, 300, raylib.ORANGE)\n\n    raylib.EndDrawing()\n\nraylib.CloseWindow()"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "Shape functions take integers for positions and a float for a radius or a thickness. Python will not convert for you, so an expression that produces a float position needs <code>int(round(...))</code>."
+            }
+          ]
+        },
+        {
+          "title": "Text",
+          "paragraphs": [
+            "<code class=\"inline\">DrawText</code> uses raylib's built-in font and is all you need for a debug readout or a prototype.",
+            "A loaded font is returned as a <strong>two-element tuple</strong>: the base size and the texture id. <code class=\"inline\">DrawTextEx</code> expects exactly those two values first, so the clean way to call it is with a star-unpack — <code class=\"inline\">raylib.DrawTextEx(*font, text, ...)</code> — which is also self-documenting about what the tuple holds."
+          ],
+          "table": {
+            "headers": ["Call", "Does"],
+            "rows": [
+              ["<code>DrawText(text, x, y, size, color)</code>", "Draw with the default font"],
+              ["<code>DrawTextEx(baseSize, id, text, x, y, size, spacing, color)</code>", "Draw with a loaded font"],
+              ["<code>MeasureText(text, size)</code>", "Text width in pixels"],
+              ["<code>LoadFontEx(path, size)</code>", "Load a TTF at a pixel size"],
+              ["<code>LoadFont(path)</code>", "Load a TTF at its natural size"],
+              ["<code>GetFontDefault()</code>", "The built-in font as a tuple"],
+              ["<code>UnloadFont(baseSize, id)</code>", "Free a loaded font"]
+            ]
+          },
+          "code": {
+            "file": "text.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(640, 200, \"Text\")\n\nfont = raylib.LoadFontEx(\"assets/FreeMono.ttf\", 32)\nprint(\"font tuple has\", len(font), \"entries\")\nprint(\"measured:\", raylib.MeasureText(\"hello\", 20))\n\nwhile not raylib.WindowShouldClose():\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.RAYWHITE)\n\n    raylib.DrawText(\"default font\", 20, 20, 20, raylib.BLACK)\n    raylib.DrawTextEx(*font, \"custom font\", 20, 60, 32, 2, raylib.DARKGRAY)\n    raylib.DrawText(\"centred-ish\", 20, 120, 20, raylib.MAROON)\n\n    raylib.EndDrawing()\n\nraylib.UnloadFont(*font)\nraylib.CloseWindow()"
+          },
+          "output": "font tuple has 2 entries\nmeasured: 47"
+        },
+        {
+          "title": "Textures",
+          "paragraphs": [
+            "<code class=\"inline\">LoadTexture</code> returns an integer handle for the texture on the GPU, and you pass that handle to every draw and finally to <code class=\"inline\">UnloadTexture</code>.",
+            "<code class=\"inline\">DrawTexture</code> places it at a position with a tint; <code class=\"inline\">DrawTextureEx</code> adds rotation and scale. Pass <code class=\"inline\">raylib.WHITE</code> as the tint when you want the image unchanged."
+          ],
+          "code": {
+            "file": "textures.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(640, 360, \"Textures\")\n\nlogo = raylib.LoadTexture(\"assets/logo.png\")\nprint(\"texture valid:\", raylib.IsTextureValid(logo))\n\nwhile not raylib.WindowShouldClose():\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.DARKGRAY)\n\n    raylib.DrawTexture(logo, 20, 20, raylib.WHITE)\n    raylib.DrawTextureEx(logo, 220, 20, 45.0, 0.5, raylib.WHITE)\n\n    raylib.EndDrawing()\n\nraylib.UnloadTexture(logo)\nraylib.CloseWindow()"
+          },
+          "output": "texture valid: True"
+        },
+        {
+          "title": "Rectangles Are Tuples",
+          "paragraphs": [
+            "<code class=\"inline\">raylib.Rectangle(x, y, w, h)</code> builds a <strong>tuple</strong>. That is what the raygui binding expects as its first argument, and it is what makes a layout easy to express once and reuse.",
+            "The raylib shape functions want the four numbers separately, so spread the tuple with a star when you want to draw it: <code class=\"inline\">raylib.DrawRectangleRec(*box, color)</code>."
+          ],
+          "code": {
+            "file": "rectangles.py",
+            "lang": "python",
+            "src": "import raylib\n\nbox = raylib.Rectangle(40, 40, 200, 100)\nprint(box, type(box).__name__)\n\nx, y, w, h = box\nprint(x, y, w, h)\n\nraylib.InitWindow(320, 200, \"Rectangle\")\nraylib.BeginDrawing()\nraylib.ClearBackground(raylib.RAYWHITE)\nraylib.DrawRectangleRec(*box, raylib.SKYBLUE)\nraylib.EndDrawing()\nraylib.CloseWindow()"
+          },
+          "output": "(40, 40, 200, 100) tuple\n40 40 200 100"
+        }
+      ]
+    },
+    {
+      "id": "raylib-python-input",
+      "title": "Input",
+      "sections": [
+        {
+          "title": "Keyboard",
+          "paragraphs": [
+            "There are two questions you can ask about a key, and the difference matters. <code class=\"inline\">IsKeyDown</code> is true for every frame the key is held — that is what movement uses. <code class=\"inline\">IsKeyPressed</code> is true for exactly one frame, the frame the key went down — that is what a menu or a fire action uses.",
+            "Because both return a real <code class=\"inline\">bool</code>, they read naturally in an <code class=\"inline\">if</code>."
+          ],
+          "table": {
+            "headers": ["Call", "True when"],
+            "rows": [
+              ["<code>IsKeyDown(key)</code>", "The key is held down"],
+              ["<code>IsKeyPressed(key)</code>", "The key went down this frame"],
+              ["<code>IsKeyReleased(key)</code>", "The key came up this frame"],
+              ["<code>IsKeyUp(key)</code>", "The key is not held"],
+              ["<code>GetKeyPressed()</code>", "Key code of the next key in the queue, 0 if none"],
+              ["<code>GetCharPressed()</code>", "Unicode codepoint of the next typed character"]
+            ]
+          },
+          "code": {
+            "file": "keyboard.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(640, 360, \"Keyboard\")\nraylib.SetTargetFPS(60)\n\nx, y = 300.0, 160.0\nspeed = 200.0\n\nwhile not raylib.WindowShouldClose():\n    dt = raylib.GetFrameTime()\n\n    if raylib.IsKeyDown(raylib.KEY_LEFT):\n        x -= speed * dt\n    if raylib.IsKeyDown(raylib.KEY_RIGHT):\n        x += speed * dt\n    if raylib.IsKeyDown(raylib.KEY_UP):\n        y -= speed * dt\n    if raylib.IsKeyDown(raylib.KEY_DOWN):\n        y += speed * dt\n\n    if raylib.IsKeyPressed(raylib.KEY_SPACE):\n        x, y = 300.0, 160.0\n\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.RAYWHITE)\n    raylib.DrawRectangle(int(x), int(y), 40, 40, raylib.RED)\n    raylib.DrawText(\"arrows move, space resets\", 20, 20, 20, raylib.DARKGRAY)\n    raylib.EndDrawing()\n\nraylib.CloseWindow()"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "Multiplying by <code>GetFrameTime()</code> makes movement independent of the frame rate. Without it the paddle moves twice as fast on a machine drawing twice as many frames."
+            }
+          ]
+        },
+        {
+          "title": "Mouse",
+          "paragraphs": [
+            "<code class=\"inline\">GetMouseX</code> and <code class=\"inline\">GetMouseY</code> give the position as two integers. <code class=\"inline\">GetMousePosition</code> gives the same pair as a <strong>tuple</strong>, which unpacks on assignment: <code class=\"inline\">mx, my = raylib.GetMousePosition()</code>.",
+            "<code class=\"inline\">GetMouseWheelMove</code> returns a float that is positive when scrolled up, and the button tests mirror the keyboard ones."
+          ],
+          "table": {
+            "headers": ["Call", "Returns"],
+            "rows": [
+              ["<code>GetMouseX()</code> / <code>GetMouseY()</code>", "Mouse position as ints"],
+              ["<code>GetMousePosition()</code>", "The same as a <code>(x, y)</code> tuple"],
+              ["<code>GetMouseDelta()</code>", "Movement since the last frame"],
+              ["<code>GetMouseWheelMove()</code>", "Wheel delta as a float"],
+              ["<code>IsMouseButtonDown(b)</code> / <code>IsMouseButtonPressed(b)</code>", "Held / just pressed"],
+              ["<code>SetMousePosition(x, y)</code>", "Move the cursor"]
+            ]
+          },
+          "code": {
+            "file": "mouse.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(640, 360, \"Mouse\")\nraylib.SetTargetFPS(60)\n\nradius = 20.0\n\nwhile not raylib.WindowShouldClose():\n    mx, my = raylib.GetMousePosition()\n    radius += raylib.GetMouseWheelMove() * 2\n    radius = max(4.0, min(120.0, radius))\n\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.DARKGRAY)\n\n    if raylib.IsMouseButtonDown(raylib.MOUSE_BUTTON_LEFT):\n        raylib.DrawCircle(int(mx), int(my), radius, raylib.RED)\n    else:\n        raylib.DrawCircleLines(int(mx), int(my), radius, raylib.RAYWHITE)\n\n    raylib.DrawText(f\"{int(mx)}, {int(my)}\", 10, 10, 20, raylib.RAYWHITE)\n    raylib.EndDrawing()\n\nraylib.CloseWindow()"
+          }
+        },
+        {
+          "title": "Text Input",
+          "paragraphs": [
+            "<code class=\"inline\">GetCharPressed</code> returns one typed character at a time as a codepoint, and 0 when the queue is empty. Loop until it returns 0 to drain everything typed in that frame.",
+            "For a text field the usual pair is <code class=\"inline\">GetCharPressed</code> for the characters and <code class=\"inline\">IsKeyPressed(raylib.KEY_BACKSPACE)</code> for the delete key."
+          ],
+          "code": {
+            "file": "typing.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(480, 160, \"Typing\")\nraylib.SetTargetFPS(60)\n\ntext = \"\"\n\nwhile not raylib.WindowShouldClose():\n    while True:\n        code = raylib.GetCharPressed()\n        if code == 0:\n            break\n        if 32 <= code < 127:\n            text += chr(code)\n\n    if raylib.IsKeyPressed(raylib.KEY_BACKSPACE) and text:\n        text = text[:-1]\n\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.RAYWHITE)\n    raylib.DrawRectangleLines(20, 20, 440, 40, raylib.DARKGRAY)\n    raylib.DrawText(text, 30, 30, 20, raylib.BLACK)\n    raylib.EndDrawing()\n\nraylib.CloseWindow()"
+          }
+        }
+      ]
+    },
+{
+      "id": "raylib-python-cameras",
+      "title": "Cameras",
+      "sections": [
+        {
+          "title": "Camera2D Is a Dictionary",
+          "paragraphs": [
+            "The Python binding does not expose C structs as opaque objects. <code class=\"inline\">raylib.Camera2D()</code> returns a <strong>dictionary</strong> with four keys — <code class=\"inline\">offset</code>, <code class=\"inline\">target</code>, <code class=\"inline\">rotation</code> and <code class=\"inline\">zoom</code> — where <code class=\"inline\">offset</code> and <code class=\"inline\">target</code> are themselves dictionaries holding <code class=\"inline\">x</code> and <code class=\"inline\">y</code>.",
+            "That is convenient: you read and write the camera like any other dict, and <code class=\"inline\">BeginMode2D(cam)</code> reads it fresh every frame. Everything you draw between <code class=\"inline\">BeginMode2D</code> and <code class=\"inline\">EndMode2D</code> is transformed by it.",
+            "<code class=\"inline\">target</code> is the world point that appears at <code class=\"inline\">offset</code> on screen. With a zero offset and a target at the middle of the map, the camera sits exactly there."
+          ],
+          "code": {
+            "file": "camera2d.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(800, 600, \"Camera2D\")\nraylib.SetTargetFPS(60)\n\ncam = raylib.Camera2D()\ncam[\"offset\"] = {\"x\": 400.0, \"y\": 300.0}\ncam[\"target\"] = {\"x\": 400.0, \"y\": 300.0}\ncam[\"zoom\"] = 1.0\n\nwhile not raylib.WindowShouldClose():\n    cam[\"zoom\"] += raylib.GetMouseWheelMove() * 0.1\n    cam[\"zoom\"] = max(0.2, min(4.0, cam[\"zoom\"]))\n\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.RAYWHITE)\n\n    raylib.BeginMode2D(cam)\n    for i in range(0, 9):\n        raylib.DrawRectangle(100 + i * 80, 250, 60, 100, raylib.SKYBLUE)\n    raylib.EndMode2D()\n\n    raylib.DrawText(f\"zoom {cam['zoom']:.2f}\", 20, 20, 20, raylib.DARKGRAY)\n    raylib.EndDrawing()\n\nraylib.CloseWindow()"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "To find out what a mouse position means in the world, pass the camera to <code>GetScreenToWorld2D</code>; the reverse is <code>GetWorldToScreen2D</code>. Both take the camera dictionary."
+            }
+          ]
+        },
+        {
+          "title": "Camera3D",
+          "paragraphs": [
+            "<code class=\"inline\">raylib.Camera3D()</code> returns a dictionary with <code class=\"inline\">position</code>, <code class=\"inline\">target</code> and <code class=\"inline\">up</code> — each a dictionary with <code class=\"inline\">x</code>, <code class=\"inline\">y</code>, <code class=\"inline\">z</code> — plus <code class=\"inline\">fovy</code> and <code class=\"inline\">projection</code>. Set the fields you care about and pass the whole dictionary to <code class=\"inline\">BeginMode3D</code>.",
+            "<code class=\"inline\">projection</code> selects perspective or orthographic with the constants <code class=\"inline\">raylib.CAMERA_PERSPECTIVE</code> and <code class=\"inline\">raylib.CAMERA_ORTHOGRAPHIC</code>."
+          ],
+          "code": {
+            "file": "camera3d.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(800, 600, \"Camera3D\")\nraylib.SetTargetFPS(60)\n\ncam = raylib.Camera3D()\ncam[\"position\"] = {\"x\": 10.0, \"y\": 10.0, \"z\": 10.0}\ncam[\"target\"] = {\"x\": 0.0, \"y\": 0.0, \"z\": 0.0}\nprint(cam[\"projection\"] == raylib.CAMERA_PERSPECTIVE)\n\nwhile not raylib.WindowShouldClose():\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.RAYWHITE)\n\n    raylib.BeginMode3D(cam)\n    raylib.DrawCube(0, 0, 0, 2, 2, 2, raylib.RED)\n    raylib.DrawCubeWires(0, 0, 0, 2, 2, 2, raylib.MAROON)\n    raylib.DrawGrid(10, 1.0)\n    raylib.EndMode3D()\n\n    raylib.EndDrawing()\n\nraylib.CloseWindow()"
+          },
+          "output": "True"
+        },
+        {
+          "title": "Shapes in 3D",
+          "paragraphs": [
+            "The 3D shape functions are flattened the same way as the 2D ones: a <code class=\"inline\">Vector3</code> becomes three separate float arguments."
+          ],
+          "table": {
+            "headers": ["Call", "Draws"],
+            "rows": [
+              ["<code>DrawCube(x, y, z, w, h, l, color)</code>", "A solid cube"],
+              ["<code>DrawCubeWires(x, y, z, w, h, l, color)</code>", "A cube outline"],
+              ["<code>DrawSphere(x, y, z, radius, color)</code>", "A sphere"],
+              ["<code>DrawCylinder(x, y, z, rTop, rBottom, height, sides, color)</code>", "A cylinder"],
+              ["<code>DrawPlane(x, y, z, w, h, color)</code>", "A horizontal plane"],
+              ["<code>DrawLine3D(x1, y1, z1, x2, y2, z2, color)</code>", "A line between two points"],
+              ["<code>DrawGrid(slices, spacing)</code>", "The reference grid"]
+            ]
+          },
+          "code": {
+            "file": "shapes3d.py",
+            "lang": "python",
+            "src": "raylib.DrawSphere(-4, 1, 0, 1.0, raylib.BLUE)\nraylib.DrawCylinder(0, 1, 0, 0.5, 0.5, 2.0, 16, raylib.GREEN)\nraylib.DrawPlane(0, 0, 0, 20, 20, raylib.LIGHTGRAY)\nraylib.DrawLine3D(0, 0, 0, 0, 5, 0, raylib.YELLOW)"
+          }
+        }
+      ]
+    },
+    {
+      "id": "raylib-python-audio",
+      "title": "Audio",
+      "sections": [
+        {
+          "title": "Opening the Device",
+          "paragraphs": [
+            "Audio is started explicitly with <code class=\"inline\">InitAudioDevice()</code> and released with <code class=\"inline\">CloseAudioDevice()</code>. Between the two, <code class=\"inline\">IsAudioDeviceReady()</code> reports whether a device actually opened — worth checking, because a machine without a sound device would otherwise fail later with a confusing error."
+          ],
+          "table": {
+            "headers": ["Call", "Purpose"],
+            "rows": [
+              ["<code>InitAudioDevice()</code> / <code>CloseAudioDevice()</code>", "Open / close the device"],
+              ["<code>IsAudioDeviceReady()</code>", "Did it open?"],
+              ["<code>SetMasterVolume(v)</code> / <code>GetMasterVolume()</code>", "Master volume, 0.0 - 1.0"],
+              ["<code>LoadSound(path)</code> / <code>UnloadSound(s)</code>", "Short effect, whole file in memory"],
+              ["<code>PlaySound(s)</code>", "Start playing"],
+              ["<code>StopSound(s)</code> / <code>PauseSound(s)</code> / <code>ResumeSound(s)</code>", "Transport control"],
+              ["<code>IsSoundPlaying(s)</code>", "Still playing?"],
+              ["<code>LoadMusicStream(path)</code>", "Streaming music for long tracks"],
+              ["<code>PlayMusicStream(m)</code> / <code>UpdateMusicStream(m)</code>", "Start / feed the stream"]
+            ]
+          },
+          "code": {
+            "file": "device.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(400, 200, \"Audio\")\nraylib.InitAudioDevice()\n\nprint(\"device ready:\", raylib.IsAudioDeviceReady())\nraylib.SetMasterVolume(0.5)\nprint(\"volume:\", raylib.GetMasterVolume())\n\nraylib.CloseAudioDevice()\nraylib.CloseWindow()"
+          },
+          "output": "device ready: True\nvolume: 0.5"
+        },
+        {
+          "title": "Sound and Music Handles",
+          "paragraphs": [
+            "<code class=\"inline\">LoadSound</code> and <code class=\"inline\">LoadMusicStream</code> return an integer <strong>handle</strong>, exactly like a texture. Store it in a variable and pass it to <code class=\"inline\">PlaySound</code> or <code class=\"inline\">UpdateMusicStream</code>.",
+            "Trigger a sound from inside an input check so it fires once per event rather than once per frame. Feed a music stream with <code class=\"inline\">UpdateMusicStream</code> on every frame or it plays for a fraction of a second and stops."
+          ],
+          "code": {
+            "file": "sound.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(400, 200, \"Sound\")\nraylib.InitAudioDevice()\n\nbeep = raylib.LoadSound(\"assets/beep.wav\")\nraylib.SetMasterVolume(0.5)\n\nwhile not raylib.WindowShouldClose():\n    if raylib.IsKeyPressed(raylib.KEY_SPACE):\n        raylib.PlaySound(beep)\n\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.DARKGRAY)\n    raylib.DrawText(\"press space to beep\", 40, 90, 20, raylib.RAYWHITE)\n    raylib.EndDrawing()\n\nraylib.UnloadSound(beep)\nraylib.CloseAudioDevice()\nraylib.CloseWindow()"
+          },
+          "notes": [
+            {
+              "type": "warn",
+              "text": "The sound and music handles in this binding are still being finished: the value returned by <code>LoadSound</code> is derived from the audio stream rather than being a unique handle, so <code>PlaySound</code> may not play the file you loaded. Treat the device calls and <code>SetMasterVolume</code> as stable today, and check <code>IsAudioDeviceReady()</code> before relying on playback."
+            }
+          ]
+        },
+        {
+          "title": "Music Streams",
+          "paragraphs": [
+            "Music is streamed from disk so a track can be minutes long — but the stream must be fed every frame with <code class=\"inline\">UpdateMusicStream(m)</code>. Forget that call and the music plays for a fraction of a second and stops.",
+            "Put it at the top of the loop, next to the input checks."
+          ],
+          "code": {
+            "file": "music.py",
+            "lang": "python",
+            "src": "import raylib\n\nraylib.InitWindow(400, 200, \"Music\")\nraylib.InitAudioDevice()\n\nmusic = raylib.LoadMusicStream(\"assets/theme.ogg\")\nraylib.PlayMusicStream(music)\n\nwhile not raylib.WindowShouldClose():\n    raylib.UpdateMusicStream(music)     # must run every frame\n\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.BLACK)\n    raylib.DrawText(\"playing\", 150, 90, 24, raylib.RAYWHITE)\n    raylib.EndDrawing()\n\nraylib.CloseAudioDevice()\nraylib.CloseWindow()"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "Every loaded sound and music stream is memory. Free them with <code>UnloadSound</code> / <code>UnloadMusicStream</code> when the game ends."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "raylib-python-raygui",
+      "title": "PyRaygui — Widgets",
+      "sections": [
+        {
+          "title": "The Rectangle Comes First",
+          "paragraphs": [
+            "The raygui binding is <strong>rect-first</strong>: a widget takes a rectangle as its first argument and the label after it. The rectangle is the tuple produced by <code class=\"inline\">raylib.Rectangle(x, y, w, h)</code>, so the same tuple can be reused for a widget, a hit test and a layout that you draw yourself.",
+            "Widgets return their new state: a button returns a <code class=\"inline\">bool</code>, a slider returns a number, a combo box returns the selected index. Nothing is stored inside the widget — you keep the value and pass it back in every frame."
+          ],
+          "code": {
+            "file": "widget.py",
+            "lang": "python",
+            "src": "import raylib\nimport raygui\n\nraylib.InitWindow(600, 400, \"raygui\")\nraylib.SetTargetFPS(60)\n\nbutton = raylib.Rectangle(20, 20, 200, 40)\nslider = raylib.Rectangle(20, 80, 300, 30)\ncheck  = raylib.Rectangle(20, 130, 24, 24)\n\nwidth = 200.0\nfullscreen = False\n\nwhile not raylib.WindowShouldClose():\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.RAYWHITE)\n\n    if raygui.GuiButton(button, \"Reset\"):\n        width = 200.0\n\n    width = raygui.GuiSlider(slider, \"\", \"Width\", width, 50.0, 500.0)\n    fullscreen = raygui.GuiCheckBox(check, \"Fullscreen\", fullscreen)\n\n    raylib.DrawRectangle(20, 180, int(width), 60, raylib.SKYBLUE)\n    raylib.EndDrawing()\n\nraylib.CloseWindow()"
+          },
+          "notes": [
+            {
+              "type": "tip",
+              "text": "A widget draws and answers in the same call, so it belongs inside the frame. The rectangle is in screen pixels, not world pixels — draw widgets after <code>EndMode2D</code> so the camera does not move them."
+            }
+          ]
+        },
+        {
+          "title": "The Widget Set",
+          "paragraphs": [
+            "The signatures below are the ones to memorise. Every one takes the rectangle first."
+          ],
+          "table": {
+            "headers": ["Call", "Returns"],
+            "rows": [
+              ["<code>GuiButton(rec, text)</code>", "<code>bool</code> — clicked this frame"],
+              ["<code>GuiLabel(rec, text)</code>", "nothing — display only"],
+              ["<code>GuiCheckBox(rec, text, checked)</code>", "the new checked state"],
+              ["<code>GuiSlider(rec, left, right, value, min, max)</code>", "the new value (float)"],
+              ["<code>GuiProgressBar(rec, left, right, value, min, max)</code>", "the value (clamped)"],
+              ["<code>GuiSpinner(rec, text, value, min, max, edit)</code>", "the new value (int)"],
+              ["<code>GuiComboBox(rec, \"A;B;C\", active)</code>", "the selected index"],
+              ["<code>GuiPanel(rec, text)</code>", "nothing — a container"],
+              ["<code>GuiGroupBox(rec, text)</code>", "nothing — a titled frame"],
+              ["<code>GuiLine(rec, text)</code>", "nothing — a separator"],
+              ["<code>GuiStatusBar(rec, text)</code>", "nothing — a status strip"],
+              ["<code>GuiWindowBox(rec, text)</code>", "<code>bool</code> — the close button"],
+              ["<code>GuiTextBox(rec, text, edit)</code>", "the edited text"],
+              ["<code>GuiValueBox(rec, text, value, min, max, edit)</code>", "the new value"],
+              ["<code>GuiDropdownBox(rec, items, active, edit)</code>", "the new selection"],
+              ["<code>GuiMessageBox(rec, title, message, buttons)</code>", "the chosen button"],
+              ["<code>GuiGetTextWidth(text)</code>", "width in pixels"]
+            ]
+          },
+          "code": {
+            "file": "panel.py",
+            "lang": "python",
+            "src": "import raylib\nimport raygui\n\nraylib.InitWindow(560, 420, \"Settings\")\nraylib.SetTargetFPS(60)\n\npanel   = raylib.Rectangle(20, 20, 520, 380)\nvol     = raylib.Rectangle(40, 90, 460, 28)\nprog    = raylib.Rectangle(40, 140, 460, 24)\nquality = raylib.Rectangle(40, 190, 220, 28)\nclose   = raylib.Rectangle(180, 330, 200, 40)\n\nvolume = 0.7\nquality_index = 1\n\nwhile not raylib.WindowShouldClose():\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.RAYWHITE)\n\n    raygui.GuiPanel(panel, \"Settings\")\n    raygui.GuiLabel(raylib.Rectangle(40, 60, 200, 20), \"Audio\")\n\n    volume = raygui.GuiSlider(vol, \"Vol\", \"\", volume, 0.0, 1.0)\n    raygui.GuiProgressBar(prog, \"\", f\"{volume:.0%}\", volume, 0.0, 1.0)\n    quality_index = raygui.GuiComboBox(quality, \"Low;Normal;High\", quality_index)\n\n    if raygui.GuiButton(close, \"Close\"):\n        break\n\n    raylib.DrawText(f\"quality index {quality_index}\", 40, 240, 20, raylib.DARKGRAY)\n    raylib.EndDrawing()\n\nraylib.CloseWindow()"
+          }
+        },
+        {
+          "title": "Styling",
+          "paragraphs": [
+            "<code class=\"inline\">GuiSetStyle(control, property, value)</code> changes a widget's colours, sizes and padding, and <code class=\"inline\">GuiGetStyle(control, property)</code> reads one back. <code class=\"inline\">GuiLoadStyle(path)</code> loads a raygui style file in one call, and <code class=\"inline\">GuiLoadStyleDefault()</code> restores the built-in look.",
+            "One caveat to know before you reach for it: the Python binding does not export the <code class=\"inline\">GuiControl</code> and <code class=\"inline\">GuiControlProperty</code> constant tables, so those two arguments have to be written as plain numbers (they are documented in raygui's own header)."
+          ],
+          "table": {
+            "headers": ["Call", "Purpose"],
+            "rows": [
+              ["<code>GuiSetStyle(control, property, value)</code>", "Change one style value"],
+              ["<code>GuiGetStyle(control, property)</code>", "Read one style value"],
+              ["<code>GuiLoadStyle(path)</code>", "Load a .rgs style file"],
+              ["<code>GuiLoadStyleDefault()</code>", "Restore the default theme"],
+              ["<code>GuiEnable()</code> / <code>GuiDisable()</code>", "Enable or grey out all widgets"],
+              ["<code>GuiSetAlpha(a)</code>", "Global widget transparency"],
+              ["<code>GuiEnableTooltip()</code> / <code>GuiSetTooltip(text)</code>", "Tooltip control"],
+              ["<code>GuiSetIconScale(scale)</code> / <code>GuiIconText(icon, text)</code>", "Icon and label together"]
+            ]
+          },
+          "code": {
+            "file": "style.py",
+            "lang": "python",
+            "src": "import raygui\n\nbefore = raygui.GuiGetStyle(0, 16)\nraygui.GuiSetStyle(0, 16, 20)\nafter = raygui.GuiGetStyle(0, 16)\nprint(before, after)\n\nraygui.GuiLoadStyleDefault()\nprint(raygui.GuiGetTextWidth(\"MMMMMMMMMM\") > 0)"
+          },
+          "output": "0 20\nTrue"
+        }
+      ]
+    },
+    {
+      "id": "python-project",
+      "title": "Full Project — Keep-Up",
+      "sections": [
+        {
+          "title": "What We Are Building",
+          "paragraphs": [
+            "One window, one paddle, one ball, a score, and a restart button. It uses every part of this track: dictionaries and functions for state, a class-free module layout, input, drawing, and a raygui button.",
+            "The shape of the file is the shape of every game you will write: <strong>constants → state → update → draw → loop</strong>."
+          ],
+          "code": {
+            "file": "keepup.py",
+            "lang": "python",
+            "src": "import raylib\nimport raygui\nimport gcl\n\ngcl.init()\n\nWIDTH, HEIGHT = 800, 600\nPADDLE_W, PADDLE_H = 120, 16\nBALL_R = 8\nPADDLE_SPEED = 420.0\nBALL_SPEED_X = 200.0\nBALL_SPEED_Y = 260.0\n\nraylib.InitWindow(WIDTH, HEIGHT, \"Keep-Up\")\nraylib.SetTargetFPS(60)\n\npaddle_x = WIDTH / 2 - PADDLE_W / 2\nball_x, ball_y = WIDTH / 2, HEIGHT / 2\nball_vx, ball_vy = BALL_SPEED_X, -BALL_SPEED_Y\nscore = 0\ngame_over = False\nrestart_button = raylib.Rectangle(WIDTH / 2 - 100, HEIGHT / 2 + 40, 200, 44)\n\n\ndef reset_ball():\n    \"\"\"Put the ball back in the middle, keeping its horizontal direction.\"\"\"\n    global ball_x, ball_y, ball_vx, ball_vy\n    ball_x, ball_y = WIDTH / 2, HEIGHT / 2\n    ball_vx = BALL_SPEED_X if ball_vx >= 0 else -BALL_SPEED_X\n    ball_vy = -BALL_SPEED_Y\n\n\nwhile not raylib.WindowShouldClose():\n    dt = raylib.GetFrameTime()\n\n    # ---- update ----\n    if raylib.IsKeyDown(raylib.KEY_LEFT):\n        paddle_x -= PADDLE_SPEED * dt\n    if raylib.IsKeyDown(raylib.KEY_RIGHT):\n        paddle_x += PADDLE_SPEED * dt\n    paddle_x = max(0.0, min(WIDTH - PADDLE_W, paddle_x))\n\n    if not game_over:\n        ball_x += ball_vx * dt\n        ball_y += ball_vy * dt\n\n        if ball_x - BALL_R <= 0 and ball_vx < 0:\n            ball_x, ball_vx = BALL_R, -ball_vx\n        if ball_x + BALL_R >= WIDTH and ball_vx > 0:\n            ball_x, ball_vx = WIDTH - BALL_R, -ball_vx\n        if ball_y - BALL_R <= 0 and ball_vy < 0:\n            ball_y, ball_vy = BALL_R, -ball_vy\n\n        if ball_y + BALL_R >= HEIGHT - PADDLE_H and ball_vy > 0:\n            if paddle_x <= ball_x <= paddle_x + PADDLE_W:\n                ball_y = HEIGHT - PADDLE_H - BALL_R\n                ball_vy = -ball_vy\n                score += 1\n            else:\n                game_over = True\n                gcl.set_state(\"score\", score)\n\n    # ---- draw ----\n    raylib.BeginDrawing()\n    raylib.ClearBackground(raylib.BLACK)\n\n    raylib.DrawRectangle(int(paddle_x), HEIGHT - PADDLE_H, PADDLE_W, PADDLE_H, raylib.SKYBLUE)\n    raylib.DrawCircle(int(ball_x), int(ball_y), BALL_R, raylib.RED)\n    raylib.DrawText(f\"score {score}\", 20, 20, 30, raylib.RAYWHITE)\n\n    if game_over:\n        raylib.DrawText(\"game over\", WIDTH / 2 - 80, HEIGHT / 2 - 40, 30, raylib.RAYWHITE)\n        if raygui.GuiButton(restart_button, \"Restart\"):\n            score = 0\n            game_over = False\n            reset_ball()\n\n    raylib.EndDrawing()\n\nraylib.CloseWindow()"
+          },
+          "notes": [
+            {
+              "type": "info",
+              "text": "The file runs unchanged whether you launch it with <code>gcl -pyrun keepup.py</code> or let a GCL program start it through <code>Embed.Run(type=\"python\")</code>."
+            }
+          ]
+        },
+        {
+          "title": "Where the Pieces Came From",
+          "paragraphs": [
+            "Nothing in this file is new. Each line is a chapter from this track, and recognising that is the point of the project."
+          ],
+          "table": {
+            "headers": ["Part of the game", "Chapter it came from"],
+            "rows": [
+              ["<code>WIDTH, HEIGHT = 800, 600</code>", "Values and Variables"],
+              ["<code>while not raylib.WindowShouldClose():</code>", "PyRaylib — First Window"],
+              ["<code>if not game_over:</code>", "Control Flow"],
+              ["<code>def reset_ball():</code> and <code>global</code>", "Functions"],
+              ["<code>ball_x, ball_vx = BALL_R, -ball_vx</code>", "Collections (tuple assignment)"],
+              ["<code>f\"score {score}\"</code>", "Strings"],
+              ["<code>IsKeyDown</code> and <code>GetFrameTime</code>", "Input"],
+              ["<code>DrawRectangle</code>, <code>DrawCircle</code>, <code>DrawText</code>", "Drawing"],
+              ["<code>raygui.GuiButton(restart_button, \"Restart\")</code>", "PyRaygui"],
+              ["<code>gcl.set_state(\"score\", score)</code>", "The gcl Bridge"]
+            ]
+          }
+        },
+        {
+          "title": "Sharing the Score With GCL",
+          "paragraphs": [
+            "The one line worth its own note is <code class=\"inline\">gcl.set_state(\"score\", score)</code>. It publishes the final score into the shared state block, where the GCL program that started this script can read it back with <code class=\"inline\">Embed.GetValue(type=\"python\", name=\"score\")</code> after <code class=\"inline\">Embed.Stop(type=\"python\")</code> returns.",
+            "That is the whole cross-language contract: names, numbers, and a call on each side."
+          ],
+          "code": {
+            "file": "main.gcsf",
+            "lang": "gcl",
+            "src": "#native <Embed>\n#native <Stdio>\n\nint main() {\n    Embed.Run(type=\"python\");          /* runs scripts/main.py */\n    Embed.Stop(type=\"python\");         /* waits for the player to quit */\n\n    double score = Embed.GetValue(type=\"python\", name=\"score\");\n    Stdio.printf(\"final score: {}\\n\", score);\n    return 0;\n}"
+          },
+          "output": "final score: 17"
+        }
+      ]
+    }
+  ]
 }

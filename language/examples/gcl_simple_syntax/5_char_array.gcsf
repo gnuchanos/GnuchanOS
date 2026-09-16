@@ -2,12 +2,12 @@
 
 int main() {
 
-    // Tek bir char
+    // A single char
     char c = 'A';
     Stdio.printf("Char: {}\n", c);
 
 
-    // Char dizisi
+    // Char array
     char array[5] = {
         'H', 'e', 'l', 'l', 'o'
     };
@@ -29,7 +29,7 @@ int main() {
     }
 
 
-    // Çoklu string
+    // Multiple strings
     char texts[3][20] = {
         "Hello",
         "World",

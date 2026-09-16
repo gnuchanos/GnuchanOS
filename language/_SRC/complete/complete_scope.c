@@ -335,11 +335,69 @@ int gcl_scope_is_type(const GclScope *s, const char *name) {
 
 /* ---- Üye / bildirim ayrıştırma ---- */
 
-static int is_ident_at(const char *s, size_t len, size_t i) {
-    return i < len && gclc_ident_char(s[i]);
+/* Bildirilen tip metnini TEK KANONİK ada indir.
+   Atılanlar: baştaki niteleyiciler (const/global/static/inline/local),
+   struct/enum/union etiketi, sondaki pointer/referans ('*','&') ve dizi
+   son ekleri ("[10]").
+
+   NEDEN: üye çözümlemesi (complete_type.c) bir tipi ADIYLA arar. "struct Point"
+   veya "Point *" yazan bir sembol, tip tablosundaki "Point" girdisiyle
+   eşleşmediği için '.' zinciri SESSİZCE durur. `split_declarator()` bunu
+   değişkenler için zaten yapıyordu; fonksiyon DÖNÜŞ tipi için yapılmıyordu, bu
+   yüzden kullanıcı fonksiyonunun dönüşü zincirlenemiyordu
+   (`makePoint(1).` → hiçbir öneri).
+
+   Yerleşik tipler korunur: "unsigned int" → "unsigned int" (üye listesi yok,
+   ama tip adı bozulmamalı). "Raylib.Vector2 *" → "Raylib.Vector2" (modül öneki
+   burada SOYULMAZ; onu complete_type.c'deki strip_module_prefix yapar — kapsam
+   katmanı native modül listesini bilmemeli). */
+static void normalize_type_name(char *t, size_t cap) {
+    if (!t || cap == 0) return;
+    size_t n = strlen(t);
+    size_t a = 0;
+    while (a < n && (t[a] == ' ' || t[a] == '\t')) a++;
+
+    /* Baştaki niteleyici ve etiket sözcükleri (birden fazla olabilir:
+       "const struct Point"). */
+    static const char *lead[] = {
+        "const", "global", "static", "inline", "local",
+        "struct", "enum", "union", NULL
+    };
+    for (;;) {
+        size_t adv = 0;
+        for (int i = 0; lead[i]; i++) {
+            size_t l = strlen(lead[i]);
+            if (n - a >= l && strncmp(t + a, lead[i], l) == 0 &&
+                (n - a == l || !gclc_ident_char(t[a + l]))) { adv = l; break; }
+        }
+        if (adv == 0) break;
+        a += adv;
+        while (a < n && (t[a] == ' ' || t[a] == '\t')) a++;
+    }
+
+    /* Sondaki boşluk, pointer/referans ve dizi son ekleri. */
+    size_t b = n;
+    for (;;) {
+        while (b > a && (t[b - 1] == ' ' || t[b - 1] == '\t')) b--;
+        if (b > a && (t[b - 1] == '*' || t[b - 1] == '&')) { b--; continue; }
+        if (b > a && t[b - 1] == ']') {
+            int d = 0;
+            size_t k = b;
+            while (k > a) {
+                k--;
+                if (t[k] == ']') d++;
+                else if (t[k] == '[') { d--; if (d == 0) break; }
+            }
+            if (d == 0 && t[k] == '[') { b = k; continue; }
+        }
+        break;
+    }
+    if (b <= a) { t[0] = '\0'; return; }
+    memmove(t, t + a, b - a);
+    t[b - a] = '\0';
 }
 
-/* name: son tanımlayıcı; type: öncesi (struct/enum öneki temizlenir). */
+/* name: son tanımlayıcı; type: öncesi (normalize_type_name ile sadeleşir). */
 static void split_declarator(const char *s, size_t len,
                             char *type_out, size_t tcap,
                             char *name_out, size_t ncap) {
@@ -351,6 +409,28 @@ static void split_declarator(const char *s, size_t len,
     if (l == 0) { type_out[0] = '\0'; name_out[0] = '\0'; return; }
     /* '=' sonrasını at */
     for (size_t i = 0; i < l; i++) { if (p[i] == '=') { l = i; break; } }
+    /* Dizi bildirimi: "Type name[N]" / "name[N][M]" → tanımlayıcı '[' ÖNCESİNDEdir.
+       Eskiden imleç ']' üzerinde kalıyor, ardından gclc_ident_char(']') false
+       döndüğü için tanımlayıcı BULUNAMIYOR ve dizi değişkenleri/alanları
+       kapsama HİÇ girmiyordu. Bu yüzden "char name[20]" üyesi kayboluyor
+       (örnek: 8_typedef_struct.gcsf içindeki person.name) ve "people[i]."
+       hiçbir öneri vermiyordu (todo #6: dizi+struct karışımı). */
+    for (;;) {
+        size_t e = l;
+        while (e > 0 && (p[e - 1] == ' ' || p[e - 1] == '\t')) e--;
+        if (e == 0 || p[e - 1] != ']') break;
+        int br = 0;
+        size_t s2 = e;
+        while (s2 > 0) {
+            s2--;
+            if (p[s2] == ']') br++;
+            else if (p[s2] == '[') { br--; if (br == 0) break; }
+        }
+        if (br != 0) break;          /* eşleşmeyen '[' → dizi değil, dokunma */
+        l = s2;                      /* '[' konumuna kırp; çok boyutlu için döngü */
+    }
+    while (l > 0 && (p[l - 1] == ' ' || p[l - 1] == '\t')) l--;
+    if (l == 0) { type_out[0] = '\0'; name_out[0] = '\0'; return; }
     /* son ident = isim */
     size_t name_end = l;
     while (name_end > 0 && (p[name_end - 1] == ' ' || p[name_end - 1] == '\t')) name_end--;
@@ -358,42 +438,110 @@ static void split_declarator(const char *s, size_t len,
     while (name_start > 0 && gclc_ident_char(p[name_start - 1])) name_start--;
     if (name_start == name_end) { type_out[0] = '\0'; name_out[0] = '\0'; return; }
     copy_fixed(name_out, ncap, p + name_start, name_end - name_start);
-    /* tip = isimden öncesi */
+    /* tip = isimden öncesi (kanonik ada indirgenir; bkz. normalize_type_name) */
     size_t ta, tl;
     ta = trim_span(p, name_start, &tl);
-    const char *tp = p + ta;
-    while (tl > 0 && (tp[tl - 1] == '*' || tp[tl - 1] == '&' ||
-                      tp[tl - 1] == ' ' || tp[tl - 1] == '\t')) tl--;
-    const char *tw = tp;
-    if (tl > 7 && strncmp(tw, "struct ", 7) == 0) { tw += 7; tl -= 7; }
-    else if (tl > 5 && strncmp(tw, "enum ", 5) == 0) { tw += 5; tl -= 5; }
-    copy_fixed(type_out, tcap, tw, tl);
+    copy_fixed(type_out, tcap, p + ta, tl);
+    normalize_type_name(type_out, tcap);
 }
 
-/* "Type a, b, c;" → ilk tanımlayıcıdan tipi al, kalanlara uygula. */
+/* Tip kısmı '.' ile bitiyorsa bu bir BİLDİRİM DEĞİL, nokta ile nitelenmiş üye
+   erişimidir: "Raylib.InitWindow(800, 600)", "player.pos.x = 5", "Raylib.WHITE".
+   `split_declarator` ismi sondaki tanımlayıcıdan alırken tipi ondan ÖNCEKİ
+   metin olarak bırakır; üye erişiminde bu metin nokta ile biter.
+
+   Eskiden bu ayrım yapılmıyordu ve sonuç olarak:
+     (a) `Raylib.InitWindow(...)` çağrı yerleri "InitWindow" adlı GLOBAL bir
+         fonksiyon sembolü (tipi "Raylib.") olarak kapsama giriyordu → modül
+         üyeleri `Raylib.` yazılmadan düz önekte tamamlama olarak sızıyordu,
+     (b) `Raylib.WHITE` gibi nitelenmiş sabitler parametre olarak ekleniyordu. */
+static int type_is_qualified(const char *type) {
+    size_t n = type ? strlen(type) : 0;
+    return n > 0 && type[n - 1] == '.';
+}
+
+/* Çağrı argümanı segmenti GERÇEKTEN "Tip isim" bildirimi mi?
+   Argüman listeleri ifade içerir: "800", "20", "x + 1", "a * b", "Raylib.WHITE".
+   Yalnızca tip + isim desenindeki segmentler parametre sayılır; operatör,
+   nokta veya parantez içeren segment ifadedir ve ATILIR. Eskiden hepsi
+   parametre sanılıp kapsama ekleniyordu; bu yüzden çağrılara yazılan sayılar
+   (20, 60, 600, 800) tamamlama listesinde öneri olarak görünüyordu. */
+static int segment_is_param_decl(const char *seg, size_t len) {
+    int has_ident = 0;
+    for (size_t i = 0; i < len; i++) {
+        char c = seg[i];
+        if (gclc_ident_char(c)) { has_ident = 1; continue; }
+        /* İzinli: ayraç boşluk, işaretçi '*'/'&', dizi köşeli parantezleri. */
+        if (c == ' ' || c == '\t' || c == '*' || c == '&' ||
+            c == '[' || c == ']') continue;
+        return 0;
+    }
+    return has_ident;
+}
+
+/* 'p' ile 'end' arasındaki İLK üst-düzey ',' ayracı (yoksa 'end').
+   Parantez/köşeli parantez derinliği sayılır, böylece "f(1,2)" veya
+   "a[1,2]" içindeki virgüller ayraç sayılmaz. */
+static const char *find_top_comma(const char *p, const char *end) {
+    int d = 0;
+    for (const char *q = p; q < end; q++) {
+        if (*q == '(' || *q == '[') d++;
+        else if (*q == ')' || *q == ']') { if (d > 0) d--; }
+        else if (*q == ',' && d == 0) return q;
+    }
+    return end;
+}
+
+/* "," ile ayrılmış bir bildirim segmenti GERÇEKTEN bir tanımlayıcı adı mı
+   üretir? Başlatıcı gövdeleri ve ifade parçaları bildirim DEĞİLDİR:
+   "= { {1,20,\"Ali\"}, ... }" içindeki virgüller de üst-düzey görünür, ama
+   bu segmentlerin içinde '{'/'}' vardır. Ayrıca bir ad RAKAMLA başlayamaz
+   ("20" sayı literalidir, tamamlama listesine sızMAMALIdır). */
+static const char *segment_decl_name(const char *seg, size_t len) {
+    static char nm[GCLC_NAME];
+    nm[0] = '\0';
+    if (len == 0) return nm;
+    if (memchr(seg, '{', len) || memchr(seg, '}', len)) return nm;
+    split_declarator(seg, len, (char[GCLC_NAME]){0}, GCLC_NAME, nm, sizeof(nm));
+    if (!nm[0] || !gclc_ident_start(nm[0])) nm[0] = '\0';
+    return nm;
+}
+
+/* "Type a, b, c;" → TİP ilk bildirimden alınır, kalan ',' segmentlerinin son
+   tanımlayıcısı aynı tipe bağlanır.
+
+   ÖNEMLİ: eskiden tip TÜM satırdan çıkarılıyordu, o yüzden split_declarator
+   son tanımlayıcıyı ad sanıp tipi ÇÖP bırakıyordu: "int x, y;" → y : "int x,"
+   (x hiç kaydedilmiyordu), "struct S { int a, b; }" → yalnız b üyesi. */
+static void parse_decl_list(GclScope *s, const char *s2, size_t len,
+                            int rank, const char *file, int priv,
+                            const char *type) {
+    const char *end = s2 + len;
+    const char *q = s2;
+    while (q < end) {
+        const char *c = find_top_comma(q, end);
+        const char *nm = segment_decl_name(q, (size_t)(c - q));
+        /* Yerleşik tip adları DEĞİŞKEN değildir: "int x, long" gibi bozuk
+           kuyruklar sembol üretmesin. */
+        if (nm[0] && !gclc_is_builtin_type(nm))
+            scope_add_sym(s, nm, type, CIK_VAR, NULL, 0, priv, rank, file);
+        if (c >= end) break;
+        q = c + 1;
+    }
+}
+
 static void parse_simple_decl(GclScope *s, const char *s2, size_t len,
                               int rank, const char *file, int priv) {
+    const char *end = s2 + len;
+    const char *c1 = find_top_comma(s2, end);
     char type[GCLC_NAME] = {0}, name[GCLC_NAME] = {0};
-    split_declarator(s2, len, type, sizeof(type), name, sizeof(name));
+    split_declarator(s2, (size_t)(c1 - s2), type, sizeof(type), name, sizeof(name));
     if (!name[0]) return;
     if (gclc_is_builtin_type(name) && !type[0]) return;
+    if (type_is_qualified(type)) return;          /* üye erişimi, bildirim değil */
     scope_add_sym(s, name, type, CIK_VAR, NULL, 0, priv, rank, file);
-    /* Kalan ',' ile ayrılmış tanımlayıcılar aynı tipi alır. */
-    const char *p = s2;
-    const char *end = s2 + len;
-    int depth = 0;
-    for (const char *q = p; q < end; q++) {
-        if (*q == '(' || *q == '[') depth++;
-        else if (*q == ')' || *q == ']') { if (depth > 0) depth--; }
-        else if (*q == ',' && depth == 0) {
-            char nm[GCLC_NAME] = {0};
-            size_t a, l;
-            a = trim_span(q + 1, (size_t)(end - (q + 1)), &l);
-            split_declarator(q + 1 + a, l, (char[GCLC_NAME]){0}, GCLC_NAME, nm, sizeof(nm));
-            if (nm[0] && !gclc_is_builtin_type(nm))
-                scope_add_sym(s, nm, type, CIK_VAR, NULL, 0, priv, rank, file);
-        }
-    }
+    if (c1 >= end) return;
+    parse_decl_list(s, c1 + 1, (size_t)(end - (c1 + 1)), rank, file, priv, type);
 }
 
 /* Fonksiyon bildirimi: "ret name(params)". */
@@ -415,11 +563,24 @@ static void parse_function_decl(GclScope *s, const char *s2, size_t len,
     copy_fixed(name, sizeof(name), p + ns, ne - ns);
     if (gclc_is_builtin_type(name)) return;
 
-    /* dönüş tipi */
+    /* dönüş tipi — KANONİK ada indirgenir.
+       Eskiden ham metin saklanıyordu ("struct Point", "Point *"), üye
+       çözümlemesi ise tipi ADIYLA arıyor: bu yüzden kullanıcı fonksiyonunun
+       dönüşü asla zincirlenemiyordu (`makePoint(1).` → hiçbir öneri, sessiz). */
     size_t ta, tl;
     ta = trim_span(p, ns, &tl);
     char ret[GCLC_NAME];
     copy_fixed(ret, sizeof(ret), p + ta, tl);
+    normalize_type_name(ret, sizeof(ret));
+
+    /* "Raylib.InitWindow(800, 600)" / "Stdio.printf(...)" → ÜYE ÇAĞRISI.
+       İsimden hemen önceki metin '.' ile bitiyorsa bu bir FONKSİYON BİLDİRİMİ
+       değildir; çağrının kendisidir. Eskiden çağrılan ad ("InitWindow",
+       "DrawText", "printf") global bir fonksiyon sembolü olarak kapsama
+       giriyordu ve `Raylib.` yazılmadan düz önekte öneriliyordu — modül
+       üyeleri yalnızca "Modül.üye" olarak önerilmelidir (kullanıcı
+       bildirimi: "Raylib. yazmadan raylib içindekiler görünüyor"). */
+    if (type_is_qualified(ret)) return;
 
     /* parametreler (kaba): parantez içi */
     const char *rp = lp + 1;
@@ -447,8 +608,17 @@ static void parse_function_decl(GclScope *s, const char *s2, size_t len,
             comma++;
         }
         char ptype[GCLC_NAME] = {0}, pname[GCLC_NAME] = {0};
-        split_declarator(q, (size_t)(comma - q), ptype, sizeof(ptype), pname, sizeof(pname));
-        if (pname[0] && strcmp(pname, "void") != 0 && !gclc_is_builtin_type(pname))
+        size_t seglen = (size_t)(comma - q);
+        split_declarator(q, seglen, ptype, sizeof(ptype), pname, sizeof(pname));
+        /* YALNIZCA "Tip isim" deseni parametre sayılır. Argüman konumunda
+           ifade olan segmentler ("800", "20", "x + 1", "Raylib.WHITE")
+           atılır; aksi halde çağrılara yazılan sayılar kapsama CIK_PARAM
+           olarak girip tamamlama listesinde öneri olarak görünüyordu
+           (kullanıcı bildirimi: 20, 60, 600, 800). */
+        if (segment_is_param_decl(q, seglen) && ptype[0] &&
+            pname[0] && gclc_ident_start(pname[0]) &&
+            !type_is_qualified(ptype) &&
+            strcmp(pname, "void") != 0 && !gclc_is_builtin_type(pname))
             scope_add_sym(s, pname, ptype, CIK_PARAM, NULL, 0, 0, 1, file);
         q = comma + 1;
     }
@@ -469,26 +639,45 @@ static void parse_member_list(GclScope *s, GclTypeDef *t, const char *s2, size_t
             sc++;
         }
         if (sc > seg) {
-            /* bir segment: "Type name" veya enum ismi; ',' ile çoklanabilir */
-            char type[GCLC_NAME] = {0}, name[GCLC_NAME] = {0};
-            split_declarator(seg, (size_t)(sc - seg), type, sizeof(type), name, sizeof(name));
-            if (name[0])
-                type_push_member(t, name, type,
-                                 t->is_enum ? CIK_ENUM_VAL : CIK_FIELD);
-            /* ',' ile ayrılan ek isimler */
-            const char *cq = seg;
-            int dd = 0;
-            while (cq < sc) {
-                if (*cq == '(' || *cq == '[') dd++;
-                else if (*cq == ')' || *cq == ']') { if (dd > 0) dd--; }
-                else if (*cq == ',' && dd == 0) {
+            if (t->is_enum) {
+                /* Enum gövdesinde ',' ile ayrılmış HER AD bir sabittir; tip
+                   kavramı yoktur ve "name = 3" başlatıcısı atılır.
+                   Eskiden tüm gövde TEK bildirim sanılıyordu: "RED, GREEN, BLUE"
+                   → tip "RED, GREEN," ve yalnızca SON ad üye oluyordu; yani
+                   kullanıcı `Color.` yazdığında RED/GREEN hiç görünmüyordu. */
+                const char *q = seg;
+                while (q < sc) {
+                    const char *c = find_top_comma(q, sc);
+                    const char *name_end = c;
+                    for (const char *k = q; k < c; k++)
+                        if (*k == '=') { name_end = k; break; }
                     char nm[GCLC_NAME] = {0};
-                    split_declarator(cq + 1, (size_t)(sc - (cq + 1)), (char[GCLC_NAME]){0}, GCLC_NAME, nm, sizeof(nm));
-                    if (nm[0])
-                        type_push_member(t, nm, type,
-                                         t->is_enum ? CIK_ENUM_VAL : CIK_FIELD);
+                    split_declarator(q, (size_t)(name_end - q),
+                                     (char[GCLC_NAME]){0}, GCLC_NAME, nm, sizeof(nm));
+                    if (nm[0] && gclc_ident_start(nm[0]))
+                        type_push_member(t, nm, "", CIK_ENUM_VAL);
+                    if (c >= sc) break;
+                    q = c + 1;
                 }
-                cq++;
+            } else {
+                /* "Type a, b;" → TİP ilk bildirimden alınır; kalan ','
+                   segmentlerinden yalnız AD alınır (parse_decl_list ile aynı
+                   kural). Eskiden tip tüm segmentten çıkarılıyordu:
+                   "int a, b" → yalnız 'b' üyesi, tipi de "int a," oluyordu. */
+                const char *c1 = find_top_comma(seg, sc);
+                char type[GCLC_NAME] = {0}, name[GCLC_NAME] = {0};
+                split_declarator(seg, (size_t)(c1 - seg), type, sizeof(type),
+                                 name, sizeof(name));
+                if (name[0])
+                    type_push_member(t, name, type, CIK_FIELD);
+                const char *q = c1;
+                while (q < sc) {
+                    const char *c = find_top_comma(q + 1, sc);
+                    const char *nm = segment_decl_name(q + 1, (size_t)(c - (q + 1)));
+                    if (nm[0]) type_push_member(t, nm, type, CIK_FIELD);
+                    if (c >= sc) break;
+                    q = c;
+                }
             }
         }
         seg = sc + 1;
@@ -567,6 +756,28 @@ static void handle_preproc(GclScope *s, const char *ln, size_t L,
     }
 }
 
+/* Enum üyeleri C/GCL'de ÇIPLAK sabittir: `enum Day { MONDAY, TUESDAY };`
+   tanımından sonra kullanıcı `today = MONDAY;` yazar (`Day.MONDAY` değil).
+   Üye listesi tipe kaydedildikten sonra aynı adlar düz kapsama da eklenir;
+   aksi hâlde `MON` yazıldığında MONDAY HİÇ önerilmez, yalnızca `Day.` ile
+   görünürdü ve GCL bunu gerektirmez.
+
+   Sabitin TİPİ enum'un adıdır (`MONDAY : Day`), yani `Day d = MONDAY;`
+   yazılırsa tip bağı da kurulur. Anonim enum'da (adı "?" iken) tip boş
+   bırakılır — uydurma bir tip bağı kurmaktansa hiç bağ kurmamak doğrudur. */
+static void register_enum_constants(GclScope *s, int idx, int rank,
+                                   const char *file, int priv) {
+    if (!s || idx < 0 || idx >= s->type_count) return;
+    if (!s->types[idx].is_enum) return;
+    const char *tname = s->types[idx].name;
+    if (tname[0] == '\0' || strcmp(tname, "?") == 0) tname = "";
+    for (int i = 0; i < s->types[idx].member_count; i++) {
+        const char *nm = s->types[idx].members[i].name;
+        if (nm[0])
+            scope_add_sym(s, nm, tname, CIK_ENUM_VAL, NULL, 0, priv, rank, file);
+    }
+}
+
 /* '}' sonrası alias'ı işle ve anonim tipi adlandır.
    ÖNEMLİ: `gcl_scope_add_type()` `s->types`'ı realloc ile TAŞIYABİLİR; bu
    yüzden elemanlara işaretçi (GclTypeDef*) realloc BOYUNCA saklanmaz, yalnızca
@@ -625,6 +836,8 @@ void gcl_scope_add_source(GclScope *s, const char *file, const char *text,
                 parse_member_list(s, &s->types[cur_type], ln, before);
                 finish_type_alias(s, cur_type, rb + 1,
                                   (size_t)((ln + L) - (rb + 1)), file);
+                /* Çok satıra yayılmış enum gövdesi burada kapanır. */
+                register_enum_constants(s, cur_type, default_rank, file, 0);
                 cur_type = -1;
             } else {
                 parse_member_list(s, &s->types[cur_type], ln, L);
@@ -668,8 +881,34 @@ void gcl_scope_add_source(GclScope *s, const char *file, const char *text,
 
             const char *lb = (const char *)memchr(body, '{', bodylen);
             const char *semi = (const char *)memchr(body, ';', bodylen);
-            if (!lb && semi) {
-                /* "struct Foo bar;" → değişken bildirimi */
+            /* Etiket ile '{' ARASINDA bir tanımlayıcı varsa bu bir TİP TANIMI
+               değil DEĞİŞKEN bildirimidir: "struct Person people[3] = {"
+               başlatıcının '{' i yüzünden eskiden tip tanımı sanılıyor,
+               'people' hiç sembol olmuyor ve "people[i].id" çalışmıyordu
+               (örnek: 8_typedef_struct.gcsf). */
+            int decl_like = 0;
+            if (lb) {
+                for (const char *q = body + k; q < lb; q++) {
+                    if (gclc_ident_char(*q)) { decl_like = 1; break; }
+                }
+            }
+            if (decl_like || (!lb && semi)) {
+                /* "struct Foo bar;" / "struct Foo bar[N] = {...};" → bildirim.
+                   AMA "struct Foo make(int a);" bir FONKSİYON prototipidir:
+                   `struct` etiketi yüzünden bu dala giriyordu ve
+                   parse_simple_decl() son tanımlayıcıyı (parametre adını)
+                   değişken sanıp ÇÖP bir sembol üretiyordu
+                   ("a : Point make(int"); fonksiyon adı ve dönüş tipi kapsama
+                   HİÇ girmiyordu → "make(...)." zincirlenemezdi.
+                   Ölçüt düz bildirimle aynı: '(' hem ';' hem '=' öncesinde. */
+                if (!decl_like && !lb && semi) {
+                    const char *flp = (const char *)memchr(body, '(', bodylen);
+                    const char *feq = (const char *)memchr(body, '=', bodylen);
+                    if (flp && flp < semi && (!feq || flp < feq)) {
+                        parse_function_decl(s, d, dl, default_rank, file, priv);
+                        continue;
+                    }
+                }
                 parse_simple_decl(s, d, dl, default_rank, file, priv);
                 continue;
             }
@@ -686,6 +925,9 @@ void gcl_scope_add_source(GclScope *s, const char *file, const char *text,
                 parse_member_list(s, &s->types[idx], rem, (size_t)(rb - rem));
                 finish_type_alias(s, idx, rb + 1,
                                   (size_t)((rem + remlen) - (rb + 1)), file);
+                /* finish_type_alias'tan SONRA: anonim enum'un adı orada
+                   belirlenir, sabitler o adı tip olarak almalı. */
+                register_enum_constants(s, idx, default_rank, file, priv);
             } else {
                 parse_member_list(s, &s->types[idx], rem, remlen);
                 cur_type = idx;
@@ -769,8 +1011,12 @@ static const char *gclc_keywords[] = {
     "struct","enum","typedef","const","sizeof",
     /* görünürlük / yaşam */
     "global","local","inline","public","private",
-    /* yerleşik fonksiyonlar / kavramlar */
-    "printf","scanf","strlen","true","false","null",
+    /* yerleşik kavramlar.
+       DİKKAT: "printf"/"scanf"/"strlen" BURADAN KALDIRILDI — bunlar GCL
+       anahtar sözcüğü DEĞİL, Stdio modülünün üyeleridir ve yalnızca
+       "Stdio.printf" olarak önerilmelidir. Çıplak önerildiklerinde imleç
+       boş bir satırdayken "printf" listeye sızıyordu (todo #1). */
+    "true","false","null",
     NULL
 };
 

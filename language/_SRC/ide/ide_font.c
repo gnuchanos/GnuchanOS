@@ -139,8 +139,23 @@ char *gcl_strdup(const char *s) {
     return r;
 }
 
+/* The buffer that owns the keyboard: the focused pane's SELECTED tab.
+   A pane with no selected tab resolves to the blank buffer — never to its first
+   tab (`return &pane_tabs[0]`). In split view that fallback handed out a buffer the
+   focused pane's tab strip did not show, so typing, Ctrl+S, undo and clipboard all
+   silently hit the wrong pane / tab (todo bug #6/#17). */
 GclIdeBuffer *editor_cur(Editor *ed) {
-    return ed->active_tab >= 0 ? &ed->tabs[ed->active_tab] : &ed->blank_tab;
+    if (ed->split_enabled) {
+        int pane = ed->split_focus;
+        int pane_tab = (pane == 1) ? ed->split_right_tab : ed->split_left_tab;
+        GclIdeBuffer *pane_tabs = (pane == 1) ? ed->split_right_tabs : ed->tabs;
+        int pane_count = (pane == 1) ? ed->split_right_tab_count : ed->tab_count;
+
+        if (pane_tab >= 0 && pane_tab < pane_count && pane_tabs) return &pane_tabs[pane_tab];
+        return &ed->blank_tab;
+    }
+    if (ed->active_tab >= 0 && ed->active_tab < ed->tab_count) return &ed->tabs[ed->active_tab];
+    return &ed->blank_tab;
 }
 
 const char *gcl_keywords[] = {
@@ -153,8 +168,8 @@ const char *gcl_keywords[] = {
     "struct","enum","typedef","const","sizeof",
     /* görünürlük / yaşam */
     "global","local","inline","public","private",
-    /* yerleşik fonksiyonlar / kavramlar */
-    "printf","scanf","strlen","true","false","null",
+    /* yerleşik kavramlar */
+    "true","false","null",
     NULL
 };
 
@@ -373,20 +388,22 @@ void editor_spawn_particles(Editor *ed, float px, float py, int intensity) {
    editor_rect: kod editörü alanı. Enter/Delete/Backspace efektleri için kullanılır. */
 void editor_spawn_particles_at_cursor(Editor *ed, Rectangle editor_rect) {
     if (!ed->particles || ed->part_count >= 256) return;
-    size_t cl = gcl_ide_buffer_line_of_cursor(&CURP);
-    size_t ccol = gcl_ide_buffer_cursor_in_line(&CURP);
+    GclIdeBuffer *b = editor_cur(ed);
+    if (!b) return;
+    size_t cl = gcl_ide_buffer_line_of_cursor(b);
+    size_t ccol = gcl_ide_buffer_cursor_in_line(b);
     int efont = ed->editor_font;
     float fcw = gcl_measure_text_f("M", efont);
     if (fcw < 1.0f) fcw = 1.0f;
-    float sx_f = fcw * (float)CURP.scroll_x;
+    float sx_f = fcw * (float)b->scroll_x;
     size_t l = 0;
-    const char *cline = gcl_ide_buffer_line_at(&CURP, cl, &l);
+    const char *cline = gcl_ide_buffer_line_at(b, cl, &l);
     if (ccol > l) ccol = l;
     char prefix[4096];
     if (ccol > sizeof(prefix) - 1) ccol = sizeof(prefix) - 1;
     memcpy(prefix, cline, ccol); prefix[ccol] = '\0';
     float px = editor_rect.x + GUTTER_W + gcl_measure_text_f(prefix, efont) - sx_f;
-    float py = editor_rect.y + 4 + (float)(cl - CURP.scroll_y) * LINE_H + (float)LINE_H / 2;
+    float py = editor_rect.y + 4 + (float)(cl - b->scroll_y) * LINE_H + (float)LINE_H / 2;
     editor_spawn_particles(ed, px, py, ed->particle_strength);
 }
 

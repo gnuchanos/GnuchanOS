@@ -11,22 +11,20 @@ nul
 todo.md
 _temp/
 tests/
-
-
-
-# GCL build çıktısı (language/build/)
+# `tests/` yukarida yalnizca URETILEN test klasorlerini disliyor; projenin
+# kendi motor test paketi (language/tests/complete) kaynak koddur ve
+# repoda TAKIP EDILMELIDIR — aksi halde regresyon testleri commit edilemez.
+!language/tests/
+# GCL build output (language/build/)
 language/build/
-
 # ── GCL test temp files (_NOTES/) ──────────────────────────
 language/_NOTES/t_*.gcsf
 language/_NOTES/t_*.gcsf.c
-
 # ── Python embeddable (downloaded, not source) ─────────────
 *.pyd
 *.zip
 *.cat
 *.pth
-
 # ── OS / IDE garbage ──────────────────────────────────────
 .DS_Store
 Thumbs.db
@@ -36,8 +34,8 @@ Thumbs.db
 .vs/
 .vscode/
 .idea/
-
 # ── Python cache ──────────────────────────────────────────
 __pycache__/
 *.pyc
-
+wwww
+export.py

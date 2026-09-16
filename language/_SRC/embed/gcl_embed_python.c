@@ -572,12 +572,17 @@ int gcl_py_run_file(const char *path) {
     char script_dir[4096];
     snprintf(script_dir, sizeof(script_dir), "%s", path);
     int has_sep = 0;
-    char *slash = strrchr(script_dir, '\\');
+    /* SON ayraci al (hem '/' hem '\\'): eski kod '\\' bulunca '/' aramiyordu,
+       bu yuzden KARISIK bir yol ("D:\\proj/scripts/main.py" — IDE/GCL proje
+       kokunu '\\' ile, dosya adini '/' ile birlestiriyor) surucu harfinden
+       SONRA kesiliyor ve script_dir "D:" oluyordu. O zaman sys.path'te
+       scripts/ olmadigi icin kardes modul import'lari (import helper)
+       ModuleNotFoundError ile patliyordu. */
+    char *bs = strrchr(script_dir, '\\');
+    char *fs = strrchr(script_dir, '/');
+    char *slash = bs;
+    if (!slash || (fs && fs > bs)) slash = fs;
     if (slash) { *slash = '\0'; has_sep = 1; }
-    else {
-        slash = strrchr(script_dir, '/');
-        if (slash) { *slash = '\0'; has_sep = 1; }
-    }
     if (!has_sep) snprintf(script_dir, sizeof(script_dir), ".");
     gcl_py_add_path(script_dir);
 
@@ -592,8 +597,12 @@ int gcl_py_run_file(const char *path) {
     char old_dll_dir[4096] = "";
     int dll_changed = 0;
     if (exe_dir[0]) {
-        char *es = strrchr(exe_dir, '\\');
-        if (!es) es = strrchr(exe_dir, '/');
+        /* Ayni sekilde SON ayrac: Windows'ta GetModuleFileNameA tek tur ayrac
+           uretir, ama karisik yollar icin de dogru davranmasi bedava. */
+        char *ebs = strrchr(exe_dir, '\\');
+        char *efs = strrchr(exe_dir, '/');
+        char *es = ebs;
+        if (!es || (efs && efs > ebs)) es = efs;
         if (es) *es = '\0';
 
         char pyd_dir[4096];

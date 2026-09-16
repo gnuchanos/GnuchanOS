@@ -324,8 +324,24 @@ static int editor_fuzzy_match(const char *name, const char *query) {
 static int editor_match_cur(const char *name, const char *cur_word) {
     if (!cur_word || !cur_word[0]) return 1;
     if (!name) return 0;
-    if (editor_strnicmp(name, cur_word, strlen(cur_word)) == 0) return 1;
-    return editor_fuzzy_match(name, cur_word);
+    size_t qlen = strlen(cur_word);
+    if (editor_strnicmp(name, cur_word, qlen) == 0) return 1;
+    if (editor_fuzzy_match(name, cur_word)) return 1;
+
+    /* Native module/type prefixes like "Ray" -> "Raylib" or "Gui" -> "Raygui"
+       should keep matching even when the user typed only the stem.
+       This is intentionally a fallback for partial module names in the popup. */
+    for (const char *s = name; *s; s++) {
+        if (editor_ch_lower((unsigned char)*s) != editor_ch_lower((unsigned char)cur_word[0])) continue;
+        const char *p = s;
+        const char *q = cur_word;
+        while (*p && *q) {
+            if (editor_ch_lower((unsigned char)*p) != editor_ch_lower((unsigned char)*q)) break;
+            p++; q++;
+        }
+        if (*q == '\0') return 1;
+    }
+    return 0;
 }
 
 /* Native modül adları (gcl_native_modules) ve gcl_is_native_module artık
@@ -489,9 +505,8 @@ static void editor_show_completion_legacy(Editor *ed, int manual) {
        "there is no 'X'" mesajı gösterilir. manual = 0 → '.' üzerine otomatik
        açıldı: mesaj gösterilmez, yalnızca gerçek öneriler listelenir. */
 
-    if (ed->tab_count <= 0 || ed->active_tab < 0 || ed->active_tab >= ed->tab_count) return;
-
-    GclIdeBuffer *b = &ed->tabs[ed->active_tab];
+    GclIdeBuffer *b = editor_cur(ed);
+    if (!b || ed->tab_count <= 0) return;
     char *text = editor_buffer_text_cstr(b);
     if (!text) return;
 
@@ -871,6 +886,17 @@ static void editor_show_completion_legacy(Editor *ed, int manual) {
             }
             return;
         }
+
+        if (ed->completion_count == 0 && cur_word[0] && !last_dot) {
+            for (int nmi = 0; gcl_native_modules[nmi]; nmi++) {
+                const char *n = gcl_native_modules[nmi];
+                if (!n || !n[0]) continue;
+                if (!editor_match_cur(n, cur_word)) continue;
+                lsp_list_add(&ed->completions, &ed->completion_count, &cap,
+                             n, LSP_KIND_TYPE, LSP_VIS_PUBLIC,
+                             "native module", NULL, b->path);
+            }
+        }
     }
 
     if (last_dot) {
@@ -1104,7 +1130,8 @@ void editor_accept_completion(Editor *ed) {
     LspSymbol *s = &ed->completions[idx];
     if (!s->name || !s->name[0]) return;
 
-    GclIdeBuffer *b = &ed->tabs[ed->active_tab];
+    GclIdeBuffer *b = editor_cur(ed);
+    if (!b) return;
 
     size_t line = gcl_ide_buffer_line_of_cursor(b);
     size_t col = gcl_ide_buffer_cursor_in_line(b);
@@ -1618,9 +1645,8 @@ void editor_show_completion(Editor *ed, int manual) {
     ed->completion_sig_params[0] = '\0';
     ed->completion_sig_active = 0;
 
-    if (ed->tab_count <= 0 || ed->active_tab < 0 || ed->active_tab >= ed->tab_count) return;
-
-    GclIdeBuffer *b = &ed->tabs[ed->active_tab];
+    GclIdeBuffer *b = editor_cur(ed);
+    if (!b || ed->tab_count <= 0) return;
 
     /* GCL dışı diller (Lua/Python) için kapsam/tip motoru devrede değil;
        eski satır-bazlı yola düşülür (opsiyonel faz, §9). */

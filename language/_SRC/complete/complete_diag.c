@@ -137,6 +137,6 @@ void gcl_diag_check_printf(const char *text, size_t text_len, size_t cursor,
 
     out->have_diagnostic = 1;
     snprintf(out->diag_message, sizeof(out->diag_message),
-             "printf: kalıpta %d yer tutucu {}, %d argüman verildi",
+             "printf: the format has %d placeholders, but %d arguments were provided",
              placeholders, args);
 }

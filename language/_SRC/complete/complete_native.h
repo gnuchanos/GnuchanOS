@@ -60,6 +60,12 @@ const GclNativeStruct *gcl_native_struct(const char *type);
 /* 'type' native bir struct mı? */
 int gcl_native_is_struct(const char *type);
 
+/* Tüm native struct tip adları (NULL ile biten; "Vector2", "Camera3D", ...).
+   İki amaçla kullanılır: (a) düz önekte tip adı tamamlama — `Vect` → `Vector2`;
+   (b) `ret`/alan tiplerinin bilinen bir tipe çözülüp çözülmediğini denetleyen
+   DB tutarlılık testleri. Liste motora aittir, serbest bırakılmaz. */
+const char *const *gcl_native_struct_names(void);
+
 /* ---- Üretilen tablolar (complete_native_db.c) ---- */
 extern const GclNativeMember gcl_native_db_Raylib[];
 extern const int gcl_native_db_Raylib_count;

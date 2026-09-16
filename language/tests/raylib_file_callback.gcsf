@@ -1,0 +1,98 @@
+#native <Stdio>
+#native <Raylib>
+
+/* Dosya callback köprüsü testi — DÖRT trambolin de kapsanır:
+     SetLoadFileTextCallback  → onLoadText
+     SetLoadFileDataCallback  → onLoadData
+     SetSaveFileTextCallback  → onSaveText
+     SetSaveFileDataCallback  → onSaveData
+   raylib bunları dosya okuma/yazma sırasında, ana iş parçacığında çağırır;
+   bu yüzden host->call_gcl doğrudan (ertelenmeden) çalışır. Baytlar modülün
+   tamponundan geçer: OKUMA'da GCL FileDataPush ile basar, YAZMA'da GCL
+   FileDataAt(i) ile okur. */
+
+int loadTextCalls = 0;
+int loadDataCalls = 0;
+int saveTextCalls = 0;
+int saveDataCalls = 0;
+int saveDataBytes = 0;
+
+/* --- OKUMA (metin): "MERHABA" = 77 69 82 72 65 66 65 --- */
+void onLoadText(gcChar path) {
+    loadTextCalls = loadTextCalls + 1;
+    Raylib.FileDataReset();
+    Raylib.FileDataPush(77);
+    Raylib.FileDataPush(69);
+    Raylib.FileDataPush(82);
+    Raylib.FileDataPush(72);
+    Raylib.FileDataPush(65);
+    Raylib.FileDataPush(66);
+    Raylib.FileDataPush(65);
+}
+
+/* --- OKUMA (ikili): 3 bayt 1 2 3 --- */
+void onLoadData(gcChar path) {
+    loadDataCalls = loadDataCalls + 1;
+    Raylib.FileDataReset();
+    Raylib.FileDataPush(1);
+    Raylib.FileDataPush(2);
+    Raylib.FileDataPush(3);
+}
+
+/* --- YAZMA (metin): raylib yazılacak metni verir; 1 = başarılı --- */
+int onSaveText(gcChar path, gcChar text) {
+    saveTextCalls = saveTextCalls + 1;
+    Stdio.printf("[save-text] text={}\n", text);
+    return 1;
+}
+
+/* --- YAZMA (ikili): baytlar FileDataAt ile okunur --- */
+int onSaveData(gcChar path, int size) {
+    saveDataCalls = saveDataCalls + 1;
+    saveDataBytes = size;
+    Stdio.printf("[save-data] size={} bayt0={} bayt1={}\n",
+                 size, Raylib.FileDataAt(0), Raylib.FileDataAt(1));
+    return 1;
+}
+
+int main() {
+    /* ---- METİN okuma ---- */
+    Raylib.SetLoadFileTextCallback("onLoadText");
+    Raylib.LoadFileText("hayali.txt");
+    int n = Raylib.LastStringLen();
+    Stdio.printf("text-load: calls={} len={} baytlar=", loadTextCalls, n);
+    int i = 0;
+    while (i < n) {
+        Stdio.printf("{}", Raylib.LastStringByte(i));
+        i = i + 1;
+    }
+    Stdio.printf("\n");
+
+    /* ---- METİN yazma (dönüş değeri raylib'den geri gelmeli) ---- */
+    Raylib.SetSaveFileTextCallback("onSaveText");
+    int okText = Raylib.SaveFileText("cikti.txt", "GCL metni");
+    Stdio.printf("text-save: calls={} donus={}\n", saveTextCalls, okText);
+
+    /* ---- İKİLİ okuma ---- */
+    Raylib.SetLoadFileDataCallback("onLoadData");
+    int dsize = Raylib.LoadFileData("hayali.bin");
+    Stdio.printf("data-load: calls={} size={} baytlar=", loadDataCalls, dsize);
+    int j = 0;
+    while (j < dsize) {
+        Stdio.printf("{}", Raylib.LastStringByte(j));
+        j = j + 1;
+    }
+    Stdio.printf("\n");
+
+    /* ---- İKİLİ yazma ---- */
+    Raylib.SetSaveFileDataCallback("onSaveData");
+    int okData = Raylib.SaveFileData("cikti.bin", 1000, 2);
+    Stdio.printf("data-save: calls={} donus={} boyut={}\n",
+                 saveDataCalls, okData, saveDataBytes);
+
+    /* ---- Ayırma: callback kaldırılınca GCL fonksiyonu çağrıLMAMALI ---- */
+    Raylib.SetLoadFileDataCallback("");
+    Raylib.LoadFileData("hayali2.bin");
+    Stdio.printf("detach-sonrasi calls={}\n", loadDataCalls);
+    return 0;
+}

@@ -1,11 +1,11 @@
 #pragma commendline 
 
 #|
-    #pragma commendline nasil calisiyor
-    1: eger dosyanin yukarisinda #pragma commendline var ise otomatik isletim sisteminin terminaliacilir
-    2: gcl programi orada acilir
-    3: eger Embeded.run ile python ve lua var ise onlar icinde ayri terminal acilir ve orada baslatilir
-    4: terminal manuel kapanmadan ornek x tusuna basmak yada exit yazmak program terminali acik kalicak
+    How #pragma commendline works
+    1: if #pragma commendline is present at the top of the file, the operating system terminal opens automatically
+    2: the gcl program opens there
+    3: if python and lua are present via Embeded.run, a separate terminal also opens for them and they start there
+    4: unless the terminal is closed manually, for example by pressing the x key or typing exit, the program keeps the terminal open
 |#
 
 #native <Stdio>
@@ -17,7 +17,7 @@ int main() {
     Stdio.scanf(test);
     Stdio.printf("Variable: {}\n", test);
 
-    #// alt alta scanf oldugunda skip yapabiliyor 
+    #// when scanf calls are consecutive it may skip 
 
     gcChar test1 = "";
     Stdio.printf("Variable:-> ");

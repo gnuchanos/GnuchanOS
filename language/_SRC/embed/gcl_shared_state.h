@@ -1,19 +1,18 @@
 /*
  * gcl_shared_state.h — GCL cross-process shared state store (real-time).
  *
- * simple_doc.md: "Gerçek zamanlı değişken paylaşımı (loop içinde kullanılabilir)"
+ * simple_doc.md: "Real-time variable sharing (usable inside a loop)"
  *
- * Memory-mapped paylaşımlı bellek köprüsü: GCL (Embed.SendValue/GetValue)
- * ile Python/Lua script'leri (gcl.set_state/get_state) arasında gerçek
- * zamanlı veri alışverişi. Alt süreçler (gcl -luarun / -pyrun) aynı
- * GCL_SHARED_FILE dosyasını map'ler.
+ * Memory-mapped shared-memory bridge: real-time data exchange between GCL
+ * (Embed.SendValue/GetValue) and Python/Lua scripts (gcl.set_state/get_state).
+ * Child processes (gcl -luarun / -pyrun) map the same GCL_SHARED_FILE.
  *
- * Önceki dosya-tabanlı sürüm her get/set'te tam dosya oku-yaz-rename
- * yapıyordu (disk I/O = lag) ve iki süreç full-snapshot üzerinden yarışıp
- * eski değeri geri yazabiliyordu (top teleport). Bu sürümde get/set
- * yalnızca bir bellek erişimi + çok kısa spinlock'tur.
+ * The previous file-based version read the full file on every get/set, wrote it
+ * back, and renamed it, causing disk I/O lag and race conditions where two
+ * processes could overwrite each other with stale snapshots (teleport effect).
+ * This version does only one memory access plus a very short spinlock.
  *
- * Bağımlılık: stdio, stdlib, string, stdint. Windows / POSIX.
+ * Dependency: stdio, stdlib, string, stdint. Windows / POSIX.
  */
 
 #ifndef GCL_SHARED_STATE_H
@@ -89,8 +88,8 @@ static void gcl_shared_init(void) {
                                  FILE_SHARE_READ | FILE_SHARE_WRITE,
                                  NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (g_gcl_shm_file == INVALID_HANDLE_VALUE) { g_gcl_shared_ready = 1; return; }
-    /* Backing dosyayı gerçekten sizeof(GclShmState) boyutuna getir, yoksa
-       mapping 0 uzunlukta olur ve hiçbir okuma/yazma çalışmaz. */
+    /* Resize the backing file to sizeof(GclShmState); otherwise the mapping is
+       zero-length and no reads or writes will succeed. */
     DWORD need = (DWORD)sizeof(GclShmState);
     DWORD cur = GetFileSize(g_gcl_shm_file, NULL);
     if (cur == INVALID_FILE_SIZE || cur < need) {
@@ -122,11 +121,11 @@ static void gcl_shared_init(void) {
 static void gcl_shared_lock(void) {
 #ifdef _WIN32
     while (InterlockedExchange((volatile LONG *)&g_gcl_shm->lock, 1)) {
-        /* spin — kritik bölge çok küçük (birkaç memcpy) */
+        /* spin — critical section is tiny (just a few memcpy calls) */
     }
 #else
     while (__sync_lock_test_and_set(&g_gcl_shm->lock, 1)) {
-        /* spin — kritik bölge çok küçük (birkaç memcpy) */
+        /* spin — critical section is tiny (just a few memcpy calls) */
     }
 #endif
 }

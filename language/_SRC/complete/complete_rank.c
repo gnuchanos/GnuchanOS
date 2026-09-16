@@ -86,9 +86,21 @@ int gcl_rank_kind_bonus(GclItemKind kind, GclContextKind ctx) {
     }
 }
 
-/* Puanlama (§10.2). */
+/* Puanlama (§10.2).
+ *
+ * ÖNEMLİ: "eşleşmedi" ile "düşük/negatif puan" AYRI sinyallerdir ve bu
+ * fonksiyon artık onları karıştırmaz. Eskiden eşleşmeyen için -1 dönülüyor,
+ * çağıran da "sc < 0 → filtrele" yapıyordu. Ama gcl_rank_kind_bonus() bağlama
+ * göre NEGATİF ceza verir (değer/argüman bağlamında değer OLMAYAN tür için
+ * -80) ve kapsam puanı düşükse (builtin/modül = +20) toplam NEGATİF olur:
+ *     modül @ CTX_VALUE_ASSIGN = 200 - 4*45 - 80 = -60
+ * Bu yüzden GEÇERLİ adaylar sessizce listeden düşüyordu; cezanın amacı adayı
+ * GERİYE ATMAK, listeden silmek değil (§10.2 "DEĞER > fonksiyon/tip").
+ * Sözleşme: eşleşme 0/1 döner, puan `out_score` ile verilir.
+ */
 static int score_item(const GclItem *it, const char *prefix,
-                      GclContextKind ctx, const char *active_file) {
+                      GclContextKind ctx, const char *active_file,
+                      int *out_score) {
     const char *label = it->label ? it->label : "";
     int score = 0;
 
@@ -97,7 +109,7 @@ static int score_item(const GclItem *it, const char *prefix,
         else if (ci_prefix(label, prefix))            score += 500;  /* önek */
         else if (camel_acronym(label, prefix))        score += 300;  /* CamelCase */
         else if (fuzzy_match(label, prefix))          score += 50;   /* fuzzy */
-        else return -1;                                              /* eşleşmez */
+        else return 0;                                               /* eşleşmez */
     }
 
     /* Kapsam yakınlığı: 0 local .. 4 builtin. */
@@ -117,7 +129,8 @@ static int score_item(const GclItem *it, const char *prefix,
 
     /* Kısa adlar hafif avantajlı (eşitlik bozucu). */
     score -= (int)strlen(label) / 4;
-    return score;
+    if (out_score) *out_score = score;
+    return 1;
 }
 
 typedef struct { int idx; int score; } RankRef;
@@ -149,15 +162,35 @@ void gcl_rank_apply(GclCompletionResult *r, const char *prefix,
 
     int n = 0;
     for (int i = 0; i < r->count; i++) {
-        int sc = score_item(&r->items[i], prefix, ctx, active_file);
-        if (sc < 0) continue; /* filtrelendi */
+        int sc = 0;
+        /* Yalnız EŞLEŞMEYEN öğeler filtrelenir. Negatif puan bir eleme
+           gerekçesi DEĞİLDİR: bağlam cezası (-80) adayı geriye atar, ama
+           listede bırakır; aksi halde "int x = Raylib." gibi ifadelerde
+           modül adı hiç önerilmezdi. */
+        if (!score_item(&r->items[i], prefix, ctx, active_file, &sc)) continue;
         r->items[i].score = sc;
         refs[n].idx = i;
         refs[n].score = sc;
         n++;
     }
 
-    if (n == 0) { free(refs); r->count = 0; r->best_index = 0; return; }
+    if (n == 0) {
+        /* TÜM öğeler filtrelendi (yazılan önek hiçbir şeyle eşleşmedi).
+           Eskiden yalnız `r->count = 0` yapılıyordu; gcl_complete_result_free()
+           öğeleri `i < r->count` ile dolaştığı için başlık/gövde string'lerinin
+           TAMAMI sızıyordu (eşleşmeyen her tuş vuruşunda N adet malloc). */
+        for (int i = 0; i < r->count; i++) {
+            GclItem *it = &r->items[i];
+            free(it->label); free(it->insert); free(it->type); free(it->params);
+            free(it->signature); free(it->doc); free(it->origin_file);
+            memset(it, 0, sizeof(*it));
+        }
+        r->count = 0;
+        r->best_index = 0;
+        gcl_complete_dedup_invalidate(r);
+        free(refs);
+        return;
+    }
 
     g_sort_result = r;
     qsort(refs, (size_t)n, sizeof(RankRef), rank_cmp_stable);
@@ -197,5 +230,8 @@ void gcl_rank_apply(GclCompletionResult *r, const char *prefix,
     }
     r->count = n;
     r->best_index = 0; /* en yüksek puan ilk sırada */
+    /* Liste yeniden dizildi → dedup indeksleri artık geçersiz; gcl_complete.h
+       bu temizliğin sıralayıcı tarafından yapılmasını şart koşar. */
+    gcl_complete_dedup_invalidate(r);
     free(refs);
 }

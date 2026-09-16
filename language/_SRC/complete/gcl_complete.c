@@ -205,17 +205,27 @@ static void gclc_push_keyword(GclCompletionResult *out, const char *name) {
     if (idx >= 0) out->items[idx].scope_rank = 4;
 }
 
-static void gclc_push_type(GclCompletionResult *out, const char *name,
-                           const char *file) {
+static int gclc_push_type(GclCompletionResult *out, const char *name,
+                          const char *file) {
     int idx = gcl_complete_result_push(out, name, NULL, CIK_TYPE,
                                        name, NULL, NULL, NULL, file);
     if (idx >= 0) out->items[idx].scope_rank = 4;
+    return idx;
 }
 
 static void gclc_push_module(GclCompletionResult *out, const char *name) {
     int idx = gcl_complete_result_push(out, name, NULL, CIK_MODULE,
                                        NULL, NULL, NULL, "native module", NULL);
     if (idx >= 0) out->items[idx].scope_rank = 4;
+}
+
+/* 'name' kapsamda "#native <name>" ile BILDIRILMIS bir modül mü?
+   (handle_preproc() her "#native <X>" satiri icin CIK_MODULE sembolü ekler.)
+   Kapsam aktif dosyayi + proje dosyalarini kapsadigi icin, modül baska bir
+   include dosyasinda bildirilmisse de burada görünür. */
+static int gclc_module_declared(const GclScope *scope, const char *name) {
+    const GclSym *s = gcl_scope_find(scope, name);
+    return s != NULL && s->kind == CIK_MODULE;
 }
 
 #define GCLC_MAX_LIST 128
@@ -290,16 +300,52 @@ static void gclc_fill_ident(GclCompletionResult *out, const GclScope *scope,
     for (int i = 0; i < scope->sym_count; i++)
         gclc_push_sym(out, &scope->syms[i], file);
 
+    /* Kullanici tanimli tipler (struct/enum/typedef) DUZ ONEKTE de onerilir.
+       Eskiden yalnizca CTX_TYPE_DECL listesinde bulunuyorlardi; bu yuzden
+       "Pers" yazinca "Person" onerilmiyor, tip adi tamamlanamiyordu.
+       Aktif dosyada tanimli olduklari icin kapsam yakinligi builtin (4)
+       yerine aktif dosya (2) sayilir. */
+    for (int i = 0; i < scope->type_count; i++) {
+        int idx = gclc_push_type(out, scope->types[i].name, file);
+        if (idx >= 0) out->items[idx].scope_rank = 2;
+    }
+
+    /* Native modül adlari YALNIZCA dosyada "#native <X>" ile bildirilmisse
+       önerilir; aksi halde kullanicinin dosyasiyla ilgisi olmayan modül
+       adlari listeye dolardi.
+
+       Native TIP katalogu (Vector2, Ray, Camera3D, Color ...) burada ARTIK
+       HİÇ önerilmez: Raylib içindeki her sey yalnizca "Raylib." önekiyle
+       erisilir (bkz. book: "#native <Raylib> ... Raylib.Rectangle(...)",
+       "Raylib.RED"). Tipten bagimsiz olarak kataloğu düz öneke dokmek
+       listeyi ilgisiz adlarla dolduruyordu (kullanici bildirimi: "Ray ne??
+       Vector2 nerden geliyor"). Tipler "Raylib." yazildiginda native modül
+       üyesi olarak (NF_TYPE) zaten önerilir. */
     const char *const *mods = gcl_native_module_names();
-    for (int i = 0; mods[i]; i++) gclc_push_module(out, mods[i]);
+    for (int i = 0; mods[i]; i++)
+        if (gclc_module_declared(scope, mods[i])) gclc_push_module(out, mods[i]);
 }
 
 static void gclc_fill_values(GclCompletionResult *out, const GclScope *scope,
                              const char *file) {
     for (int i = 0; i < scope->sym_count; i++) {
-        if (!gclc_is_value_kind(scope->syms[i].kind)) continue;
+        GclItemKind k = scope->syms[i].kind;
+        /* Fonksiyonlar da deger baglaminda GECERLIDIR: `int x = skor()` ve
+           `Stdio.printf("{}", hesap())` yazilabilir. Eskiden burada yalniz
+           deger turleri itildigi icin fonksiyonlar HIC onerilmiyordu ve
+           gcl_rank_kind_bonus()'un bu baglamdaki -80 cezasi OLU KOD haline
+           geliyordu (ceza "geride tut" demek, "listeden cikar" degil).
+           Artik geriye atilirlar ve listeye dahil olurlar. */
+        if (k != CIK_FUNC && !gclc_is_value_kind(k)) continue;
         gclc_push_sym(out, &scope->syms[i], file);
     }
+    /* Modul adlari: arguman/deger konumunda `Modul.uye(...)` yazilabilsin
+       (`Stdio.printf(Raylib.GetMousePosition())`). Yalnizca dosyada
+       "#native <X>" ile bildirilmis modüller önerilir. Degerlerin gerisine
+       atilirlar, elenmezler (bkz. complete_rank.c sozlesmesi). */
+    const char *const *mods = gcl_native_module_names();
+    for (int i = 0; mods[i]; i++)
+        if (gclc_module_declared(scope, mods[i])) gclc_push_module(out, mods[i]);
 }
 
 static void gclc_fill_types(GclCompletionResult *out, const GclScope *scope,
@@ -311,6 +357,10 @@ static void gclc_fill_types(GclCompletionResult *out, const GclScope *scope,
     for (int i = 0; i < scope->sym_count; i++)
         if (scope->syms[i].kind == CIK_MODULE)
             gclc_push_type(out, scope->syms[i].name, file);
+    /* NOT: Native struct tip katalogu (Vector2, Ray, Camera3D ...) burada da
+       DOKULMEZ. Tipler modül üyesidir: gövde icinde "Raylib." yazildiginda
+       CTX_MEMBER yolundan (NF_TYPE) önerilirler. Böylece tip listesi yalnizca
+       dosyanin kendi tiplerini + builtin tipleri + bildirilmis modülleri tasir. */
 }
 
 /* ================================================================== */
@@ -453,9 +503,24 @@ GclContextKind gcl_complete_query(const char *file, const char *text,
         gcl_index_scope(file, text, text_len, workspace ? workspace : "");
     if (!scope) { out->suppressed = 1; return ctx.kind; }
     if (workspace && workspace[0]) {
+        unsigned long long gen_before = gcl_index_generation();
         GclProject proj;
         gcl_project_load(&proj, workspace);
         gcl_project_scan_into_scope(&proj, scope, file);
+
+        if (gcl_index_generation() != gen_before) {
+            /* Proje dosyalarindan biri BU SORGUDA diskten yeniden okundu.
+               Proje sembolleri mevcut kapsama yalnizca EKLENDIGI icin, o
+               dosyadan SILINEN tanimlar kapsamda kalirdi (bayat sembol).
+               Onbellegi gecersiz kil, kapsami sifirdan kur ve proje katmanini
+               bastan ekle. Ek maliyet yalnizca dosya gercekten degistiginde
+               ortaya cikar. */
+            gcl_index_scope_invalidate();
+            scope = gcl_index_scope(file, text, text_len,
+                                    workspace ? workspace : "");
+            if (scope) gcl_project_scan_into_scope(&proj, scope, file);
+        }
+        if (!scope) { out->suppressed = 1; return ctx.kind; }
     }
 
     /* 3) Bağlama göre liste */

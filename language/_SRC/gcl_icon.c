@@ -242,10 +242,80 @@ typedef struct {
 } GclGrpIconEntry;
 #pragma pack(pop)
 
-/* Resource ids the build may have written previously. Deleting this range
-   keeps repeated builds idempotent (no accumulating stale icons). */
+/* Icon resources are always written under this id: Explorer, the taskbar and
+   Alt-Tab pick the lowest-id group icon, so one well-known id keeps every
+   build deterministic. */
 #define GCL_ICON_ID      1
-#define GCL_ICON_MAX_ID  32
+
+/* ---- existing icon resources -------------------------------------------- */
+
+/* One (ordinal id, language) pair of an RT_ICON / RT_GROUP_ICON entry that is
+   really present inside the target exe. */
+typedef struct {
+    WORD id;
+    WORD lang;
+} GclIconResRef;
+
+typedef struct {
+    GclIconResRef refs[128];
+    int count;
+} GclIconRefList;
+
+static BOOL CALLBACK icon_enum_lang_cb(HMODULE mod, LPCSTR type, LPCSTR name,
+                                       WORD lang, LONG_PTR param) {
+    GclIconRefList *list = (GclIconRefList *)param;
+    (void)mod;
+    (void)type;
+    if (!IS_INTRESOURCE(name)) return TRUE;  /* ordinals only — named icons are not ours */
+    if (list->count < (int)(sizeof(list->refs) / sizeof(list->refs[0]))) {
+        list->refs[list->count].id = (WORD)(ULONG_PTR)name;
+        list->refs[list->count].lang = lang;
+        list->count++;
+    }
+    return TRUE;
+}
+
+static BOOL CALLBACK icon_enum_name_cb(HMODULE mod, LPCSTR type, LPSTR name,
+                                       LONG_PTR param) {
+    EnumResourceLanguagesA(mod, type, name, icon_enum_lang_cb, param);
+    return TRUE;
+}
+
+static void icon_collect_resources(HMODULE mod, LPCSTR type, GclIconRefList *list) {
+    list->count = 0;
+    EnumResourceNamesA(mod, type, icon_enum_name_cb, (LONG_PTR)list);
+}
+
+/* Deletes every icon resource the target exe already carries.
+   UpdateResourceA(handle, type, id, lang, NULL, 0) deletes an entry, but it
+   FAILS with ERROR_INVALID_PARAMETER (87) when the entry does not exist — and
+   that single failure permanently corrupts the update handle: every following
+   call, the real RT_ICON insert included, then returns ERROR_INTERNAL_ERROR
+   (1359). That is why every built exe kept the plain gcl.exe icon even though
+   the icon lookup itself succeeded. The exe is enumerated FIRST here, so only
+   genuinely present entries are ever deleted. */
+static void icon_remove_existing(HANDLE upd, const char *exe_path) {
+    GclIconRefList icons;
+    GclIconRefList groups;
+    icons.count = 0;
+    groups.count = 0;
+
+    /* LOAD_LIBRARY_AS_DATAFILE maps the image without executing it, which is
+       what makes EnumResourceNamesA usable on a plain exe. */
+    HMODULE mod = LoadLibraryExA(exe_path, NULL, LOAD_LIBRARY_AS_DATAFILE);
+    if (mod) {
+        icon_collect_resources(mod, RT_ICON, &icons);
+        icon_collect_resources(mod, RT_GROUP_ICON, &groups);
+        FreeLibrary(mod);
+    }
+
+    for (int i = 0; i < icons.count; i++)
+        UpdateResourceA(upd, RT_ICON, MAKEINTRESOURCEA(icons.refs[i].id),
+                        icons.refs[i].lang, NULL, 0);
+    for (int i = 0; i < groups.count; i++)
+        UpdateResourceA(upd, RT_GROUP_ICON, MAKEINTRESOURCEA(groups.refs[i].id),
+                        groups.refs[i].lang, NULL, 0);
+}
 
 static int win_apply_icon_bytes(const unsigned char *png, size_t png_sz,
                                 const char *exe_path) {
@@ -265,10 +335,9 @@ static int win_apply_icon_bytes(const unsigned char *png, size_t png_sz,
         return -1;
     }
 
-    for (int id = 1; id <= GCL_ICON_MAX_ID; id++) {
-        UpdateResourceA(upd, RT_ICON, MAKEINTRESOURCEA(id), LANG_NEUTRAL, NULL, 0);
-        UpdateResourceA(upd, RT_GROUP_ICON, MAKEINTRESOURCEA(id), LANG_NEUTRAL, NULL, 0);
-    }
+    /* Idempotency: drop the icon resources this exe already carries (a copy of
+       a previously produced exe, for example) BEFORE writing the new ones. */
+    icon_remove_existing(upd, exe_path);
 
     /* Vista+ accepts a PNG payload inside RT_ICON (no BMP/ICO conversion). */
     SetLastError(0);

@@ -14,6 +14,8 @@
 typedef struct {
     char   path[1024];
     long   mtime;
+    long   size;     /* mtime çözünürlüğü 1 sn; aynı saniyedeki düzenleme
+                        yalnız boyut değişimiyle yakalanabilir. */
     char  *text;
     size_t len;
 } GciEntry;
@@ -21,15 +23,24 @@ typedef struct {
 static GciEntry g_idx[GCI_MAX];
 static int      g_idx_count = 0;
 
-static long file_mtime(const char *path) {
+/* İçerik nesli (generation): diskten YENİDEN okunan her dosyada artar,
+   cache isabetlerinde DEĞİŞMEZ. complete_index.h'deki sözleşmeye bakınız. */
+static unsigned long long g_idx_generation = 0;
+
+unsigned long long gcl_index_generation(void) { return g_idx_generation; }
+
+/* Dosyanın (mtime, boyut) çiftini ver. Başarıda 1. */
+static int file_stat_pair(const char *path, long *out_mtime, long *out_size) {
 #ifdef _WIN32
     struct _stat st;
-    if (_stat(path, &st) != 0) return -1;
+    if (_stat(path, &st) != 0) return 0;
 #else
     struct stat st;
-    if (stat(path, &st) != 0) return -1;
+    if (stat(path, &st) != 0) return 0;
 #endif
-    return (long)st.st_mtime;
+    if (out_mtime) *out_mtime = (long)st.st_mtime;
+    if (out_size)  *out_size  = (long)st.st_size;
+    return 1;
 }
 
 static char *read_whole_file(const char *path, size_t *out_len) {
@@ -57,6 +68,7 @@ static GciEntry *find_entry(const char *path) {
 void gcl_index_clear(void) {
     for (int i = 0; i < g_idx_count; i++) free(g_idx[i].text);
     g_idx_count = 0;
+    g_idx_generation++;        /* tüm içerik kümesi geçersiz */
     gcl_index_scope_clear();   /* kapsam önbelleği de geçersiz */
 }
 
@@ -69,11 +81,12 @@ void gcl_index_invalidate(const char *path) {
 int gcl_index_read(const char *path, const char **out_text,
                    size_t *out_len, long *out_mtime) {
     if (!path || !path[0]) return 0;
-    long mt = file_mtime(path);
-    if (mt < 0) return 0;
+    long mt = 0, sz = 0;
+    if (!file_stat_pair(path, &mt, &sz)) return 0;
 
     GciEntry *e = find_entry(path);
-    if (e && e->mtime == mt && e->text) {
+    /* (mtime, boyut) ikisi de aynıysa içerik değişmemiştir. */
+    if (e && e->mtime == mt && e->size == sz && e->text) {
         if (out_text)  *out_text  = e->text;
         if (out_len)   *out_len   = e->len;
         if (out_mtime) *out_mtime = mt;
@@ -84,11 +97,17 @@ int gcl_index_read(const char *path, const char **out_text,
     char *nt = read_whole_file(path, &nl);
     if (!nt) return 0;
 
+    /* İçerik GERÇEKTEN yenilendi → nesli artır; kapsam önbelleği bu sayede
+       bayat sembolleri temizler (todo #10: silinen tanımlar önbellekte
+       kalıyordu). */
+    g_idx_generation++;
+
     if (e) {
         free(e->text);
         e->text = nt;
         e->len = nl;
         e->mtime = mt;
+        e->size = sz;
     } else {
         if (g_idx_count >= GCI_MAX) {
             /* FIFO tahliye: en eski girdiyi at. */
@@ -102,6 +121,7 @@ int gcl_index_read(const char *path, const char **out_text,
         e->text = nt;
         e->len = nl;
         e->mtime = mt;
+        e->size = sz;
     }
 
     if (out_text)  *out_text  = e->text;
@@ -120,6 +140,7 @@ typedef struct {
     char                file[512];
     char                workspace[1024];
     unsigned long long  hash;
+    unsigned long long  generation;  /* proje dosyalarının içerik nesli */
     GclScope           *scope;
 } GciScopeEntry;
 
@@ -130,9 +151,16 @@ void gcl_index_scope_clear(void) {
     g_scope.scope = NULL;
     g_scope.used = 0;
     g_scope.hash = 0;
+    g_scope.generation = 0;
     g_scope.file[0] = '\0';
     g_scope.workspace[0] = '\0';
 }
+
+/* Bir sonraki gcl_index_scope() çağrısını, buffer hash'i AYNI olsa bile
+   yeniden kurmaya zorla. Nesil artışı tarama SIRASINDA (kapsam alındıktan
+   sonra) gerçekleştiği için tek sorguluk bayatlık kalır; çağıran bunu
+   gördüğünde bu işlevi çağırıp taze bir tarama alır. */
+void gcl_index_scope_invalidate(void) { g_scope.used = 0; }
 
 /* FNV-1a 64: içerik değişimini O(n) tespit eder (parsing'den çok daha ucuz). */
 static unsigned long long gci_hash_bytes(const char *p, size_t n) {
@@ -151,7 +179,13 @@ GclScope *gcl_index_scope(const char *file, const char *text, size_t len,
     const char *ws = workspace ? workspace : "";
 
     unsigned long long h = gci_hash_bytes(text, len);
+    /* Nesil de anahtarın parçasıdır: include/lib/kök .gcsf dosyalarından biri
+       değiştiğinde (mtime veya boyut) tarama sonucu SIFIRDAN kurulur. Aksi
+       halde dosyadan SİLİNEN bir tanımın sembolü kapsamda kalıcı kalıyordu,
+       çünkü proje sembolleri mevcut kapsama yalnızca EKLENİR (todo #10). */
+    unsigned long long gen = g_idx_generation;
     if (g_scope.used && g_scope.scope && g_scope.hash == h &&
+        g_scope.generation == gen &&
         strcmp(g_scope.file, f) == 0 && strcmp(g_scope.workspace, ws) == 0)
         return g_scope.scope;
 
@@ -165,6 +199,7 @@ GclScope *gcl_index_scope(const char *file, const char *text, size_t len,
     snprintf(g_scope.file, sizeof(g_scope.file), "%s", f);
     snprintf(g_scope.workspace, sizeof(g_scope.workspace), "%s", ws);
     g_scope.hash = h;
+    g_scope.generation = gen;
     g_scope.used = 1;
     return g_scope.scope;
 }
