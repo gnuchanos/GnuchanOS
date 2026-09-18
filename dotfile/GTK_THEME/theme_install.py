@@ -16,7 +16,9 @@
 #      ships no binaries;
 #   3. installs the GTK 4 / libadwaita overlay as ~/.config/gtk-4.0/gtk.css,
 #      which is how libadwaita applications get the palette without GTK_THEME;
-#   4. writes a ~/.gtkrc-2.0 that selects the theme for GTK 2 applications;
+#   4. writes ~/.gtkrc-2.0 for GTK 2 and the GTK 3 and GTK 4 settings.ini
+#      files, which are what actually select the theme on the sessions that
+#      have no XSettings daemon (i3, sway, Openbox, plain lxappearance setups);
 #   5. copies the terminal / launcher / bar extras to ~/.config/gnuchan-purple.
 #
 # Existing files are moved aside to <name>.gnuchan-backup instead of being
@@ -917,9 +919,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-extras", action="store_true", help="do not install the terminal and bar extras"
     )
     parser.add_argument(
-        "--gtk3-settings",
+        "--no-settings",
         action="store_true",
-        help="also write the GTK 3 and GTK 4 settings.ini files",
+        help="do not write the GTK 3 and GTK 4 settings.ini files",
     )
     parser.add_argument(
         "--apply", action="store_true", help="make the theme the active one for this desktop"
@@ -960,7 +962,7 @@ def main(argv: list[str] | None = None) -> int:
         install_theme(log, theme_dirs, render_assets=not args.no_assets)
     if not args.no_config:
         install_configuration(
-            log, theme_dirs[0] / THEME_NAME, force=args.force, settings_ini=args.gtk3_settings
+            log, theme_dirs[0] / THEME_NAME, force=args.force, settings_ini=not args.no_settings
         )
     if not args.no_extras:
         install_extras(log)

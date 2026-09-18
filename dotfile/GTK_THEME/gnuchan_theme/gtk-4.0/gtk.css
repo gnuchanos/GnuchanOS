@@ -1174,3 +1174,351 @@ scrolledwindow > viewport > columnview,
 scrolledwindow > viewport > treeview {
   background-color: @gnuchan_bg_darkest;
 }
+/* ----------------------------------------------------------------------------
+ * 4. The widgets libadwaita paints with colours this file never named
+ * ----------------------------------------------------------------------------
+ * The same reasoning as in the GTK 3 file applies here: libadwaita compiles its
+ * widget rules from Sass variables, so the colour layer this file overrides
+ * only reaches widgets that read it. Anything not named below keeps
+ * libadwaita's own grey, which is why a tool bar, a menu bar or a file chooser
+ * sidebar can stay grey inside an otherwise purple window.
+ *
+ * libadwaita 1.7 and newer do read the :root custom properties, so those
+ * widgets are already covered by section 2b; the rules here are for the
+ * widgets whose colours are still written out literally.
+ * -------------------------------------------------------------------------- */
+
+/* Tool bars and menu bars. GTK 4 dropped the GtkToolbar widget, so a tool bar
+ * is a plain box carrying the .toolbar style class. */
+.toolbar,
+box.toolbar,
+.toolbar button,
+box.toolbar button,
+.toolbar > separator,
+box.toolbar > separator {
+  background-color: transparent;
+  background-image: none;
+  color: @gnuchan_fg;
+  border-color: transparent;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+window > .toolbar,
+box.toolbar.raised,
+.toolbar.raised {
+  background-color: @gnuchan_bg;
+}
+
+.toolbar button:hover,
+box.toolbar button:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+.toolbar button:checked,
+.toolbar button:active,
+box.toolbar button:checked {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+.toolbar > separator,
+box.toolbar > separator {
+  background-color: @gnuchan_border;
+}
+
+menubar,
+.menubar {
+  background-color: @gnuchan_bg;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+  box-shadow: none;
+}
+
+/* Search bar */
+searchbar > revealer > box {
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+  border-bottom: 1px solid @gnuchan_border;
+  box-shadow: none;
+}
+
+/* View switcher and tab overview */
+viewswitcher > button,
+viewswitcherbutton > button,
+viewswitcher > button > togglebutton > button {
+  background-color: transparent;
+  color: @gnuchan_fg_dim;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+viewswitcher > button:hover,
+viewswitcherbutton > button:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+viewswitcher > button:checked,
+viewswitcherbutton > button:checked {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+taboverview > button,
+taboverview > button:hover {
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+/* Preferences pages */
+preferencespage,
+preferencespage > scrolledwindow > viewport,
+preferencesgroup,
+preferencesgroup > box > label {
+  background-color: @gnuchan_bg;
+  color: @gnuchan_fg;
+}
+
+preferencesgroup > box > label {
+  color: @gnuchan_fg_dim;
+}
+
+/* Boxed lists, framed lists and their separators */
+list.boxed-list,
+list.frame,
+list.separators > row,
+list.boxed-list > row {
+  background-color: @gnuchan_surface_alt;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+list.boxed-list > row:selected,
+list.frame > row:selected,
+list.separators > row:selected {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+list.boxed-list > row:hover,
+list.frame > row:hover {
+  background-color: @gnuchan_hover;
+}
+
+/* File chooser, path bar and the places sidebar */
+filechooser,
+filechooser .view,
+filechooser stack.view,
+filechooser #pathbarbox {
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+pathbar,
+pathbar > button,
+pathbar button {
+  background-color: @gnuchan_bg_darkest;
+  background-image: none;
+  color: @gnuchan_fg_dim;
+  border-color: @gnuchan_border;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+pathbar > button:hover,
+pathbar button:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+placesview,
+placesview row,
+placessidebar,
+placessidebar list,
+placessidebar row {
+  background-color: @gnuchan_surface;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+placesview row:hover,
+placessidebar row:hover {
+  background-color: @gnuchan_hover;
+}
+
+placesview row:selected,
+placessidebar row:selected {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+placesview row:disabled,
+placessidebar row:disabled {
+  color: @gnuchan_fg_disabled;
+}
+
+/* Sidebars used by stack pages */
+stacksidebar,
+stacksidebar > list {
+  background-color: @gnuchan_surface;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+stacksidebar > list > row:selected {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+/* Colour and font buttons, colour swatches */
+colorbutton > button,
+fontbutton > button,
+linkbutton > button {
+  background-color: @gnuchan_raised;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+colorbutton > button:hover,
+fontbutton > button:hover,
+linkbutton > button:hover {
+  background-color: @gnuchan_raised_hover;
+  border-color: @gnuchan_border_strong;
+}
+
+colorswatch,
+colorswatch > overlay,
+colorchooser,
+fontchooser {
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+  box-shadow: none;
+}
+
+/* Calendar */
+calendar,
+calendar > grid,
+calendar > header {
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+calendar:selected {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+calendar.header,
+calendar > header > button {
+  background-color: @gnuchan_surface_alt;
+  color: @gnuchan_fg_dim;
+}
+
+calendar > header > button:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+calendar:indeterminate,
+calendar:disabled {
+  color: @gnuchan_fg_disabled;
+}
+
+/* Dialogs, including the newer alert dialog */
+window.dialog,
+window.messagedialog,
+window.alertdialog,
+dialog,
+messagedialog,
+alertdialog {
+  background-color: @gnuchan_surface_alt;
+  color: @gnuchan_fg;
+}
+
+/* Shortcuts window */
+.shortcuts,
+.shortcuts .dim-label,
+.shortcut > label {
+  background-color: @gnuchan_bg;
+  color: @gnuchan_fg;
+}
+
+/* Frames, panes and wide separators */
+frame,
+frame > border {
+  border-color: @gnuchan_border;
+  background-color: transparent;
+  color: @gnuchan_fg;
+}
+
+frame > border:backdrop {
+  border-color: @gnuchan_border_alt;
+}
+
+paned > separator,
+separator.wide {
+  background-color: @gnuchan_border;
+  border-color: @gnuchan_border;
+  background-image: none;
+}
+
+/* Drag and drop rubber band */
+rubberband,
+.rubberband {
+  background-color: @gnuchan_selection_soft;
+  border: 1px solid @gnuchan_accent;
+}
+
+expander {
+  color: @gnuchan_fg_dim;
+}
+
+expander:hover,
+expander:checked {
+  color: @gnuchan_accent_light;
+}
+
+/* ----------------------------------------------------------------------------
+ * 5. The colour names libadwaita exports, plus the GTK 3 era spelling of them
+ * ----------------------------------------------------------------------------
+ * Exported so third party applications and older widgets read the palette
+ * instead of falling back to a stray grey.
+ * -------------------------------------------------------------------------- */
+
+@define-color popover_shade_color                    @gnuchan_shade;
+@define-color headerbar_darker_shade_color           rgba(0, 0, 0, 0.90);
+@define-color secondary_sidebar_shade_color          @gnuchan_shade;
+@define-color tabbar_bg_color                        @gnuchan_bg;
+@define-color tabbar_fg_color                        @gnuchan_fg;
+@define-color active_toggle_bg_color                 rgba(168, 85, 247, 0.35);
+@define-color active_toggle_fg_color                 @gnuchan_white;
+@define-color overview_bg_color                       @gnuchan_bg_alt;
+@define-color overview_fg_color                       @gnuchan_fg;
+@define-color border_color                            @gnuchan_border;
+
+/* GTK 3 era names, still read by older applications on a GTK 4 session */
+@define-color bg_color                               @gnuchan_bg;
+@define-color fg_color                               @gnuchan_fg;
+@define-color base_color                             @gnuchan_bg_darkest;
+@define-color text_color                             @gnuchan_fg;
+@define-color selected_bg_color                      @gnuchan_selected_bg;
+@define-color selected_fg_color                      @gnuchan_white;
+@define-color tooltip_bg_color                       @gnuchan_surface_alt;
+@define-color tooltip_fg_color                       @gnuchan_fg;
+@define-color menu_color                             @gnuchan_surface_alt;
+@define-color menu_fg_color                          @gnuchan_fg;
+@define-color panel_bg_color                         @gnuchan_bg_darkest;
+@define-color panel_fg_color                         @gnuchan_fg;
+@define-color content_view_bg                        @gnuchan_bg_darkest;
+@define-color theme_unfocused_selected_bg_color      @gnuchan_selected_bg;
+@define-color theme_unfocused_selected_fg_color      @gnuchan_fg_bright;
+@define-color unfocused_borders                      @gnuchan_border_alt;
+@define-color insensitive_base_color                 @gnuchan_bg;
+@define-color theme_selected_bg_color                @gnuchan_selected_bg;
+@define-color theme_selected_fg_color                @gnuchan_white;

@@ -453,3 +453,173 @@ style "gnuchan-pathbar"
   fg[NORMAL] = "#B78ED6"
 }
 widget_class "*<GtkPathBar>*" style "gnuchan-pathbar"
+# =============================================================================
+# Coverage for the GTK 2 widgets the blocks above never named
+# -----------------------------------------------------------------------------
+# GTK 2 selects a style by class name, and a style that is not named keeps the
+# engine default, which for every widget below is a grey. The blocks above
+# cover the widgets a GNOME 2 era application puts on screen most of the time;
+# these are the rest.
+#
+# Note that GTK 2 matches a class by ancestry as well, so "GtkButton" already
+# reaches GtkLinkButton, GtkColorButton and the tool item buttons. The explicit
+# entries are here so the intent is readable and so a future GTK 2 that stops
+# walking the ancestry still gets the colours.
+# =============================================================================
+
+# --- Text views --------------------------------------------------------------
+style "gnuchan-textview"
+{
+  xthickness = 4
+  ythickness = 4
+  base[NORMAL]      = "#09030D"
+  base[PRELIGHT]    = "#12071A"
+  base[ACTIVE]      = "#180A22"
+  base[SELECTED]    = "#542080"
+  base[INSENSITIVE] = "#0E0614"
+  text[NORMAL]      = "#EAD7FF"
+  text[PRELIGHT]    = "#F3E8FF"
+  text[SELECTED]    = "#FFFFFF"
+  text[ACTIVE]      = "#FFFFFF"
+  text[INSENSITIVE] = "#70458A"
+  bg[NORMAL]        = "#0E0614"
+  fg[NORMAL]        = "#EAD7FF"
+}
+class "GtkTextView" style "gnuchan-textview"
+class "GtkText"     style "gnuchan-textview"
+widget_class "*<GtkTextView>*" style "gnuchan-textview"
+
+# --- Combo boxes -------------------------------------------------------------
+style "gnuchan-combobox"
+{
+  xthickness = 3
+  ythickness = 3
+  bg[NORMAL]      = "#1C0B27"
+  bg[PRELIGHT]    = "#281036"
+  bg[ACTIVE]      = "#542080"
+  bg[INSENSITIVE] = "#0F0615"
+  fg[NORMAL]      = "#EAD7FF"
+  fg[PRELIGHT]    = "#F3E8FF"
+  fg[ACTIVE]      = "#FFFFFF"
+  fg[INSENSITIVE] = "#70458A"
+  base[NORMAL]    = "#09030D"
+  base[SELECTED]  = "#542080"
+  text[NORMAL]    = "#EAD7FF"
+  text[SELECTED]  = "#FFFFFF"
+  GtkComboBox::appears-as-list = 0
+  GtkComboBox::arrow-size      = 14
+}
+class "GtkComboBox"      style "gnuchan-combobox"
+class "GtkComboBoxEntry" style "gnuchan-combobox"
+widget_class "*<GtkComboBox>*" style "gnuchan-combobox"
+widget_class "*<GtkComboBoxEntry>*" style "gnuchan-combobox"
+
+# --- Calendar ----------------------------------------------------------------
+style "gnuchan-calendar"
+{
+  xthickness = 2
+  ythickness = 2
+  bg[NORMAL]      = "#09030D"
+  bg[SELECTED]    = "#542080"
+  fg[NORMAL]      = "#EAD7FF"
+  fg[PRELIGHT]    = "#FFFFFF"
+  fg[SELECTED]    = "#FFFFFF"
+  fg[INSENSITIVE] = "#70458A"
+  text[NORMAL]    = "#EAD7FF"
+  text[SELECTED]  = "#FFFFFF"
+  GtkCalendar::internal-padding = 2
+}
+class "GtkCalendar" style "gnuchan-calendar"
+widget_class "*<GtkCalendar>*" style "gnuchan-calendar"
+
+# --- Expanders and handle boxes ----------------------------------------------
+style "gnuchan-expander"
+{
+  fg[NORMAL]   = "#B78ED6"
+  fg[PRELIGHT] = "#C77DFF"
+  fg[ACTIVE]   = "#D8A4FF"
+  bg[NORMAL]   = "#0E0614"
+  GtkExpander::expander-size = 12
+  GtkExpander::expander-spacing = 3
+}
+class "GtkExpander"   style "gnuchan-expander"
+class "GtkHandleBox"  style "gnuchan-expander"
+widget_class "*<GtkExpander>*"  style "gnuchan-expander"
+widget_class "*<GtkHandleBox>*" style "gnuchan-expander"
+
+# --- Tool items, menu tool buttons and link buttons ---------------------------
+style "gnuchan-toolitem"
+{
+  xthickness = 4
+  ythickness = 4
+  bg[NORMAL]      = "#1C0B27"
+  bg[PRELIGHT]    = "#281036"
+  bg[ACTIVE]      = "#542080"
+  bg[INSENSITIVE] = "#0F0615"
+  fg[NORMAL]      = "#EAD7FF"
+  fg[PRELIGHT]    = "#F3E8FF"
+  fg[ACTIVE]      = "#FFFFFF"
+  fg[INSENSITIVE] = "#70458A"
+  GtkToolItem::spacing = 3
+}
+class "GtkToolItem"       style "gnuchan-toolitem"
+class "GtkToolButton"     style "gnuchan-toolitem"
+class "GtkMenuToolButton" style "gnuchan-toolitem"
+class "GtkToggleToolButton" style "gnuchan-toolitem"
+class "GtkSeparatorToolItem" style "gnuchan-toolitem"
+class "GtkLinkButton"     style "gnuchan-toolitem"
+class "GtkColorButton"    style "gnuchan-toolitem"
+class "GtkFontButton"     style "gnuchan-toolitem"
+class "GtkFileChooserButton" style "gnuchan-toolitem"
+widget_class "*<GtkToolItem>*"   style "gnuchan-toolitem"
+widget_class "*<GtkToolButton>*" style "gnuchan-toolitem"
+widget_class "*<GtkLinkButton>*" style "gnuchan-toolitem"
+
+# --- Menu item variants ------------------------------------------------------
+style "gnuchan-menuitem-variant"
+{
+  bg[NORMAL]      = "#180A22"
+  bg[PRELIGHT]    = "#542080"
+  bg[ACTIVE]      = "#542080"
+  fg[NORMAL]      = "#EAD7FF"
+  fg[PRELIGHT]    = "#FFFFFF"
+  bg[INSENSITIVE] = "#0F0615"
+  fg[INSENSITIVE] = "#70458A"
+  GtkMenuItem::toggle-spacing = 16
+}
+class "GtkCheckMenuItem"      style "gnuchan-menuitem-variant"
+class "GtkRadioMenuItem"      style "gnuchan-menuitem-variant"
+class "GtkSeparatorMenuItem"  style "gnuchan-menuitem-variant"
+class "GtkTearoffMenuItem"    style "gnuchan-menuitem-variant"
+widget_class "*<GtkCheckMenuItem>*"     style "gnuchan-menuitem-variant"
+widget_class "*<GtkRadioMenuItem>*"     style "gnuchan-menuitem-variant"
+widget_class "*<GtkSeparatorMenuItem>*" style "gnuchan-menuitem-variant"
+
+# --- Info bars and colour/font selection -------------------------------------
+style "gnuchan-infobar"
+{
+  xthickness = 6
+  ythickness = 4
+  bg[NORMAL] = "#180A22"
+  fg[NORMAL] = "#EAD7FF"
+  bg[SELECTED] = "#542080"
+  fg[SELECTED] = "#FFFFFF"
+}
+class "GtkInfoBar" style "gnuchan-infobar"
+widget_class "*<GtkInfoBar>*" style "gnuchan-infobar"
+
+style "gnuchan-selection-widget"
+{
+  bg[NORMAL]      = "#0E0614"
+  bg[PRELIGHT]    = "#1C0B27"
+  base[NORMAL]    = "#09030D"
+  base[SELECTED]  = "#542080"
+  fg[NORMAL]      = "#EAD7FF"
+  fg[SELECTED]    = "#FFFFFF"
+  text[NORMAL]    = "#EAD7FF"
+  text[SELECTED]  = "#FFFFFF"
+}
+class "GtkColorSelection" style "gnuchan-selection-widget"
+class "GtkFontSelection"  style "gnuchan-selection-widget"
+widget_class "*<GtkColorSelection>*" style "gnuchan-selection-widget"
+widget_class "*<GtkFontSelection>*"  style "gnuchan-selection-widget"
