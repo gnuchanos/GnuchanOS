@@ -1,0 +1,166 @@
+/* ============================================================================
+ * GnuchanPurple - rofi colour scheme
+ * ----------------------------------------------------------------------------
+ * Save as ~/.config/rofi/gnuchan-purple.rasi and either theme it per launcher:
+ *
+ *   rofi -show drun -theme ~/.config/rofi/gnuchan-purple.rasi
+ *
+ * or make it the default by putting this in ~/.config/rofi/config.rasi:
+ *
+ *   @theme "gnuchan-purple"
+ *
+ * License: GPL3
+ * ========================================================================== */
+
+* {
+    bg:        #0e0614;
+    bg-alt:    #180a22;
+    bg-dark:   #09030d;
+    fg:        #ead7ff;
+    fg-dim:    #b78ed6;
+    fg-mute:   #70458a;
+    border:    #32143f;
+    accent:    #a855f7;
+    accent-lo: #542080;
+    alert:     #e879f9;
+
+    background-color: transparent;
+    text-color:       @fg;
+    border:           0;
+    margin:           0;
+    padding:          0;
+    spacing:          0;
+}
+
+window {
+    background-color: @bg;
+    border:           1px solid;
+    border-color:     @accent;
+    border-radius:    10px;
+    width:            44em;
+    padding:          10px;
+}
+
+mainbox {
+    background-color: transparent;
+    children:         [ inputbar, listview ];
+    spacing:          10px;
+}
+
+inputbar {
+    background-color: @bg-alt;
+    text-color:       @fg;
+    border:           1px solid;
+    border-color:     @border;
+    border-radius:    8px;
+    padding:          8px 12px;
+    spacing:          8px;
+    children:         [ prompt, entry ];
+}
+
+prompt {
+    background-color: transparent;
+    text-color:       @accent;
+    padding:          0 4px 0 0;
+}
+
+entry {
+    background-color: transparent;
+    text-color:       @fg;
+    placeholder:      "Type to search...";
+    placeholder-color: @fg-mute;
+}
+
+listview {
+    background-color: transparent;
+    border:           0;
+    lines:            10;
+    columns:          1;
+    scrollbar:        false;
+    fixed-height:     false;
+    dynamic:          true;
+    padding:          0;
+    spacing:          2px;
+}
+
+element {
+    background-color: transparent;
+    text-color:       @fg;
+    border-radius:    6px;
+    padding:          8px 10px;
+    spacing:          10px;
+}
+
+element normal.normal,
+element alternate.normal {
+    background-color: transparent;
+    text-color:       @fg;
+}
+
+element selected.normal,
+element selected.active {
+    background-color: @accent-lo;
+    text-color:       #ffffff;
+}
+
+element selected.urgent,
+element urgent.normal {
+    background-color: @alert;
+    text-color:       #ffffff;
+}
+
+element-text {
+    background-color: transparent;
+    text-color:       inherit;
+    highlight:        bold #c77dff;
+}
+
+element-icon {
+    background-color: transparent;
+    size:             1.2em;
+    padding:          0 4px 0 0;
+}
+
+element-index {
+    background-color: transparent;
+    text-color:       @fg-mute;
+    padding:          0 8px 0 0;
+}
+
+scrollbar {
+    background-color: transparent;
+    handle-color:     @accent;
+    handle-width:     4px;
+    border:           0;
+    padding:          0;
+}
+
+mode-switcher {
+    background-color: transparent;
+    border:           0;
+    spacing:          6px;
+}
+
+button {
+    background-color: @bg-alt;
+    text-color:       @fg-dim;
+    border:           1px solid;
+    border-color:     @border;
+    border-radius:    6px;
+    padding:          6px 12px;
+}
+
+button selected {
+    background-color: @accent-lo;
+    text-color:       #ffffff;
+    border-color:     @accent;
+}
+
+message {
+    background-color: @bg-alt;
+    text-color:       @fg;
+    border:           1px solid;
+    border-color:     @border;
+    border-radius:    8px;
+    padding:          10px;
+}

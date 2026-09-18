@@ -1,0 +1,38 @@
+# =============================================================================
+# GnuchanPurple - dunst notification daemon
+# -----------------------------------------------------------------------------
+# Append to ~/.config/dunst/dunstrc (dunst merges repeated sections, the last
+# value wins) or copy to ~/.config/dunst/gnuchan-purple and include it.
+#
+# Only colours are set here, so your own geometry and behaviour are kept.
+#
+# License: GPL3
+# =============================================================================
+
+[global]
+    frame_color = "#6d28d9"
+    separator_color = "auto"
+    font = Sans 10
+
+[urgency_low]
+    background = "#180a22"
+    foreground = "#b78ed6"
+    frame_color = "#32143f"
+    timeout = 6
+
+[urgency_normal]
+    background = "#180a22"
+    foreground = "#ead7ff"
+    frame_color = "#6d28d9"
+    timeout = 10
+
+[urgency_critical]
+    background = "#2a0b2f"
+    foreground = "#e879f9"
+    frame_color = "#e879f9"
+    timeout = 0
+
+[shortcuts]
+    close = ctrl+space
+    close_all = ctrl+shift+space
+    context = ctrl+shift+period

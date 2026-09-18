@@ -1,0 +1,1789 @@
+/* ============================================================================
+ * GnuchanPurple - GTK 3 theme
+ * ----------------------------------------------------------------------------
+ * A dark, monochrome purple theme, colour matched to the GnuchanOS VSCodium
+ * theme (dotfile/vscodium_theme/settings.json).
+ *
+ * How this file works
+ * -------------------
+ * GTK 3.20 and newer do not inherit from Adwaita automatically: a theme that
+ * ships a gtk.css replaces the base theme completely. So we pull Adwaita's
+ * compiled dark stylesheet out of the GTK resource bundle first and only then
+ * override colours and the widgets we care about. That keeps the theme small
+ * and guarantees every widget keeps working.
+ *
+ * The @import below must stay the very first rule of the file. On GTK older
+ * than 3.20 that resource does not exist, GTK only prints a warning, and those
+ * versions already load Adwaita underneath us, so the theme still applies.
+ *
+ * License: GPL3
+ * ========================================================================== */
+
+@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained-dark.css");
+
+/* ----------------------------------------------------------------------------
+ * 1. Palette
+ * -------------------------------------------------------------------------- */
+
+/* Surfaces, darkest to lightest */
+@define-color gnuchan_bg_darkest      #09030d;
+@define-color gnuchan_bg              #0e0614;
+@define-color gnuchan_bg_alt          #0f0615;
+@define-color gnuchan_surface         #12071a;
+@define-color gnuchan_surface_alt     #180a22;
+@define-color gnuchan_raised          #1c0b27;
+@define-color gnuchan_hover           #21102b;
+@define-color gnuchan_raised_hover    #281036;
+
+/* Lines */
+@define-color gnuchan_border_alt      #24102f;
+@define-color gnuchan_border          #32143f;
+@define-color gnuchan_border_strong   #6d28d9;
+
+/* Accents */
+@define-color gnuchan_accent          #a855f7;
+@define-color gnuchan_accent_hover    #b76eff;
+@define-color gnuchan_accent_active   #9333ea;
+@define-color gnuchan_accent_light    #c77dff;
+@define-color gnuchan_accent_pale     #d8a4ff;
+@define-color gnuchan_selected_bg     #542080;
+@define-color gnuchan_selected_bg_alt #6d28d9;
+
+/* Text */
+@define-color gnuchan_fg              #ead7ff;
+@define-color gnuchan_fg_bright       #f3e8ff;
+@define-color gnuchan_fg_dim          #b78ed6;
+@define-color gnuchan_fg_disabled     #70458a;
+@define-color gnuchan_white           #ffffff;
+
+/* Semantics, kept inside the purple family on purpose */
+@define-color gnuchan_error           #e879f9;
+@define-color gnuchan_warning         #c77dff;
+@define-color gnuchan_success         #9d4edd;
+
+/* Transparency helpers */
+@define-color gnuchan_shade           rgba(0, 0, 0, 0.36);
+@define-color gnuchan_shadow          rgba(0, 0, 0, 0.60);
+@define-color gnuchan_selection_soft  rgba(168, 85, 247, 0.30);
+
+/* ----------------------------------------------------------------------------
+ * 2. Remap the named colours Adwaita and third party apps rely on
+ * ----------------------------------------------------------------------------
+ * Every Adwaita widget derives its colours from these names, so remapping them
+ * repaints the whole toolkit consistently, including widgets this file never
+ * mentions and applications that reference the names from their own CSS.
+ * -------------------------------------------------------------------------- */
+
+/* Classic Adwaita 3 names, GTK 3.20 - 3.22 */
+@define-color theme_bg_color                        @gnuchan_bg;
+@define-color theme_base_color                      @gnuchan_bg_darkest;
+@define-color theme_fg_color                        @gnuchan_fg;
+@define-color theme_text_color                      @gnuchan_fg;
+@define-color theme_selected_bg_color               @gnuchan_selected_bg;
+@define-color theme_selected_fg_color               @gnuchan_white;
+@define-color theme_unfocused_bg_color              @gnuchan_bg;
+@define-color theme_unfocused_base_color            @gnuchan_bg_darkest;
+@define-color theme_unfocused_fg_color              @gnuchan_fg_dim;
+@define-color theme_unfocused_text_color            @gnuchan_fg_dim;
+@define-color theme_unfocused_selected_bg_color     @gnuchan_selected_bg;
+@define-color theme_unfocused_selected_fg_color     @gnuchan_fg_bright;
+@define-color insensitive_bg_color                  @gnuchan_bg_alt;
+@define-color insensitive_base_color                @gnuchan_bg;
+@define-color insensitive_fg_color                  @gnuchan_fg_disabled;
+@define-color borders                               @gnuchan_border;
+@define-color unfocused_borders                     @gnuchan_border_alt;
+@define-color content_view_bg                       @gnuchan_bg_darkest;
+@define-color text_view_bg                          @gnuchan_bg_darkest;
+
+/* Modern Adwaita 3.24 names, also used by libadwaita styled apps */
+@define-color window_bg_color                       @gnuchan_bg;
+@define-color window_fg_color                       @gnuchan_fg;
+@define-color view_bg_color                         @gnuchan_bg_darkest;
+@define-color view_fg_color                         @gnuchan_fg;
+@define-color headerbar_bg_color                    @gnuchan_bg_darkest;
+@define-color headerbar_fg_color                    @gnuchan_fg;
+@define-color headerbar_border_color                @gnuchan_border;
+@define-color headerbar_backdrop_color              @gnuchan_bg_darkest;
+@define-color headerbar_shade_color                 @gnuchan_shade;
+@define-color sidebar_bg_color                      @gnuchan_surface;
+@define-color sidebar_fg_color                      @gnuchan_fg;
+@define-color sidebar_backdrop_color                @gnuchan_bg_alt;
+@define-color sidebar_border_color                  @gnuchan_border;
+@define-color sidebar_shade_color                   @gnuchan_shade;
+@define-color secondary_sidebar_bg_color            @gnuchan_bg_alt;
+@define-color secondary_sidebar_fg_color            @gnuchan_fg;
+@define-color secondary_sidebar_backdrop_color      @gnuchan_bg;
+@define-color secondary_sidebar_border_color        @gnuchan_border;
+@define-color secondary_sidebar_shade_color         @gnuchan_shade;
+@define-color card_bg_color                         @gnuchan_surface_alt;
+@define-color card_fg_color                         @gnuchan_fg;
+@define-color card_shade_color                      @gnuchan_shade;
+@define-color dialog_bg_color                       @gnuchan_surface_alt;
+@define-color dialog_fg_color                       @gnuchan_fg;
+@define-color popover_bg_color                      @gnuchan_surface_alt;
+@define-color popover_fg_color                      @gnuchan_fg;
+@define-color thumbnail_bg_color                    @gnuchan_surface_alt;
+@define-color thumbnail_fg_color                    @gnuchan_fg;
+@define-color shade_color                           @gnuchan_shade;
+@define-color scrollbar_outline_color               @gnuchan_border;
+
+/* States */
+@define-color destructive_color                     @gnuchan_error;
+@define-color destructive_bg_color                  #86198f;
+@define-color destructive_fg_color                  @gnuchan_white;
+@define-color error_color                           @gnuchan_error;
+@define-color error_bg_color                        #86198f;
+@define-color error_fg_color                        @gnuchan_white;
+@define-color warning_color                         @gnuchan_warning;
+@define-color warning_bg_color                      @gnuchan_accent_active;
+@define-color warning_fg_color                      @gnuchan_white;
+@define-color success_color                         @gnuchan_success;
+@define-color success_bg_color                      @gnuchan_selected_bg;
+@define-color success_fg_color                      @gnuchan_white;
+@define-color suggested_color                       @gnuchan_accent;
+@define-color accent_color                          @gnuchan_accent;
+@define-color accent_bg_color                       @gnuchan_accent;
+@define-color accent_fg_color                       @gnuchan_white;
+@define-color link_color                            @gnuchan_accent_light;
+@define-color link_visited_color                    @gnuchan_accent_pale;
+
+/* Window manager colours. GTK 3 paints the titlebar of client side decorated
+ * windows itself, so for CSD apps these names are the whole "WM theme". */
+@define-color wm_bg                                 @gnuchan_bg_darkest;
+@define-color wm_bg_backdrop                        @gnuchan_bg_darkest;
+@define-color wm_bg_unfocused                       @gnuchan_bg_darkest;
+@define-color wm_bg_unbackdrop                      @gnuchan_bg_darkest;
+@define-color wm_fg                                 @gnuchan_fg;
+@define-color wm_border                             @gnuchan_border;
+@define-color wm_border_backdrop                    @gnuchan_border_alt;
+@define-color wm_title                              @gnuchan_fg;
+@define-color wm_title_backdrop                     @gnuchan_fg_dim;
+@define-color wm_subtitle                           @gnuchan_fg_dim;
+@define-color wm_button_bg                          transparent;
+@define-color wm_button_bg_hover                    @gnuchan_hover;
+@define-color wm_button_bg_active                   @gnuchan_raised_hover;
+@define-color wm_button_border                      transparent;
+@define-color wm_button_border_backdrop             transparent;
+@define-color wm_unfocused_title                    @gnuchan_fg_dim;
+@define-color wm_unfocused_control                  @gnuchan_fg_disabled;
+@define-color wm_highlight                          rgba(0, 0, 0, 0);
+
+/* OSD, video players and full screen overlays */
+@define-color osd_bg_color                          @gnuchan_bg_darkest;
+@define-color osd_fg_color                          @gnuchan_fg;
+@define-color osd_base_color                        @gnuchan_bg_darkest;
+@define-color osd_text_color                        @gnuchan_fg;
+@define-color osd_borders_color                     @gnuchan_border;
+@define-color osd_bg                                @gnuchan_bg_darkest;
+@define-color osd_fg                                @gnuchan_fg;
+
+/* Scrollbars, Adwaita 3.24 names */
+@define-color scrollbar_bg_color                    @gnuchan_bg_alt;
+@define-color scrollbar_slider_color                #6d28d9;
+@define-color scrollbar_slider_hover_color          #9333ea;
+@define-color scrollbar_slider_active_color         #c77dff;
+/* ----------------------------------------------------------------------------
+ * 3. Base
+ * -------------------------------------------------------------------------- */
+
+* {
+  outline-color: @gnuchan_selection_soft;
+  outline-width: 2px;
+  outline-style: solid;
+  outline-offset: -2px;
+  -gtk-outline-radius: 6px;
+  -GtkWidget-link-color: @gnuchan_accent_light;
+  -GtkWidget-visited-link-color: @gnuchan_accent_pale;
+  -GtkWidget-focus-line-width: 0;
+  -GtkWidget-focus-padding: 0;
+  caret-color: @gnuchan_accent_pale;
+  -gtk-secondary-caret-color: @gnuchan_accent;
+}
+
+window,
+.background {
+  background-color: @gnuchan_bg;
+  color: @gnuchan_fg;
+}
+
+window:backdrop,
+.background:backdrop {
+  color: @gnuchan_fg_dim;
+}
+
+label {
+  caret-color: @gnuchan_accent_pale;
+}
+
+label:disabled,
+label.dim-label,
+label.separator,
+.dim-label {
+  color: @gnuchan_fg_disabled;
+}
+
+label:backdrop,
+.dim-label:backdrop {
+  color: @gnuchan_fg_dim;
+}
+
+label selection,
+label > selection,
+entry selection,
+textview selection,
+text selection,
+.iconview selection {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+label:selected,
+label:selected:focus {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+separator {
+  background-color: @gnuchan_border;
+  min-width: 1px;
+  min-height: 1px;
+}
+
+separator:backdrop {
+  background-color: @gnuchan_border_alt;
+}
+
+/* ----------------------------------------------------------------------------
+ * 4. Header bars and client side decorated title bars
+ * -------------------------------------------------------------------------- */
+
+headerbar,
+.titlebar {
+  background-color: @gnuchan_bg_darkest;
+  background-image: none;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-radius: 10px 10px 0 0;
+  padding: 4px 6px;
+  min-height: 34px;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+headerbar:backdrop,
+.titlebar:backdrop {
+  color: @gnuchan_fg_dim;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+headerbar > separator,
+headerbar separator {
+  background-color: @gnuchan_border;
+  border: none;
+}
+
+headerbar .title,
+.titlebar .title {
+  color: @gnuchan_fg;
+  font-weight: 600;
+  padding: 0 10px;
+}
+
+headerbar .title:backdrop,
+.titlebar .title:backdrop {
+  color: @gnuchan_fg_dim;
+}
+
+headerbar .subtitle,
+.titlebar .subtitle {
+  color: @gnuchan_fg_dim;
+  font-size: 0.82em;
+  padding: 0 10px;
+}
+
+headerbar .subtitle:backdrop,
+.titlebar .subtitle:backdrop {
+  color: @gnuchan_fg_disabled;
+}
+
+headerbar button,
+.titlebar button,
+headerbar .titlebutton,
+.titlebar .titlebutton {
+  background-image: none;
+  background-color: transparent;
+  border-color: transparent;
+  border-radius: 6px;
+  min-height: 24px;
+  min-width: 24px;
+  padding: 4px;
+  margin: 0 1px;
+  color: @gnuchan_fg_dim;
+  box-shadow: none;
+  text-shadow: none;
+  -gtk-icon-shadow: none;
+  transition: background-color 120ms ease-in-out, color 120ms ease-in-out;
+}
+
+headerbar button:hover,
+.titlebar button:hover,
+headerbar .titlebutton:hover,
+.titlebar .titlebutton:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+headerbar button:active,
+headerbar button:checked,
+.titlebar button:active,
+.titlebar button:checked {
+  background-color: @gnuchan_raised_hover;
+  color: @gnuchan_white;
+}
+
+headerbar button:disabled,
+.titlebar button:disabled {
+  color: @gnuchan_fg_disabled;
+  background-color: transparent;
+}
+
+headerbar entry,
+.titlebar entry {
+  background-color: @gnuchan_surface_alt;
+  border: 1px solid @gnuchan_border;
+  border-radius: 6px;
+  color: @gnuchan_fg;
+  min-height: 28px;
+}
+
+/* Window controls. GnuchanOS keeps the close button red-ish but inside the
+ * same purple family so it does not look bolted on. */
+headerbar button.titlebutton.close:hover,
+.titlebar button.titlebutton.close:hover,
+windowcontrols > button.close:hover {
+  background-color: #86198f;
+  color: @gnuchan_white;
+}
+
+headerbar button.titlebutton.close:active,
+.titlebar button.titlebutton.close:active,
+windowcontrols > button.close:active {
+  background-color: #a21caf;
+  color: @gnuchan_white;
+}
+
+headerbar button.titlebutton:backdrop,
+.titlebar button.titlebutton:backdrop,
+windowcontrols > button:backdrop {
+  color: @gnuchan_fg_disabled;
+  background-color: transparent;
+}
+
+windowcontrols > button {
+  border-radius: 6px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 4px;
+  margin: 0 1px;
+  color: @gnuchan_fg_dim;
+  background-color: transparent;
+  border: none;
+}
+
+windowcontrols > button:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+windowcontrols > button > image {
+  color: inherit;
+}
+
+/* The bottom corner rounding of CSD windows */
+window.csd,
+window.csd > .titlebar,
+headerbar.default-decoration {
+  border-radius: 10px 10px 0 0;
+}
+
+window.csd > decoration {
+  box-shadow: 0 0 0 1px @gnuchan_border, 0 8px 24px 4px @gnuchan_shadow;
+  border-radius: 10px;
+}
+
+/* ----------------------------------------------------------------------------
+ * 5. Buttons
+ * -------------------------------------------------------------------------- */
+
+button,
+.button {
+  background-image: none;
+  background-color: @gnuchan_raised;
+  color: @gnuchan_fg;
+  border: 1px solid @gnuchan_border;
+  border-radius: 6px;
+  padding: 5px 12px;
+  min-height: 24px;
+  min-width: 16px;
+  text-shadow: none;
+  -gtk-icon-shadow: none;
+  box-shadow: none;
+  transition: background-color 120ms ease-in-out, border-color 120ms ease-in-out,
+              color 120ms ease-in-out;
+}
+
+button:hover,
+.button:hover {
+  background-color: @gnuchan_raised_hover;
+  border-color: @gnuchan_border_strong;
+  color: @gnuchan_fg_bright;
+}
+
+button:active,
+button:checked,
+.button:active,
+.button:checked {
+  background-color: @gnuchan_selected_bg;
+  border-color: @gnuchan_accent;
+  color: @gnuchan_white;
+}
+
+button:disabled,
+.button:disabled {
+  background-color: @gnuchan_bg_alt;
+  border-color: @gnuchan_border_alt;
+  color: @gnuchan_fg_disabled;
+}
+
+button:backdrop,
+.button:backdrop {
+  background-color: @gnuchan_raised;
+  border-color: @gnuchan_border_alt;
+  color: @gnuchan_fg_dim;
+}
+
+button.flat,
+button.flat:backdrop,
+button.titlebutton,
+button.image-button,
+button.text-button,
+button:link,
+button:visited {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+button.flat:hover,
+button.titlebutton:hover,
+button.image-button:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+button.flat:active,
+button.flat:checked,
+button.image-button:active {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+button.flat:disabled {
+  background-color: transparent;
+  color: @gnuchan_fg_disabled;
+}
+
+button:link,
+button:visited {
+  color: @gnuchan_accent_light;
+  padding: 2px 4px;
+}
+
+button:link:hover,
+button:visited:hover {
+  color: @gnuchan_accent_pale;
+  text-decoration: underline;
+}
+
+/* Suggested action button */
+button.suggested-action,
+button.suggested-action:backdrop {
+  background-color: @gnuchan_accent_active;
+  border-color: @gnuchan_accent;
+  color: @gnuchan_white;
+}
+
+button.suggested-action:hover {
+  background-color: @gnuchan_accent;
+  border-color: @gnuchan_accent_hover;
+  color: @gnuchan_white;
+}
+
+button.suggested-action:active,
+button.suggested-action:checked {
+  background-color: #7b2cbf;
+  border-color: @gnuchan_accent_pale;
+}
+
+button.suggested-action:disabled {
+  background-color: @gnuchan_surface_alt;
+  border-color: @gnuchan_border;
+  color: @gnuchan_fg_disabled;
+}
+
+/* Destructive action button */
+button.destructive-action {
+  background-color: #86198f;
+  border-color: #a21caf;
+  color: @gnuchan_white;
+}
+
+button.destructive-action:hover {
+  background-color: #a21caf;
+  border-color: @gnuchan_error;
+}
+
+button.destructive-action:active,
+button.destructive-action:checked {
+  background-color: #701a75;
+}
+
+button.destructive-action:disabled {
+  background-color: @gnuchan_surface_alt;
+  border-color: @gnuchan_border;
+  color: @gnuchan_fg_disabled;
+}
+
+/* Split and linked button groups */
+.linked > button,
+.linked > button:hover,
+.linked > button:active {
+  border-radius: 0;
+  border-left-width: 0;
+}
+
+.linked > button:first-child {
+  border-radius: 6px 0 0 6px;
+  border-left-width: 1px;
+}
+
+.linked > button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.linked > button:only-child {
+  border-radius: 6px;
+  border-left-width: 1px;
+}
+
+button.circular {
+  border-radius: 9999px;
+  padding: 6px;
+  min-width: 16px;
+  min-height: 16px;
+}
+
+button.font,
+button.calendar,
+button.colorswatch {
+  background-color: @gnuchan_surface_alt;
+  border-color: @gnuchan_border;
+}
+/* ----------------------------------------------------------------------------
+ * 6. Entries, labels, text views
+ * -------------------------------------------------------------------------- */
+
+entry,
+.entry {
+  background-image: none;
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+  border: 1px solid @gnuchan_border;
+  border-radius: 6px;
+  padding: 4px 8px;
+  min-height: 26px;
+  caret-color: @gnuchan_accent_pale;
+  transition: border-color 140ms ease-in-out, box-shadow 140ms ease-in-out;
+}
+
+entry:focus,
+entry:focus-within,
+.entry:focus {
+  border-color: @gnuchan_accent;
+  box-shadow: 0 0 0 2px @gnuchan_selection_soft;
+}
+
+entry:disabled,
+.entry:disabled {
+  background-color: @gnuchan_bg_alt;
+  border-color: @gnuchan_border_alt;
+  color: @gnuchan_fg_disabled;
+}
+
+entry:backdrop {
+  border-color: @gnuchan_border_alt;
+}
+
+entry.error,
+.entry.error {
+  border-color: #86198f;
+  color: @gnuchan_error;
+}
+
+entry.error:focus {
+  border-color: @gnuchan_error;
+  box-shadow: 0 0 0 2px rgba(232, 121, 249, 0.30);
+}
+
+entry.warning,
+.entry.warning {
+  border-color: @gnuchan_accent_active;
+  color: @gnuchan_warning;
+}
+
+entry.success,
+.entry.success {
+  border-color: @gnuchan_selected_bg;
+}
+
+entry > image,
+entry > button {
+  color: @gnuchan_fg_dim;
+  background-color: transparent;
+  border: none;
+  min-height: 20px;
+  min-width: 20px;
+  padding: 2px;
+}
+
+entry > image:hover,
+entry > button:hover {
+  color: @gnuchan_fg_bright;
+}
+
+entry progress {
+  background-color: transparent;
+  border: none;
+  border-bottom: 2px solid @gnuchan_accent;
+}
+
+entry selection,
+textview selection,
+text selection,
+spinbutton selection {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+textview,
+textview text,
+.textview {
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+  caret-color: @gnuchan_accent_pale;
+}
+
+textview:disabled,
+textview text:disabled {
+  color: @gnuchan_fg_disabled;
+}
+
+textview border {
+  background-color: @gnuchan_bg_alt;
+  color: @gnuchan_fg_dim;
+}
+
+/* ----------------------------------------------------------------------------
+ * 7. Check buttons, radio buttons, switches, sliders
+ * -------------------------------------------------------------------------- */
+
+checkbutton,
+.check,
+radiobutton,
+.radio {
+  color: @gnuchan_fg;
+  outline-offset: 0;
+}
+
+check,
+radio {
+  background-image: none;
+  background-color: @gnuchan_bg_darkest;
+  border: 1px solid @gnuchan_border_strong;
+  min-width: 16px;
+  min-height: 16px;
+  margin: 2px;
+  transition: background-color 120ms ease-in-out, border-color 120ms ease-in-out;
+}
+
+check,
+.check {
+  border-radius: 4px;
+}
+
+radio,
+.radio {
+  border-radius: 9999px;
+}
+
+check:hover,
+radio:hover {
+  background-color: @gnuchan_hover;
+  border-color: @gnuchan_accent;
+}
+
+check:checked,
+check:indeterminate {
+  background-color: @gnuchan_accent_active;
+  border-color: @gnuchan_accent;
+  color: @gnuchan_white;
+  -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
+}
+
+/* A radio holds a dot, not the tick the check button uses. Drawing it as a
+ * radial gradient rather than an icon means it never depends on an icon theme
+ * shipping the right symbolic name. */
+radio:checked {
+  background-color: @gnuchan_accent_active;
+  background-image: radial-gradient(circle, @gnuchan_white 27%, transparent 30%);
+  border-color: @gnuchan_accent;
+  color: @gnuchan_white;
+  -gtk-icon-source: none;
+}
+
+check:checked:hover,
+radio:checked:hover {
+  background-color: @gnuchan_accent;
+  border-color: @gnuchan_accent_hover;
+}
+
+check:disabled,
+radio:disabled {
+  background-color: @gnuchan_bg_alt;
+  border-color: @gnuchan_border_alt;
+  color: @gnuchan_fg_disabled;
+}
+
+check:checked:disabled,
+radio:checked:disabled {
+  background-color: @gnuchan_border_alt;
+  background-image: none;
+  border-color: @gnuchan_border;
+  -gtk-icon-source: none;
+}
+
+check:backdrop,
+radio:backdrop {
+  border-color: @gnuchan_border;
+}
+
+checkbutton:checked label,
+radiobutton:checked label {
+  color: @gnuchan_fg_bright;
+}
+
+/* Switches, GTK 3.20+ */
+switch {
+  background-color: @gnuchan_bg_darkest;
+  border: 1px solid @gnuchan_border;
+  border-radius: 9999px;
+  color: transparent;
+  min-width: 42px;
+  min-height: 22px;
+  padding: 0;
+  transition: background-color 140ms ease-in-out, border-color 140ms ease-in-out;
+}
+
+switch:hover {
+  background-color: @gnuchan_hover;
+  border-color: @gnuchan_border_strong;
+}
+
+switch:checked {
+  background-color: @gnuchan_accent_active;
+  border-color: @gnuchan_accent;
+  color: @gnuchan_white;
+}
+
+switch:checked:hover {
+  background-color: @gnuchan_accent;
+}
+
+switch:disabled {
+  background-color: @gnuchan_bg_alt;
+  border-color: @gnuchan_border_alt;
+}
+
+switch > slider {
+  background-image: none;
+  background-color: @gnuchan_fg_dim;
+  border: none;
+  border-radius: 9999px;
+  min-width: 18px;
+  min-height: 18px;
+  margin: 2px;
+  box-shadow: none;
+  transition: background-color 140ms ease-in-out;
+}
+
+switch:hover > slider {
+  background-color: @gnuchan_fg_bright;
+}
+
+switch:checked > slider {
+  background-color: @gnuchan_white;
+}
+
+switch:disabled > slider {
+  background-color: @gnuchan_fg_disabled;
+}
+
+/* Scales */
+scale {
+  min-height: 18px;
+  min-width: 18px;
+  padding: 6px;
+}
+
+scale trough,
+scale > trough {
+  background-color: @gnuchan_bg_darkest;
+  border: 1px solid @gnuchan_border;
+  border-radius: 9999px;
+  min-width: 6px;
+  min-height: 6px;
+}
+
+scale trough:disabled {
+  background-color: @gnuchan_bg_alt;
+  border-color: @gnuchan_border_alt;
+}
+
+scale highlight,
+scale > trough > highlight {
+  background-color: @gnuchan_accent_active;
+  border: none;
+  border-radius: 9999px;
+}
+
+scale highlight:disabled {
+  background-color: @gnuchan_border_alt;
+}
+
+scale slider {
+  background-color: @gnuchan_fg;
+  border: 1px solid @gnuchan_accent;
+  border-radius: 9999px;
+  min-width: 14px;
+  min-height: 14px;
+  margin: -5px;
+  box-shadow: none;
+  transition: background-color 120ms ease-in-out, border-color 120ms ease-in-out;
+}
+
+scale slider:hover {
+  background-color: @gnuchan_fg_bright;
+  border-color: @gnuchan_accent_hover;
+}
+
+scale slider:active {
+  background-color: @gnuchan_accent_pale;
+  border-color: @gnuchan_accent_pale;
+}
+
+scale slider:disabled {
+  background-color: @gnuchan_fg_disabled;
+  border-color: @gnuchan_border;
+}
+
+scale value,
+scale marks {
+  color: @gnuchan_fg_dim;
+  font-size: 0.85em;
+}
+
+scale indicator {
+  background-color: @gnuchan_accent;
+  min-width: 1px;
+  min-height: 6px;
+}
+
+/* ----------------------------------------------------------------------------
+ * 8. Scrollbars
+ * -------------------------------------------------------------------------- */
+
+scrollbar {
+  background-color: @gnuchan_bg_alt;
+  background-image: none;
+  border: none;
+  transition: background-color 200ms ease-in-out;
+}
+
+scrollbar trough {
+  background-color: @gnuchan_bg_alt;
+  border: none;
+  border-radius: 0;
+}
+
+scrollbar slider {
+  background-color: @gnuchan_border_strong;
+  background-image: none;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 9999px;
+  min-width: 8px;
+  min-height: 8px;
+  transition: background-color 160ms ease-in-out;
+}
+
+scrollbar slider:hover {
+  background-color: @gnuchan_accent_active;
+}
+
+scrollbar slider:active {
+  background-color: @gnuchan_accent_light;
+}
+
+scrollbar slider:disabled {
+  background-color: @gnuchan_border_alt;
+}
+
+scrollbar:backdrop slider {
+  background-color: @gnuchan_border;
+}
+
+scrollbar.vertical slider {
+  min-width: 8px;
+  min-height: 40px;
+}
+
+scrollbar.horizontal slider {
+  min-width: 40px;
+  min-height: 8px;
+}
+
+scrollbar button,
+scrollbar > button {
+  background-color: transparent;
+  border: none;
+  border-radius: 4px;
+  min-width: 12px;
+  min-height: 12px;
+  color: @gnuchan_fg_dim;
+}
+
+scrollbar button:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+/* Overlay scrolling */
+scrolledwindow > scrollbar.overlay-indicator {
+  background-color: transparent;
+  border: none;
+}
+
+scrolledwindow > scrollbar.overlay-indicator > trough {
+  background-color: transparent;
+}
+
+scrolledwindow.undershoot-top,
+scrolledwindow.undershoot-bottom,
+scrolledwindow.undershoot-left,
+scrolledwindow.undershoot-right {
+  background-color: @gnuchan_bg_darkest;
+}
+
+/* ----------------------------------------------------------------------------
+ * 9. Progress bars, level bars, spinners
+ * -------------------------------------------------------------------------- */
+
+progressbar,
+progressbar > trough {
+  background-color: @gnuchan_bg_darkest;
+  border: 1px solid @gnuchan_border;
+  border-radius: 9999px;
+  color: @gnuchan_white;
+  min-height: 8px;
+}
+
+progressbar > trough > progress {
+  background-color: @gnuchan_accent_active;
+  background-image: none;
+  border: none;
+  border-radius: 9999px;
+  min-height: 8px;
+}
+
+progressbar.osd,
+progressbar.osd > trough,
+progressbar.osd > trough > progress {
+  background-color: @gnuchan_accent_active;
+  border: none;
+}
+
+progressbar > text {
+  color: @gnuchan_white;
+  font-size: 0.85em;
+}
+
+levelbar,
+levelbar > trough {
+  background-color: @gnuchan_bg_darkest;
+  border: 1px solid @gnuchan_border;
+  border-radius: 6px;
+  min-height: 8px;
+}
+
+levelbar > trough > block {
+  background-color: @gnuchan_accent_active;
+  border: none;
+  border-radius: 3px;
+  min-height: 6px;
+}
+
+levelbar > trough > block.low {
+  background-color: @gnuchan_accent;
+}
+
+levelbar > trough > block.high,
+levelbar > trough > block.full {
+  background-color: @gnuchan_accent_pale;
+}
+
+levelbar > trough > block.discrete {
+  border-right: 2px solid @gnuchan_bg;
+  border-radius: 2px;
+}
+
+levelbar > trough > block.empty {
+  background-color: @gnuchan_border_alt;
+}
+
+spinner {
+  color: @gnuchan_accent_light;
+  min-width: 16px;
+  min-height: 16px;
+}
+
+spinner:disabled {
+  color: @gnuchan_fg_disabled;
+}
+
+/* ----------------------------------------------------------------------------
+ * 10. Spin buttons and drop downs
+ * -------------------------------------------------------------------------- */
+
+spinbutton,
+.spinbutton {
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+  border: 1px solid @gnuchan_border;
+  border-radius: 6px;
+  padding: 0;
+  min-height: 28px;
+}
+
+spinbutton:focus,
+spinbutton:focus-within {
+  border-color: @gnuchan_accent;
+  box-shadow: 0 0 0 2px @gnuchan_selection_soft;
+}
+
+spinbutton:disabled {
+  background-color: @gnuchan_bg_alt;
+  border-color: @gnuchan_border_alt;
+  color: @gnuchan_fg_disabled;
+}
+
+spinbutton entry,
+spinbutton > entry,
+spinbutton text {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  color: @gnuchan_fg;
+  padding: 4px 8px;
+  min-height: 26px;
+}
+
+spinbutton > button {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  color: @gnuchan_fg_dim;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 2px;
+}
+
+spinbutton > button:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+spinbutton > button:active {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+spinbutton > button:disabled {
+  color: @gnuchan_fg_disabled;
+  background-color: transparent;
+}
+
+combobox,
+combobox > box,
+.combobox {
+  color: @gnuchan_fg;
+}
+
+combobox button,
+combobox > box > button.combo,
+.combobox button {
+  background-color: @gnuchan_raised;
+  border: 1px solid @gnuchan_border;
+  border-radius: 6px;
+  color: @gnuchan_fg;
+  padding: 4px 8px;
+  min-height: 26px;
+}
+
+combobox button:hover,
+combobox > box > button.combo:hover {
+  background-color: @gnuchan_raised_hover;
+  border-color: @gnuchan_border_strong;
+  color: @gnuchan_fg_bright;
+}
+
+combobox button:active,
+combobox button:checked {
+  background-color: @gnuchan_selected_bg;
+  border-color: @gnuchan_accent;
+  color: @gnuchan_white;
+}
+
+combobox arrow,
+combobox button arrow {
+  color: @gnuchan_fg_dim;
+  min-width: 12px;
+  min-height: 12px;
+}
+
+combobox button:hover arrow {
+  color: @gnuchan_fg_bright;
+}
+/* ----------------------------------------------------------------------------
+ * 11. Menus, popovers, tooltips
+ * -------------------------------------------------------------------------- */
+
+popover,
+popover.background,
+menu,
+.menu,
+.context-menu {
+  background-color: @gnuchan_surface_alt;
+  background-image: none;
+  color: @gnuchan_fg;
+  border: 1px solid @gnuchan_border_strong;
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 6px 20px 2px @gnuchan_shadow;
+}
+
+popover > contents,
+popover.background > contents {
+  background-color: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+popover > arrow,
+popover.background > arrow,
+menu > arrow {
+  background-color: @gnuchan_surface_alt;
+  border: 1px solid @gnuchan_border_strong;
+  color: @gnuchan_fg_dim;
+}
+
+menuitem,
+menu > menuitem,
+.menuitem {
+  background-color: transparent;
+  color: @gnuchan_fg;
+  border-radius: 6px;
+  padding: 6px 10px;
+  min-height: 20px;
+  transition: background-color 100ms ease-in-out, color 100ms ease-in-out;
+}
+
+menuitem:hover,
+menu > menuitem:hover {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+menuitem:disabled,
+menu > menuitem:disabled {
+  color: @gnuchan_fg_disabled;
+  background-color: transparent;
+}
+
+menuitem accelerator,
+menuitem > accelerator {
+  color: @gnuchan_fg_disabled;
+}
+
+menuitem:hover accelerator {
+  color: @gnuchan_accent_pale;
+}
+
+menu separator,
+popover separator,
+menuitem separator {
+  background-color: @gnuchan_border;
+  margin: 4px 6px;
+  min-height: 1px;
+}
+
+modelbutton {
+  background-color: transparent;
+  color: @gnuchan_fg;
+  border-radius: 6px;
+  padding: 5px 8px;
+  min-height: 22px;
+}
+
+modelbutton:hover {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+modelbutton:active,
+modelbutton:checked {
+  background-color: @gnuchan_selected_bg_alt;
+  color: @gnuchan_white;
+}
+
+modelbutton:disabled {
+  color: @gnuchan_fg_disabled;
+}
+
+modelbutton > arrow {
+  color: @gnuchan_fg_dim;
+  min-width: 12px;
+  min-height: 12px;
+}
+
+tooltip,
+.tooltip,
+tooltip.background {
+  background-color: @gnuchan_surface_alt;
+  background-image: none;
+  color: @gnuchan_fg;
+  border: 1px solid @gnuchan_border_strong;
+  border-radius: 6px;
+  padding: 5px 9px;
+  box-shadow: 0 4px 12px 1px @gnuchan_shadow;
+}
+
+tooltip decoration,
+tooltip.background decoration {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+tooltip label {
+  color: @gnuchan_fg;
+}
+
+/* ----------------------------------------------------------------------------
+ * 12. Notebooks, stacks, sidebars
+ * -------------------------------------------------------------------------- */
+
+notebook > header {
+  background-color: @gnuchan_bg;
+  border-color: @gnuchan_border;
+  padding: 0;
+}
+
+notebook > header.top {
+  border-bottom: 1px solid @gnuchan_border;
+}
+
+notebook > header.bottom {
+  border-top: 1px solid @gnuchan_border;
+}
+
+notebook > header.left {
+  border-right: 1px solid @gnuchan_border;
+}
+
+notebook > header.right {
+  border-left: 1px solid @gnuchan_border;
+}
+
+notebook > stack {
+  background-color: @gnuchan_bg;
+}
+
+notebook > header > tabs,
+notebook > header tabs {
+  background-color: transparent;
+}
+
+notebook > header > tabs > tab,
+notebook > header tabs > tab {
+  background-color: transparent;
+  background-image: none;
+  color: @gnuchan_fg_dim;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 12px;
+  min-height: 22px;
+  margin: 2px 1px;
+  transition: background-color 120ms ease-in-out, color 120ms ease-in-out;
+}
+
+notebook > header > tabs > tab:hover,
+notebook > header tabs > tab:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+notebook > header > tabs > tab:checked,
+notebook > header tabs > tab:checked {
+  background-color: @gnuchan_raised;
+  color: @gnuchan_fg_bright;
+  border-color: @gnuchan_border;
+}
+
+notebook > header > tabs > tab:checked:hover {
+  background-color: @gnuchan_raised_hover;
+}
+
+notebook > header > tabs > tab:disabled {
+  color: @gnuchan_fg_disabled;
+}
+
+notebook > header > tabs > tab button {
+  color: @gnuchan_fg_dim;
+  padding: 0;
+  min-width: 16px;
+  min-height: 16px;
+  border-radius: 4px;
+}
+
+notebook > header > tabs > tab button:hover {
+  color: @gnuchan_white;
+  background-color: @gnuchan_selected_bg;
+}
+
+stacksidebar,
+stacksidebar > list,
+.sidebar {
+  background-color: @gnuchan_surface;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+stacksidebar > list row,
+.sidebar row {
+  color: @gnuchan_fg;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+stacksidebar > list row:hover,
+.sidebar row:hover {
+  background-color: @gnuchan_hover;
+}
+
+stacksidebar > list row:selected,
+stacksidebar > list row:selected:focus,
+.sidebar row:selected,
+.sidebar row:selected:focus {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+/* ----------------------------------------------------------------------------
+ * 13. Lists, trees, icon views
+ * -------------------------------------------------------------------------- */
+
+list,
+list.view,
+treeview,
+treeview.view,
+.view {
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+  border-radius: 0;
+}
+
+viewport,
+textview.view,
+iconview,
+iconview.view {
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+}
+
+list row,
+treeview.view > row {
+  background-color: transparent;
+  color: @gnuchan_fg;
+  padding: 4px 6px;
+  min-height: 24px;
+  border-color: @gnuchan_border;
+}
+
+list row.activatable:hover,
+treeview.view > row:hover,
+list row:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+list row:selected,
+treeview.view > row:selected,
+list row:selected:focus,
+treeview.view > row:selected:focus {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+list row:selected:hover,
+treeview.view > row:selected:hover {
+  background-color: @gnuchan_selected_bg_alt;
+}
+
+list row:disabled,
+treeview.view > row:disabled {
+  color: @gnuchan_fg_disabled;
+}
+
+treeview.view header button,
+treeview.view > header > button {
+  background-color: @gnuchan_surface_alt;
+  background-image: none;
+  color: @gnuchan_fg_dim;
+  border: 1px solid @gnuchan_border;
+  border-radius: 0;
+  padding: 4px 8px;
+  min-height: 24px;
+  font-weight: 600;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+treeview.view header button:hover,
+treeview.view > header > button:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+treeview.view header button:active,
+treeview.view > header > button:active {
+  background-color: @gnuchan_raised;
+}
+
+treeview.view expander {
+  color: @gnuchan_fg_dim;
+  min-width: 14px;
+  min-height: 14px;
+}
+
+treeview.view expander:hover {
+  color: @gnuchan_accent_light;
+}
+
+treeview.view:selected,
+treeview.view:hover:selected {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+treeview.view cell {
+  padding: 2px 4px;
+}
+
+list row entry,
+treeview.view entry {
+  background-color: @gnuchan_surface_alt;
+  border-color: @gnuchan_border;
+  min-height: 22px;
+}
+/* ----------------------------------------------------------------------------
+ * 14. Frames, panes, expanders, action bars
+ * -------------------------------------------------------------------------- */
+
+frame,
+frame > border {
+  border: 1px solid @gnuchan_border;
+  border-radius: 6px;
+  background-color: transparent;
+  color: @gnuchan_fg;
+  box-shadow: none;
+}
+
+frame > label {
+  color: @gnuchan_fg_dim;
+}
+
+frame.flat > border,
+frame > border.flat {
+  border: none;
+}
+
+frame > border:backdrop {
+  border-color: @gnuchan_border_alt;
+}
+
+paned,
+paned > separator {
+  background-color: @gnuchan_bg;
+  color: @gnuchan_border;
+  border: none;
+}
+
+paned > separator {
+  background-color: @gnuchan_border;
+  min-width: 1px;
+  min-height: 1px;
+  background-image: none;
+}
+
+paned > separator:hover {
+  background-color: @gnuchan_accent_active;
+}
+
+paned > separator.wide {
+  min-width: 6px;
+  min-height: 6px;
+  background-color: @gnuchan_bg;
+}
+
+expander {
+  color: @gnuchan_fg_dim;
+  min-width: 12px;
+  min-height: 12px;
+}
+
+expander:hover,
+expander:checked {
+  color: @gnuchan_accent_light;
+}
+
+actionbar,
+actionbar > revealer > box {
+  background-color: @gnuchan_bg_darkest;
+  border-top: 1px solid @gnuchan_border;
+  color: @gnuchan_fg;
+  padding: 6px;
+}
+
+/* ----------------------------------------------------------------------------
+ * 15. Info bars, dialogs, calendar
+ * -------------------------------------------------------------------------- */
+
+infobar,
+infobar > revealer > box {
+  background-color: @gnuchan_surface_alt;
+  border-radius: 6px;
+  color: @gnuchan_fg;
+  padding: 6px 10px;
+}
+
+infobar.info,
+infobar.info > revealer > box {
+  background-color: @gnuchan_bg_alt;
+  color: @gnuchan_fg;
+}
+
+infobar.warning,
+infobar.warning > revealer > box {
+  background-color: @gnuchan_raised_hover;
+  color: @gnuchan_accent_pale;
+}
+
+infobar.error,
+infobar.error > revealer > box {
+  background-color: #4a1049;
+  color: @gnuchan_error;
+}
+
+infobar.question,
+infobar.question > revealer > box {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+messagedialog,
+messagedialog.background,
+dialog,
+dialog.background {
+  background-color: @gnuchan_surface_alt;
+  color: @gnuchan_fg;
+  border-radius: 10px;
+}
+
+messagedialog .titlebar,
+dialog .titlebar {
+  background-color: @gnuchan_bg_darkest;
+  border-radius: 10px 10px 0 0;
+}
+
+calendar {
+  background-color: @gnuchan_bg_darkest;
+  border: 1px solid @gnuchan_border;
+  border-radius: 6px;
+  color: @gnuchan_fg;
+}
+
+calendar:selected {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+  border-radius: 4px;
+}
+
+calendar.header,
+calendar > header {
+  background-color: @gnuchan_surface_alt;
+  color: @gnuchan_fg_dim;
+  border-bottom: 1px solid @gnuchan_border;
+}
+
+calendar.button {
+  color: @gnuchan_fg_dim;
+}
+
+calendar.button:hover {
+  color: @gnuchan_fg_bright;
+}
+
+calendar.highlight {
+  color: @gnuchan_accent_light;
+  font-weight: 600;
+}
+
+calendar:indeterminate {
+  color: @gnuchan_fg_disabled;
+}
+
+.circular,
+circular {
+  border-radius: 9999px;
+}
+
+.dnd,
+.dnd-target {
+  background-color: @gnuchan_selection_soft;
+  border: 1px dashed @gnuchan_accent;
+}
+
+.overshoot,
+undershoot {
+  background-image: none;
+  background-color: @gnuchan_bg_darkest;
+  border-color: @gnuchan_border;
+}
+
+/* ----------------------------------------------------------------------------
+ * 16. OSD and full screen overlays
+ * -------------------------------------------------------------------------- */
+
+.osd,
+osd {
+  background-color: @gnuchan_bg_darkest;
+  color: @gnuchan_fg;
+  border: 1px solid @gnuchan_border;
+  border-radius: 10px;
+}
+
+.osd button,
+osd button {
+  background-color: @gnuchan_raised;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+.osd button:hover,
+osd button:hover {
+  background-color: @gnuchan_raised_hover;
+}
+
+/* ----------------------------------------------------------------------------
+ * 17. Status bars, badges, keycaps, links, placeholders
+ * -------------------------------------------------------------------------- */
+
+.statusbar,
+.status-bar {
+  background-color: @gnuchan_bg_alt;
+  color: @gnuchan_fg_dim;
+}
+
+image {
+  color: inherit;
+}
+
+image:disabled {
+  color: @gnuchan_fg_disabled;
+}
+
+arrow {
+  color: @gnuchan_fg_dim;
+  min-width: 12px;
+  min-height: 12px;
+}
+
+arrow:disabled {
+  color: @gnuchan_fg_disabled;
+}
+
+.shortcut-label,
+.shortcut > label {
+  color: @gnuchan_fg_dim;
+}
+
+.badge,
+badge {
+  background-color: @gnuchan_accent_active;
+  color: @gnuchan_white;
+  border-radius: 9999px;
+  padding: 1px 6px;
+  font-size: 0.8em;
+}
+
+.keycap {
+  background-color: @gnuchan_raised;
+  color: @gnuchan_fg_bright;
+  border: 1px solid @gnuchan_border;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.85em;
+}
+
+link,
+*:link {
+  color: @gnuchan_accent_light;
+}
+
+link:visited,
+*:visited {
+  color: @gnuchan_accent_pale;
+}
+
+link:hover {
+  color: @gnuchan_accent_hover;
+  text-decoration: underline;
+}
+
+/* Placeholder text colour is a plain named colour in GTK, redefining it here
+ * keeps entry placeholders readable instead of near black. */
+@define-color placeholder_text_color @gnuchan_fg_disabled;

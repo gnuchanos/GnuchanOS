@@ -1,0 +1,63 @@
+! ============================================================================
+! GnuchanPurple - X11 resources
+! ----------------------------------------------------------------------------
+! Load with:  xrdb -merge ~/.config/gnuchan-purple/Xresources
+!
+! Covers the classic X colours (*.color0 .. *.color15) that xterm, urxvt,
+! st, xfontsel and many small X programs read, plus the cursor colour pair.
+!
+! License: GPL3
+! ============================================================================
+
+! Special
+*foreground:     #ead7ff
+*background:     #09030d
+*cursorColor:    #d8a4ff
+*pointerColorBackground: #32143f
+*pointerColorForeground: #c77dff
+
+! Black / bright black
+*color0:  #170a20
+*color8:  #70458a
+
+! Red - kept inside the purple family on purpose
+*color1:  #86198f
+*color9:  #a21caf
+
+! Green
+*color2:  #6d28d9
+*color10: #7c3aed
+
+! Yellow
+*color3:  #9333ea
+*color11: #a855f7
+
+! Blue
+*color4:  #9d4edd
+*color12: #b76eff
+
+! Magenta
+*color5:  #c77dff
+*color13: #d8a4ff
+
+! Cyan
+*color6:  #b57edc
+*color14: #c9a0ff
+
+! White / bright white
+*color7:  #ead7ff
+*color15: #ffffff
+
+! Text selection
+*highlightColor:   #ead7ff
+*highlightColorBG: #542080
+
+! Selection colours for widgets
+*selectBackground: #542080
+*selectForeground: #ffffff
+*selectColor:      #542080
+*menuBackground:   #180a22
+*menuForeground:   #ead7ff
+*menuHighlight:    #542080
+*menuShadowColor:  #000000
+*menuBorderColor:  #6d28d9

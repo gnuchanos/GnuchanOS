@@ -1,0 +1,67 @@
+# =============================================================================
+# GnuchanPurple - Alacritty colour scheme
+# -----------------------------------------------------------------------------
+# Copy to ~/.config/alacritty/gnuchan-purple.toml, then in alacritty.toml:
+#
+#   [general]
+#   import = ["~/.config/alacritty/gnuchan-purple.toml"]
+#
+# License: GPL3
+# =============================================================================
+
+[colors.primary]
+background = "#09030d"
+foreground = "#ead7ff"
+dim_foreground = "#b78ed6"
+bright_foreground = "#ffffff"
+
+[colors.cursor]
+text = "#09030d"
+cursor = "#d8a4ff"
+
+[colors.vi_mode_cursor]
+text = "#09030d"
+cursor = "#c77dff"
+
+[colors.search.matches]
+foreground = "#09030d"
+background = "#a855f7"
+
+[colors.search.focused_match]
+foreground = "#09030d"
+background = "#d8a4ff"
+
+[colors.footer_bar]
+foreground = "#0e0614"
+background = "#b78ed6"
+
+[colors.selection]
+text = "#ffffff"
+background = "#542080"
+
+[colors.normal]
+black = "#170a20"
+red = "#86198f"
+green = "#6d28d9"
+yellow = "#9333ea"
+blue = "#9d4edd"
+magenta = "#c77dff"
+cyan = "#b57edc"
+white = "#ead7ff"
+
+[colors.bright]
+black = "#70458a"
+red = "#a21caf"
+green = "#7c3aed"
+yellow = "#a855f7"
+blue = "#b76eff"
+magenta = "#d8a4ff"
+cyan = "#c9a0ff"
+white = "#ffffff"
+
+[window]
+opacity = 0.96
+
+[window.padding]
+x = 8
+y = 8
