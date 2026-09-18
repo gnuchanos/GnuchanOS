@@ -37,6 +37,9 @@
 
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
+#else
+#include <time.h>
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -390,12 +393,45 @@ static double fn_flush_file(int argc, const char **argv) {
 }
 
 /* ------------------------------------------------------------------ */
+/* sleep                                                               */
+/* ------------------------------------------------------------------ */
+
+/* sleep(saniye) -> 0.  GERCEK bir uyku; raylib'e BAGLI DEGIL.
+   NEDEN VAR: penceresiz bir surecte `Raylib.WaitTime()` DONMUYOR — raylib
+   saati InitWindow ile kurulur; pencere acilmadiginda GetTime() hep 0.0
+   kalir ve WaitTime'in bekleme dongusu hic bitmez. Olculdu: 8 saniye sonra
+   hala donmemisti (t0 = 0.0000). Penceresi olmayan bir host'un (Embed
+   demosunda `main.gcsf` hakemi) tempo tutmasi icin raylib'den BAGIMSIZ bir
+   uyku sart. */
+static double fn_sleep(int argc, const char **argv) {
+    double seconds = (argc > 0 && argv[0]) ? atof(argv[0]) : 0.0;
+    if (!(seconds > 0.0)) return 0.0;     /* 0, negatif ve NaN → hemen don */
+    if (seconds > 60.0) seconds = 60.0;   /* tek cagrida ust sinir */
+#ifdef _WIN32
+    Sleep((DWORD)(seconds * 1000.0 + 0.5));
+#else
+    {
+        struct timespec ts;
+        ts.tv_sec = (time_t)seconds;
+        ts.tv_nsec = (long)((seconds - (double)ts.tv_sec) * 1000000000.0);
+        nanosleep(&ts, NULL);
+    }
+#endif
+    return 0.0;
+}
+
+/* ------------------------------------------------------------------ */
 /* Uye tablosu                                                         */
 /* ------------------------------------------------------------------ */
 
 static const GclNativeEntry g_entries[] = {
     {"printf", fn_printf},
     {"scanf", fn_scanf},
+
+    {"sleep", fn_sleep},
+    {"Sleep", fn_sleep},
+    {"delay", fn_sleep},
+    {"Delay", fn_sleep},
 
     {"LastStringLen", fn_last_string_len},
     {"lastStringLen", fn_last_string_len},
