@@ -12,7 +12,23 @@
 # License: GPL3
 # =============================================================================
 
-gtk-color-scheme = "bg_color:#0E0614\nfg_color:#EAD7FF\nbase_color:#09030D\ntext_color:#EAD7FF\nselected_bg_color:#542080\nselected_fg_color:#FFFFFF\ntooltip_bg_color:#180A22\ntooltip_fg_color:#EAD7FF"
+# No "gtk-color-scheme" key here, on purpose.
+#
+# Tools such as LXAppearance read that key out of a theme's gtkrc and
+# republish it as the GtkSettings "gtk-color-scheme" property, which makes GTK
+# parse a stylesheet held in memory instead of one read from a file. GTK has
+# ignored that property since 3.8:
+#
+#   "Color scheme support was dropped and is no longer supported. You can
+#    still set this property, but it will be ignored."
+#   -- gtk/gtksettings.c, GtkSettings:gtk-color-scheme
+#
+# So omitting the key costs GTK 3 nothing, and it keeps this theme out of that
+# code path entirely rather than relying on GTK ignoring it.
+#
+# GTK 2 does not lose anything either: every colour below is declared
+# explicitly in each style block, so the theme renders identically without a
+# palette table.
 
 # -----------------------------------------------------------------------------
 # Global widget defaults
