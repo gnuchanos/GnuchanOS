@@ -474,6 +474,8 @@ static PyObject *py_draw_texture(PyObject *self, PyObject *args) { (void)self;un
 static PyObject *py_draw_texture_ex(PyObject *self, PyObject *args) { (void)self;unsigned int id;float x,y,rot,scale;unsigned int c;if(!PyArg_ParseTuple(args,"IffffI",&id,&x,&y,&rot,&scale,&c))return NULL;Texture2D t;t.id=id;DrawTextureEx(t,(Vector2){x,y},rot,scale,uint_to_color(c));Py_RETURN_NONE; }
 
 /* ---- Color helpers ---- */
+/* Raylib.Color(r, g, b, a) -- build a colour from its four channels (0-255). */
+static PyObject *py_color_rgba(PyObject *self, PyObject *args) { (void)self;int r,g,b,a;if(!PyArg_ParseTuple(args,"iiii",&r,&g,&b,&a))return NULL;Color c;c.r=(unsigned char)r;c.g=(unsigned char)g;c.b=(unsigned char)b;c.a=(unsigned char)a;return PyLong_FromUnsignedLong(color_to_uint(c)); }
 static PyObject *py_fade(PyObject *self, PyObject *args) { (void)self;unsigned int c;float a;if(!PyArg_ParseTuple(args,"If",&c,&a))return NULL;return PyLong_FromUnsignedLong(color_to_uint(Fade(uint_to_color(c),a))); }
 static PyObject *py_color_to_int(PyObject *self, PyObject *args) { (void)self;unsigned int c;if(!PyArg_ParseTuple(args,"I",&c))return NULL;return PyLong_FromLong(ColorToInt(uint_to_color(c))); }
 static PyObject *py_color_from_hsv(PyObject *self, PyObject *args) { (void)self;float h,s,v;if(!PyArg_ParseTuple(args,"fff",&h,&s,&v))return NULL;return PyLong_FromUnsignedLong(color_to_uint(ColorFromHSV(h,s,v))); }
@@ -721,6 +723,7 @@ static PyMethodDef raylib_methods[] = {
     {"DrawTexture", py_draw_texture, METH_VARARGS, NULL},
     {"DrawTextureEx", py_draw_texture_ex, METH_VARARGS, NULL},
     {"Fade", py_fade, METH_VARARGS, NULL},
+    {"Color", py_color_rgba, METH_VARARGS, NULL},
     {"ColorToInt", py_color_to_int, METH_VARARGS, NULL},
     {"ColorFromHSV", py_color_from_hsv, METH_VARARGS, NULL},
     {"ColorAlpha", py_color_alpha, METH_VARARGS, NULL},

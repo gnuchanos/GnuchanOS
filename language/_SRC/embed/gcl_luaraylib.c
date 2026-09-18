@@ -475,6 +475,16 @@ static int l_unload_image(lua_State *L) { Image img; img.data=lua_touserdata(L,1
 static int l_gen_image_color(lua_State *L) { Image img = GenImageColor((int)luaL_checkinteger(L,1),(int)luaL_checkinteger(L,2),uint_to_color((unsigned int)luaL_checkinteger(L,3))); lua_pushlightuserdata(L, img.data); lua_pushinteger(L, img.width); lua_pushinteger(L, img.height); return 3; }
 
 /* ---- Color helpers ---- */
+/* Raylib.Color(r, g, b, a) -- build a colour from its four channels (0-255). */
+static int l_color_rgba(lua_State *L) {
+    Color c;
+    c.r = (unsigned char)luaL_checkinteger(L, 1);
+    c.g = (unsigned char)luaL_checkinteger(L, 2);
+    c.b = (unsigned char)luaL_checkinteger(L, 3);
+    c.a = (unsigned char)luaL_checkinteger(L, 4);
+    lua_pushinteger(L, (lua_Integer)color_to_uint(c));
+    return 1;
+}
 static int l_fade(lua_State *L) { Color c = uint_to_color((unsigned int)luaL_checkinteger(L,1)); float a=(float)luaL_checknumber(L,2); lua_pushinteger(L, color_to_uint(Fade(c,a))); return 1; }
 static int l_color_to_int(lua_State *L) { Color c = uint_to_color((unsigned int)luaL_checkinteger(L,1)); lua_pushinteger(L, ColorToInt(c)); return 1; }
 static int l_color_from_hsv(lua_State *L) { Color c = ColorFromHSV((float)luaL_checknumber(L,1),(float)luaL_checknumber(L,2),(float)luaL_checknumber(L,3)); lua_pushinteger(L, color_to_uint(c)); return 1; }
@@ -742,6 +752,7 @@ static const luaL_Reg raylib_funcs[] = {
 
     /* Color helpers */
     {"Fade", l_fade},
+    {"Color", l_color_rgba},
     {"ColorToInt", l_color_to_int},
     {"ColorFromHSV", l_color_from_hsv},
     {"ColorAlpha", l_color_alpha},
