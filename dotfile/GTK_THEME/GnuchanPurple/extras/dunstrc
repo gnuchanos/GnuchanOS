@@ -13,6 +13,11 @@
     frame_color = "#6d28d9"
     separator_color = "auto"
     font = Sans 10
+    # dunst defaults highlight to #4499cc, a blue that would otherwise leak
+    # into an all purple notification. "highlight" colours a matched
+    # substring, "highlight_bg" fills behind it.
+    highlight = "#a855f7"
+    highlight_bg = "#180a22"
 
 [urgency_low]
     background = "#180a22"

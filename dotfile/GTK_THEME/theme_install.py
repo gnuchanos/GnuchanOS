@@ -2,13 +2,13 @@
 # =============================================================================
 # GnuchanPurple - theme installer
 # -----------------------------------------------------------------------------
-# Single file installer for the theme in ./gnuchan_theme. No third party
+# Single file installer for the theme in ./GnuchanPurple. No third party
 # modules: everything it needs, including the PNG writer xfwm4 requires, is in
 # this file.
 #
 # What it does
 # ------------
-#   1. copies gnuchan_theme/ into the user theme directories GTK 2, GTK 3,
+#   1. copies GnuchanPurple/ into the user theme directories GTK 2, GTK 3,
 #      GTK 4, xfwm4, Marco/Metacity and Openbox read;
 #   2. renders the xfwm4 decoration images (title bar, borders and every title
 #      button) plus the preview that appearance settings show, straight into
@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -53,16 +54,29 @@ THEME_NAME = "GnuchanPurple"
 CONFIG_DIR_NAME = "gnuchan-purple"
 BACKUP_SUFFIX = ".gnuchan-backup"
 GENERATED_MARKER = "written by theme_install.py"
+# Mirrors ButtonLayout in GnuchanPurple/index.theme.
+BUTTON_LAYOUT = ":minimize,maximize,close"
 IGNORED_COPY_NAMES = {"__pycache__", ".DS_Store", "Thumbs.db"}
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SOURCE_THEME_DIR = SCRIPT_DIR / "gnuchan_theme"
+# The source directory carries the theme name on purpose. A user, or a
+# distribution packager, who copies this tree into ~/.themes or
+# ~/.local/share/themes by hand then gets a directory that the
+# "gtk-theme-name=GnuchanPurple" this installer writes can actually find; a
+# directory called anything else is silently ignored by every toolkit.
+SOURCE_THEME_DIR = SCRIPT_DIR / THEME_NAME
 SOURCE_THEME_OVERLAY = SOURCE_THEME_DIR / "gtk-4.0" / "user.css"
 SOURCE_EXTRAS_DIR = SOURCE_THEME_DIR / "extras"
 
 # --- palette -----------------------------------------------------------------
-# Byte for byte the colours used by gtk-2.0/gtkrc, gtk-3.0/gtk.css and
-# gtk-4.0/gtk.css, so every toolkit ends up with the same purple.
+# The colours the built-in renderer rasterises the xfwm4 images and the theme
+# preview from. They are taken from gtk-2.0/gtkrc, gtk-3.0/gtk.css and
+# gtk-4.0/gtk.css, but this table is deliberately not a copy of those files: it
+# only carries the values the renderer needs, plus the close button tints.
+#
+# GnuchanPurple/ is the source of truth for the theme palette. Add an entry
+# here only when a generated image needs a colour, and keep it in step with the
+# stylesheet by hand.
 
 _PALETTE_SOURCE: dict[str, str] = {
     # Surfaces
@@ -644,12 +658,19 @@ def copy_tree(source: Path, destination: Path) -> int:
 
 
 def backup_file(path: Path) -> Path | None:
-    """Move an existing file aside, returning where it went."""
+    """Move an existing file aside, returning where it went.
+
+    The backup is written once, not once per run. Overwriting it on a second
+    install put this installer's own output in the backup, so a later
+    ``--uninstall`` restored the theme's file instead of whatever the user had
+    before the first run. Keeping the oldest copy is what makes the promise in
+    the header true however many times the installer has run since.
+    """
     if not path.exists():
         return None
     backup = path.with_name(path.name + BACKUP_SUFFIX)
     if backup.exists():
-        backup.unlink()
+        return backup
     shutil.move(str(path), str(backup))
     return backup
 
@@ -681,31 +702,140 @@ def is_generated_file(path: Path) -> bool:
 # --- generated configuration -------------------------------------------------
 
 
-def gtk2_rc_content(theme_dir: Path) -> str:
-    """Body of ``~/.gtkrc-2.0``.
+# Keys the installer owns. Anything else in the user's file is left alone.
+SETTINGS_INI_KEYS: dict[str, str] = {
+    "gtk-theme-name": THEME_NAME,
+    "gtk-application-prefer-dark-theme": "1",
+}
 
-    The theme name is what GTK 2 selects on; the explicit include is a fallback
-    for setups whose theme search path does not cover the install location.
+
+def read_existing(path: Path) -> str:
+    """Contents of a configuration file, or an empty string if there is none."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _generated_header() -> str:
+    return f"# GnuchanPurple - {GENERATED_MARKER}\n"
+
+
+def merge_ini(existing: str, section: str, managed: dict[str, str]) -> str:
+    """Set ``managed`` keys inside ``section``, keeping every other line.
+
+    The installer used to rewrite settings.ini with its own two keys and
+    nothing else, which silently dropped the user's ``gtk-font-name``,
+    ``gtk-icon-theme-name``, ``gtk-cursor-theme-name`` and
+    ``gtk-decoration-layout``. Here the file is walked line by line and only
+    the managed keys are touched: comments, blank lines, key order and
+    unrelated sections survive, missing keys are appended to the section, and
+    a section that does not exist yet is created at the end.
     """
-    included = (theme_dir / "gtk-2.0" / "gtkrc").as_posix()
-    return (
-        f"# GnuchanPurple - {GENERATED_MARKER}\n"
-        "# Remove this file to fall back to the default GTK 2 theme.\n"
-        "\n"
-        f'gtk-theme-name = "{THEME_NAME}"\n'
-        "\n"
-        f'include "{included}"\n'
-    )
+    managed_by_lower = {key.lower(): key for key in managed}
+    pending = list(managed)
+    written: set[str] = set()
+
+    def append_pending(block: list[str]) -> None:
+        while pending:
+            key = pending.pop(0)
+            block.append(f"{key}={managed[key]}")
+
+    body: list[str] = []
+    current_section: str | None = None
+    section_found = False
+
+    for line in existing.splitlines():
+        if GENERATED_MARKER in line:
+            continue  # drop the header a previous run wrote
+        stripped = line.strip()
+        in_our_section = (
+            current_section is not None and current_section.lower() == section.lower()
+        )
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if in_our_section:
+                append_pending(body)
+            current_section = stripped[1:-1].strip()
+            if current_section.lower() == section.lower():
+                section_found = True
+            body.append(line)
+            continue
+        if in_our_section and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            canonical = managed_by_lower.get(key.lower())
+            if canonical is not None:
+                if canonical in written:
+                    continue  # a duplicate of a key we already set
+                written.add(canonical)
+                body.append(f"{canonical}={managed[canonical]}")
+                if canonical in pending:
+                    pending.remove(canonical)
+                continue
+        body.append(line)
+
+    if current_section is not None and current_section.lower() == section.lower():
+        append_pending(body)
+
+    if not section_found:
+        if body and body[-1].strip():
+            body.append("")
+        body.append(f"[{section}]")
+        append_pending(body)
+
+    text = "\n".join(body).strip("\n")
+    return _generated_header() + (text + "\n" if text else "")
 
 
-def settings_ini_content() -> str:
-    """Body of a GTK 3 or GTK 4 ``settings.ini``."""
-    return (
-        f"# GnuchanPurple - {GENERATED_MARKER}\n"
-        "[Settings]\n"
-        f"gtk-theme-name={THEME_NAME}\n"
-        "gtk-application-prefer-dark-theme=1\n"
+def settings_ini_content(path: Path) -> str:
+    """Body of a GTK 3 or GTK 4 ``settings.ini``, merged with what was there."""
+    return merge_ini(read_existing(path), "Settings", SETTINGS_INI_KEYS)
+
+
+# The line that tells the user how to undo this file. It has to be recognised
+# on the next run like any other line of ours, or every install appends another
+# copy of it and the file grows without ever changing meaning.
+GTK2_OWNERSHIP_COMMENT = "# Remove the lines below to fall back to the default GTK 2 theme."
+
+
+def gtk2_rc_content(theme_dir: Path, include_theme: bool = True) -> str:
+    """Body of ``~/.gtkrc-2.0``, merged with what was there.
+
+    ``gtk-theme-name`` is what GTK 2 selects on; the explicit include is a
+    fallback for setups whose theme search path does not cover the install
+    directory. The include is only emitted when the theme tree is actually
+    installed, so ``--no-theme`` no longer writes an include pointing at a
+    directory that was never created.
+    """
+    theme_line = f'gtk-theme-name = "{THEME_NAME}"'
+    include_line = (
+        f'include "{(theme_dir / "gtk-2.0" / "gtkrc").as_posix()}"'
+        if include_theme
+        else None
     )
+
+    kept: list[str] = []
+    for line in read_existing(gtk2_rc_file()).splitlines():
+        if GENERATED_MARKER in line:
+            continue
+        stripped = line.strip()
+        if re.match(r"^\s*gtk-theme-name\s*=", stripped):
+            continue
+        if stripped.startswith("include") and THEME_NAME in stripped:
+            continue
+        if stripped == GTK2_OWNERSHIP_COMMENT:
+            continue
+        kept.append(line)
+
+    while kept and not kept[-1].strip():
+        kept.pop()
+    if kept and kept[-1].strip():
+        kept.append("")
+    kept.append(GTK2_OWNERSHIP_COMMENT)
+    kept.append(theme_line)
+    if include_line is not None:
+        kept.append(include_line)
+
+    return _generated_header() + "\n".join(kept).strip("\n") + "\n"
 
 
 def gtk4_overlay_content() -> str:
@@ -748,35 +878,82 @@ class Log:
 # --- installing --------------------------------------------------------------
 
 
+def link_theme_dir(target: Path, primary: Path) -> bool:
+    """Make ``target`` point at ``primary``, reporting whether it worked.
+
+    Nothing is destroyed: a real directory that is not one of our own symlinks
+    is left in place and the caller falls back to copying into it.
+    """
+    if target.is_symlink():
+        if Path(os.readlink(target)) == primary:
+            return True
+        target.unlink()
+    elif target.exists():
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target.symlink_to(primary, target_is_directory=True)
+    except OSError:
+        return False
+    return True
+
+
+def write_theme_tree(log: Log, target: Path, render_assets: bool) -> None:
+    """Copy the theme tree into ``target`` and render its decoration images."""
+    copied = copy_tree(SOURCE_THEME_DIR, target)
+    log.detail(f"copied {copied} files into {target}")
+    if not render_assets:
+        return
+    count = render_xfwm4_assets(target)
+    render_thumbnail().save(target / "thumbnail.png")
+    log.detail(f"rendered {count} xfwm4 images into {target / 'xfwm4'}")
+    log.detail(f"rendered the theme preview into {target / 'thumbnail.png'}")
+
+
 def install_theme(log: Log, theme_dirs: tuple[Path, ...], render_assets: bool) -> list[Path]:
-    """Copy the theme into every target directory and render its xfwm4 images."""
+    """Install the theme and link every directory after the first to it.
+
+    ``user_theme_dirs()`` returns two locations because GTK 4 prefers
+    ``$XDG_DATA_HOME/themes`` while GTK 2, xfwm4 and most window managers still
+    read ``~/.themes``. Two independent copies drift apart the moment one of
+    them is edited, so the second location becomes a symlink to the first;
+    where symlinks are unavailable the theme is copied instead.
+    """
     installed: list[Path] = []
+    primary = (theme_dirs[0] / THEME_NAME) if theme_dirs else None
     for directory in theme_dirs:
         target = directory / THEME_NAME
+        if primary is not None and target != primary:
+            if log.dry_run:
+                log.detail(f"link {target} -> {primary}")
+            elif link_theme_dir(target, primary):
+                log.detail(f"linked {target} -> {primary}")
+            else:
+                log.detail(f"{target} is already a real directory; filling it instead")
+                write_theme_tree(log, target, render_assets)
+            installed.append(target)
+            continue
         if log.dry_run:
             log.detail(f"copy {SOURCE_THEME_DIR} -> {target}")
-        else:
-            copied = copy_tree(SOURCE_THEME_DIR, target)
-            log.detail(f"copied {copied} files into {target}")
-        if render_assets:
-            if log.dry_run:
+            if render_assets:
                 log.detail(f"render the xfwm4 images and the theme preview into {target}")
-            else:
-                count = render_xfwm4_assets(target)
-                render_thumbnail().save(target / "thumbnail.png")
-                log.detail(f"rendered {count} xfwm4 images into {target / 'xfwm4'}")
-                log.detail(f"rendered the theme preview into {target / 'thumbnail.png'}")
+        else:
+            write_theme_tree(log, target, render_assets)
         installed.append(target)
     return installed
 
 
-def write_config(log: Log, path: Path, content: str, force: bool) -> None:
+def write_config(
+    log: Log, path: Path, content: str, force: bool, merge: bool = False
+) -> None:
     """Write one configuration file, backing up whatever was already there.
 
     A file this installer did not write is left alone unless --force is given,
-    so a hand made configuration is never replaced by surprise.
+    so a hand made configuration is never replaced by surprise. Files written
+    with ``merge=True`` already carry the user's own settings, so they are
+    written even without --force; they are still backed up first.
     """
-    if path.exists() and not is_generated_file(path) and not force:
+    if path.exists() and not is_generated_file(path) and not force and not merge:
         log.warn(
             f"{path} was not written by this installer; leaving it alone "
             "(pass --force to replace it)"
@@ -789,18 +966,31 @@ def write_config(log: Log, path: Path, content: str, force: bool) -> None:
     write_text(path, content)
     if backup is not None:
         log.detail(f"backed up {path.name} to {backup.name}")
-    log.detail(f"wrote {path}")
+    log.detail(f"merged {path}" if merge else f"wrote {path}")
 
 
-def install_configuration(log: Log, theme_dir: Path, force: bool, settings_ini: bool) -> None:
-    """Install the files GTK 2, GTK 4 and libadwaita read from the home directory."""
+def install_configuration(
+    log: Log, theme_dir: Path, force: bool, settings_ini: bool, include_theme: bool
+) -> None:
+    """Install the files GTK 2, GTK 4 and libadwaita read from the home directory.
+
+    The GTK 2 rc file and the settings.ini files are merged rather than
+    replaced, so keys the user already set - fonts, icon theme, cursor theme,
+    decoration layout - survive the install untouched.
+    """
     if not SOURCE_THEME_OVERLAY.is_file():
         raise SystemExit(f"error: missing GTK 4 overlay: {SOURCE_THEME_OVERLAY}")
-    write_config(log, gtk2_rc_file(), gtk2_rc_content(theme_dir), force)
+    write_config(
+        log,
+        gtk2_rc_file(),
+        gtk2_rc_content(theme_dir, include_theme=include_theme),
+        force,
+        merge=True,
+    )
     write_config(log, gtk4_user_file(), gtk4_overlay_content(), force)
     if settings_ini:
         for path in (gtk3_settings_file(), gtk4_settings_file()):
-            write_config(log, path, settings_ini_content(), force)
+            write_config(log, path, settings_ini_content(path), force, merge=True)
 
 
 def install_extras(log: Log) -> None:
@@ -825,7 +1015,15 @@ APPLY_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("gsettings", "set", "org.mate.interface", "gtk-theme", THEME_NAME),
     ("gsettings", "set", "org.mate.Marco.general", "theme", THEME_NAME),
     ("gsettings", "set", "org.cinnamon.desktop.interface", "gtk-theme", THEME_NAME),
-    ("gsettings", "set", "org.cinnamon.theme", "name", THEME_NAME),
+    # Button layout, so a session that follows gsettings places the buttons the
+    # same way index.theme asks for when the metatheme is selected by hand.
+    (
+        "gsettings",
+        "set",
+        "org.gnome.desktop.wm.preferences",
+        "button-layout",
+        BUTTON_LAYOUT,
+    ),
     ("xfconf-query", "-c", "xsettings", "-p", "/Net/ThemeName", "-n", "-t", "string", "-s", THEME_NAME),
     ("xfconf-query", "-c", "xfwm4", "-p", "/general/theme", "-n", "-t", "string", "-s", THEME_NAME),
 )
@@ -872,11 +1070,15 @@ def uninstall_config(log: Log, path: Path) -> None:
 def uninstall(log: Log, theme_dirs: tuple[Path, ...]) -> None:
     for directory in theme_dirs:
         target = directory / THEME_NAME
-        if not target.exists():
+        # A symlink to a missing directory is still something we created.
+        if not target.exists() and not target.is_symlink():
             log.detail(f"not installed: {target}")
             continue
         if log.dry_run:
             log.detail(f"remove {target}")
+        elif target.is_symlink():
+            target.unlink()
+            log.detail(f"removed the link {target}")
         else:
             shutil.rmtree(target)
             log.detail(f"removed {target}")
@@ -962,7 +1164,11 @@ def main(argv: list[str] | None = None) -> int:
         install_theme(log, theme_dirs, render_assets=not args.no_assets)
     if not args.no_config:
         install_configuration(
-            log, theme_dirs[0] / THEME_NAME, force=args.force, settings_ini=not args.no_settings
+            log,
+            theme_dirs[0] / THEME_NAME,
+            force=args.force,
+            settings_ini=not args.no_settings,
+            include_theme=not args.no_theme,
         )
     if not args.no_extras:
         install_extras(log)
@@ -980,6 +1186,16 @@ def main(argv: list[str] | None = None) -> int:
             log.note(f"  {directory / THEME_NAME}")
         log.note("")
         log.note("Log out and back in, or run with --apply, to make it active.")
+        log.note("")
+        log.note("Window managers with no XSettings daemon - i3, sway, Openbox,")
+        log.note("bspwm - do not read the settings files above. For those, add")
+        log.note("this line to ~/.profile (or ~/.xprofile) and log back in:")
+        log.note("")
+        log.note(f"  . {extras_dir() / 'gtk-env.sh'}")
+        log.note("")
+        log.note("That line lives outside this installer's own files, so it is")
+        log.note("the one thing --uninstall leaves behind: delete it by hand to")
+        log.note("go back to GTK_THEME being unset.")
     return 0
 
 

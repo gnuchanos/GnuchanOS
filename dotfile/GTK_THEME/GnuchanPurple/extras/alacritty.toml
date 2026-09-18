@@ -3,8 +3,14 @@
 # -----------------------------------------------------------------------------
 # Copy to ~/.config/alacritty/gnuchan-purple.toml, then in alacritty.toml:
 #
-#   [general]
 #   import = ["~/.config/alacritty/gnuchan-purple.toml"]
+#
+# "import" is a top level key, not a table. Alacritty has no [general] section,
+# and a line placed under one is silently ignored, which is what the earlier
+# version of this file told you to do.
+#
+# Alacritty 0.13 and newer read "import". Older releases only load a single
+# file, so with those copy the blocks below straight into your alacritty.toml.
 #
 # License: GPL3
 # =============================================================================

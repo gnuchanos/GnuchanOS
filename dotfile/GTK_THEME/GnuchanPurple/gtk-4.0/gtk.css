@@ -57,6 +57,15 @@
 @define-color gnuchan_fg_dim          #b78ed6;
 @define-color gnuchan_fg_disabled     #70458a;
 @define-color gnuchan_white           #ffffff;
+
+/* Semantics, kept inside the purple family on purpose. They are declared here
+ * because destructive_color, error_color and success_color below reference
+ * them: GTK 4 cannot resolve a @name that the file never defines, and the two
+ * lines that did were silently falling back to libadwaita's own palette. */
+@define-color gnuchan_error           #e879f9;
+@define-color gnuchan_warning         #c77dff;
+@define-color gnuchan_success         #9d4edd;
+
 @define-color gnuchan_shade           rgba(0, 0, 0, 0.36);
 @define-color gnuchan_selection_soft  rgba(168, 85, 247, 0.30);
 
@@ -1489,11 +1498,12 @@ expander:checked {
  * ----------------------------------------------------------------------------
  * Exported so third party applications and older widgets read the palette
  * instead of falling back to a stray grey.
+ *
+ * Names already set in section 2a are deliberately not repeated here. Writing
+ * a colour twice looks harmless while both copies hold the same value, but the
+ * later definition wins, so the two silently drift apart on the first edit.
  * -------------------------------------------------------------------------- */
 
-@define-color popover_shade_color                    @gnuchan_shade;
-@define-color headerbar_darker_shade_color           rgba(0, 0, 0, 0.90);
-@define-color secondary_sidebar_shade_color          @gnuchan_shade;
 @define-color tabbar_bg_color                        @gnuchan_bg;
 @define-color tabbar_fg_color                        @gnuchan_fg;
 @define-color active_toggle_bg_color                 rgba(168, 85, 247, 0.35);
@@ -1501,6 +1511,17 @@ expander:checked {
 @define-color overview_bg_color                       @gnuchan_bg_alt;
 @define-color overview_fg_color                       @gnuchan_fg;
 @define-color border_color                            @gnuchan_border;
+
+/* GTK 3 era scrollbar names. GTK 3 defines all four of these in
+ * gtk-3.0/gtk.css ("Scrollbars, Adwaita 3.24 names"); GTK 4 only reads
+ * scrollbar_outline_color, which section 2a already sets, and paints the rest
+ * from section 3. A third party stylesheet that asks for
+ * @scrollbar_slider_color on a GTK 4 session would otherwise resolve to
+ * nothing, so the names are exported here with exactly the values GTK 3 uses. */
+@define-color scrollbar_bg_color                     @gnuchan_bg_alt;
+@define-color scrollbar_slider_color                 @gnuchan_border_strong;
+@define-color scrollbar_slider_hover_color           @gnuchan_accent_active;
+@define-color scrollbar_slider_active_color          @gnuchan_accent_light;
 
 /* GTK 3 era names, still read by older applications on a GTK 4 session */
 @define-color bg_color                               @gnuchan_bg;
@@ -1515,10 +1536,6 @@ expander:checked {
 @define-color menu_fg_color                          @gnuchan_fg;
 @define-color panel_bg_color                         @gnuchan_bg_darkest;
 @define-color panel_fg_color                         @gnuchan_fg;
-@define-color content_view_bg                        @gnuchan_bg_darkest;
 @define-color theme_unfocused_selected_bg_color      @gnuchan_selected_bg;
 @define-color theme_unfocused_selected_fg_color      @gnuchan_fg_bright;
 @define-color unfocused_borders                      @gnuchan_border_alt;
-@define-color insensitive_base_color                 @gnuchan_bg;
-@define-color theme_selected_bg_color                @gnuchan_selected_bg;
-@define-color theme_selected_fg_color                @gnuchan_white;

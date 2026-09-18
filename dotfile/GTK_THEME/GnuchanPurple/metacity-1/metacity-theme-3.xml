@@ -1,14 +1,17 @@
 <?xml version="1.0"?>
-<!-- ==========================================================================
-     GnuchanPurple - Metacity / Marco window manager theme
-     --------------------------------------------------------------------------
+<!-- GnuchanPurple - Metacity / Marco window manager theme
+
      Metacity and Marco (the MATE window manager) read this file for window
      decorations. Geometry is thin and flat, matching the GTK 3 and GTK 4 title
      bars so decorated and client side decorated windows look like one system.
 
      Palette is identical to the rest of the theme.
-     License: GPL3
-     ========================================================================== -->
+     License: GPL3.
+
+     Note: an XML comment may not contain a double hyphen, so this header uses
+     blank lines instead of a rule. Writing one here makes the whole file
+     unparseable and Metacity silently falls back to its built in theme.
+-->
 <metacity_theme>
   <info>
     <name>GnuchanPurple</name>
@@ -33,6 +36,10 @@
   <constant name="C_white"          value="#ffffff"/>
   <constant name="C_close"          value="#e879f9"/>
   <constant name="C_close_bg"       value="#86198f"/>
+  <!-- The normal close state and the inactive button fill, kept in step with
+       openbox-3/themerc and the xfwm4 images theme_install.py renders. -->
+  <constant name="C_close_rest"     value="#2a0b2f"/>
+  <constant name="C_button_inactive" value="#12071a"/>
 
   <!-- Frame geometries -->
   <frame_geometry name="normal" rounded_top_left="false" rounded_top_right="false"
@@ -103,13 +110,18 @@
     <rectangle color="C_accent" x="0" y="0" width="width" height="height" filled="false"/>
   </draw_ops>
 
+  <!-- C_bg was almost the same shade as the title bar, so an unfocused window
+       showed nothing where its buttons are. This fill matches the inactive
+       button colour in openbox-3/themerc, so the boxes stay visible. -->
   <draw_ops name="button_background_insensitive">
-    <rectangle color="C_bg" x="0" y="0" width="width" height="height" filled="true"/>
+    <rectangle color="C_button_inactive" x="0" y="0" width="width" height="height" filled="true"/>
     <rectangle color="C_border_alt" x="0" y="0" width="width" height="height" filled="false"/>
   </draw_ops>
 
+  <!-- Fill #2a0b2f, border and glyph #e879f9: the same normal close state as
+       openbox-3/themerc and the xfwm4 close-active.png. -->
   <draw_ops name="button_close_background">
-    <rectangle color="C_raised" x="0" y="0" width="width" height="height" filled="true"/>
+    <rectangle color="C_close_rest" x="0" y="0" width="width" height="height" filled="true"/>
     <rectangle color="C_close" x="0" y="0" width="width" height="height" filled="false"/>
   </draw_ops>
 
@@ -118,9 +130,9 @@
   </draw_ops>
 
   <draw_ops name="button_close_glyph">
-    <line color="C_fg" x1="(width / 2) - 4" y1="(height / 2) - 4"
+    <line color="C_close" x1="(width / 2) - 4" y1="(height / 2) - 4"
           x2="(width / 2) + 4" y2="(height / 2) + 4"/>
-    <line color="C_fg" x1="(width / 2) + 4" y1="(height / 2) - 4"
+    <line color="C_close" x1="(width / 2) + 4" y1="(height / 2) - 4"
           x2="(width / 2) - 4" y2="(height / 2) + 4"/>
   </draw_ops>
 
@@ -163,6 +175,48 @@
     <rectangle color="C_fg" x="(width / 2) - 5" y="(height / 2) + 4"
                width="11" height="2" filled="true"/>
   </draw_ops>
+  <!-- Dimmed glyphs for the unfocused state. Metacity draws a disabled button
+       through its own draw_ops, so each symbol needs a variant in
+       C_fg_disabled; without one the button box was drawn empty. -->
+  <draw_ops name="button_close_glyph_insensitive">
+    <line color="C_fg_disabled" x1="(width / 2) - 4" y1="(height / 2) - 4"
+          x2="(width / 2) + 4" y2="(height / 2) + 4"/>
+    <line color="C_fg_disabled" x1="(width / 2) + 4" y1="(height / 2) - 4"
+          x2="(width / 2) - 4" y2="(height / 2) + 4"/>
+  </draw_ops>
+
+  <draw_ops name="button_max_glyph_insensitive">
+    <rectangle color="C_fg_disabled" x="(width / 2) - 4" y="(height / 2) - 4"
+               width="9" height="9" filled="true"/>
+  </draw_ops>
+
+  <draw_ops name="button_unmax_glyph_insensitive">
+    <rectangle color="C_fg_disabled" x="(width / 2) - 5" y="(height / 2) - 3"
+               width="9" height="9" filled="true"/>
+    <rectangle color="C_button_inactive" x="(width / 2) - 3" y="(height / 2) - 1"
+               width="8" height="8" filled="true"/>
+  </draw_ops>
+
+  <draw_ops name="button_min_glyph_insensitive">
+    <line color="C_fg_disabled" x1="(width / 2) - 5" y1="(height / 2) + 3"
+          x2="(width / 2) + 5" y2="(height / 2) + 3"/>
+  </draw_ops>
+
+  <draw_ops name="button_shade_glyph_insensitive">
+    <line color="C_fg_disabled" x1="(width / 2) - 5" y1="(height / 2)"
+          x2="(width / 2) + 5" y2="(height / 2)"/>
+    <line color="C_fg_disabled" x1="(width / 2) - 3" y1="(height / 2) + 3"
+          x2="(width / 2) + 3" y2="(height / 2) + 3"/>
+  </draw_ops>
+
+  <draw_ops name="button_menu_glyph_insensitive">
+    <rectangle color="C_fg_disabled" x="(width / 2) - 5" y="(height / 2) - 4"
+               width="11" height="2" filled="true"/>
+    <rectangle color="C_fg_disabled" x="(width / 2) - 5" y="(height / 2)"
+               width="11" height="2" filled="true"/>
+    <rectangle color="C_fg_disabled" x="(width / 2) - 5" y="(height / 2) + 4"
+               width="11" height="2" filled="true"/>
+  </draw_ops>
 <!-- Composite button draw operations -->
   <draw_ops name="close_normal">
     <include name="button_close_background"/>
@@ -179,8 +233,37 @@
     <include name="button_close_glyph_hover"/>
   </draw_ops>
 
+  <!-- One insensitive composite per button function, each pairing the inactive
+       box with its own dimmed glyph. The unfocused frame styles used to point
+       every function at close_insensitive, which drew a bare box. -->
   <draw_ops name="close_insensitive">
     <include name="button_background_insensitive"/>
+    <include name="button_close_glyph_insensitive"/>
+  </draw_ops>
+
+  <draw_ops name="maximize_insensitive">
+    <include name="button_background_insensitive"/>
+    <include name="button_max_glyph_insensitive"/>
+  </draw_ops>
+
+  <draw_ops name="unmaximize_insensitive">
+    <include name="button_background_insensitive"/>
+    <include name="button_unmax_glyph_insensitive"/>
+  </draw_ops>
+
+  <draw_ops name="minimize_insensitive">
+    <include name="button_background_insensitive"/>
+    <include name="button_min_glyph_insensitive"/>
+  </draw_ops>
+
+  <draw_ops name="shade_insensitive">
+    <include name="button_background_insensitive"/>
+    <include name="button_shade_glyph_insensitive"/>
+  </draw_ops>
+
+  <draw_ops name="menu_insensitive">
+    <include name="button_background_insensitive"/>
+    <include name="button_menu_glyph_insensitive"/>
   </draw_ops>
 
   <draw_ops name="maximize_normal">
@@ -295,22 +378,22 @@
     <button function="close" state="pressed" draw_ops="close_pressed"/>
     <button function="close" state="prelight" draw_ops="close_hover"/>
     <button function="close" state="disabled" draw_ops="close_insensitive"/>
-    <button function="maximize" state="normal" draw_ops="close_insensitive"/>
+    <button function="maximize" state="normal" draw_ops="maximize_insensitive"/>
     <button function="maximize" state="pressed" draw_ops="maximize_pressed"/>
     <button function="maximize" state="prelight" draw_ops="maximize_hover"/>
-    <button function="unmaximize" state="normal" draw_ops="close_insensitive"/>
+    <button function="unmaximize" state="normal" draw_ops="unmaximize_insensitive"/>
     <button function="unmaximize" state="pressed" draw_ops="unmaximize_pressed"/>
     <button function="unmaximize" state="prelight" draw_ops="unmaximize_hover"/>
-    <button function="minimize" state="normal" draw_ops="close_insensitive"/>
+    <button function="minimize" state="normal" draw_ops="minimize_insensitive"/>
     <button function="minimize" state="pressed" draw_ops="minimize_pressed"/>
     <button function="minimize" state="prelight" draw_ops="minimize_hover"/>
-    <button function="shade" state="normal" draw_ops="close_insensitive"/>
+    <button function="shade" state="normal" draw_ops="shade_insensitive"/>
     <button function="shade" state="pressed" draw_ops="shade_pressed"/>
     <button function="shade" state="prelight" draw_ops="shade_hover"/>
-    <button function="unshade" state="normal" draw_ops="close_insensitive"/>
+    <button function="unshade" state="normal" draw_ops="shade_insensitive"/>
     <button function="unshade" state="pressed" draw_ops="shade_pressed"/>
     <button function="unshade" state="prelight" draw_ops="shade_hover"/>
-    <button function="menu" state="normal" draw_ops="close_insensitive"/>
+    <button function="menu" state="normal" draw_ops="menu_insensitive"/>
     <button function="menu" state="pressed" draw_ops="menu_pressed"/>
     <button function="menu" state="prelight" draw_ops="menu_hover"/>
   </frame_style>
@@ -338,13 +421,13 @@
     <button function="close" state="normal" draw_ops="close_insensitive"/>
     <button function="close" state="pressed" draw_ops="close_pressed"/>
     <button function="close" state="prelight" draw_ops="close_hover"/>
-    <button function="unmaximize" state="normal" draw_ops="close_insensitive"/>
+    <button function="unmaximize" state="normal" draw_ops="unmaximize_insensitive"/>
     <button function="unmaximize" state="pressed" draw_ops="unmaximize_pressed"/>
     <button function="unmaximize" state="prelight" draw_ops="unmaximize_hover"/>
-    <button function="minimize" state="normal" draw_ops="close_insensitive"/>
+    <button function="minimize" state="normal" draw_ops="minimize_insensitive"/>
     <button function="minimize" state="pressed" draw_ops="minimize_pressed"/>
     <button function="minimize" state="prelight" draw_ops="minimize_hover"/>
-    <button function="menu" state="normal" draw_ops="close_insensitive"/>
+    <button function="menu" state="normal" draw_ops="menu_insensitive"/>
     <button function="menu" state="pressed" draw_ops="menu_pressed"/>
     <button function="menu" state="prelight" draw_ops="menu_hover"/>
   </frame_style>

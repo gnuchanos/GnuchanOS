@@ -67,8 +67,12 @@ style "gnuchan-default"
   GtkWidget::focus-line-pattern  = "\1\1"
   GtkWidget::link-color          = "#C77DFF"
   GtkWidget::visited-link-color  = "#D8A4FF"
-  GtkWidget::cursor-color        = "#DDB3FF"
-  GtkWidget::secondary-cursor-color = "#C77DFF"
+  # No GtkWidget::cursor-color / ::secondary-cursor-color here. GTK 2 has no
+  # such style property, so both lines only made GTK 2 complain about this file
+  # on every parse and never tinted anything. GTK 2 draws the caret with the
+  # widget's own text colour, which is #EAD7FF in this theme. GTK 3 and GTK 4
+  # set it properly with caret-color / -gtk-secondary-caret-color in
+  # gtk-3.0/gtk.css and gtk-4.0/gtk.css (#D8A4FF and #A855F7).
   GtkWidget::internal-padding    = 2
 }
 
@@ -373,9 +377,14 @@ style "gnuchan-check"
   GtkWidget::interior-focus = 1
   GtkWidget::focus-line-width = 1
 }
+# GtkToggleButton is deliberately not listed here. GTK 2 keeps the last style
+# it finds at the same priority, so the line that used to sit in this block
+# gave every plain toggle button xthickness 2 / ythickness 2 and threw away the
+# xthickness 6 / ythickness 4 it should share with "gnuchan-button" above.
+# GtkCheckButton and GtkRadioButton are named explicitly, both by class and by
+# widget path, so they keep this style and their own metrics.
 class "GtkCheckButton" style "gnuchan-check"
 class "GtkRadioButton" style "gnuchan-check"
-class "GtkToggleButton" style "gnuchan-check"
 widget_class "*<GtkCheckButton>*" style "gnuchan-check"
 widget_class "*<GtkRadioButton>*" style "gnuchan-check"
 

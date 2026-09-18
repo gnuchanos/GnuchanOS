@@ -19,7 +19,10 @@
     fg:        #ead7ff;
     fg-dim:    #b78ed6;
     fg-mute:   #70458a;
-    border:    #32143f;
+    /* Named border-line, not border: the "border:" key further down sets the
+     * thickness, and a colour variable sharing that name is shadowed by it,
+     * which silently disabled every border-color: @border below. */
+    border-line: #32143f;
     accent:    #a855f7;
     accent-lo: #542080;
     alert:     #e879f9;
@@ -51,7 +54,7 @@ inputbar {
     background-color: @bg-alt;
     text-color:       @fg;
     border:           1px solid;
-    border-color:     @border;
+    border-color:     @border-line;
     border-radius:    8px;
     padding:          8px 12px;
     spacing:          8px;
@@ -145,7 +148,7 @@ button {
     background-color: @bg-alt;
     text-color:       @fg-dim;
     border:           1px solid;
-    border-color:     @border;
+    border-color:     @border-line;
     border-radius:    6px;
     padding:          6px 12px;
 }
@@ -160,7 +163,7 @@ message {
     background-color: @bg-alt;
     text-color:       @fg;
     border:           1px solid;
-    border-color:     @border;
+    border-color:     @border-line;
     border-radius:    8px;
     padding:          10px;
 }

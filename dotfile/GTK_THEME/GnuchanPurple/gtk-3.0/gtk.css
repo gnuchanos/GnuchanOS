@@ -59,7 +59,7 @@
 /* Semantics, kept inside the purple family on purpose */
 @define-color gnuchan_error           #e879f9;
 @define-color gnuchan_warning         #c77dff;
-@define-color gnuchan_success         #9d4edd;
+@define-color gnuchan_success         #d8a4ff;
 
 /* Transparency helpers */
 @define-color gnuchan_shade           rgba(0, 0, 0, 0.36);
@@ -132,7 +132,7 @@
 @define-color thumbnail_bg_color                    @gnuchan_surface_alt;
 @define-color thumbnail_fg_color                    @gnuchan_fg;
 @define-color shade_color                           @gnuchan_shade;
-@define-color scrollbar_outline_color               @gnuchan_border;
+@define-color scrollbar_outline_color               rgba(9, 3, 13, 0.95);
 
 /* States */
 @define-color destructive_color                     @gnuchan_error;
@@ -145,10 +145,10 @@
 @define-color warning_bg_color                      @gnuchan_accent_active;
 @define-color warning_fg_color                      @gnuchan_white;
 @define-color success_color                         @gnuchan_success;
-@define-color success_bg_color                      @gnuchan_selected_bg;
+@define-color success_bg_color                      @gnuchan_selected_bg_alt;
 @define-color success_fg_color                      @gnuchan_white;
 @define-color suggested_color                       @gnuchan_accent;
-@define-color accent_color                          @gnuchan_accent;
+@define-color accent_color                          @gnuchan_accent_light;
 @define-color accent_bg_color                       @gnuchan_accent;
 @define-color accent_fg_color                       @gnuchan_white;
 @define-color link_color                            @gnuchan_accent_light;

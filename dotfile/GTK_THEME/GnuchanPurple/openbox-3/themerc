@@ -20,6 +20,13 @@ window.handle.width: 4
 window.client.padding.width: 0
 window.client.padding.height: 0
 
+# Button outlines. Openbox falls back to its compiled in grey when these are
+# missing, which showed as off palette borders around every title button.
+window.active.button.border.width: 1
+window.active.button.border.color: #32143f
+window.inactive.button.border.width: 1
+window.inactive.button.border.color: #24102f
+
 # --- Window frame ------------------------------------------------------------
 window.active.border.color: #32143f
 window.inactive.border.color: #24102f
@@ -81,6 +88,28 @@ window.active.button.close.hover.image.color: #ffffff
 window.active.button.close.pressed.bg: flat solid
 window.active.button.close.pressed.bg.color: #a21caf
 window.active.button.close.pressed.image.color: #ffffff
+
+# The unfocused close button keeps the magenta identity, dimmed. Without these
+# keys Openbox gave it the generic inactive button colours instead.
+window.inactive.button.close.unpressed.bg: flat solid
+window.inactive.button.close.unpressed.bg.color: #1c0b27
+window.inactive.button.close.unpressed.image.color: #86198f
+window.inactive.button.close.hover.bg: flat solid
+window.inactive.button.close.hover.bg.color: #86198f
+window.inactive.button.close.hover.image.color: #ffffff
+
+# --- Window handle and grips -------------------------------------------------
+# window.handle.width is set above, so the handle and the grips are drawn;
+# without a colour Openbox used its built in grey for both.
+window.active.handle.bg: flat solid
+window.active.handle.bg.color: #0e0614
+window.inactive.handle.bg: flat solid
+window.inactive.handle.bg.color: #09030d
+
+window.active.grip.bg: flat solid
+window.active.grip.bg.color: #32143f
+window.inactive.grip.bg: flat solid
+window.inactive.grip.bg.color: #24102f
 
 # --- Menus -------------------------------------------------------------------
 menu.border.width: 1
