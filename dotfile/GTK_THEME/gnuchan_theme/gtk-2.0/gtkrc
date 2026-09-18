@@ -12,7 +12,7 @@
 # License: GPL3
 # =============================================================================
 
-gtk-color-scheme = "bg_color:#0E0614\nfg_color:#EAD7FF\nbase_color:#09030D\ntext_color:#EAD7FF\nselected_bg_color:#542080\nselected_fg_color:#FFFFFF\ntooltip_bg_color:#180A22\ntooltip_fg_color:#EAD7FF\nlink_color:#C77DFF\n"
+gtk-color-scheme = "bg_color:#0E0614\nfg_color:#EAD7FF\nbase_color:#09030D\ntext_color:#EAD7FF\nselected_bg_color:#542080\nselected_fg_color:#FFFFFF\ntooltip_bg_color:#180A22\ntooltip_fg_color:#EAD7FF"
 
 # -----------------------------------------------------------------------------
 # Global widget defaults
