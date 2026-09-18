@@ -7,7 +7,15 @@
  *   - Sayısal parametreler atof/strtol ile çevrilir.
  *   - Renkler 32-bit packed uint olarak taşınır (R | G<<8 | B<<16 | A<<24).
  *   - Struct dönen fonksiyonlar g_* global'lerine yazar; dönüş handle (int) olarak verilir.
- *   - String dönen fonksiyonlar g_str global'ine yazar; dönüş 0.
+ *   - String dönen fonksiyonlar metni g_str global'ine yazar. KURAL: dönüş
+ *     değeri 0'dır, metnin uzunluğunu çağıran `LastStringLen()` ile alır
+ *     (bkz. language/readme.md "string" satırı).
+ *     İSTİSNA: sonucu metnin KENDİSİ olan ve uzunluğu doğrudan anlamlı olan
+ *     iki üye bayt sayısını döner — `LoadFileText` ve `LoadUTF8`. Dönen sayı
+ *     `LastStringLen()` ile AYNI olmak zorundadır; böylece 0 "boş/başarısız",
+ *     >0 "şu kadar bayt geldi" demektir ve ikisi karışmaz.
+ *     `LoadFileData` ayrıca HAM bayt sayısını döner: yuva hex kodlanmıştır,
+ *     bu yüzden `strlen(g_str)` o sayıyı VEREMEZ (size=3 ama baytlar "123").
  *   - Struct parametreleri genişletilmiş argümanlarla verilir:
  *        Rectangle -> 4 arg (x, y, w, h)
  *        Vector2   -> 2 arg (x, y)
@@ -401,10 +409,36 @@ COLOR_FN(MAGENTA,MAGENTA)
 /* =========================================================================
    CORE — WINDOW
    ========================================================================= */
+
+/* ---- B25: pencere/GL bağlamı gerektiren üyeler için koruma --------------
+   `InitWindow` çağrılmadan bu üyeler çağrılınca raylib GEÇERSİZ duruma erişiyor:
+   `Raylib.CloseWindow()` → ACCESS_VIOLATION (EXIT 0xC0000005) — yakalanamayan
+   bir çökme. Diğer bazı üyeler (DrawText, SetTargetFPS, GetScreenWidth) raylib
+   tarafından tolere ediliyor, bu yüzden yalnızca pencere/GL/cursor DURUMUNA
+   doğrudan dokunan üyeler korunur. Pencere yoksa çağrı HİÇ yapılmaz, bir kez
+   stderr'e uyarı yazılır ve 0 döner (sessiz çökme yerine).
+
+   ÖNEMLİ: koruma üye GÖVDESİNİN içindedir (tablo değil). `tools/gen_native_db.py`
+   üye kümesini `g_entries[]` içindeki `E(NAME)` satırlarından, dönüş tipini de
+   `fn_<NAME>` gövdesinden okur; sarmalayıcı bir fn_ üretmek tabloyu ve tipleri
+   bozar (1142 → 1099 üye, 3 tamamlama testi kırılıyordu). */
+static int g_no_window_warned = 0;
+
+static void gcl_no_window_warn(const char *name) {
+    if (g_no_window_warned) return;
+    g_no_window_warned = 1;
+    fprintf(stderr, "Raylib.%s: window not ready "
+                    "(call Raylib.InitWindow first) - call skipped\n",
+            name ? name : "?");
+}
+
+#define GCL_NO_WINDOW(NAME) \
+    do { if (!IsWindowReady()) { gcl_no_window_warn(#NAME); return 0.0; } } while (0)
+
 static double fn_InitWindow(int argc,const char**argv){
     InitWindow(ii(argv[0]),ii(argv[1]),ss(argv[2])); return 0.0;
 }
-static double fn_CloseWindow(int argc,const char**argv){(void)argc;(void)argv;CloseWindow();return 0.0;}
+static double fn_CloseWindow(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(CloseWindow);CloseWindow();return 0.0;}
 static double fn_WindowShouldClose(int argc,const char**argv){(void)argc;(void)argv;return WindowShouldClose()?1.0:0.0;}
 static double fn_IsWindowReady(int argc,const char**argv){(void)argc;(void)argv;return IsWindowReady()?1.0:0.0;}
 static double fn_IsWindowFullscreen(int argc,const char**argv){(void)argc;(void)argv;return IsWindowFullscreen()?1.0:0.0;}
@@ -417,17 +451,18 @@ static double fn_IsWindowState(int argc,const char**argv){
     unsigned int f=(argc>0)?(unsigned int)strtoul(argv[0],NULL,10):0; return IsWindowState(f)?1.0:0.0;
 }
 static double fn_SetWindowState(int argc,const char**argv){
-    unsigned int f=(argc>0)?(unsigned int)strtoul(argv[0],NULL,10):0; SetWindowState(f); return 0.0;
+    unsigned int f=(argc>0)?(unsigned int)strtoul(argv[0],NULL,10):0; GCL_NO_WINDOW(SetWindowState); SetWindowState(f); return 0.0;
 }
 static double fn_ClearWindowState(int argc,const char**argv){
-    unsigned int f=(argc>0)?(unsigned int)strtoul(argv[0],NULL,10):0; ClearWindowState(f); return 0.0;
+    unsigned int f=(argc>0)?(unsigned int)strtoul(argv[0],NULL,10):0; GCL_NO_WINDOW(ClearWindowState); ClearWindowState(f); return 0.0;
 }
-static double fn_ToggleFullscreen(int argc,const char**argv){(void)argc;(void)argv;ToggleFullscreen();return 0.0;}
-static double fn_ToggleBorderlessWindowed(int argc,const char**argv){(void)argc;(void)argv;ToggleBorderlessWindowed();return 0.0;}
-static double fn_MaximizeWindow(int argc,const char**argv){(void)argc;(void)argv;MaximizeWindow();return 0.0;}
-static double fn_MinimizeWindow(int argc,const char**argv){(void)argc;(void)argv;MinimizeWindow();return 0.0;}
-static double fn_RestoreWindow(int argc,const char**argv){(void)argc;(void)argv;RestoreWindow();return 0.0;}
+static double fn_ToggleFullscreen(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(ToggleFullscreen);ToggleFullscreen();return 0.0;}
+static double fn_ToggleBorderlessWindowed(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(ToggleBorderlessWindowed);ToggleBorderlessWindowed();return 0.0;}
+static double fn_MaximizeWindow(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(MaximizeWindow);MaximizeWindow();return 0.0;}
+static double fn_MinimizeWindow(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(MinimizeWindow);MinimizeWindow();return 0.0;}
+static double fn_RestoreWindow(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(RestoreWindow);RestoreWindow();return 0.0;}
 static double fn_SetWindowIcon(int argc,const char**argv){
+    GCL_NO_WINDOW(SetWindowIcon);
     int h=(argc>0)?(int)atof(argv[0]):-1; SetWindowIcon(get_img(h)); return 0.0;
 }
 /* SetWindowIcons(count, image0[, image1[, ...]]): raylib takes an
@@ -435,21 +470,22 @@ static double fn_SetWindowIcon(int argc,const char**argv){
 static double fn_SetWindowIcons(int argc,const char**argv){
     static Image imgs[8];
     int count = (argc > 0) ? ii(argv[0]) : 0;
+    GCL_NO_WINDOW(SetWindowIcons);
     if (count < 0) count = 0;
     if (count > 8) count = 8;
     for (int i = 0; i < count; i++) imgs[i] = get_img(ii(argv[1 + i]));
     if (count > 0) SetWindowIcons(imgs, count);
     return 0.0;
 }
-static double fn_SetWindowTitle(int argc,const char**argv){ SetWindowTitle(ss(argv[0])); return 0.0; }
-static double fn_SetWindowPosition(int argc,const char**argv){ SetWindowPosition(ii(argv[0]),ii(argv[1])); return 0.0; }
-static double fn_SetWindowMonitor(int argc,const char**argv){ SetWindowMonitor(ii(argv[0])); return 0.0; }
-static double fn_SetWindowMinSize(int argc,const char**argv){ SetWindowMinSize(ii(argv[0]),ii(argv[1])); return 0.0; }
-static double fn_SetWindowMaxSize(int argc,const char**argv){ SetWindowMaxSize(ii(argv[0]),ii(argv[1])); return 0.0; }
-static double fn_SetWindowSize(int argc,const char**argv){ SetWindowSize(ii(argv[0]),ii(argv[1])); return 0.0; }
-static double fn_SetWindowOpacity(int argc,const char**argv){ SetWindowOpacity(ff(argv[0])); return 0.0; }
-static double fn_SetWindowFocused(int argc,const char**argv){(void)argc;(void)argv;SetWindowFocused();return 0.0;}
-static double fn_GetWindowHandle(int argc,const char**argv){(void)argc;(void)argv;return (double)(intptr_t)GetWindowHandle();}
+static double fn_SetWindowTitle(int argc,const char**argv){ GCL_NO_WINDOW(SetWindowTitle); SetWindowTitle(ss(argv[0])); return 0.0; }
+static double fn_SetWindowPosition(int argc,const char**argv){ GCL_NO_WINDOW(SetWindowPosition); SetWindowPosition(ii(argv[0]),ii(argv[1])); return 0.0; }
+static double fn_SetWindowMonitor(int argc,const char**argv){ GCL_NO_WINDOW(SetWindowMonitor); SetWindowMonitor(ii(argv[0])); return 0.0; }
+static double fn_SetWindowMinSize(int argc,const char**argv){ GCL_NO_WINDOW(SetWindowMinSize); SetWindowMinSize(ii(argv[0]),ii(argv[1])); return 0.0; }
+static double fn_SetWindowMaxSize(int argc,const char**argv){ GCL_NO_WINDOW(SetWindowMaxSize); SetWindowMaxSize(ii(argv[0]),ii(argv[1])); return 0.0; }
+static double fn_SetWindowSize(int argc,const char**argv){ GCL_NO_WINDOW(SetWindowSize); SetWindowSize(ii(argv[0]),ii(argv[1])); return 0.0; }
+static double fn_SetWindowOpacity(int argc,const char**argv){ GCL_NO_WINDOW(SetWindowOpacity); SetWindowOpacity(ff(argv[0])); return 0.0; }
+static double fn_SetWindowFocused(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(SetWindowFocused);SetWindowFocused();return 0.0;}
+static double fn_GetWindowHandle(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(GetWindowHandle);return (double)(intptr_t)GetWindowHandle();}
 static double fn_GetScreenWidth(int argc,const char**argv){(void)argc;(void)argv;return (double)GetScreenWidth();}
 static double fn_GetScreenHeight(int argc,const char**argv){(void)argc;(void)argv;return (double)GetScreenHeight();}
 static double fn_GetRenderWidth(int argc,const char**argv){(void)argc;(void)argv;return (double)GetRenderWidth();}
@@ -476,39 +512,41 @@ static double fn_EnableEventWaiting(int argc,const char**argv){(void)argc;(void)
 static double fn_DisableEventWaiting(int argc,const char**argv){(void)argc;(void)argv;DisableEventWaiting();return 0.0;}
 
 /* cursor */
-static double fn_ShowCursor(int argc,const char**argv){(void)argc;(void)argv;ShowCursor();return 0.0;}
-static double fn_HideCursor(int argc,const char**argv){(void)argc;(void)argv;HideCursor();return 0.0;}
+static double fn_ShowCursor(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(ShowCursor);ShowCursor();return 0.0;}
+static double fn_HideCursor(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(HideCursor);HideCursor();return 0.0;}
 static double fn_IsCursorHidden(int argc,const char**argv){(void)argc;(void)argv;return IsCursorHidden()?1.0:0.0;}
-static double fn_EnableCursor(int argc,const char**argv){(void)argc;(void)argv;EnableCursor();return 0.0;}
-static double fn_DisableCursor(int argc,const char**argv){(void)argc;(void)argv;DisableCursor();return 0.0;}
+static double fn_EnableCursor(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EnableCursor);EnableCursor();return 0.0;}
+static double fn_DisableCursor(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(DisableCursor);DisableCursor();return 0.0;}
 static double fn_IsCursorOnScreen(int argc,const char**argv){(void)argc;(void)argv;return IsCursorOnScreen()?1.0:0.0;}
 
-/* drawing */
-static double fn_ClearBackground(int argc,const char**argv){ ClearBackground(ci(argv,0)); return 0.0; }
-static double fn_BeginDrawing(int argc,const char**argv){(void)argc;(void)argv;BeginDrawing();return 0.0;}
-static double fn_EndDrawing(int argc,const char**argv){(void)argc;(void)argv;EndDrawing();return 0.0;}
+/* drawing — B25: GL bağlamı (rlgl toplu çizim) gerektirirler. */
+static double fn_ClearBackground(int argc,const char**argv){ GCL_NO_WINDOW(ClearBackground); ClearBackground(ci(argv,0)); return 0.0; }
+static double fn_BeginDrawing(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(BeginDrawing);BeginDrawing();return 0.0;}
+static double fn_EndDrawing(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndDrawing);EndDrawing();return 0.0;}
 static double fn_BeginMode2D(int argc,const char**argv){
     if (argc >= 6) g_last_cam2d=(Camera2D){v2_arg(argv,0),v2_arg(argv,2),ff(argv[4]),ff(argv[5])};
     /* Argümansız çağrı: Raylib.Camera2D(...) ile oluşturulan son kamerayı kullan */
+    GCL_NO_WINDOW(BeginMode2D);
     BeginMode2D(g_last_cam2d); return 0.0;
 }
-static double fn_EndMode2D(int argc,const char**argv){(void)argc;(void)argv;EndMode2D();return 0.0;}
+static double fn_EndMode2D(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndMode2D);EndMode2D();return 0.0;}
 static double fn_BeginMode3D(int argc,const char**argv){
     if (argc >= 11) g_last_cam=(Camera3D){v3_arg(argv,0),v3_arg(argv,3),v3_arg(argv,6),ff(argv[9]),ii(argv[10])};
     /* Argümansız çağrı: Raylib.Camera(...) ile oluşturulan son kamerayı kullan */
+    GCL_NO_WINDOW(BeginMode3D);
     BeginMode3D(g_last_cam); return 0.0;
 }
-static double fn_EndMode3D(int argc,const char**argv){(void)argc;(void)argv;EndMode3D();return 0.0;}
-static double fn_BeginTextureMode(int argc,const char**argv){ BeginTextureMode(get_rt(ii(argv[0]))); return 0.0; }
-static double fn_EndTextureMode(int argc,const char**argv){(void)argc;(void)argv;EndTextureMode();return 0.0;}
-static double fn_BeginShaderMode(int argc,const char**argv){ BeginShaderMode(get_shader(ii(argv[0]))); return 0.0; }
-static double fn_EndShaderMode(int argc,const char**argv){(void)argc;(void)argv;EndShaderMode();return 0.0;}
-static double fn_BeginBlendMode(int argc,const char**argv){ BeginBlendMode(ii(argv[0])); return 0.0; }
-static double fn_EndBlendMode(int argc,const char**argv){(void)argc;(void)argv;EndBlendMode();return 0.0;}
-static double fn_BeginScissorMode(int argc,const char**argv){ BeginScissorMode(ii(argv[0]),ii(argv[1]),ii(argv[2]),ii(argv[3])); return 0.0; }
-static double fn_EndScissorMode(int argc,const char**argv){(void)argc;(void)argv;EndScissorMode();return 0.0;}
-static double fn_BeginVrStereoMode(int argc,const char**argv){(void)argc;(void)argv;BeginVrStereoMode(g_last_vr);return 0.0;}
-static double fn_EndVrStereoMode(int argc,const char**argv){(void)argc;(void)argv;EndVrStereoMode();return 0.0;}
+static double fn_EndMode3D(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndMode3D);EndMode3D();return 0.0;}
+static double fn_BeginTextureMode(int argc,const char**argv){ GCL_NO_WINDOW(BeginTextureMode); BeginTextureMode(get_rt(ii(argv[0]))); return 0.0; }
+static double fn_EndTextureMode(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndTextureMode);EndTextureMode();return 0.0;}
+static double fn_BeginShaderMode(int argc,const char**argv){ GCL_NO_WINDOW(BeginShaderMode); BeginShaderMode(get_shader(ii(argv[0]))); return 0.0; }
+static double fn_EndShaderMode(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndShaderMode);EndShaderMode();return 0.0;}
+static double fn_BeginBlendMode(int argc,const char**argv){ GCL_NO_WINDOW(BeginBlendMode); BeginBlendMode(ii(argv[0])); return 0.0; }
+static double fn_EndBlendMode(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndBlendMode);EndBlendMode();return 0.0;}
+static double fn_BeginScissorMode(int argc,const char**argv){ GCL_NO_WINDOW(BeginScissorMode); BeginScissorMode(ii(argv[0]),ii(argv[1]),ii(argv[2]),ii(argv[3])); return 0.0; }
+static double fn_EndScissorMode(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndScissorMode);EndScissorMode();return 0.0;}
+static double fn_BeginVrStereoMode(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(BeginVrStereoMode);BeginVrStereoMode(g_last_vr);return 0.0;}
+static double fn_EndVrStereoMode(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndVrStereoMode);EndVrStereoMode();return 0.0;}
 
 /* VR */
 /* LoadVrStereoConfig(hRes, vRes, hScreen, vScreen, eyeDist, lensSep, ipd
@@ -608,8 +646,8 @@ static double fn_SetTargetFPS(int argc,const char**argv){ SetTargetFPS(ii(argv[0
 static double fn_GetFrameTime(int argc,const char**argv){(void)argc;(void)argv;return (double)GetFrameTime();}
 static double fn_GetTime(int argc,const char**argv){(void)argc;(void)argv;return GetTime();}
 static double fn_GetFPS(int argc,const char**argv){(void)argc;(void)argv;return (double)GetFPS();}
-static double fn_SwapScreenBuffer(int argc,const char**argv){(void)argc;(void)argv;SwapScreenBuffer();return 0.0;}
-static double fn_PollInputEvents(int argc,const char**argv){(void)argc;(void)argv;PollInputEvents();return 0.0;}
+static double fn_SwapScreenBuffer(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(SwapScreenBuffer);SwapScreenBuffer();return 0.0;}
+static double fn_PollInputEvents(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(PollInputEvents);PollInputEvents();return 0.0;}
 static double fn_WaitTime(int argc,const char**argv){ WaitTime(atof(argv[0])); return 0.0; }
 static double fn_SetRandomSeed(int argc,const char**argv){ SetRandomSeed((unsigned int)strtoul(argv[0],NULL,10)); return 0.0; }
 static double fn_GetRandomValue(int argc,const char**argv){ return (double)GetRandomValue(ii(argv[0]),ii(argv[1])); }
@@ -635,7 +673,7 @@ static double fn_LoadRandomSequence(int argc,const char**argv){
     return (double)count;
 }
 static double fn_UnloadRandomSequence(int argc,const char**argv){ (void)argc;(void)argv; return 0.0; }
-static double fn_TakeScreenshot(int argc,const char**argv){ TakeScreenshot(ss(argv[0])); return 0.0; }
+static double fn_TakeScreenshot(int argc,const char**argv){ GCL_NO_WINDOW(TakeScreenshot); TakeScreenshot(ss(argv[0])); return 0.0; }
 static double fn_SetConfigFlags(int argc,const char**argv){ SetConfigFlags((unsigned int)strtoul(argv[0],NULL,10)); return 0.0; }
 static double fn_OpenURL(int argc,const char**argv){ OpenURL(ss(argv[0])); return 0.0; }
 static double fn_SetTraceLogLevel(int argc,const char**argv){ SetTraceLogLevel(ii(argv[0])); return 0.0; }
@@ -769,7 +807,24 @@ static double fn_LoadFileData(int argc,const char**argv){
 static double fn_UnloadFileData(int argc,const char**argv){ (void)argc;(void)argv; return 0.0; }
 static double fn_SaveFileData(int argc,const char**argv){ return SaveFileData(ss(argv[0]),argv[1],ii(argv[2]))?1.0:0.0; }
 static double fn_ExportDataAsCode(int argc,const char**argv){ return ExportDataAsCode((const unsigned char*)(argv[0]?argv[0]:(const char*)""),ii(argv[1]),ss(argv[2]))?1.0:0.0; }
-static double fn_LoadFileText(int argc,const char**argv){ char *t=LoadFileText(ss(argv[0])); if(t){snprintf(g_str,sizeof(g_str),"%s",t); UnloadFileText(t);} else g_str[0]=0; return 0.0; }
+/* LoadFileText(fileName): raylib returns a char*. GCL copies the text into
+   g_str and returns its BYTE COUNT - the same shape as LoadUTF8 (source ->
+   NUL-terminated text in the slot -> byte count of what was stored).
+   ESKI HATA: bu uye 0.0 donuyordu, yani uzunlugu donus degerinden almak
+   imkansizdi ve cagiran `LastStringLen()`e mecburdu - oysa AYNI isi yapan
+   `LoadUTF8` uzunlugu donuyordu. 0.0 ayrica "bos dosya" ile "okunamadi"yi
+   birbirinden ayirt edilemez kiliyordu; simdi >0 "metin geldi" demektir.
+   Uzunluk g_str'ye YAZILANDAN olculur (snprintf kisaltmis olabilir), boylece
+   donen sayi `LastStringLen()` ile HER ZAMAN aynidir.
+   NOT: `LoadFileData` ile ayni DEGILDIR - orada donen sayi HAM bayt sayisidir
+   ve yuva hex kodlanmis oldugu icin `strlen(g_str)` onu veremez (bkz.
+   raylib_file_callback.gcsf: size=3 ama baytlar "123"). */
+static double fn_LoadFileText(int argc,const char**argv){
+    char *t = LoadFileText(ss((argc > 0) ? argv[0] : ""));
+    if (t) { snprintf(g_str, sizeof(g_str), "%s", t); UnloadFileText(t); }
+    else g_str[0] = 0;
+    return (double)strlen(g_str);
+}
 static double fn_UnloadFileText(int argc,const char**argv){ (void)argc;(void)argv; return 0.0; }
 static double fn_SaveFileText(int argc,const char**argv){ return SaveFileText(ss(argv[0]),ss(argv[1]))?1.0:0.0; }
 /* Bu dört üye artık GERÇEKTEN çalışır — aşağıdaki "Dosya callback köprüsü"

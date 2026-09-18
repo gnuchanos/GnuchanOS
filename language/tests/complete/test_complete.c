@@ -4,7 +4,9 @@
  * Motor raylib/UI'ya bagimli DEGILDIR; bu yuzden pencere acmadan derlenip
  * kosulabilir:
  *
- *   gcc -std=c99 -I language/_SRC/complete -o _temp/ctest.exe \
+ *   mkdir -p _temp/tests    (working directory is the repo root)
+ *   gcc -std=c99 -D_POSIX_C_SOURCE=200809L -I language/_SRC/complete \
+ *       -o _temp/tests/ctest.exe \
  *       language/tests/complete/test_complete.c \
  *       language/_SRC/complete/gcl_complete.c \
  *       language/_SRC/complete/complete_context.c \
@@ -22,6 +24,7 @@
  */
 #include "gcl_complete.h"
 #include "complete_native.h"   /* DB butunluk denetimi: modul/struct/alan */
+#include "complete_scope.h"    /* gclc_keyword_list(): anahtar sozcuk listesi */
 #include <stdio.h>
 #include <string.h>
 
@@ -106,13 +109,24 @@ static void make_dir(const char *path) {
 #endif
 }
 
+/* Fixture yazimi. Basarisizlikta SORUNLU YOLU yazar: setup_project() yalnizca
+   "dosyalar yazilamadi" diyebiliyordu ve hangi yolun (eksik klasor, dosya
+   sanilan klasor, dolu disk) patladigi ancak tahminle bulunabiliyordu. */
 static int write_text(const char *path, const char *content) {
     FILE *f = fopen(path, "wb");
-    if (!f) return 0;
+    if (!f) {
+        printf("  [kurulum] yazilamadi (fopen): %s\n", path);
+        return 0;
+    }
     size_t n = strlen(content);
     size_t w = fwrite(content, 1, n, f);
     fclose(f);
-    return w == n;
+    if (w != n) {
+        printf("  [kurulum] eksik yazildi (%lu/%lu): %s\n",
+               (unsigned long)w, (unsigned long)n, path);
+        return 0;
+    }
+    return 1;
 }
 /* ------------------------------------------------------------------ */
 /* Test verisi                                                         */
@@ -145,7 +159,14 @@ static const char *k_decls =
     "    int counter = 0;\n"
     "    char buf[64];\n";
 
-#define PROJ_DIR "_temp/ctest/proj"
+/* Proje taklidi kok dizini. Bu ad, test ikilisinin KENDI yolundan farkli
+   olmak ZORUNDA: kosucu ikiliyi eskiden _temp/ctest icine kuruyordu ve test
+   ardindan mkdir("_temp/ctest") cagiriyordu. Linux'ta (.exe son eki yok)
+   mkdir EEXIST ile, butun fixture yazimlari ENOTDIR ile patliyordu — test
+   Windows'ta geciyor, CI'da "proje kurulumu" adiminda dusuyordu.
+   Ikili artik _temp/tests/ altinda; bu dizinin adini hicbir test ikilisi
+   kullanmaz. */
+#define PROJ_DIR "_temp/gcl_ctest/proj"
 
 static char g_buf[16384];
 
@@ -394,7 +415,7 @@ static void test_diag(void) {
 
 static int setup_project(void) {
     make_dir("_temp");
-    make_dir("_temp/ctest");
+    make_dir("_temp/gcl_ctest");
     make_dir(PROJ_DIR);
     make_dir(PROJ_DIR "/include");
     make_dir(PROJ_DIR "/assets");
@@ -974,6 +995,51 @@ static void test_enum_constants(void) {
 /* main                                                                */
 /* ------------------------------------------------------------------ */
 
+/* ---- Error-handling keywords -------------------------------------------
+   try/catch/finally/throw/raise were added to the language (lexer + parser +
+   runner) but were missing from the completion and highlighting lists: typing
+   "try" produced an empty suggestion list and the IDE did not highlight the
+   words, so the feature looked like it did not exist.
+
+   This test pins both layers:
+     a) the contents of gclc_keyword_list() (the language's single list),
+     b) what the engine ACTUALLY suggests (through context + rank filtering).
+   (b) matters on its own: if the list is correct but the context filter drops
+   the words, the user still never sees them - two separate failure modes. */
+static void test_error_keywords(void) {
+    static const char *want[] = { "try", "catch", "finally", "throw", "raise",
+                                  "defer", NULL };
+    const char *const *kw = gclc_keyword_list();
+
+    case_begin("error keywords present in the dictionary");
+    for (int i = 0; want[i]; i++) {
+        int found = 0;
+        for (int k = 0; kw && kw[k]; k++) {
+            if (strcmp(kw[k], want[i]) == 0) { found = 1; break; }
+        }
+        char what[96];
+        snprintf(what, sizeof(what), "'%s' missing from gclc_keyword_list()", want[i]);
+        check(found, what);
+    }
+
+    case_begin("error keywords are offered");
+    check(suggests("try", NULL, tf("    tr"), NULL),
+          "'tr' inside demo() did not offer 'try'");
+    check(suggests("catch", NULL, tf("    cat"), NULL),
+          "'cat' did not offer 'catch'");
+    check(suggests("finally", NULL, tf("    fin"), NULL),
+          "'fin' did not offer 'finally'");
+    check(suggests("throw", NULL, tf("    thr"), NULL),
+          "'thr' did not offer 'throw'");
+    check(suggests("raise", NULL, tf("    rai"), NULL),
+          "'rai' did not offer 'raise'");
+    /* `defer` is a statement keyword like `return`: it must be offered at the
+       start of a body, otherwise the feature is invisible in the IDE even
+       though the interpreter accepts it. */
+    check(suggests("defer", NULL, tf("    def"), NULL),
+          "'def' did not offer 'defer'");
+}
+
 int main(void) {
     printf("GCL completion engine tests\n");
 
@@ -988,6 +1054,7 @@ int main(void) {
     test_call_args_leak();
     test_user_chain();
     test_enum_constants();
+    test_error_keywords();
 
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

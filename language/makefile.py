@@ -3,7 +3,14 @@
 GCL build chain (C version).
 
 Usage:
-  python makefile.py        # single command: dependencies + build (no arguments)
+  py.exe language/makefile.py            # deps + build + headless test layers
+  py.exe language/makefile.py raylib     # deps + build + WINDOW (raylib/raygui) tests
+  py.exe language/makefile.py all        # both
+
+The build is always done first. `raylib` is a SEPARATE target because its cases
+load Library/Raylib.dll and Library/Raygui.dll and one of them opens a real
+window: a display-less machine cannot run them, and the default target must
+stay runnable everywhere (see language/tests/run_raylib_tests.py).
 
 Build output (simple_doc.md):
   build/<os>/
@@ -90,8 +97,13 @@ GCL_SRCS = [
     "_SRC/build/gcbundle_pack.c",
     "_SRC/build/gcbundle_build.c",
     "_SRC/SharedPipeline/gcl_error.c",
+    "_SRC/SharedPipeline/gcl_source.c",
+    "_SRC/SharedPipeline/gcl_diag.c",
     "_SRC/SharedPipeline/gcl_lexer.c",
     "_SRC/SharedPipeline/gcl_parser.c",
+    # Native struct alan tablosu (Vector2/Rectangle/...): yorumlayici
+    # `Raylib.Rectangle r;` bildirimini bununla kurar.
+    "_SRC/SharedPipeline/gcl_native_types.c",
     "_SRC/GCL/SimpleRunner/gcl_runner.c",
     "_SRC/GCL/SimpleRunner/gcl_simple_runner.c",
     "_SRC/GCL/SimpleRunner/gcl_terminal.c",
@@ -124,6 +136,7 @@ IDE_SRCS = [
     "_SRC/complete/complete_context.c",
     "_SRC/complete/complete_scope.c",
     "_SRC/complete/complete_type.c",
+    "_SRC/SharedPipeline/gcl_native_types.c",
     "_SRC/complete/complete_native.c",
     "_SRC/complete/complete_native_db.c",
     "_SRC/complete/complete_project.c",
@@ -158,6 +171,8 @@ PARSER_TEST_SRCS = [
     "language/_SRC/SharedPipeline/gcl_lexer.c",
     "language/_SRC/SharedPipeline/gcl_parser.c",
     "language/_SRC/SharedPipeline/gcl_error.c",
+    "language/_SRC/SharedPipeline/gcl_diag.c",
+    "language/_SRC/SharedPipeline/gcl_source.c",
 ]
 
 COMPLETE_TEST_SRCS = [
@@ -166,6 +181,7 @@ COMPLETE_TEST_SRCS = [
     "language/_SRC/complete/complete_context.c",
     "language/_SRC/complete/complete_scope.c",
     "language/_SRC/complete/complete_type.c",
+    "language/_SRC/SharedPipeline/gcl_native_types.c",
     "language/_SRC/complete/complete_native.c",
     "language/_SRC/complete/complete_native_db.c",
     "language/_SRC/complete/complete_project.c",
@@ -181,6 +197,101 @@ def exe_name() -> str:
 
 def dll_ext() -> str:
     return "dll" if os_name() == "windows" else "so"
+
+
+# ---------- Linux sistem geliştirme paketleri (Debian/Ubuntu) ----------
+# Raylib kaynaktan derlenir ve raylib'in kendi Makefile'i GLFW'yi X11 ile
+# derler (GLFW_LINUX_ENABLE_X11 ?= TRUE → CFLAGS += -D_GLFW_X11). Bu durumda
+# GLFW'nin include/GLFW/glfw3native.h dosyasi <X11/Xlib.h> basligini ceker ve
+# o basligi tasiyan -dev paketi kurulu degilse derleme cok daha anlasilmaz bir
+# yerde patlar:
+#     external/glfw/include/GLFW/glfw3native.h:118:12:
+#     fatal error: X11/Xlib.h: No such file or directory
+#     make: *** [Makefile:854: rglfw.o] Error 1
+# Asagidaki kontrol bu hatayi kaynaginda yakalar ve kurulacak paketi isimle soyler.
+# Baslik listesi external/glfw/src/x11_platform.h'deki include'lardan gelir.
+LINUX_DEV_HEADERS = (
+    ("X11/Xlib.h", "libx11-dev"),
+    ("X11/keysym.h", "libx11-dev"),
+    ("X11/Xatom.h", "libx11-dev"),
+    ("X11/Xresource.h", "libx11-dev"),
+    ("X11/XKBlib.h", "libx11-dev"),
+    ("X11/Xcursor/Xcursor.h", "libxcursor-dev"),
+    ("X11/extensions/Xrandr.h", "libxrandr-dev"),
+    ("X11/extensions/Xinerama.h", "libxinerama-dev"),
+    ("X11/extensions/XInput2.h", "libxi-dev"),
+    ("X11/extensions/shape.h", "libxext-dev"),
+    ("GL/gl.h", "libgl1-mesa-dev"),
+)
+
+# Kendi gcc satirlarimizin linkledigi kutuphaneler (-lGL -lX11).
+LINUX_DEV_LIBS = (
+    ("GL", "libgl1-mesa-dev"),
+    ("X11", "libx11-dev"),
+)
+
+
+def _gcc_probe_header(gcc: str, header: str) -> bool:
+    """Basligi gcc'ye sor: bulunamazsa gcc sifirdan farkli doner."""
+    try:
+        result = subprocess.run([gcc, "-E", "-xc", "-"],
+                                input=f"#include <{header}>\n",
+                                text=True, capture_output=True, check=False)
+    except OSError:
+        return True  # gcc yok — karari gercek derlemeye birak
+    return result.returncode == 0
+
+
+def _gcc_probe_lib(gcc: str, lib: str) -> bool:
+    """Kucuk bir programi -l<lib> ile linklemeyi dene."""
+    try:
+        result = subprocess.run([gcc, "-xc", "-", "-o", os.devnull, f"-l{lib}"],
+                                input="int main(void){return 0;}\n",
+                                text=True, capture_output=True, check=False)
+    except OSError:
+        return True
+    return result.returncode == 0
+
+
+def check_linux_dev_deps() -> bool:
+    """Linux'ta X11/OpenGL gelistirme paketlerini onden dogrular.
+
+    Eksik varsa eksikleri ve tek satirlik apt komutunu basar, False doner.
+    Baska platformlarda (ve gcc yoksa) hicbir seye karismaz: True.
+    """
+    if os_name() != "gnuLinux":
+        return True
+    gcc = os.environ.get("CC") or "gcc"
+    if shutil.which(gcc) is None:
+        print(f"[gcl] uyari: '{gcc}' bulunamadi — sistem paket kontrolu atlandi",
+              flush=True)
+        return True
+
+    missing: dict = {}
+    for header, package in LINUX_DEV_HEADERS:
+        if not _gcc_probe_header(gcc, header):
+            missing.setdefault(package, []).append(header)
+    for lib, package in LINUX_DEV_LIBS:
+        if not _gcc_probe_lib(gcc, lib):
+            missing.setdefault(package, []).append(f"lib{lib}.so")
+
+    if not missing:
+        print("[gcl] sistem paketleri: X11/OpenGL basliklari tam", flush=True)
+        return True
+
+    packages = sorted(missing)
+    print("[gcl] ERROR: Linux gelistirme paketleri eksik — derleme durduruldu. "
+          "Eksik baslik/kutuphaneler:", file=sys.stderr, flush=True)
+    for package in packages:
+        print(f"[gcl]   {package}: {', '.join(missing[package])}",
+              file=sys.stderr, flush=True)
+    print("[gcl] Kurmak icin (Debian/Ubuntu):", file=sys.stderr, flush=True)
+    print(f"[gcl]   sudo apt update && sudo apt install -y {' '.join(packages)}",
+          file=sys.stderr, flush=True)
+    print("[gcl] Not: GLFW'nin X11 backend'i (glfw3native.h → <X11/Xlib.h>) bu "
+          "paketler olmadan derlenmez; raylib Makefile'i 'rglfw.o' adiminda duser.",
+          file=sys.stderr, flush=True)
+    return False
 
 
 def run(cmd: list[str], cwd: Path, env: dict | None = None) -> None:
@@ -1101,6 +1212,12 @@ def build_gcl() -> Path:
     # on Windows -lm is harmless and works fine with MinGW).
     cmd += ["-lm"]
     if os_name() == "windows":
+        # B2 — the GCL interpreter runs user functions on the NATIVE C stack
+        # (call_user_func -> exec_block -> eval_expr -> call_user_func). The
+        # default 1 MB stack OVERFLOWED on deep recursion (exit 0xC00000FD,
+        # no message). Reserve 64 MB so GCL_MAX_CALL_DEPTH (default 8192,
+        # ~2 KB per frame) fits comfortably.
+        cmd += ["-Wl,--stack,67108864"]
         cmd += ["-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lshell32", "-lcomdlg32", "-lole32"]
     else:
         cmd += ["-lGL", "-lpthread", "-ldl", "-lrt", "-lX11"]
@@ -1144,8 +1261,13 @@ def run_test_suite(name: str, sources: list[str], include_dir: str) -> bool:
     ext = ".exe" if os_name() == "windows" else ""
     exe = bin_dir / f"{name}{ext}"
     # Üretim derlemeleriyle aynı feature sözleşmesi (bkz. docstring).
+    # Testler üretim katmanlarini DOGRUDAN derler. complete_native.h artik
+    # SharedPipeline altindaki gcl_native_types.h'i dahil eder (alan tablosu tek
+    # kaynak: yorumlayici da ayni listeyi kullanir), bu yüzden test derlemesine
+    # SharedPipeline yolu da verilir. Kullanilmayan bir -I zararsizdir.
     cmd = ["gcc", "-std=c99", "-D_POSIX_C_SOURCE=200809L",
-           "-I", include_dir] + sources + ["-o", str(exe), "-lm"]
+           "-I", include_dir,
+           "-I", "language/_SRC/SharedPipeline"] + sources + ["-o", str(exe), "-lm"]
     if not run_optional(cmd, cwd=REPO_ROOT):
         print(f"[gcl] ERROR: {name} derlenemedi (test paketi çalıştırılamadı)",
               file=sys.stderr, flush=True)
@@ -1160,19 +1282,175 @@ def run_test_suite(name: str, sources: list[str], include_dir: str) -> bool:
     return True
 
 
+def run_gcsf_suite() -> bool:
+    """language/tests/run_gcsf_tests.py — dil seviyesi golden testler.
+
+    ptest/ctest (lexer/parser ve tamamlama motoru) DERLEME ZAMANI birim
+    testleridir; bu paket ise AZ ÖNCE DERLENEN gerçek yorumlayıcıyı
+    (`language/build/<os>/gcl[.exe]`) alt süreç olarak koşar ve her .gcsf
+    vakasının stdout'unu, exit kodunu ve tanılama metnini saklanan beklentilerle
+    karşılaştırır. Böylece dil semantiğindeki bir gerileme (ör. B12 sınır
+    kontrolü, B29 char literali, B16 eksik `;`) IDE'de görünmeden önce yakalanır.
+    Test verisi `language/tests/gcsf/` altındadır — `_temp/` scratch DEĞİLDİR;
+    bu yüzden beklentiler versiyonlanır ve sürer.
+    """
+    script = ROOT / "tests" / "run_gcsf_tests.py"
+    if not script.exists():
+        print(f"[gcl] uyarı: gcsf test paketi yok, atlandı: {script}",
+              file=sys.stderr, flush=True)
+        return True
+    print("[gcl] test: gcsf", flush=True)
+    # --strict-assertions: bir vaka HİÇBİR sidecar'a sahip değilse (yalnızca
+    # exit kodu karşılaştırılıyorsa) bu bir HATA sayılır. TURN 21 ve TURN 23'ün
+    # kök nedeni tam olarak böyle bir vakaydı: dosya "yeşil" görünüyordu ama
+    # hiçbir şey iddia etmiyordu. Koşucu bunu zaten raporlar (`unanchored`);
+    # derleme adımı bunu hataya çevirir, böylece sessizce geçemez.
+    result = subprocess.run([sys.executable, str(script), "--strict-assertions"],
+                            cwd=REPO_ROOT, check=False)
+    if result.returncode != 0:
+        print("[gcl] ERROR: gcsf paketi BAŞARISIZ", file=sys.stderr, flush=True)
+        return False
+    return True
+
+
+def run_raylib_suite() -> bool:
+    """language/tests/run_raylib_tests.py — modül/pencere testleri.
+
+    gcsf paketinden AYRI bir hedeftir (`makefile.py raylib`). Bu vakalar
+    Library/Raylib.dll (raygui_* için ayrıca Raygui.dll) yükler ve en az biri
+    GERÇEK bir pencere açar. Ekransız bir makinede bu kaçınılmaz olarak
+    başarısız olur; bu yüzden varsayılan hedef bu paketi koşmaz — yeşil bir
+    `makefile.py` bir ekrana bağımlı olmamalıdır.
+    """
+    script = ROOT / "tests" / "run_raylib_tests.py"
+    if not script.exists():
+        print(f"[gcl] uyarı: raylib test paketi yok, atlandı: {script}",
+              file=sys.stderr, flush=True)
+        return True
+    print("[gcl] test: raylib (pencere/modül)", flush=True)
+    result = subprocess.run([sys.executable, str(script)], cwd=REPO_ROOT, check=False)
+    if result.returncode != 0:
+        print("[gcl] ERROR: raylib paketi BAŞARISIZ", file=sys.stderr, flush=True)
+        return False
+    return True
+
+
+# ---------- Hedefler (argv) ----------
+# Varsayılan yalnızca başlıksız katmanları koşar; pencere testleri AÇIKÇA
+# istenir. Böylece `py.exe language/makefile.py` her makinede yeşil kalır.
+TARGET_DEFAULT = "default"
+TARGET_RAYLIB = "raylib"
+TARGET_ALL = "all"
+KNOWN_TARGETS = (TARGET_DEFAULT, TARGET_RAYLIB, TARGET_ALL)
+
+
+def run_headless_layers() -> list[tuple[str, bool]]:
+    """ptest + ctest + gcsf. Üçü de derlemeden sonra, hep birlikte koşar.
+
+    TURN 28 — her katman ADIYLA dondurulur: main() artik tek satirlik bir ozet
+    basiyor ve adsiz bir sonuc listesi ozette okunamaz.
+    """
+    return [
+        ("ptest", run_test_suite("ptest", PARSER_TEST_SRCS, "language/_SRC/SharedPipeline")),
+        ("ctest", run_test_suite("ctest", COMPLETE_TEST_SRCS, "language/_SRC/complete")),
+        # Dil seviyesi golden testler: gercek gcl.exe'yi kosar. Diger ikisi
+        # derleme-zamani birim testleri oldugu icin bu ucuncu katman, "API
+        # dogru ama dil yanlis davraniyor" sinifini yakalar.
+        ("gcsf", run_gcsf_suite()),
+    ]
+
+
+# TURN 29 - every layer this harness knows about, in the order they run.
+#
+# TURN 28's open item: the summary line named only the layers that RAN, so
+# `ptest PASS | ctest PASS | gcsf PASS` was the final screenful both when the
+# window package had been built and run and when it had never been touched.
+# A reader had no way to tell "no failures" from "not executed". The SKIPPED
+# line below closes that gap by naming what did not run, and by printing the
+# exact command that runs it.
+ALL_LAYER_NAMES = ("ptest", "ctest", "gcsf", "raylib")
+
+# The window package is the only layer that needs a screen; when it is the one
+# that was skipped the hint has to say so, otherwise "run: ... all" invites the
+# reader to re-run the three layers they just watched pass.
+HEADLESS_LAYER_NAMES = ("ptest", "ctest", "gcsf")
+
+
+def print_suite_summary(results: list[tuple[str, bool]],
+                        skipped: tuple[str, ...] = ()) -> bool:
+    """Print ONE summary line for the layer results; return whether all passed.
+
+    TURN 28 — split out of main() so it can be exercised DIRECTLY, without a
+    full rebuild: the value of the line is that it renders FAIL loudly, and a
+    claim like that has to be shown, not asserted.
+
+        py.exe -c "import sys; sys.path.insert(0,'language'); import makefile as m; \
+                   m.print_suite_summary([('ptest',True),('gcsf',False)])"
+    """
+    summary = " | ".join(
+        f"{name} {'PASS' if ok else 'FAIL'}" for name, ok in results
+    )
+    print(f"[gcl] SUITE: {summary}", flush=True)
+
+    # TURN 29 - say what did NOT run. Printed even when every layer passed,
+    # because that is exactly the case where the omission used to be invisible.
+    if skipped:
+        rerun = ("py.exe language/makefile.py raylib"
+                 if tuple(skipped) == ("raylib",)
+                 else "py.exe language/makefile.py all")
+        print(f"[gcl] SKIPPED: {' '.join(skipped)} (not run by this target) - "
+              f"to run them: {rerun}", flush=True)
+
+    if all(ok for _, ok in results):
+        print("[gcl] RESULT: all layers passed", flush=True)
+        return True
+    print("[gcl] RESULT: FAILED - a FAIL above names the layer; that layer "
+          "printed its own ERROR line earlier in the log",
+          file=sys.stderr, flush=True)
+    return False
+
+
 def main() -> int:
+    target = sys.argv[1] if len(sys.argv) > 1 else TARGET_DEFAULT
+    if target not in KNOWN_TARGETS:
+        print(f"[gcl] hata: bilinmeyen hedef '{target}' — "
+              f"geçerli hedefler: {', '.join(KNOWN_TARGETS)}", file=sys.stderr, flush=True)
+        return 2
+
+    # Eksik X11/OpenGL -dev paketi varsa raylib'in Makefile'i yerine burada,
+    # anlasilir bir mesajla dur.
+    if not check_linux_dev_deps():
+        print("[gcl] hata: eksik sistem gelistirme paketleri — derleme durduruldu",
+              file=sys.stderr, flush=True)
+        return 1
+
     build_dir = build_gcl()
     print(f"[gcl] output: {build_dir}", flush=True)
 
-    # Başlıksız testler derlemeden SONRA koşar: IDE DLL'i ile aynı kaynakları
-    # kullandıkları için gerçek çıktının da tutarlı olduğunu doğrularlar.
-    # İkisi de her koşuda çalışır (kısa devre yok) — biri patlarsa diğeri de
+    # Katmanların hepsi koşar (kısa devre yok) — biri patlarsa diğerleri de
     # sonucunu bildirsin.
-    results = [
-        run_test_suite("ptest", PARSER_TEST_SRCS, "language/_SRC/SharedPipeline"),
-        run_test_suite("ctest", COMPLETE_TEST_SRCS, "language/_SRC/complete"),
-    ]
-    if not all(results):
+    results: list[tuple[str, bool]] = []
+    if target in (TARGET_DEFAULT, TARGET_ALL):
+        results += run_headless_layers()
+    if target in (TARGET_RAYLIB, TARGET_ALL):
+        results.append(("raylib", run_raylib_suite()))
+
+    # TURN 29 - which known layers this target did NOT execute. Derived from
+    # `results` rather than from `target`, so a layer added to ALL_LAYER_NAMES
+    # but never invoked reports itself as skipped instead of vanishing from
+    # both lists (the exact blind spot TURN 28 recorded).
+    _ran = {name for name, _ in results}
+    skipped_layers = tuple(name for name in ALL_LAYER_NAMES if name not in _ran)
+
+    # TURN 28 — ONE summary line, printed LAST.
+    #
+    # Before this the only signals were a per-layer `[gcl] ERROR: ... BASARISIZ`
+    # line buried in ~150 lines of gcc command echoes, and the process exit
+    # code. TURN 26 shipped a tree whose parser tests were red (6 failures) and
+    # its gcsf suite red (9 failures), and nobody noticed for a whole turn: the
+    # log's middle is not where a reader looks. The summary puts every layer's
+    # verdict on the final screenful, in the order the layers ran.
+    if not print_suite_summary(results, skipped_layers):
         return 1
     return 0
 

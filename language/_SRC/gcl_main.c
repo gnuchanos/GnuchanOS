@@ -287,7 +287,8 @@ static int run_gcl(const char *path, int script_argc, char **script_argv) {
     snprintf(shared_file, sizeof(shared_file), "%s/gcl_shared.state", base_dir);
     setenv("GCL_SHARED_FILE", shared_file, 1);
 #endif
-    int rc = gcl_simple_run_source(src, strlen(src), base_dir, script_argc, script_argv);
+    int rc = gcl_simple_run_source(src, strlen(src), path, base_dir,
+                                   script_argc, script_argv);
     gcl_shared_cleanup();
     free(src);
     return rc == 0 ? 0 : 1;
@@ -375,7 +376,11 @@ static int run_bundle_program(const char *bundle_path) {
         setenv("GCL_SHARED_FILE", shared_file, 1);
     }
 #endif
-    int rc = gcl_simple_run_source(src, strlen(src), base_dir, 0, NULL);
+    /* A bundle has no source file of its own; the diagnostic header names the
+       extracted main.gcsf, which is the text a user can actually open. */
+    char bundle_main[4096];
+    snprintf(bundle_main, sizeof(bundle_main), "%s/main.gcsf", base_dir);
+    int rc = gcl_simple_run_source(src, strlen(src), bundle_main, base_dir, 0, NULL);
     free(src);
     gcl_shared_cleanup();
     gcb_close(b);

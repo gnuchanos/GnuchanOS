@@ -766,7 +766,7 @@
           "table": {
             "headers": ["Token class", "Examples"],
             "rows": [
-              ["Keywords", "<code>if else while for switch case default break continue return struct enum typedef const public private global local inline sizeof strlen true false null</code>"],
+              ["Keywords", "<code>if else while for switch case default break continue return struct enum typedef const public private global local inline sizeof strlen true false null try catch finally throw raise defer</code>"],
               ["Type names", "<code>int8 int16 int32 int64 int128 uint8..uint128 float16..float128 char short int long float double unsigned void bool gcChar</code>"],
               ["Numbers", "Decimal, fractional, hexadecimal (<code>0x</code>) and suffixes <code>L</code>, <code>LL</code>, <code>U</code>, <code>F</code>"],
               ["Strings", "Double <em>and</em> single quotes, with <code>\\</code> escape awareness"],
@@ -798,7 +798,8 @@
               ["<code>STMT_IF</code>, <code>STMT_WHILE</code>, <code>STMT_FOR</code>, <code>STMT_SWITCH</code>", "<code>AST_EXPR_VAR</code>, <code>AST_EXPR_BINOP</code>, <code>AST_EXPR_UNOP</code>"],
               ["<code>STMT_BREAK</code>, <code>STMT_CONTINUE</code>, <code>STMT_RETURN</code>", "<code>AST_EXPR_CALL</code>, <code>AST_EXPR_ASSIGN</code>"],
               ["<code>STMT_BLOCK</code>, <code>STMT_FUNC_DECL</code>", "<code>AST_EXPR_MEMBER</code>, <code>AST_EXPR_ARRAY</code>, <code>AST_EXPR_INIT_LIST</code>"],
-              ["<code>STMT_TYPEDEF</code>, <code>STMT_ENUM</code>, <code>STMT_STRUCT_DECL</code>", "<code>OP_ADD .. OP_SHR</code>, <code>OP_BITAND</code>, <code>OP_BITNOT</code>"]
+              ["<code>STMT_TYPEDEF</code>, <code>STMT_ENUM</code>, <code>STMT_STRUCT_DECL</code>", "<code>OP_ADD .. OP_SHR</code>, <code>OP_BITAND</code>, <code>OP_BITNOT</code>"],
+              ["<code>STMT_TRY</code>, <code>STMT_THROW</code>, <code>STMT_DEFER</code>", "&mdash; error handling and <code>defer</code> add no expression kind"]
             ]
           },
           "notes": [

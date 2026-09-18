@@ -109,18 +109,19 @@ Supported directives:
 
 | Directive | What it does |
 | --- | --- |
-| `#include <x.gcsf>` / `#include "x.gcsf"` | finds the file and **inlines** its contents through the same preprocessor |
+| `#include <x.gcsf>` / `#include "x.gcsf"` | inlines the file's contents through the same preprocessor - **only when the `#if` branch it sits in is active**; an unresolvable include is FATAL (exit 1) |
 | `#define NAME` / `#define NAME value` | object-like macro |
 | `#define F(a,b) ...` | function-like macro, arguments substituted |
 | `#undef NAME` | removes a macro |
 | `#if` / `#ifdef` / `#ifndef` / `#elif` / `#else` / `#endif` | conditional compilation |
-| `#warning ...` | yellow line on stderr |
-| `#error ...` | red line on stderr |
-| `#debug ...` | blue line on stderr |
+| `#warning ...` | yellow line on stderr; compilation continues |
+| `#error ...` | red line on stderr and **compilation STOPS** (exit 1, nothing runs) |
+| `#debug ...` | blue line on stderr; compilation continues |
 | `#native <Name>` | adds a module to the load list |
 | `#extern <file.dll>` | loads an external library |
 | `#register <ret> <fn>(<params>);` | declares an external function signature |
 | `#pragma commandline` | puts the program into terminal-app mode |
+| `#pragma once` | in an INCLUDED file: include it at most once per run (opt-in guard) |
 
 ### #include
 
@@ -131,8 +132,19 @@ Both `<...>` and `"..."` work and there is no difference between them. The searc
 3. `<project>/lib`.
 
 `#include` means "paste here", not "link". Including the same header from two files embeds
-its contents twice. There is no include guard yet; if you need one, wrap the file in
-`#ifndef ... #endif` yourself.
+its contents twice — that is C's behaviour and it is deliberate (table generators and
+X-macro style patterns depend on it). For an include-once guard, put `#pragma once` in the
+INCLUDED file: the guard is keyed on the resolved path, is reset for every run, and has no
+fixed limit on how many distinct guarded files it remembers.
+
+An `#include` is resolved and pasted only when the `#if` branch it sits in is ACTIVE: a
+disabled include is not looked up and its contents are not pasted, exactly as in C. When the
+branch IS active and the file cannot be found - or nesting passes 32 levels - the build
+STOPS: the diagnostic names the file (and the directories searched), a plain
+`Error: #include failed, compilation stopped` line follows it, no statement runs (stdout
+stays empty) and the process exits with code **1**. Golden tests:
+`language/tests/gcsf/preproc/include_inactive.gcsf`, `include_inactive_missing.gcsf`,
+`include_missing_active.gcsf`, `include_cycle.gcsf`.
 
 ### #define
 
@@ -161,9 +173,20 @@ and something never defined counts as 0.
 #endif
 ```
 
-`#error` does **not** stop the build. It prints a red line and keeps going. Know this up
-front so you do not spend an afternoon wondering why a failing `#error` still produced
-output.
+`#error` **stops the build**, exactly like C: the red line is printed to stderr, a plain
+`Error: #error directive stopped compilation` line follows it (greppable in CI), **no
+statement runs** — stdout stays empty even for a `printf` that appears before the directive —
+and the process exits with code **1**.
+
+A `#error` inside a FALSE branch never fires, which is the whole point of guarding a
+directive with `#if`: a platform-specific `#error` stays quiet everywhere else. An ACTIVE
+`#error` inside an `#include`d file stops the WHOLE compilation, not just that fragment, and
+reports the fragment's own message so you can see which file failed.
+
+`#warning` and `#debug` are diagnostics only: they print and compilation continues.
+
+Golden tests for all four behaviours: `language/tests/gcsf/preproc/error_directive.gcsf`,
+`error_in_include.gcsf`, `error_under_true_if.gcsf`, `error_inactive_and_warning.gcsf`.
 
 ### #native
 
@@ -276,6 +299,12 @@ bool    void
 These live in a hard-coded word list inside the lexer, which means you cannot use them as
 identifiers — `int int32 = 5;` will not parse.
 
+Numeric literals are C-like. Decimal (`42`), hexadecimal (`0x1F`) and fractional (`1.5`)
+forms all work, and so does scientific notation: `1e30`, `1.5E-3`, `2e+8`. The exponent
+marker is read only when a digit follows the optional sign, so a typo such as `1else` is
+still reported as a literal welded to a name instead of being swallowed as a truncated
+exponent. The `l`/`L`, `u`/`U` and `f`/`F` suffixes come after the exponent (`1e3f`).
+
 `gcChar` is a different beast: a real UTF-8 string. Not a pointer into a byte buffer, but a
 value that carries its own contents.
 
@@ -302,8 +331,12 @@ foundation, so it stays on the list.
 
 There is also a special path for `uint64`/`uint128` variables and arrays: the original
 literal text is kept alongside the number, because `double` rounds large unsigned values.
-That is why `uint64 m = 18446744073709551615;` prints correctly. Put it into arithmetic and
-it rounds like any other double.
+That is why `uint64 m = 18446744073709551615;` prints correctly, and why
+`uint128 n = 12345678901234567890;` does too even though both are far past the 2^53 where a
+`double` stops counting by ones. The mirror is kept only when the literal is a plain run of
+decimal digits that actually FITS the type, so a literal the type cannot hold prints the
+value really stored instead of digits it never had (`expressions/uint64_literal_print.gcsf`
+pins both routes). Put the value into arithmetic and it rounds like any other double.
 
 ---
 
@@ -1837,13 +1870,16 @@ A short honest list, so nobody re-discovers them the hard way:
 - **No real 128-bit types.** `int128`/`uint128`/`float128` are clamped to 64-bit/`double`.
 - **Everything is a `double` at runtime.** Very large integers lose precision once they enter
   arithmetic, even though `uint64`/`uint128` literals print correctly.
-- **`#error` does not abort.** It prints and continues.
+- **`#warning`/`#debug` never abort.** Only `#error` stops the build (exit code 1, empty
+  stdout).
 - **`#extern`/`#register` support only a few calling shapes**, listed earlier.
 - **`readFile` returns a size, not contents.** Reading a file's text into a variable is not
   implemented yet.
 - **`enum` has no explicit values**; it is always 0, 1, 2, ...
 - **`sizeof(array)` returns an element count, not bytes.**
-- **No include guards.** Wrap headers yourself.
+- **Include guards are opt-in** (not bounded). `#pragma once` guards an included file. There
+  is no cap on how many distinct guarded files a run may remember; it used to be a fixed 64,
+  past which the guard was dropped silently.
 - **`#lib` / `.gclib` was removed** — there is no bundle-loading path for it any more.
 - **Undefined variables are a runtime error**, printed to stderr; the expression evaluates to
   0 and the program keeps going rather than stopping.

@@ -168,6 +168,12 @@ const char *gcl_keywords[] = {
     "struct","enum","typedef","const","sizeof",
     /* görünürlük / yaşam */
     "global","local","inline","public","private",
+    /* error handling: try / catch / finally / throw (+ raise).
+       Must be identical to gclc_keywords[] in complete_scope.c: forgetting a
+       word here means the IDE does not highlight it (syntax colours). */
+    "try","catch","finally","throw","raise",
+    /* temizlik: `defer <stmt>;` — blok/iterasyon kapaninca (LIFO) calisir. */
+    "defer",
     /* yerleşik kavramlar */
     "true","false","null",
     NULL

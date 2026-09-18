@@ -47,24 +47,12 @@ int gcl_native_is_module(const char *name);
 /* Tüm modül adları (NULL ile biten). */
 const char *const *gcl_native_module_names(void);
 
-/* ---- Struct alanları (§4.5) ---- */
-typedef struct { const char *name; const char *type; } GclNativeField;
-typedef struct {
-    const char *type;                 /* "Vector2", "Camera3D" ... */
-    const GclNativeField *fields;
-    int field_count;
-} GclNativeStruct;
+/* ---- Struct alanları (§4.5) ----
 
-/* Native bir struct tipinin alanları (yoksa NULL). Camera ve Camera3D aynıdır. */
-const GclNativeStruct *gcl_native_struct(const char *type);
-/* 'type' native bir struct mı? */
-int gcl_native_is_struct(const char *type);
-
-/* Tüm native struct tip adları (NULL ile biten; "Vector2", "Camera3D", ...).
-   İki amaçla kullanılır: (a) düz önekte tip adı tamamlama — `Vect` → `Vector2`;
-   (b) `ret`/alan tiplerinin bilinen bir tipe çözülüp çözülmediğini denetleyen
-   DB tutarlılık testleri. Liste motora aittir, serbest bırakılmaz. */
-const char *const *gcl_native_struct_names(void);
+   Alan tablosu ARTIK SharedPipeline'da yaşar (gcl_native_types.h): aynı
+   listeye yorumlayıcı da ihtiyaç duyar (`Raylib.Rectangle r;` bildiriminde
+   alanları kuran gcl_runner.c). Burada yalnızca yeniden yayınlanır. */
+#include "gcl_native_types.h"
 
 /* ---- Üretilen tablolar (complete_native_db.c) ---- */
 extern const GclNativeMember gcl_native_db_Raylib[];

@@ -655,6 +655,30 @@ def collect_gaps(api: dict | None) -> None:
                        f"functions - no value lost, module work only")
 
 
+def collect_missing_bindings(entries, api: dict | None, label: str) -> dict:
+    """Header declarations that have NO entry in the module's g_entries[].
+
+    TURN 29 - this is the check `_temp/audit_api.py` was supposed to provide, and
+    the reason its "MISSING 0" was not trustworthy: the two scripts disagreed on
+    the header itself (this parser sees 618 raylib declarations, audit_api.py saw
+    566), so a clean answer from the weaker regex proved nothing. Here the SAME
+    parser that decides the completion table also reports what it could not bind,
+    so the number is produced by the authority rather than by a second opinion.
+
+    What it catches: a new raylib function that nobody bound. The member is then
+    absent from the IDE's suggestion list with no diagnostic anywhere - the
+    failure mode this generator exists to prevent. A non-zero count is not
+    automatically a defect (a few declarations are C-only), but it must be READ,
+    which is why the names are printed and not summarised away.
+
+    Returns {"label", "header", "bound", "missing"}.
+    """
+    bound = {name for name, _ in entries}
+    missing = sorted(name for name in (api or {}) if name not in bound)
+    return {"label": label, "header": len(api or {}), "bound": len(bound),
+            "missing": missing}
+
+
 def audit(name: str, binding_ret: str, api: dict | None) -> None:
     """Compare the binding-derived return type with the real C header.
 
@@ -826,6 +850,15 @@ def main() -> int:
         print(f"  ... and {len(GAPS) - 20} more value-returning stub(s)")
     if GAP_SUMMARY:
         print(GAP_SUMMARY)
+    for cov in (collect_missing_bindings(raylib, raylib_api, "Raylib"),
+                collect_missing_bindings(raygui, raygui_api, "Raygui")):
+        print(f"[gen_native_db] coverage {cov['label']}: header={cov['header']} "
+              f"bound={cov['bound']} unbound={len(cov['missing'])}", flush=True)
+        for name in cov["missing"][:20]:
+            print(f"  [unbound] {cov['label']}.{name}")
+        if len(cov["missing"]) > 20:
+            print(f"  ... and {len(cov['missing']) - 20} more unbound "
+                  f"in {cov['label']}")
     if REPORT:
         print(f"[gen_native_db] header audit ({len(REPORT)} note(s)):", flush=True)
         for line in REPORT[:40]:

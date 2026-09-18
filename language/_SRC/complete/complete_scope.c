@@ -1011,6 +1011,14 @@ static const char *gclc_keywords[] = {
     "struct","enum","typedef","const","sizeof",
     /* görünürlük / yaşam */
     "global","local","inline","public","private",
+    /* error handling: try / catch / finally / throw (+ raise as a throw alias).
+       Must stay in sync with g_keywords[] in gcl_lexer.c. These are real
+       keywords in the language, so if they are missing from this list the user
+       sees an empty completion list after typing "try" and assumes the feature
+       does not exist. */
+    "try","catch","finally","throw","raise",
+    /* temizlik: `defer <stmt>;` — blok/iterasyon kapaninca (LIFO) calisir. */
+    "defer",
     /* yerleşik kavramlar.
        DİKKAT: "printf"/"scanf"/"strlen" BURADAN KALDIRILDI — bunlar GCL
        anahtar sözcüğü DEĞİL, Stdio modülünün üyeleridir ve yalnızca

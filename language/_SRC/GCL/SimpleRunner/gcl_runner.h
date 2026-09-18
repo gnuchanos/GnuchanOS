@@ -6,8 +6,39 @@
 #define GCL_RUNNER_H
 
 #include "gcl_parser.h"
+/* TURN 50 - the runner is a PRODUCER of diagnostics, not a printer of strings:
+   a runtime failure now carries a code, a span and a source frame, exactly like
+   a lexer/parser one (same vocabulary, same renderer). gcl_diag.h is the only
+   dependency, and it deliberately drags in nothing but the lexer's token names
+   and the source map, so the interpreter stays raylib-free. */
+#include "gcl_diag.h"
 
 typedef struct GclEnv GclEnv;
+
+/* ---------- runtime diagnostics ---------- */
+
+/* Tell the runner WHERE its own line/column numbers live. The lexer and the
+   parser only ever see the PREPROCESSED buffer, so an AST node's line is a line
+   of THAT buffer; the map is what turns it back into the file the user wrote.
+   `src` is the fallback when the map cannot resolve a line (and both may be
+   NULL, in which case a diagnostic still renders as a header).
+
+   `file` is the DEFAULT file name for a diagnostic the map cannot resolve -
+   the same role the first argument of gcl_diag_list_init plays for the lexer
+   and the parser. It is what keeps `file: error: ...` from degrading to
+   `<input>: error: ...` when a failure has no position at all (the module
+   loading loop runs before any statement exists to point at).
+
+   The runner borrows all four and must be called again for every run. */
+void gcl_runtime_set_source(const char *file, const char *src, size_t len,
+                            const GclSourceMap *map);
+
+/* Every runtime diagnostic of the CURRENT run, in the order it was reported
+   (the list is cleared at the start of each gcl_run_program). Never NULL.
+   This is the runtime's half of the shared vocabulary: the caller renders it
+   with gcl_diag_list_print_mapped(), exactly like the lexer's and the parser's
+   list, so a runtime failure carries the same code, span and source frame. */
+const GclDiagList *gcl_runtime_diags(void);
 
 /* #extern <dll> — harici DLL fonksiyon parametre tipleri */
 typedef enum {

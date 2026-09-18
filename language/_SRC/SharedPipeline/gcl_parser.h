@@ -23,6 +23,15 @@ typedef enum {
     AST_EXPR_MEMBER,
     AST_EXPR_ARRAY,
     AST_EXPR_INIT_LIST,
+    /* B9: `i++` İFADENİN DEĞERİ eski değerdir, `++i` yeni değerdir. Eskiden
+       ikisi de `i = i + 1` atamasına indirgeniyordu ve postfix de YENİ değeri
+       döndürüyordu: `int j = i++;` → j = 6 (C'de 5). */
+    AST_EXPR_POSTINC,
+    AST_EXPR_PREINC,
+    /* B11 — C-tipi cast: `(int)7.5`. left = operand, str = target type name.
+       Eskiden `(int)expr` bir değişken gibi ayrıştırılıp `expected ';'`
+       veriyordu (yanlış sonuç üretmiyordu ama cast hiç desteklenmiyordu). */
+    AST_EXPR_CAST,
 } GclExprKind;
 
 typedef struct GclExpr GclExpr;
@@ -57,11 +66,31 @@ typedef enum {
     STMT_TYPEDEF,
     STMT_ENUM,
     STMT_STRUCT_DECL,
+    /* Hata yakalama (try/catch/finally/throw). */
+    STMT_TRY,
+    STMT_THROW,
+    /* Temizlik (defer): govde blogu kapanirken (LIFO) calisan eylem. */
+    STMT_DEFER,
 } GclStmtKind;
+
+/* TURN 26 — a function parameter is a NAME plus a TYPE. These used to be two
+   PARALLEL arrays (`char **params` + `char **param_types`) that had to be kept
+   in lockstep by hand. The struct-parameter branch wrote only the first one and
+   grew the second with `realloc`, whose new tail is NOT zeroed, so a struct
+   parameter that landed past a growth boundary left an UNINITIALIZED pointer in
+   the type array; the runner then `strdup`'d and `free`'d it (undefined
+   behaviour; latent on this build because the fresh heap happened to be zero).
+   One array whose two fields are written TOGETHER, by a single helper, makes a
+   half-written parameter structurally impossible. */
+typedef struct {
+    char *name;   /* parameter name (owned by the AST) */
+    char *type;   /* declared type; NULL when it cannot be resolved (a
+                     struct/typedef/native type name is a single token) */
+} GclParam;
 
 typedef struct {
     char *name;
-    char **params;
+    GclParam *params;    /* param_count entries; grow/shrink through helpers */
     int param_count;
     char *return_type;   /* function return type (Hello, void, int, ...) */
     /* body: first stmt block */
@@ -98,7 +127,8 @@ typedef struct {
 } GclFor;
 
 typedef struct {
-    char *name;
+    char *name;           /* legacy: set when the condition is a plain variable */
+    GclExpr *cond;        /* full condition expression (switch (v + 1), f(x), ...) */
     GclStmt **cases;
     GclExpr **case_vals;
     int case_count;
@@ -141,6 +171,12 @@ struct GclStructValue {
 struct GclStmt {
     GclStmtKind kind;
     struct GclStmt *next;
+    /* Source position of the token that started this statement. The runtime
+       reads these so a failure can name the file and line instead of printing
+       a bare sentence with no location at all. */
+    int line;
+    int col;
+    int len;
     union {
         GclExpr *expr;
         GclVarDecl var_decl;
@@ -155,6 +191,19 @@ struct GclStmt {
         GclTypedefInfo typedef_info;
         GclEnumInfo enum_info;
         GclStructInfo struct_info;
+        /* try { body } catch (err_name) { catch_body } finally { finally_body }
+           — `err_name`, `catch_body` ve `finally_body` NULL olabilir; parser
+           en az bir `catch`/`finally` dali oldugunu dogrular. */
+        struct {
+            GclStmt *body;          /* try blogu (zorunlu) */
+            char *err_name;         /* catch (err) icindeki ad; NULL = adsiz */
+            GclStmt *catch_body;    /* NULL = catch dali yok */
+            GclStmt *finally_body;  /* NULL = finally dali yok */
+        } try_;
+        /* throw <expr>; / raise <expr>;  — expr NULL ise "throw;" */
+        struct { GclExpr *expr; } throw_;
+        /* defer <stmt>;  — govde blogu/iterasyon kapanirken (LIFO) calisir. */
+        struct { GclStmt *stmt; } defer_;
     } u;
 };
 
@@ -165,6 +214,17 @@ typedef struct {
 
 struct GclExpr {
     GclExprKind kind;
+    /* TRAP — a CALL keeps its callee in `left`, NEVER in `name`:
+
+           call->left == AST_EXPR_VAR      plain call      -> callee in `left->name`
+           call->left == AST_EXPR_MEMBER   qualified call  -> `left->member_name`
+                                           (e.g. Raylib.InitWindow(...))
+
+       `name` is only ever the identifier of an AST_EXPR_VAR. Reading
+       `call->name` yields NULL and looks like a parser bug; a test written
+       that way went red on a CORRECT parser, and the test — not the code — was
+       the defect. Read the callee from `left` and nowhere else; the reference
+       implementation is `callee_name()` in gcl_parser.c. */
     struct GclExpr *left;
     struct GclExpr *right;
     GclBinOp op;
@@ -174,9 +234,23 @@ struct GclExpr {
     struct GclExpr **args;
     int arg_count;
     char *member_name;
+    /* Source position of the token that STARTED this expression. Filled in by
+       the parser; read by the runtime so "undefined variable 'x'" can point at
+       the line the user actually wrote. */
+    int line;
+    int col;
+    int len;
 };
 
+/* Parse the token stream. `error_msg` receives one flattened message on
+   failure (deprecated shape — use gcl_parse_diag()). */
 GclProgram *gcl_parse(GclTokenList *tokens, char **error_msg);
+
+/* Diagnostics-aware parser. On failure returns NULL and appends rich
+   diagnostics to `diags` (may be NULL). Every diagnostic carries a stable
+   code, a span with a real length, and usually a note and a hint. */
+GclProgram *gcl_parse_diag(GclTokenList *tokens, struct GclDiagList *diags);
+
 void gcl_program_free(GclProgram *prog);
 
 #endif /* GCL_PARSER_H */

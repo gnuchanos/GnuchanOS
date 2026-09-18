@@ -11,6 +11,10 @@
 #include "gcl_parser.h"
 #include "gcl_error.h"
 #include "gcl_module.h"
+/* Native modul struct alan duzeni (Vector2/Rectangle/...) — tamamlama motoruyla
+   AYNI tablo (SharedPipeline). `Raylib.Rectangle r;` bildirimini kurmak icin
+   gerekir; tablo olmadan alan okumalari sessizce 0 donerdi. */
+#include "gcl_native_types.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +22,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdarg.h>
+#include <limits.h>   /* LLONG_MAX / LLONG_MIN - the finite-narrowing bounds in gcl_to_ll */
 
 /* -debug flag: enabled by `gcl -debug -run ...` (set by gcl_main.c).
    During a normal run runtime debug messages are NOT shown. */
@@ -31,6 +36,186 @@ static void gcl_debugf(const char *fmt, ...) {
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
+}
+
+/* ---------- Runtime hata kanali (B17) ----------
+
+   Butun runtime hatalari TEK noktadan gecer: mesaj stderr'e yazilir ve hata
+   SAYACI artar. gcl_run_program bu sayaca bakip exit code'u ayarlar.
+
+   Neden global sayac? call_user_func / exec_block ic cagrilari Runner'i
+   `memcpy` ile KOPYALAR (bkz. `Runner sub`). Kopyaya yazilan bir BAYRAK
+   cagirana geri DONMEZ; bu yuzden bayrak yerine global sayac kullanilir —
+   boylece hata en distaki gcl_run_program'a ulasir. Runner'da boyle bir alan
+   YOKTUR: bir zamanlar bir `error` alani vardi ve tek bir yerde yazilip hic
+   OKUNMUYORDU; TURN 41'de kaldirildi.
+
+   Eskiden her hata yalnizca `fprintf` yapiyordu: program **0** ile
+   cikiyordu, CI/IDE hatayi goremiyordu. */
+int gcl_runtime_errors = 0;
+
+/* ---------- try/catch hata kanali ----------
+
+   Butun runtime hatalari TEK noktadan gecer (runtime_errorf → error_capture).
+   Iki mod vardir:
+
+   * `try` DISINDA (g_try_depth == 0): eski TOLERANSLI davranis aynen korunur —
+     mesaj hemen stderr'e yazilir, sayac artar ve program AKMAYA devam eder.
+     Altin testler bu sozlesmeye dayanir: `errors/runtime_diagnostics.gcsf`
+     "division by zero"dan SONRA `div 0` basmaya devam eder ve surec 1 ile cikar.
+   * `try` ICINDE (g_try_depth > 0): mesaj SAKLANIR, ekrana YAZILMAZ ve sayac
+     ARTMAZ — yakalanan bir hatanin gorunur izi kalmamalidir. `g_unwinding = 1`
+     ile govde bloklari/ donguler hizli cikisa zorlanir; STMT_TRY yakalar.
+
+   Bayraklar GLOBAL'dir: call_user_func ve exec_block Runner'i `memcpy` ile
+   KOPYALAR (yukaridaki gerekce), kopyaya yazilan alan cagirana geri donmez.
+
+   TURN 50 - TEK SOZLUK. Eskiden bu ceviri birimi gcl_diag.h'yi include ETMEZ
+   ve kodlari `GCL_RT_CODE_*` adiyla ELLE kopyalardi; yorumu da "degerler
+   gcl_diag.h'deki GCL3xxx ile AYNIdir" diyordu. Iki sozlugu elle senkron tutmak
+   zorunlulugu somut bir hata uretmisti: GCL_RT_CODE_THROW = 3014, gcl_diag.h'de
+   HIC YOKTU - yorumlayici, sozlugun tanimadigi bir kod uretiyor ve `-explain`
+   onu "diagnostic" diye cevapliyordu. Kodlar artik gercek basliktan gelir
+   (yukaridaki include); THROW/LOOP_CONTROL/CALL_DEPTH oraya eklendi. */
+*/
+
+#define GCL_ERR_MSG_MAX 512
+
+static char       g_err_msg[GCL_ERR_MSG_MAX];
+static GclDiagCode g_err_code;
+static int  g_err_line;
+static int  g_err_col;
+static int  g_err_len;       /* span uzunlugu: alti cizilen karakter sayisi */
+static int  g_err_valid;     /* yakalanmayi bekleyen bir hata var mi? */
+static int  g_err_is_throw;  /* hata acik `throw` ile mi uretildi? */
+static int  g_unwinding;     /* 1 = govdeler hizli cikisa zorlanir */
+static int  g_try_depth;     /* kac `try` govdesi icindeyiz? */
+
+/* ---------- runtime tanilama HAVUZU (TURN 50) ----------
+
+   Eskiden runtime kendi satirini BURADA bicimlendirip basardi:
+   "Runtime error: <mesaj>". Bu seklin kodu yok, spani yok, kaynak cercevesi
+   yok - ve ayni hata bir cagri yerinde makine-okunur (kod geciren cagrilar),
+   digerinde duz yaziydi (mesaj metnine "(GCL3008)" gomen cagrilar). IDE ise
+   yalnizca lexer/parser tanilamalarini okuyabildigi icin runtime hatasini HIC
+   okuyamiyordu.
+
+   Artik runtime da lexer/parser gibi bir URETICIDIR: hata bu listeye kodu ve
+   spaniyla eklenir, bicimlendirmeyi cagiran yapar
+   (gcl_diag_list_print_mapped). Tek sozluk, tek renderer, tek "mesaji ve cikis
+   kodunu kim uretiyor" yeri. Liste `main` disinda global'tir cunku hatayi
+   URETEN yer ile RAPORLAYAN yer farklidir (bkz. error_escalate). */
+static GclDiagList g_rt_diags;
+static int g_rt_diags_ready;      /* gcl_diag_list_init cagrildi mi? */
+static const char *g_rt_src;      /* fallback kaynak (preprocessed buffer) */
+static size_t g_rt_src_len;
+static const GclSourceMap *g_rt_map;
+
+static GclDiagList *rt_diags(void) {
+    if (!g_rt_diags_ready) {
+        gcl_diag_list_init(&g_rt_diags, NULL);
+        g_rt_diags_ready = 1;
+    }
+    return &g_rt_diags;
+}
+
+void gcl_runtime_set_source(const char *file, const char *src, size_t len,
+                            const GclSourceMap *map) {
+    g_rt_src = src;
+    g_rt_src_len = len;
+    g_rt_map = map;
+    rt_diags()->file = file;    /* borrowed default; bkz. gcl_runner.h */
+}
+
+const GclDiagList *gcl_runtime_diags(void) { return rt_diags(); }
+
+/* ---------- span helpers ----------
+
+   "span, yapinin BASLADIGI token'dir" - parser'daki stamp_expr()/stamp_stmt()
+   ile ayni kural. AST'te karsiligi OLMAYAN bir hata (modul yukleme dongusu,
+   bellek yetmezligi yolu) sifir span alir: renderer o zaman line:col'suz bir
+   baslik basar, ki "nerede?" sorusuna UYDURMA bir konum vermekten iyidir.
+   `len` sifir olsa da renderer `^` isaretini basar (tek karakter). */
+static GclSpan span_none(void) {
+    GclSpan sp;
+    sp.line = 0; sp.col = 0; sp.len = 0;
+    return sp;
+}
+static GclSpan span_of_expr(const GclExpr *e) {
+    GclSpan sp;
+    sp.line = e ? e->line : 0;
+    sp.col  = e ? e->col  : 0;
+    sp.len  = e ? e->len  : 0;
+    return sp;
+}
+static GclSpan span_of_stmt(const GclStmt *s) {
+    GclSpan sp;
+    sp.line = s ? s->line : 0;
+    sp.col  = s ? s->col  : 0;
+    sp.len  = s ? s->len  : 0;
+    return sp;
+}
+
+/* ---------- the ONE place a runtime failure becomes a diagnostic ----------
+
+   TURN 50 removed the message-text code sniffing that used to live here
+   (`code_from_message`). It existed for ONE reason: about half the call sites
+   passed a code as a number while the other half wrote it INTO the sentence
+   ("division by zero (GCL3008)"), so the error object had to read the prose
+   back out to answer `e.code`. Now every call site passes its code and its
+   span, the messages are plain sentences, and the code reaches the user
+   through the renderer instead of through a parenthesised suffix - so the
+   same failure can no longer be machine-readable at one site and prose at
+   another, and there is no second table to keep in sync. */
+static void runtime_report_pending(void) {
+    GclSpan span;
+    span.line = g_err_line;
+    span.col  = g_err_col;
+    span.len  = g_err_len;
+    gcl_runtime_errors++;
+    (void)gcl_diag_add(rt_diags(), g_err_code, GCL_SEV_ERROR, span,
+                       "%s", g_err_msg);
+}
+
+/* Hatayi kaydet. Raporlama karari modu belirler (bkz. yukaridaki aciklama).
+   `span`: hatanin kaynak konumu (yoksa span_none()), `code`: GCL3xxx kodu. */
+static void error_capture(const char *msg, GclDiagCode code, GclSpan span,
+                          int is_throw) {
+    snprintf(g_err_msg, sizeof(g_err_msg), "%s", msg ? msg : "error");
+    if (code == GCL_E_NONE) code = GCL_E_SEM_RUNTIME;
+    g_err_code = code;
+    g_err_line = span.line;
+    g_err_col  = span.col;
+    g_err_len  = span.len;
+    g_err_valid = 1;
+    g_err_is_throw = is_throw;
+    if (g_try_depth > 0) { g_unwinding = 1; return; }   /* try yakalayabilir */
+    runtime_report_pending();
+    /* Acik `throw` yakalanmadiysa program DURUR (Python gibi); siradan runtime
+       hatasi toleransli modda akisa devam eder (legacy sozlesme). */
+    if (is_throw) g_unwinding = 1;
+}
+
+/* Spansiz varyant: konum bilinmiyorsa (modul yukleme dongusu, bellek
+   yetmezligi) cagiran span_none() gecirir ve renderer line:col'suz bir baslik
+   basar. Kodu GCL_E_SEM_RUNTIME'dir: "genel runtime hatasi". */
+static void runtime_errorf(GclSpan span, const char *fmt, ...) {
+    char msg[GCL_ERR_MSG_MAX];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    va_end(ap);
+    error_capture(msg, GCL_E_SEM_RUNTIME, span, 0);
+}
+
+/* Kodlu varyant: ayni kod HEM `e.code`a HEM basilacak tanilamaya gider. */
+static void runtime_errorcf(GclDiagCode code, GclSpan span, const char *fmt, ...) {
+    char msg[GCL_ERR_MSG_MAX];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    va_end(ap);
+    error_capture(msg, code, span, 0);
 }
 
 #ifdef _WIN32
@@ -81,9 +266,17 @@ typedef struct StructDef {
 
 typedef struct FuncDef {
     char *name;
-    char **params;
-    int param_count;    
+    /* TURN 26 — ONE array of GclParam {name, type}, copied from the AST.
+       Previously the runner kept a SECOND pair of parallel arrays (`params` +
+       `param_types`); two structures holding the same fact is what let them
+       drift, and the struct-parameter path left the type slot uninitialized. */
+    GclParam *params;
+    int param_count;
     GclStmt *body;
+    /* Donus tipi. Bir degerin turu fonksiyon sinirindan gecerken kaybolmasin
+       diye tasinir: `char pick()`in sonucu karakter, `gcChar greet()`in sonucu
+       metin olarak yazdirilir. Parametre tipi artik `params[i].type` alanidir. */
+    char *return_type;
     struct FuncDef *next;
 } FuncDef;
 
@@ -161,6 +354,34 @@ static void env_remove_var(GclEnv *env, const char *name) {
     }
 }
 
+/* Blok cikisi: bir bloga girmeden ONCEKI liste basini (`mark`) alir ve mark'in
+   ONUNDE kalan (yani blok ICINDE olusan) degiskenleri siler. Boylece dongu
+   govdesinde tanimlanan degiskenler dongu bitince yasar (C blok-scope).
+   `global` isaretli degiskenler korunur. `mark` NULL ise env tamamen bloktu. */
+static void env_scope_exit(GclEnv *env, Var *mark) {
+    if (!env) return;
+    Var **pp = &env->vars;
+    while (*pp && *pp != mark) {
+        Var *v = *pp;
+        if (v->is_global) { pp = &v->next; continue; }
+        *pp = v->next;
+        if (v->name) free(v->name);
+        if (v->str) free(v->str);
+        if (v->decl_type) free(v->decl_type);
+        if (v->members) free_struct_members(v->members);
+        if (v->arr_vals) free(v->arr_vals);
+        if (v->arr_strs) {
+            for (int i = 0; i < v->arr_count; i++) if (v->arr_strs[i]) free(v->arr_strs[i]);
+            free(v->arr_strs);
+        }
+        if (v->arr_members) {
+            for (int i = 0; i < v->arr_count; i++) if (v->arr_members[i]) free_struct_members(v->arr_members[i]);
+            free(v->arr_members);
+        }
+        free(v);
+    }
+}
+
 static void env_set_num(GclEnv *env, const char *name, double val) {
     Var *v = env_find(env, name);
     if (!v) {
@@ -200,30 +421,250 @@ static double env_get_num(GclEnv *env, const char *name) {
     return v->num;
 }
 
-/* Real int/uint/float types: clamps the value to the overflow/excess
-   boundary according to the declared decl_type. The runner used to keep
-   everything as double; this gives correct semantics for int8/int16/.../float32 and bool. */
+/* Narrow `val` to a long long with a DEFINED result for inf/nan, and with the
+   DECLARED type's own bounds wherever the C conversion is undefined.
+
+   Two regimes, and the line between them is exactly where C stops defining the
+   answer (TURN 43):
+
+   1. -2^63 <= val < 2^63 -- `(long long)val` is DEFINED, so GCL follows C and
+      nothing here interferes: the caller's cast performs the C conversion, so
+      `int8 = 200` is -56, `uint8 = -1` is 255, `uint64 = -1` is 2^64-1.
+   2. |val| >= 2^63 -- `(long long)val` is UNDEFINED BEHAVIOUR (on x86-64
+      cvttsd2si yields INT64_MIN, so a POSITIVE overflow came back NEGATIVE).
+      TURN 31 clamped here, but only to `long long`, and the declared type's
+      cast then took the LOW BITS of that clamp: the sign-flip TURN 31 removed
+      at int64 survived one level down -- `char x = 1e30` printed -1 and
+      `int x = 1e30` printed -1 -- while `uint64 x = -1e30` printed
+      +9.2233720368547758e+18 instead of 0. The clamp now uses the DECLARED
+      TYPE's own bounds, so a value too large for its type saturates to that
+      type's ceiling: `int8 = 1e30` is 127, `int = 1e30` is 2147483647,
+      `uint64 = -1e30` is 0.
+
+   Non-finite (inf/nan) narrows to 0: the GCL3008 diagnostic is what reports the
+   error, the stored value only has to be predictable. Float/double targets are
+   NOT affected -- they keep IEEE inf/nan (see the float branches).
+
+   2^63 is written as a double ON PURPOSE: it is exactly representable, while
+   the integer constant LLONG_MAX (2^63-1) would round back UP to 2^63 as a
+   double and make the comparison useless. `val < -2^63` (not <=) because -2^63
+   itself IS representable in long long and belongs to regime 1. */
+#define GCL_LL_TWO63      9223372036854775808.0    /*  2^63 exact, as a double */
+#define GCL_LL_NEG_TWO63 (-9223372036854775808.0)  /* -2^63 exact, as a double */
+
+/* The declared integer type's own floor and ceiling, carried as the long long
+   BIT PATTERN that saturates to it. Unsigned 64-bit types are why the ceiling
+   is a pattern and not a value: the largest uint64 has no positive long long
+   spelling, so its ceiling is -1 (all ones) and the caller's `(unsigned long
+   long)` cast turns it into 2^64-1 -- exactly as it does for a real value. */
+typedef struct {
+    long long lo;
+    long long hi;
+} GclIntBounds;
+
+/* 1 when `decl_type` is an integer type this runner narrows; `out` then holds
+   its bounds. A type that is NOT an integer (float, double, gcChar, a struct, a
+   typedef alias) answers 0 and is narrowed by its own branch instead. */
+static int int_type_bounds(const char *decl_type, GclIntBounds *out) {
+    if (!decl_type || !decl_type[0]) return 0;
+    /* signed -- as wide as the C type the matching branch down below casts to */
+    if (strcmp(decl_type, "int8") == 0)  { out->lo = -128L;   out->hi = 127L;   return 1; }
+    if (strcmp(decl_type, "int16") == 0) { out->lo = -32768L; out->hi = 32767L; return 1; }
+    if (strcmp(decl_type, "char") == 0)  { out->lo = -128L;   out->hi = 127L;   return 1; }
+    if (strcmp(decl_type, "int64") == 0 || strcmp(decl_type, "int128") == 0 ||
+        strcmp(decl_type, "long long") == 0 || strcmp(decl_type, "long long int") == 0) {
+        out->lo = LLONG_MIN; out->hi = LLONG_MAX; return 1;
+    }
+    if (strcmp(decl_type, "int32") == 0 || strcmp(decl_type, "int") == 0 ||
+        strcmp(decl_type, "long") == 0 || strcmp(decl_type, "long int") == 0 ||
+        strcmp(decl_type, "unsigned") == 0 || strcmp(decl_type, "unsigned int") == 0 ||
+        strcmp(decl_type, "unsigned long") == 0) {
+        /* The C basics AND their unsigned spellings. Every one of them is
+           narrowed through the SAME `(int)` cast below, so `unsigned int` is
+           32-bit here. Giving `unsigned` a real unsigned range is a SEPARATE
+           decision and cannot be made in this branch alone: regime 1 follows C,
+           and C says `(unsigned)-1` is 2^32-1, which the DEFINED path would
+           have to change too. Left as it is, on purpose. */
+        out->lo = -2147483648L; out->hi = 2147483647L; return 1;
+    }
+    if (strcmp(decl_type, "short") == 0 || strcmp(decl_type, "short int") == 0) {
+        out->lo = -32768L; out->hi = 32767L; return 1;
+    }
+    /* unsigned */
+    if (strcmp(decl_type, "uint8") == 0)  { out->lo = 0L; out->hi = 255L;        return 1; }
+    if (strcmp(decl_type, "uint16") == 0) { out->lo = 0L; out->hi = 65535L;      return 1; }
+    if (strcmp(decl_type, "uint32") == 0) { out->lo = 0L; out->hi = 4294967295L; return 1; }
+    if (strcmp(decl_type, "uint64") == 0 || strcmp(decl_type, "uint128") == 0) {
+        out->lo = 0L;
+        out->hi = -1L;   /* all ones -- 2^64-1 through the (unsigned long long) cast */
+        return 1;
+    }
+    return 0;
+}
+
+static long long gcl_to_ll(double val, const char *decl_type) {
+    if (!isfinite(val)) return 0;
+    if (val >= GCL_LL_NEG_TWO63 && val < GCL_LL_TWO63)
+        return (long long)val;                    /* regime 1: C is defined */
+    GclIntBounds b;
+    if (!int_type_bounds(decl_type, &b))
+        return val > 0 ? LLONG_MAX : LLONG_MIN;   /* not an integer type here */
+    return val > 0 ? b.hi : b.lo;                 /* regime 2: the declared type's bound */
+}
+
+/* TURN 34 - may the exact-lexeme mirror be kept for this literal?
+
+   `uint64`/`uint128` keep a mirror of the literal's EXACT text so that a value
+   beyond 2^53 can print its digits instead of a double's rounded ones (see the
+   declaration path below). Two gates decide whether keeping it is truthful.
+
+   1. The text must BE an integer spelling. A lexeme carrying a point, an
+      exponent or a suffix (`1e18`, `10.0`, `9007199254740993u`) is not one:
+      keeping it would print `1e18` for a `uint64` that stores
+      1000000000000000000 - the "one value, two texts" wart this gate exists to
+      prevent. Exponent literals only reach here at all because the lexer now
+      accepts them (TURN 33).
+
+   2. The written DIGITS must fit the type. The old gate compared the parsed
+      double against 2^63, and a double cannot answer this question: both
+      18446744073709551615 and 18446744073709551616 parse to the SAME double
+      2^64, yet only the first is a `uint64`; and 12345678901234567890 - a
+      perfectly good `uint64` - was dropped and printed as 1.2345678901234567e+19
+      even though it WAS stored exactly. So the comparison is a decimal
+      digit-string compare against the type's own ceiling.
+
+   `uint64` and `uint128` share that ceiling: the interpreter stores both through
+   the SAME 64-bit gate (`truncate_to_declared_type` casts both to
+   `unsigned long long`; the "128" in the name is aspirational - see
+   simple_doc.md), so a uint128 literal above 2^64-1 is saturated just like a
+   uint64 one and must not keep its mirror either. Negative values cannot reach
+   this function: the lexer only produces digits, and a leading '-' is a
+   separate unary operator. */
+#define GCL_UINT64_MAX_DIGITS "18446744073709551615"
+
+static int unsigned_mirror_digits_fit(const char *lex, const char *decl_type) {
+    if (!lex || !lex[0] || !decl_type) return 0;
+    if (strcmp(decl_type, "uint64") != 0 && strcmp(decl_type, "uint128") != 0) return 0;
+    /* (1) an integer spelling: decimal digits only */
+    for (const char *q = lex; *q; q++) {
+        if (*q < '0' || *q > '9') return 0;
+    }
+    /* (2) the value fits: compare digit strings; leading zeros are not significant */
+    const char *p = lex;
+    while (*p == '0') p++;
+    if (!*p) return 1;                       /* the value 0 */
+    const char *maxd = GCL_UINT64_MAX_DIGITS;
+    size_t len = strlen(p), maxlen = strlen(maxd);
+    if (len != maxlen) return len < maxlen;
+    return strcmp(p, maxd) <= 0;
+}
+
+/* THE single narrowing choke point: it is named in exactly ONE forward
+   declaration and every storage path in this file reaches it (declaration,
+   plain assignment, compound assignment, compound-literal leaves, struct
+   members, array elements, cast). A value is a double; this gives each declared
+   type its own width on top of it.
+
+   WIDTHS, stated here because three of the spellings are WIDER-NAMING THAN THE
+   STORAGE (TURN 43, documented in simple_doc.md):
+     int8/int16/int32/int64    REAL - 1/2/4/8 bytes, C conversion at regime 1
+     uint8/uint16/uint32/uint64 REAL
+     int128 / uint128          ALIASES of int64 / uint64. There is no 128-bit
+                               arithmetic in the interpreter - the stored value
+                               is an IEEE double, which is already only exact to
+                               2^53 - so a "128-bit" type would hold exactly the
+                               same bits as its 64-bit neighbour. They are
+                               accepted as spellings and narrowed identically.
+     float16 / float32         ALIASES of `float` (4 bytes)
+     float64 / double          the stored form itself
+     float128                  ALIAS of `double`
+     bool                      0/1
+   `int`/`long`/`short`/`char` and their unsigned spellings are C's basics; each
+   casts to the C type named in its branch (see int_type_bounds for the note on
+   `unsigned` being narrowed through `int`). */
 static double truncate_to_declared_type(double val, const char *decl_type) {
     if (!decl_type || !decl_type[0]) return val;
     /* bool → 0/1 */
     if (strcmp(decl_type, "bool") == 0) return val != 0.0 ? 1.0 : 0.0;
-    /* signed integers */
-    if (strcmp(decl_type, "int8") == 0) return (double)(signed char)((long long)val);
-    if (strcmp(decl_type, "int16") == 0) return (double)(short)((long long)val);
-    if (strcmp(decl_type, "int32") == 0) return (double)(int)((long long)val);
-    if (strcmp(decl_type, "int64") == 0) return (double)(long long)val;
-    if (strcmp(decl_type, "int128") == 0) return (double)(long long)val;
+    /* signed integers. gcl_to_ll takes the type so that a value outside long
+       long saturates to THIS type's ceiling instead of taking the low bits of
+       a long long clamp. */
+    if (strcmp(decl_type, "int8") == 0) return (double)(signed char)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "int16") == 0) return (double)(short)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "int32") == 0) return (double)(int)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "int64") == 0) return (double)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "int128") == 0) return (double)gcl_to_ll(val, decl_type);
     /* unsigned integers */
-    if (strcmp(decl_type, "uint8") == 0) return (double)(unsigned char)((long long)val);
-    if (strcmp(decl_type, "uint16") == 0) return (double)(unsigned short)((long long)val);
-    if (strcmp(decl_type, "uint32") == 0) return (double)(unsigned int)((long long)val);
-    if (strcmp(decl_type, "uint64") == 0) return (double)(unsigned long long)((long long)val);
-    if (strcmp(decl_type, "uint128") == 0) return (double)(unsigned long long)((long long)val);
-    /* float tipleri */
+    if (strcmp(decl_type, "uint8") == 0) return (double)(unsigned char)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "uint16") == 0) return (double)(unsigned short)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "uint32") == 0) return (double)(unsigned int)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "uint64") == 0) return (double)(unsigned long long)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "uint128") == 0) return (double)(unsigned long long)gcl_to_ll(val, decl_type);
+    /* float tipleri — float16/float32 collapse to a 4-byte float, and
+       float128 collapses to the 8-byte double that IS the storage. The
+       branches name them so the widths are stated in the code rather than
+       falling out of the default `return val`. */
     if (strcmp(decl_type, "float") == 0 || strcmp(decl_type, "float32") == 0 || strcmp(decl_type, "float16") == 0)
         return (double)(float)val;
-    if (strcmp(decl_type, "float64") == 0 || strcmp(decl_type, "double") == 0) return val;
+    if (strcmp(decl_type, "float64") == 0 || strcmp(decl_type, "double") == 0 ||
+        strcmp(decl_type, "float128") == 0)
+        return val;
+    /* B3 — C'nin TEMEL tam sayı tipleri. Eskiden yalnızca int8..int128 /
+       uint8..uint128 tanınıyordu; `int`/`long`/`short`/`char` listede yoktu ve
+       değer double olarak saklanıyordu: `int c = 7 / 2;` → 3.5 (C'de 3). */
+    if (strcmp(decl_type, "int") == 0 || strcmp(decl_type, "long") == 0 ||
+        strcmp(decl_type, "long int") == 0 || strcmp(decl_type, "unsigned") == 0 ||
+        strcmp(decl_type, "unsigned int") == 0 || strcmp(decl_type, "unsigned long") == 0)
+        return (double)(int)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "short") == 0 || strcmp(decl_type, "short int") == 0)
+        return (double)(short)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "char") == 0) return (double)(signed char)gcl_to_ll(val, decl_type);
+    if (strcmp(decl_type, "long long") == 0 || strcmp(decl_type, "long long int") == 0)
+        return (double)gcl_to_ll(val, decl_type);
     return val;
+}
+
+/* The width, in bytes, of one stored value of a declared type -- the number
+   `sizeof(T)` reports (TURN 43).
+
+   It is derived from the SAME fact truncate_to_declared_type narrows with, and
+   that is the whole point of having it here: the runtime value is a double, and
+   each sized type keeps the C width of the cast it narrows through. So the
+   "128-bit" names report 8 and `float16` reports 4 -- see the WIDTHS note above
+   truncate_to_declared_type.
+
+   One table, so `sizeof(uint128)` cannot disagree with what a `uint128`
+   declaration actually stores. The list used to live inside the sizeof branch
+   of eval_expr and had drifted in exactly the two places you would expect: the
+   three "128-bit" names claimed 16 bytes while the interpreter stores 8, and
+   `float16` was missing altogether so it fell through to the double default.
+
+   Returns 0 for a name that is not a sized type (gcChar, a struct, a module
+   type, a typo); the caller keeps its own default. */
+static int decl_type_size(const char *t) {
+    if (!t || !t[0]) return 0;
+    if (strcmp(t, "bool") == 0 || strcmp(t, "char") == 0 ||
+        strcmp(t, "int8") == 0 || strcmp(t, "uint8") == 0) return 1;
+    if (strcmp(t, "short") == 0 || strcmp(t, "short int") == 0 ||
+        strcmp(t, "int16") == 0 || strcmp(t, "uint16") == 0) return 2;
+    /* `unsigned`/`unsigned long` are narrowed through `(int)` (see
+       int_type_bounds), so they are 4 here for the same reason. */
+    if (strcmp(t, "int") == 0 || strcmp(t, "int32") == 0 || strcmp(t, "uint32") == 0 ||
+        strcmp(t, "long") == 0 || strcmp(t, "long int") == 0 ||
+        strcmp(t, "unsigned") == 0 || strcmp(t, "unsigned int") == 0 ||
+        strcmp(t, "unsigned long") == 0 ||
+        strcmp(t, "float") == 0 || strcmp(t, "float32") == 0 ||
+        strcmp(t, "float16") == 0) return 4;
+    /* int128/uint128/float128 are ALIASES of the 8-byte types they narrow
+       through, so they report 8. `long double` has no narrowing branch at all
+       (it is not one of the lexer's sized type names), so a value declared that
+       way is simply the stored double -- also 8. */
+    if (strcmp(t, "long long") == 0 || strcmp(t, "long long int") == 0 ||
+        strcmp(t, "int64") == 0 || strcmp(t, "uint64") == 0 ||
+        strcmp(t, "int128") == 0 || strcmp(t, "uint128") == 0 ||
+        strcmp(t, "double") == 0 || strcmp(t, "float64") == 0 ||
+        strcmp(t, "float128") == 0 || strcmp(t, "long double") == 0) return 8;
+    return 0;
 }
 
 /* Build the struct member list (recursive nested struct) */
@@ -265,6 +706,65 @@ static void env_set_struct(GclEnv *env, const char *name, StructDef *def) {
     if (v->members) free_struct_members(v->members);
     v->members = NULL;
     build_members_recursive(env, &v->members, def);
+}
+
+/* ---------- Native (raylib) struct degiskenleri ----------
+
+   Raylib/Raygui struct'lari GCL'de bir DEGERDIR ve iki yazim gecerlidir:
+       Rectangle r;          // duz
+       Raylib.Rectangle r;   // modul oneki ile (bkz. complete/complete_type.c)
+   Alan listesi gcl_native_types.c'de tek kaynaktan gelir. Bu yol olmadan
+   `r.x` SESSIZCE 0 donuyordu: hata yok, yanlis deger var. */
+
+/* Tipi native struct'a coz; modul oneki (`Raylib.Rectangle`) soyulur. */
+static const GclNativeStruct *lookup_native_struct(const char *type) {
+    if (!type || !type[0]) return NULL;
+    const GclNativeStruct *ns = gcl_native_struct(type);
+    if (ns) return ns;
+    const char *dot = strrchr(type, '.');
+    return dot ? gcl_native_struct(dot + 1) : NULL;
+}
+
+/* Native struct alanlarini kur (ic ice struct'lar ozyinelemeli). */
+static void build_native_members(GclStructValue **head, const GclNativeStruct *ns) {
+    if (!head || !ns) return;
+    *head = NULL;
+    for (int i = ns->field_count - 1; i >= 0; i--) {
+        GclStructValue *m = (GclStructValue *)calloc(1, sizeof(GclStructValue));
+        if (!m) continue;
+        m->name = strdup(ns->fields[i].name ? ns->fields[i].name : "");
+        m->num = 0.0;
+        m->is_string = 0;
+        m->members = NULL;
+        if (ns->fields[i].type) {
+            m->decl_type = strdup(ns->fields[i].type);
+            /* Alan baska bir native struct ise (Vector3 position) icini de kur;
+               yoksa `camera.position.x` sessizce 0 donerdi. */
+            const GclNativeStruct *sub = gcl_native_struct(ns->fields[i].type);
+            if (sub) build_native_members(&m->members, sub);
+        }
+        m->next = *head;
+        *head = m;
+    }
+}
+
+/* Native struct degiskeni yarat (varsa uzerine yaz). */
+static void env_set_native_struct(GclEnv *env, const char *name, const GclNativeStruct *ns) {
+    Var *v = env_find(env, name);
+    if (!v) {
+        v = (Var *)calloc(1, sizeof(Var));
+        if (!v) return;
+        v->name = strdup(name);
+        v->next = env->vars;
+        env->vars = v;
+    }
+    v->is_string = 0;
+    if (v->str) { free(v->str); v->str = NULL; }
+    if (v->members) free_struct_members(v->members);
+    v->members = NULL;
+    build_native_members(&v->members, ns);
+    if (v->decl_type) free(v->decl_type);
+    v->decl_type = strdup(ns->type ? ns->type : "");
 }
 
 /* Read a struct member value */
@@ -382,9 +882,22 @@ typedef struct {
     double return_value;
     int break_flag;
     int continue_flag;
-    int error;
+    /* B31 — `break`/`continue` yalnizca bir dongu/switch ICINDE gecerlidir.
+       Sayaclar olmadan dongu DISINDAKI bir `break`, exec_block'un dongusunu
+       durdurup blogu SESSIZCE bitiriyordu: hata yok, exit 0, kullaniciya
+       hicbir sey soylenmiyordu (`bug_33_breakout`).
+       INCE NOKTA: call_user_func ve gcl_run_program Runner'i `memcpy` ile
+       KOPYALAR, bu yuzden `sub` icinde bu sayaclar SIFIRLANIR — aksi halde
+       dongu icinden cagrilan bir fonksiyondaki `break` "gecerli" sayilirdi. */
+    int loop_depth;       /* kac dongu icinde? (`continue` icin) */
+    int breakable_depth;  /* kac dongu/switch icinde? (`break` icin) */
     GclStructValue *return_struct;  /* struct return value */
     GclExpr *return_init_list;      /* struct literal return { ... } */
+    /* Metin donduren fonksiyonlar icin kanal (gcChar / char* / char[N]).
+       `return_value` yalnizca bir double tasir; bu kanal olmadan bir
+       fonksiyonun dondurdugu METIN kayboluyordu ve `printf("{}", greet())`
+       0 yaziyordu. Sahibi bu Runner'dir; tuketiciler yalnizca OKUR. */
+    char *return_str;
 } Runner;
 
 /* ---------- Host API: modüllerden GCL'e GERİ ÇAĞRI (callback köprüsü) ----------
@@ -404,9 +917,73 @@ typedef struct {
 static Runner        *g_active_runner = NULL;
 static GclHostApi     g_host_api;
 
+/* B2 — özyineleme derinliği koruması. Kullanıcı fonksiyon çağrıları NATIVE C
+   yığını üzerinde koşar (call_user_func → exec_block → eval_expr →
+   call_user_func); sınır olmadan derin özyineleme STATUS_STACK_OVERFLOW ile
+   ÇÖKÜYORDU (exit 0xC00000FD, mesajsız). Sınırda kontrollü hata verilir. */
+#ifdef _WIN32
+/* gcl.exe 64 MB yiginla baglanir (makefile.py: -Wl,--stack,67108864);
+   kare basina ~2 KB ile 8192 cagri ~16 MB yapar ve rahat sigar. */
+#define GCL_MAX_CALL_DEPTH_DEFAULT 8192
+#else
+/* POSIX'te ana is parcacigi yigini ulimit'ten gelir (tipik 8 MB). Kare
+   basina ~2 KB ile 2048 guvenli mesafededir; daha derini icin derleme
+   bayragi/ulimit buyutulup GCL_MAX_CALL_DEPTH yukseltilmelidir. */
+#define GCL_MAX_CALL_DEPTH_DEFAULT 2048
+#endif
+static int g_call_depth = 0;
+static int g_max_call_depth = 0;   /* 0 = henuz okunmadi */
+
+/* B2 — cagri derinligi siniri. ONEMLI: bu sinir NATIVE C yiginina baglidir,
+   bu yuzden gcl.exe buyuk yiginla baglanir (makefile.py:
+   -Wl,--stack,67108864 → 64 MB). Kare basina ~2 KB ile bu ~32.000 cagri
+   demektir; varsayilan 8192 guvenli mesafede kalir. Daha derin (ya da daha
+   sig) bir sinir isteyen `GCL_MAX_CALL_DEPTH` ortam degiskenini kullanabilir. */
+static int max_call_depth(void) {
+    if (g_max_call_depth > 0) return g_max_call_depth;
+    int v = GCL_MAX_CALL_DEPTH_DEFAULT;
+    const char *env = getenv("GCL_MAX_CALL_DEPTH");
+    if (env && env[0]) {
+        int n = atoi(env);
+        if (n > 0) v = n;
+    }
+    g_max_call_depth = v;
+    return v;
+}
+
+/* B34 - loop iteration limit. A runaway `while (1)` used to abort with a bare
+   `return -1`, which a `try` could NEVER catch: the error was unrecoverable by
+   design. The guard now reports through the normal error channel (code
+   GCL3009), so `try/catch` can handle it, while an UNCAUGHT runaway loop still
+   stops the process with a non-zero exit code - exactly the old behaviour.
+
+   The limit is configurable because a long-running program is not a bug: a
+   raylib game loop legitimately runs for hours. `GCL_MAX_LOOP_ITERATIONS`
+   overrides the default. The counter is per loop ENTRY, not global, so N
+   sequential loops may each run the full budget. */
+#define GCL_MAX_LOOP_ITERATIONS_DEFAULT 1000000
+static int g_max_loop_iterations = 0;   /* 0 = not read yet */
+static int max_loop_iterations(void) {
+    if (g_max_loop_iterations > 0) return g_max_loop_iterations;
+    int v = GCL_MAX_LOOP_ITERATIONS_DEFAULT;
+    const char *env = getenv("GCL_MAX_LOOP_ITERATIONS");
+    if (env && env[0]) {
+        int n = atoi(env);
+        if (n > 0) v = n;
+    }
+    g_max_loop_iterations = v;
+    return v;
+}
+
 /* call_user_func aşağıda tanımlı; host köprüsü onu burada çağırdığı için
    önden bildirilir (C99 örtük bildirime izin vermez). */
-static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args, int arg_count);
+/* TURN 50 - `call_span` is the span of the CALL EXPRESSION, passed down so
+   that "unknown function", "wrong number of arguments" and "call depth" point
+   at the call the user wrote instead of at nothing. A callback coming FROM a
+   native module has no call site in GCL source, so host_call_gcl passes
+   span_none(). */
+static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args,
+                             int arg_count, GclSpan call_span);
 
 static int host_call_gcl(void *host, const char *fn_name, int argc,
                          const GclHostArg *argv, double *ret) {
@@ -436,7 +1013,7 @@ static int host_call_gcl(void *host, const char *fn_name, int argc,
         }
         ptrs[i] = &nodes[i];
     }
-    double v = call_user_func(g_active_runner, fd, ptrs, n);
+    double v = call_user_func(g_active_runner, fd, ptrs, n, span_none());
     if (ret) *ret = v;
     return 0;
 }
@@ -565,11 +1142,37 @@ static void fill_struct_init(Runner *r, const char *var_name, GclExpr *init) {
     }
 }
 
+/* `Raylib.Rectangle r = Raylib.Rectangle(x, y, w, h);`
+
+   Modul cagrisi degeri KENDI durumunda tutar (raylib: g_last_rect); degiskene
+   bir sey kopyalamaz. Argumanlar bu yuzden alanlara sirayla yazilir — yoksa
+   `r` sifirlarla dolu kalir ve `r.width` sessizce 0 okunurdu. Cagri tipin
+   KURUCUSU degilse (baska bir fonksiyon/ad) hicbir sey yapilmaz.
+
+   Donus: alanlar doldurulduysa 1. */
+static int fill_native_from_constructor(Runner *r, const char *var_name,
+                                        const GclNativeStruct *ns, GclExpr *call) {
+    if (!r || !ns || !ns->type || !call || call->kind != AST_EXPR_CALL) return 0;
+    GclExpr *callee = call->left;
+    if (!callee || callee->kind != AST_EXPR_MEMBER || !callee->member_name) return 0;
+    if (strcmp(callee->member_name, ns->type) != 0) return 0;
+    Var *v = env_find(r->env, var_name);
+    if (!v || !v->members) return 0;
+    GclStructValue *m = v->members;
+    for (int i = 0; i < call->arg_count && m; i++) {
+        if (!call->args[i]) continue;
+        set_member_value(m, call->args[i], r);
+        m = m->next;
+    }
+    return 1;
+}
+
 /* ---------- GCL lib modules (#lib <Name>) ---------- */
 
 /* Forward declaration of eval_expr and call_user_func */
 static double eval_expr(GclExpr *e, Runner *r);
-static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args, int arg_count);
+static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args,
+                             int arg_count, GclSpan call_span);
 
 /* Resolve an AST_EXPR_MEMBER chain: p.addr.city -> the final GclStructValue */
 static GclStructValue *resolve_member_chain(GclExpr *e, Runner *r) {
@@ -606,6 +1209,125 @@ static GclStructValue *resolve_member_chain(GclExpr *e, Runner *r) {
         }
     }
     return NULL;
+}
+
+/* B5 - the TEXT an initializer expression denotes, or NULL when it has none.
+
+   `gcChar`/`char[N]`/2D-char declarations used to accept only a string LITERAL;
+   every other spelling of the same string silently became "". Three live misses:
+   `gcChar c = f();` (the text a call returns travels in Runner.return_str, not in
+   the double `v`), `char buf[N] = s;` (a variable) and
+   `char names[N][M] = { s, "x" };` (a variable inside the init list).
+   One rule for all of them: a string-valued initializer is a literal, a string
+   VARIABLE, or a CALL that left its text in return_str. Anything else - a plain
+   number, a vanilla `char`, a struct - returns NULL and the caller keeps its
+   numeric behaviour. */
+static const char *init_text_value(Runner *r, GclExpr *init) {
+    if (!r || !init) return NULL;
+    if (init->kind == AST_EXPR_STRING) return init->str ? init->str : "";
+    if (init->kind == AST_EXPR_VAR) {
+        Var *src = env_find(r->env, init->name);
+        if (src && src->is_string && src->str) return src->str;
+        return NULL;
+    }
+    /* The caller has already evaluated the call, so the text it returned is in
+       the channel - reading the channel is the only way to see it. */
+    if (init->kind == AST_EXPR_CALL) return r->return_str;
+    return NULL;
+}
+
+/* B5 (2D half) - resolve one ROW of a `char a[N][M] = { ... };` initializer.
+
+   The row gate used to accept only AST_EXPR_STRING entries, so every other
+   spelling of the same text fell through to the numeric branch:
+   `char names[2][16] = { a, "two" };` stored atof("hello")=0 for `a` and the
+   single byte 't' for "two", and `names[0]` printed "" while `names[1]` printed
+   "t" instead of "two". An entry is TEXT when it is a literal, a string
+   VARIABLE, or a CALL - the same three spellings init_text_value() already
+   serves for the 1D case.
+
+   Each entry is evaluated EXACTLY ONCE: a call must not run twice, and its text
+   lives in Runner.return_str only until the next call refreshes it, so it is
+   read immediately after the call that produced it.
+
+   `vals[i]` always receives the entry's numeric value (0 for a text entry).
+   Returns 1 when EVERY entry denotes text - the caller then keeps `texts` as
+   the row table; otherwise it keeps `vals` and frees `texts`. */
+static int collect_text_row(Runner *r, GclExpr *init, int cnt, double *vals, char **texts) {
+    int all_text = cnt > 0;
+    for (int ai = 0; ai < cnt; ai++) {
+        GclExpr *it = init ? init->args[ai] : NULL;
+        const char *t = NULL;
+        if (it) {
+            if (it->kind == AST_EXPR_CALL) {
+                vals[ai] = eval_expr(it, r);
+                t = r->return_str;   /* set by call_user_func, NULL for a numeric return */
+            } else {
+                t = init_text_value(r, it);
+                vals[ai] = t ? 0.0 : eval_expr(it, r);
+            }
+        }
+        if (t) texts[ai] = strdup(t);
+        else all_text = 0;
+    }
+    return all_text;
+}
+
+/* ---------- TEK KURAL (TUR 22): bir `char` degeri KARAKTERDIR ----------
+
+   `printf`in `{}` yer tutucusu bir degeri STATIK TIPINE gore yazar:
+
+       gcChar / char* / char[N]  ->  metin           ("abc")
+       char                      ->  TEK KARAKTER    ('A' -> "A")
+       diger her sey             ->  sayi            (65)
+
+   Sayisal baglam (int'e atama, aritmetik, karsilastirma, bitsel islemler)
+   HER ZAMAN kodu gorur: `int m = c;` -> 65, `c + 1` -> 66. Kuralin tamami
+   budur: char degerleri karakter, sayilar sayidir.
+
+   Eskiden bu kural ARGUMAN DONUSTURUCUSUNE dagitilmisti ve yalnizca BAZI
+   dugum turlerinde uygulaniyordu — ayni deger ifade bicimine gore iki farkli
+   sey basiyordu:
+
+       `char c`     -> 'A'   (VAR dali)     DOGRU
+       `char a[i]`  -> 'b'   (ARRAY dali)   DOGRU
+       `s[i]`       -> 'b'   (is_string)    DOGRU
+       `pick()`     -> 'Z'   (CALL dali)    DOGRU
+       `'A'`        -> 65    (int sabiti)   DOGRU  <-- C'de de `'A'` int'tir
+       `(char)65`   -> 65    (else dali)    YANLIS
+       `p.letter`   -> 65    (MEMBER dali)  YANLIS
+
+   Donus: 1 = ifadenin STATIK tipi `char` (tek karakter), *code = kodu.
+          0 = char DEGIL — cagiran kendi yolundan devam eder. */
+static int expr_is_char_value(GclExpr *e, Runner *r, int *code) {
+    if (!e) return 0;
+    /* Not: `'A'` bir int sabitidir (B29/TUR 22), char DEGILDIR. */
+    /* Cast: `(char)65` — hedef tip dogrudan karakterdir. */
+    if (e->kind == AST_EXPR_CAST && e->str && strcmp(e->str, "char") == 0) {
+        *code = (int)eval_expr(e->left, r);
+        return 1;
+    }
+    /* `char c` — skaler, isaretcisiz, dizi olmayan char degiskeni. */
+    if (e->kind == AST_EXPR_VAR) {
+        Var *v = env_find(r->env, e->name);
+        if (v && !v->is_string && !v->is_pointer && v->array_size == 0 &&
+            !v->members && v->decl_type && strcmp(v->decl_type, "char") == 0) {
+            *code = (int)v->num;
+            return 1;
+        }
+        return 0;
+    }
+    /* `p.letter` — tipi `char` olan struct alani (metin alani DEGIL). */
+    if (e->kind == AST_EXPR_MEMBER) {
+        GclStructValue *mv = resolve_member_chain(e, r);
+        if (mv && !mv->is_string && !mv->members &&
+            mv->decl_type && strcmp(mv->decl_type, "char") == 0) {
+            *code = (int)mv->num;
+            return 1;
+        }
+        return 0;
+    }
+    return 0;
 }
 
 /* Flatten struct members recursively for a native module: the sub-float members
@@ -689,8 +1411,9 @@ static double do_scanf(Runner *r, GclExpr **args, int arg_count) {
 static NativeModule *native_load(GclEnv *env, const char *name);
 
 /* Call a module function: Modul.member(args) */
-static double call_native_member(const char *module_name, const char *member,
-                                 GclExpr **args, int arg_count, Runner *r) {
+static double call_native_member(GclSpan call_span, const char *module_name,
+                                 const char *member, GclExpr **args,
+                                 int arg_count, Runner *r) {
     /* Ertelenmiş callback işlerini (ses üretimi) ana iş parçacığında koştur.
        Modül çağrıları bir oyun döngüsünde her karede olduğu için bu, ses
        tamponunun düzenli beslenmesi için doğal ve yeterli kancadır. */
@@ -701,7 +1424,8 @@ static double call_native_member(const char *module_name, const char *member,
         mod = native_load(r->env, module_name);
     }
     if (!mod) {
-        fprintf(stderr, "Runtime error: unknown module '%s'\n", module_name);
+        runtime_errorcf(GCL_E_SEM_UNKNOWN_MODULE, call_span,
+                        "unknown module '%s'", module_name);
         return 0.0;
     }
     /* Stdio.scanf — real input read, writes to env (same as bare scanf) */
@@ -722,6 +1446,19 @@ static double call_native_member(const char *module_name, const char *member,
             for (int j = 0; j < arg_count && ac < 255; j++) {
                 GclExpr *a = args[j];
                 if (!a) { argv[ac++] = ""; continue; }
+                /* TEK KURAL (bkz. expr_is_char_value): char tipli argüman
+                   modüle KARAKTER olarak geçer. `'A'`, `(char)65`, `char c`
+                   ve `p.letter` ayni sekilde davranir. */
+                {
+                    int char_code = 0;
+                    if (expr_is_char_value(a, r, &char_code)) {
+                        int ci = ac;
+                        chbuf[ci][0] = (char)char_code;
+                        chbuf[ci][1] = '\0';
+                        argv[ac++] = chbuf[ci];
+                        continue;
+                    }
+                }
                 /* Address-of: &camera → flatten the underlying struct members (UpdateCamera(&camera, ...)) */
                 if (a->kind == AST_EXPR_UNOP && a->op == OP_BITAND && a->right) {
                     GclExpr *inner = a->right;
@@ -735,6 +1472,21 @@ static double call_native_member(const char *module_name, const char *member,
                 }
                 if (a->kind == AST_EXPR_VAR) {
                     Var *v = env_find(r->env, a->name);
+                    /* B18: native çağrı argümanında TANIMSIZ değişken eskiden
+                       SESSİZCE 0 olarak geçiyordu (eval_expr'in "undefined
+                       variable" kontrolü bu yoldan geçmiyordu):
+                       printf("{}", undefined_xyz) → "0", uyarı yok. */
+                    if (!v) {
+                        runtime_errorcf(GCL_E_SEM_UNKNOWN_VAR, span_of_expr(a),
+                                        "undefined variable '%s'", a->name);
+                        /* B33: inside a `try` body the native call must NOT run at
+                           all. Previously this fell through to the `else` branch
+                           below, wrote "0" into argv, and `printf("{}", undefined)`
+                           printed that "0" BEFORE unwinding started (partial
+                           output). In tolerant mode (outside `try`) g_unwinding
+                           stays 0, so the legacy behaviour is preserved exactly. */
+                        if (g_unwinding) return 0.0;
+                    }
                     /* Struct variable → expand its members in declaration order */
                     if (v && v->members) {
                         flatten_struct_members(v->members, argv, numbuf, chbuf, &ac, 255);
@@ -744,14 +1496,10 @@ static double call_native_member(const char *module_name, const char *member,
                         argv[ac++] = v->str ? v->str : "";
                     } else if (v && v->decl_type && (strcmp(v->decl_type, "uint64") == 0 || strcmp(v->decl_type, "uint128") == 0) && v->str) {
                         argv[ac++] = v->str;
-                    } else if (v && v->decl_type && strcmp(v->decl_type, "char") == 0 &&
-                               v->array_size == 0 && !v->is_pointer && !v->is_string) {
-                        /* vanilla char -> tek karakter */
-                        int idx = ac;
-                        chbuf[idx][0] = (char)(int)v->num;
-                        chbuf[idx][1] = '\0';
-                        argv[ac++] = chbuf[idx];
                     } else {
+                        /* Not: `char` degiskeni buraya HIC gelmez — dongu
+                           basindaki expr_is_char_value() onu zaten KARAKTER
+                           olarak alir. Kural TEK yerde yasar. */
                         int idx = ac;
                         snprintf(numbuf[idx], sizeof(numbuf[idx]), "%.17g", v ? v->num : 0.0);
                         argv[ac++] = numbuf[idx];
@@ -864,6 +1612,26 @@ static double call_native_member(const char *module_name, const char *member,
                         }
                     }
                     continue;
+                } else if (a->kind == AST_EXPR_CALL) {
+                    /* Bir CAGRI sonucu TURUNU korusun. Eskiden bu arguman genel
+                       dala dusuyor ve `%.17g` ile sayiya cevriliyordu:
+                       `printf("{}", greet())` (gcChar) → 0,
+                       `printf("{}", pick())`  (char)  → 90 yaziyordu. */
+                    int idx = ac;
+                    double cv = eval_expr(a, r);
+                    if (r->return_str) {
+                        argv[ac++] = r->return_str;   /* Runner'a ait; kopyalanmaz */
+                    } else {
+                        FuncDef *cfd = a->name ? find_func(r->env, a->name) : NULL;
+                        if (cfd && cfd->return_type && strcmp(cfd->return_type, "char") == 0) {
+                            chbuf[idx][0] = (char)(int)cv;
+                            chbuf[idx][1] = '\0';
+                            argv[ac++] = chbuf[idx];
+                        } else {
+                            snprintf(numbuf[idx], sizeof(numbuf[idx]), "%.17g", cv);
+                            argv[ac++] = numbuf[idx];
+                        }
+                    }
                 } else {
                     /* All other argument kinds (number, binop, etc.) */
                     int idx = ac;
@@ -871,10 +1639,17 @@ static double call_native_member(const char *module_name, const char *member,
                     argv[ac++] = numbuf[idx];
                 }
             }
+            /* B33: if an error was raised while converting the arguments
+               (`eval_expr`, unknown member, out-of-bounds array, ...) the native
+               call is NOT executed at all. Otherwise it would run with
+               half-converted arguments and cause a side effect
+               (e.g. `printf("{}", undefined + 1)` used to print "1"). */
+            if (g_unwinding) return 0.0;
             return mod->entries[i].fn(ac, argv);
         }
     }
-    fprintf(stderr, "Runtime error: unknown member '%s.%s'\n", module_name, member);
+    runtime_errorcf(GCL_E_SEM_UNKNOWN_MEMBER, call_span,
+                    "unknown member '%s.%s'", module_name, member);
     return 0.0;
 }
 
@@ -1011,7 +1786,7 @@ static double call_native_member(const char *module_name, const char *member,
             return mod->entries[i].fn(ac, argv);
         }
     }
-    fprintf(stderr, "Runtime error: unknown member '%s.%s'\n", module_name, member);
+    runtime_errorcf(GCL_RT_CODE_UNKNOWN_MEMBER, "unknown member '%s.%s'", module_name, member);
     return 0.0;
 #endif
 
@@ -1262,19 +2037,22 @@ static void *extern_func_find(GclEnv *env, const char *func_name) {
 }
 
 /* Call an extern C function — performing the type conversions */
-static double call_extern_func(GclEnv *env, const char *func_name, GclExpr **args, int arg_count, Runner *r) {
+static double call_extern_func(GclEnv *env, GclSpan call_span, const char *func_name,
+                               GclExpr **args, int arg_count, Runner *r) {
     GclExternReg *er = NULL;
     for (int i = 0; i < env->extern_reg_count; i++) {
         if (strcmp(env->extern_regs[i].func_name, func_name) == 0) { er = &env->extern_regs[i]; break; }
     }
     if (!er) {
-        fprintf(stderr, "Runtime error: unknown function '%s'\n", func_name);
+        runtime_errorcf(GCL_E_SEM_UNKNOWN_FUNC, call_span,
+                        "unknown function '%s'", func_name);
         return 0.0;
     }
     void *fp = er->fn_ptr;
     if (!fp) fp = extern_func_find(env, func_name);
     if (!fp) {
-        fprintf(stderr, "Runtime error: cannot resolve external function '%s'\n", func_name);
+        runtime_errorcf(GCL_E_SEM_UNKNOWN_FUNC, call_span,
+                        "cannot resolve external function '%s'", func_name);
         return 0.0;
     }
 
@@ -1372,8 +2150,127 @@ static double eval_expr(GclExpr *e, Runner *r);
 static int exec_stmt(GclStmt *s, Runner *r);
 static int exec_block(GclStmt *blk, Runner *r);
 
+/* Forward declarations for the two body runners. `defers_run_frame` is
+   defined before them and needs `run_cleanup_body`; `run_cleanup_body` in
+   turn needs `run_nested`. */
+static int run_nested(GclStmt *body, Runner *r);
+static int run_cleanup_body(GclStmt *body, Runner *r);
+
 /* Kullanıcı fonksiyonunu çağır */
-static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args, int arg_count) {
+/* B14 — struct argümanını parametreye ÜYE LİSTESİYLE kopyala.
+   Eskiden call_user_func yalnızca skaler bağlıyordu; `P v` parametresine
+   `a` geçilince üyeler kayboluyor ve `v.id` sessizce 0 dönüyordu. */
+static void env_set_members_copy(GclEnv *env, const char *name, Var *src) {
+    if (!env || !name) return;
+    Var *v = env_find(env, name);
+    if (!v) {
+        v = (Var *)calloc(1, sizeof(Var));
+        if (!v) return;
+        v->name = strdup(name);
+        v->next = env->vars;
+        env->vars = v;
+    }
+    v->is_string = 0;
+    if (v->str) { free(v->str); v->str = NULL; }
+    v->num = 0;
+    if (v->members) free_struct_members(v->members);
+    v->members = (src && src->members) ? clone_struct_members(src->members) : NULL;
+    if (v->decl_type) { free(v->decl_type); v->decl_type = NULL; }
+    if (src && src->decl_type) v->decl_type = strdup(src->decl_type);
+}
+
+/* B6 — dizi argümanını parametreye kopyala (değer semantiği).
+   `int last(int arr[3]) { return arr[2]; }` + `last(nums)` eskiden 0
+   dönüyordu: dizi argümanı eval_expr ile skalerleşiyor (v->num = 0) ve
+   parametrede arr_vals hiç oluşmuyordu. */
+static void env_set_array_copy(GclEnv *env, const char *name, Var *src) {
+    if (!env || !name || !src) return;
+    Var *v = env_find(env, name);
+    if (!v) {
+        v = (Var *)calloc(1, sizeof(Var));
+        if (!v) return;
+        v->name = strdup(name);
+        v->next = env->vars;
+        env->vars = v;
+    }
+    v->is_string = 0;
+    if (v->str) { free(v->str); v->str = NULL; }
+    if (v->members) { free_struct_members(v->members); v->members = NULL; }
+    if (v->arr_vals) { free(v->arr_vals); v->arr_vals = NULL; }
+    if (v->arr_strs) {
+        for (int i = 0; i < v->arr_count; i++) if (v->arr_strs[i]) free(v->arr_strs[i]);
+        free(v->arr_strs);
+        v->arr_strs = NULL;
+    }
+    if (v->arr_members) {
+        for (int i = 0; i < v->arr_count; i++) if (v->arr_members[i]) free_struct_members(v->arr_members[i]);
+        free(v->arr_members);
+        v->arr_members = NULL;
+    }
+    v->arr_count = src->arr_count;
+    v->array_size = src->array_size;
+    if (src->arr_vals && src->arr_count > 0) {
+        v->arr_vals = (double *)calloc((size_t)src->arr_count, sizeof(double));
+        if (v->arr_vals) memcpy(v->arr_vals, src->arr_vals, (size_t)src->arr_count * sizeof(double));
+    }
+    if (src->arr_strs && src->arr_count > 0) {
+        v->arr_strs = (char **)calloc((size_t)src->arr_count, sizeof(char *));
+        if (v->arr_strs) {
+            for (int i = 0; i < src->arr_count; i++)
+                v->arr_strs[i] = src->arr_strs[i] ? strdup(src->arr_strs[i]) : NULL;
+        }
+    }
+    if (src->arr_members && src->arr_count > 0) {
+        v->arr_members = (GclStructValue **)calloc((size_t)src->arr_count, sizeof(GclStructValue *));
+        if (v->arr_members) {
+            for (int i = 0; i < src->arr_count; i++)
+                v->arr_members[i] = src->arr_members[i] ? clone_struct_members(src->arr_members[i]) : NULL;
+        }
+    }
+    if (v->decl_type) { free(v->decl_type); v->decl_type = NULL; }
+    if (src->decl_type) v->decl_type = strdup(src->decl_type);
+}
+
+/* TUR 25 — parametre kaydetme alani artik SABIT BOYUTLU DEGIL.
+   Eskiden `Var *saved[32]` + uc paralel dizi vardi ve `saved_count < 32`
+   ile sinirlaniyordu: 32'den fazla parametreli bir fonksiyonda 33. ve
+   sonraki parametreler HIC kaydedilmiyor, dolayisiyla geri de
+   yuklenmiyordu. Sonuc, TUR 23'te duzeltilen B35 ile AYNI sinifta bir
+   hataydi (cagiranin degiskeni kalici olarak eziliyordu), yalnizca keyfi
+   bir sinirin otesinde. Kaydetme alani artik `fd->param_count` kadar
+   ayrilir; `saved_slot` dizisi her parametrenin hangi slota gittigini
+   tutar, boylece geri yukleme ARAMA yapmaz (eski kod her parametre icin
+   tum slotlari tarayip O(n^2) idi). */
+typedef struct {
+    Var   *var;        /* cagiranin Var'i (env_set_* onu YERINDE gunceller) */
+    double num;        /* ezilmeden ONCEKI sayisal deger */
+    int    is_string;  /* ezilmeden ONCEKI tur */
+    char  *str;        /* strdup kopyasi — use-after-free onlemi */
+} SavedParam;
+
+static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args,
+                             int arg_count, GclSpan call_span) {
+    /* B2: derinlik sınırı — aşılırsa çökme yerine kontrollü hata. */
+    if (g_call_depth >= max_call_depth()) {
+        runtime_errorcf(GCL_E_SEM_CALL_DEPTH, call_span,
+                        "call depth limit exceeded (%d) in '%s' "
+                        "(set the GCL_MAX_CALL_DEPTH environment variable to raise it)",
+                        max_call_depth(), (fd && fd->name) ? fd->name : "?");
+        return 0.0;
+    }
+    /* B26 — argüman sayısı denetimi. Eskiden yalnızca
+       `min(param_count, arg_count)` kadar bağlanıyordu: EKSİK argümanda
+       parametre env'de tanımsız kalıp daha sonra kafa karıştırıcı bir
+       "undefined variable" üretiyor, FAZLA argüman ise tamamen sessizce
+       düşüyordu (GCL_E_SEM_BAD_ARGC hiç üretilmiyordu).
+       main() bu yoldan DEĞİL (exec_block ile, argv doğrudan) çağrılır. */
+    if (fd && arg_count != fd->param_count) {
+        runtime_errorcf(GCL_E_SEM_BAD_ARGC, call_span,
+                        "'%s' expects %d argument(s), got %d",
+                        fd->name ? fd->name : "?", fd->param_count, arg_count);
+        return 0.0;
+    }
+    g_call_depth++;
     /* Fonksiyon çağrısından ÖNCE var listesinin başını kaydet —
        içeride yeni oluşturulan local (global olmayan) değişkenleri
        fonksiyon çıkışında temizlemek için. */
@@ -1381,33 +2278,96 @@ static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args, int arg_cou
     /* Parametreleri env'e bağla — geçici: eski değerleri sakla ve geri yükle.
        env_set_num, mevcut string değişkenin str alanını free ettiği için
        restore'da dangling pointer okumamak adına str kopyasını sakla. */
-    Var *saved[32];
-    char *saved_str[32] = {0};
-    int saved_is_string[32] = {0};
+    /* TUR 23 — ONCEKI DEGERIN KENDISI de saklanmali. Eskiden yalnizca
+       POINTER (`saved[j]`) ve string kopyasi tutuluyordu; `v->num` zaten
+       `env_set_num` ile EZILMIS oldugu icin geri yukleme dongusundeki
+       `v->num = saved[j]->num` bir KENDINE ATAMA idi ve cagiranin degeri
+       kalici olarak bozuluyordu:
+           int x = 99;  int h(int x) { return x; }  h(7);
+           printf("{}", x);   // 99 olmali, eskiden 7 yaziyordu
+       C'de parametre DEGER ile gecer; cagiranin degiskeni degismemelidir.
+       TUR 25 — alan artik `fd->param_count` kadar ayrilir (eskiden 32 sabit). */
+    int save_cap = fd->param_count > 0 ? fd->param_count : 1;
+    SavedParam *saved = (SavedParam *)calloc((size_t)save_cap, sizeof(SavedParam));
+    int *saved_slot = (int *)malloc((size_t)save_cap * sizeof(int));
+    if (!saved || !saved_slot) {
+        free(saved);
+        free(saved_slot);
+        g_call_depth--;
+        runtime_errorf(call_span, "out of memory while saving the parameters of '%s'",
+                       fd->name ? fd->name : "?");
+        return 0.0;
+    }
+    for (int i = 0; i < save_cap; i++) saved_slot[i] = -1;
     int saved_count = 0;
+    /* Onceki cagridan kalan metin sonucunu temizle: argumanlar
+       degerlendirilirken return_str tazelenmelidir (bayat deger okunmasin). */
+    if (r->return_str) { free(r->return_str); r->return_str = NULL; }
     for (int i = 0; i < fd->param_count && i < arg_count; i++) {
-        Var *existing = env_find(r->env, fd->params[i]);
-        if (existing && saved_count < 32) {
-            /* saved_count 32'yi aştığında push edilmez — taşma önlenir */
-            saved[saved_count] = existing;
-            saved_is_string[saved_count] = existing->is_string;
-            saved_str[saved_count] = existing->str ? strdup(existing->str) : NULL;
+        const char *pname = fd->params[i].name;
+        Var *existing = env_find(r->env, pname);
+        if (existing) {
+            /* Kaydetme alani `fd->param_count` kadar ve bu dongu de
+               param_count ile sinirli — tasma artik YAPISAL olarak
+               imkansiz (eskiden 32. parametreden sonrasi sessizce
+               kaydedilmiyordu). */
+            saved_slot[i] = saved_count;
+            saved[saved_count].var = existing;
+            saved[saved_count].num = existing->num;   /* degerin KENDISI */
+            saved[saved_count].is_string = existing->is_string;
+            saved[saved_count].str = existing->str ? strdup(existing->str) : NULL;
             saved_count++;
         }
         /* String argümanlar env_set_num ile bağlanırsa AST_EXPR_STRING 0.0
            döndürür ve string değer kaybolur. String ise env_set_str kullan. */
         GclExpr *arg = args[i];
         if (arg && arg->kind == AST_EXPR_STRING) {
-            env_set_str(r->env, fd->params[i], arg->str ? arg->str : "");
+            env_set_str(r->env, pname, arg->str ? arg->str : "");
         } else if (arg && arg->kind == AST_EXPR_VAR) {
             Var *av = env_find(r->env, arg->name);
-            if (av && av->is_string) {
-                env_set_str(r->env, fd->params[i], av->str ? av->str : "");
+            if (av && av->members) {
+                /* B14: struct argümanı — üyeleri kopyala (değer semantiği). */
+                env_set_members_copy(r->env, pname, av);
+            } else if (av && (av->arr_vals || av->arr_strs || av->arr_members)) {
+                /* B6: dizi argümanı — elemanları kopyala. */
+                env_set_array_copy(r->env, pname, av);
+            } else if (av && av->is_string) {
+                env_set_str(r->env, pname, av->str ? av->str : "");
             } else {
-                env_set_num(r->env, fd->params[i], eval_expr(arg, r));
+                double av_num = eval_expr(arg, r);
+                /* Arguman bir CAGRI ise ve metin dondurduyse metni bagla:
+                   `f(g())` icinde g()'nin metni kaybolmasin. */
+                if (r->return_str) {
+                    env_set_str(r->env, pname, r->return_str);
+                    free(r->return_str);
+                    r->return_str = NULL;
+                } else {
+                    env_set_num(r->env, pname, av_num);
+                }
             }
         } else {
-            env_set_num(r->env, fd->params[i], arg ? eval_expr(arg, r) : 0.0);
+            double av_num = arg ? eval_expr(arg, r) : 0.0;
+            if (r->return_str) {
+                env_set_str(r->env, pname, r->return_str);
+                free(r->return_str);
+                r->return_str = NULL;
+            } else {
+                env_set_num(r->env, pname, av_num);
+            }
+        }
+        /* Parametre TIPINI isaretle: `void show(char x)` icinde `x`'in char
+           oldugunu runner ancak boylece bilir. Eskiden tip dusuyordu ve
+           `printf("{}", x)` karakter yerine sayisal kodu (81) yaziyordu.
+           DIKKAT: yalnizca fonksiyona OZEL (cagiranda olmayan) parametre icin.
+           Cagiranin kendi degiskeni varsa onun tipi korunur — geri yukleme
+           dongusu `decl_type`i geri koymaz, oraya yazmak cagiranin tipini
+           kalici olarak bozardi. */
+        if (!existing && i < fd->param_count && fd->params[i].type) {
+            Var *pv = env_find(r->env, pname);
+            if (pv) {
+                if (pv->decl_type) free(pv->decl_type);
+                pv->decl_type = strdup(fd->params[i].type);
+            }
         }
     }
     Runner sub;
@@ -1416,8 +2376,12 @@ static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args, int arg_cou
     sub.return_value = 0;
     sub.break_flag = 0;
     sub.continue_flag = 0;
+    /* B31: cagrilan fonksiyon dongu/switch baglamini DEVRALMAZ. */
+    sub.loop_depth = 0;
+    sub.breakable_depth = 0;
     sub.return_struct = NULL;
     sub.return_init_list = NULL;
+    sub.return_str = NULL;
     if (fd->body && fd->body->kind == STMT_BLOCK) exec_block(fd->body, &sub);
     else if (fd->body) exec_stmt(fd->body, &sub);
     double ret = sub.return_value;
@@ -1429,23 +2393,30 @@ static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args, int arg_cou
     if (sub.return_init_list) {
         r->return_init_list = sub.return_init_list;
     }
-    /* eski değerleri geri yükle — str kopyası saved_str'den (use-after-free önlemi) */
-    for (int i = 0; i < fd->param_count && i < arg_count; i++) {
-        Var *v = env_find(r->env, fd->params[i]);
-        if (v) {
-            for (int j = 0; j < saved_count; j++) {
-                if (saved[j] == v) {
-                    v->num = saved[j]->num;
-                    v->is_string = saved_is_string[j];
-                    if (v->str) free(v->str);
-                    v->str = saved_str[j] ? strdup(saved_str[j]) : NULL;
-                    free(saved_str[j]);
-                    saved_str[j] = NULL;
-                    break;
-                }
-            }
-        }
+    /* Metin sonucu cagirana tasi (cagiranda bayat deger kalmasin). */
+    if (r->return_str) { free(r->return_str); r->return_str = NULL; }
+    if (sub.return_str) {
+        r->return_str = strdup(sub.return_str);
+        free(sub.return_str);
+        sub.return_str = NULL;
     }
+    /* eski değerleri geri yükle — str kopyası saved_str'den (use-after-free önlemi).
+       TUR 25: slot indeksi ile dogrudan; eskiden her parametre icin tum
+       slotlar taranirdi ve 32'den sonrasi hic bulunamazdi. */
+    for (int i = 0; i < fd->param_count; i++) {
+        int slot = saved_slot[i];
+        if (slot < 0) continue;              /* bu parametre cagiranda yoktu */
+        Var *v = env_find(r->env, fd->params[i].name);
+        if (!v) continue;
+        /* Kayitli DEGER — `saved[slot].var->num` artik ezilmis degerdir. */
+        v->num = saved[slot].num;
+        v->is_string = saved[slot].is_string;
+        if (v->str) free(v->str);
+        v->str = saved[slot].str ? strdup(saved[slot].str) : NULL;
+    }
+    for (int i = 0; i < saved_count; i++) free(saved[i].str);
+    free(saved);
+    free(saved_slot);
     /* Fonksiyon içinde oluşturulan LOCAL (global olmayan) değişkenleri temizle.
        Global değişkenler (call_user_func öncesinde de varsa) korunur. */
     {
@@ -1462,27 +2433,83 @@ static double call_user_func(Runner *r, FuncDef *fd, GclExpr **args, int arg_cou
                 if (v->str) free(v->str);
                 if (v->decl_type) free(v->decl_type);
                 if (v->members) free_struct_members(v->members);
+                /* B6: parametreye kopyalanan dizi elemanları da serbest
+                   bırakılmalı — aksi hâlde her çağrıda sızıntı olur. */
+                if (v->arr_vals) free(v->arr_vals);
+                if (v->arr_strs) {
+                    for (int i = 0; i < v->arr_count; i++) if (v->arr_strs[i]) free(v->arr_strs[i]);
+                    free(v->arr_strs);
+                }
+                if (v->arr_members) {
+                    for (int i = 0; i < v->arr_count; i++) if (v->arr_members[i]) free_struct_members(v->arr_members[i]);
+                    free(v->arr_members);
+                }
                 free(v);
             } else {
                 pp = &v->next;
             }
         }
     }
+    g_call_depth--;
     return ret;
+}
+
+/* B7 — bir ifade STRING değeri üretiyor mu? String literali veya string
+   DEĞİŞKENİ ise metni döndürür; değilse NULL. `"abc" == "xyz"` eskiden iki
+   taraf da sayısal 0'a indiği için DAİMA 1 (true) veriyordu. */
+static const char *expr_string_value(GclExpr *e, Runner *r) {
+    if (!e) return NULL;
+    if (e->kind == AST_EXPR_STRING) return e->str ? e->str : "";
+    if (e->kind == AST_EXPR_VAR) {
+        Var *v = env_find(r->env, e->name);
+        if (v && v->is_string && v->str) return v->str;
+    }
+    return NULL;
 }
 
 static double eval_expr(GclExpr *e, Runner *r) {
     if (!e) return 0.0;
     switch (e->kind) {
         case AST_EXPR_FLOAT: return e->num;
+        /* TUR 22 — `'A'` bir `char` DEGERIDIR; sayisal baglamda degeri KODdur
+           (65), tipki `int m = c;` gibi. printf'in `{}` yer tutucusunun onu
+           KARAKTER basmasi "tek kural"in parcasi; bkz. expr_is_char_value(). */
         case AST_EXPR_STRING: return 0.0;
         case AST_EXPR_VAR: {
             Var *v = env_find(r->env, e->name);
             if (!v) {
-                fprintf(stderr, "Runtime error: undefined variable '%s'\n", e->name);
+        runtime_errorcf(GCL_E_SEM_UNKNOWN_VAR, span_of_expr(e),
+                        "undefined variable '%s'", e->name);
                 return 0.0;
             }
             return env_get_num(r->env, e->name);
+        }
+        /* B9 — `i++` ESKİ değeri, `++i` YENİ değeri verir (C). Yeni değer,
+           mevcut atama yolları (VAR / MEMBER / ARRAY lvalue) kullanılarak
+           yazılır; böylece struct alanı ve dizi elemanı için de çalışır. */
+        case AST_EXPR_POSTINC:
+        case AST_EXPR_PREINC: {
+            double old_value = eval_expr(e->left, r);
+            double new_value = (e->op == OP_ADD) ? old_value + 1.0 : old_value - 1.0;
+            GclExpr literal;
+            memset(&literal, 0, sizeof(literal));
+            literal.kind = AST_EXPR_FLOAT;
+            literal.num  = new_value;
+            GclExpr store;
+            memset(&store, 0, sizeof(store));
+            store.kind  = AST_EXPR_ASSIGN;
+            store.left  = e->left;      /* lvalue: değişken / alan / dizi elemanı */
+            store.right = &literal;
+            eval_expr(&store, r);       /* yan etki: lvalue = yeni değer */
+            return (e->kind == AST_EXPR_POSTINC) ? old_value : new_value;
+        }
+        /* B11 — C-tipi cast: `(int)7.5`. Operand değerlendirilir, sonra hedef
+           tipin aralığına kırpılır (truncate_to_declared_type). Eskiden bu
+           sözdizimi hiç desteklenmiyordu → "expected ';'". */
+        case AST_EXPR_CAST: {
+            double v = eval_expr(e->left, r);
+            if (!e->str || !e->str[0]) return v;
+            return truncate_to_declared_type(v, e->str);
         }
         case AST_EXPR_BINOP: {
             double l = eval_expr(e->left, r);
@@ -1491,10 +2518,34 @@ static double eval_expr(GclExpr *e, Runner *r) {
                 case OP_ADD: return l + rr;
                 case OP_SUB: return l - rr;
                 case OP_MUL: return l * rr;
-                case OP_DIV: return rr != 0 ? l / rr : 0.0;
-                case OP_MOD: return rr != 0 ? fmod(l, rr) : 0.0;
-                case OP_EQ: return l == rr;
-                case OP_NE: return l != rr;
+                /* B13 — sıfıra bölme/modül eskiden TAMAMEN SESSİZ 0.0 dönüyordu.
+                   Artık C semantiğine uygun sonuç (+/-inf, nan) ve bir tanılama
+                   (GCL_E_SEM_DIV_ZERO = GCL3008) üretilir. */
+                case OP_DIV:
+                    if (rr == 0.0) {
+                        runtime_errorcf(GCL_E_SEM_DIV_ZERO, span_of_expr(e),
+                                        "division by zero");
+                        if (l == 0.0) return NAN;              /* 0/0 */
+                        return (l > 0.0) ? HUGE_VAL : -HUGE_VAL;
+                    }
+                    return l / rr;
+                case OP_MOD:
+                    if (rr == 0.0) {
+                        runtime_errorcf(GCL_E_SEM_DIV_ZERO, span_of_expr(e),
+                                        "modulo by zero");
+                        return NAN;
+                    }
+                    return fmod(l, rr);
+                /* B7: operandlardan biri STRING ise metin karşılaştırması yap. */
+                case OP_EQ: case OP_NE: {
+                    const char *ls = expr_string_value(e->left, r);
+                    const char *rs = expr_string_value(e->right, r);
+                    if (ls || rs) {
+                        int eq = (ls && rs) ? (strcmp(ls, rs) == 0) : 0;
+                        return (double)(e->op == OP_EQ ? eq : !eq);
+                    }
+                    return (double)(e->op == OP_EQ ? (l == rr) : (l != rr));
+                }
                 case OP_LT: return l < rr;
                 case OP_GT: return l > rr;
                 case OP_LE: return l <= rr;
@@ -1522,8 +2573,14 @@ static double eval_expr(GclExpr *e, Runner *r) {
             if (e->left && e->left->kind == AST_EXPR_VAR) {
                 Var *tv = env_find(r->env, e->left->name);
                 if (tv && tv->is_const) {
-                    fprintf(stderr, "Runtime error: cannot assign to const '%s'\n", e->left->name);
-                    r->error = 1;
+                    /* Hata GLOBAL sayaca gider (bkz. `gcl_runtime_errors` ve
+                       Runner'in `memcpy` kopyasi notu): bu `r` bir KOPYA
+                       olabilir ve kopyaya yazilan bir bayrak cagirana
+                       DONMEZ — bu yuzden Runner'da boyle bir alan TUTULMAZ.
+                       `return` yine de sart: const'un degeri KORUNMALI
+                       (errors/try_catch_kinds.gcsf). */
+                    runtime_errorcf(GCL_E_SEM_ASSIGN_CONST, span_of_expr(e->left),
+                                    "cannot assign to const '%s'", e->left->name);
                     return 0.0;
                 }
                 /* struct atama: student1 = getStudent(); */
@@ -1593,10 +2650,21 @@ static double eval_expr(GclExpr *e, Runner *r) {
                 if (arr_base && arr_base->kind == AST_EXPR_VAR && idx_expr) {
                     Var *arr = env_find(r->env, arr_base->name);
                     int idx = (int)eval_expr(idx_expr, r);
-                    if (arr && idx >= 0) {
+                    if (arr && idx < 0) {
+                        /* B12 — negatif index eskiden tamamen sessizdi. */
+                        runtime_errorcf(GCL_E_SEM_OUT_OF_BOUNDS, span_of_expr(arr_expr),
+                                        "negative array index %d for '%s'",
+                                        idx, arr_base->name);
+                    } else if (arr && idx >= 0) {
                         int bounds = arr->arr_count > 0 ? arr->arr_count : arr->array_size;
                         if (bounds <= 0) bounds = (int)(arr->str ? strlen(arr->str) : 0);
-                        if (arr->arr_vals && idx < arr->arr_count) {
+                        /* B12 — aralik disi YAZMA eskiden SESSIZCE ATILIYORDU
+                           (ne hata ne uyari vardi). Artik tanilama uretilir. */
+                        if (bounds > 0 && idx >= bounds) {
+                            runtime_errorcf(GCL_E_SEM_OUT_OF_BOUNDS, span_of_expr(arr_expr),
+                                            "array index %d out of bounds for '%s' (size %d)",
+                                            idx, arr_base->name, bounds);
+                        } else if (arr->arr_vals && idx < arr->arr_count) {
                             /* String değer verilirse arr_strs'e, sayı verilirse arr_vals'e yaz */
                             if (e->right->kind == AST_EXPR_STRING) {
                                 if (!arr->arr_strs) {
@@ -1626,6 +2694,26 @@ static double eval_expr(GclExpr *e, Runner *r) {
                         }
                     }
                 }
+            } else if (e->left) {
+                /* B32 — atanamayan hedef (rvalue): `5 = 3`, `f(x) = 1`, `a + b = 2`.
+                   Eskiden bu ifade TAMAMEN SESSIZDI: sag taraf hesaplaniyor, atama
+                   yapilmiyor, hicbir hata da verilmiyordu (exit 0) — kullanici
+                   yazim hatasini asla goremiyordu. */
+                const char *what = "an expression";
+                switch (e->left->kind) {
+                    case AST_EXPR_FLOAT:
+                    case AST_EXPR_INT:    what = "a number literal"; break;
+                    case AST_EXPR_STRING: what = "a string literal"; break;
+                    case AST_EXPR_CALL:   what = "a function call"; break;
+                    case AST_EXPR_BINOP:  what = "an arithmetic expression"; break;
+                    case AST_EXPR_CAST:   what = "a cast expression"; break;
+                    case AST_EXPR_UNOP:   what = "a unary expression"; break;
+                    default: break;
+                }
+                runtime_errorf(span_of_expr(e->left),
+                               "cannot assign to %s - the left side of '=' must be "
+                               "a variable, a struct member or an array element",
+                               what);
             }
             return v;
         }
@@ -1635,7 +2723,8 @@ static double eval_expr(GclExpr *e, Runner *r) {
                 const char *fn = callee->name;
                 /* Bare printf("{}", ...) — simple_doc.md giriş dilinde Stdio. öneki yok */
                 if (strcmp(fn, "printf") == 0) {
-                    return call_native_member("Stdio", "printf", e->args, e->arg_count, r);
+                    return call_native_member(span_of_expr(e), "Stdio", "printf",
+                                              e->args, e->arg_count, r);
                 }
                 /* Bare scanf(name) / scanf("format", var) — simple_doc.md giriş dili */
                 if (strcmp(fn, "scanf") == 0) {
@@ -1684,14 +2773,16 @@ static double eval_expr(GclExpr *e, Runner *r) {
                         if (!v) {
                             /* sizeof(tip_adı) — bilinen tip boyutları */
                             const char *tn = arg->name;
-                            if (strcmp(tn, "char")==0 || strcmp(tn,"int8")==0 || strcmp(tn,"uint8")==0) return 1.0;
-                            if (strcmp(tn, "short")==0 || strcmp(tn,"int16")==0 || strcmp(tn,"uint16")==0) return 2.0;
-                            if (strcmp(tn, "int")==0 || strcmp(tn,"long")==0 || strcmp(tn,"int32")==0 ||
-                                strcmp(tn,"uint32")==0 || strcmp(tn,"float")==0 || strcmp(tn,"float32")==0) return 4.0;
-                            if (strcmp(tn, "long long")==0 || strcmp(tn,"int64")==0 || strcmp(tn,"uint64")==0 ||
-                                strcmp(tn,"double")==0 || strcmp(tn,"float64")==0) return 8.0;
-                            if (strcmp(tn, "long double")==0 || strcmp(tn,"int128")==0 ||
-                                strcmp(tn,"uint128")==0 || strcmp(tn,"float128")==0) return 16.0;
+                            /* ONE table, defined beside
+                               truncate_to_declared_type, so `sizeof(T)` cannot
+                               disagree with what a `T` declaration actually
+                               stores (TURN 43). This list used to live here and
+                               had drifted in two places: the three "128-bit"
+                               names claimed 16 bytes while the interpreter
+                               stores 8, and `float16` was missing altogether so
+                               it fell through to the 8-byte double default. */
+                            int sz = decl_type_size(tn);
+                            if (sz > 0) return (double)sz;
                         }
                     }
                     return 8.0; /* double varsayımı */
@@ -1699,17 +2790,19 @@ static double eval_expr(GclExpr *e, Runner *r) {
                 /* kullanıcı fonksiyonu */
                 FuncDef *fd = find_func(r->env, fn);
                 if (fd) {
-                    return call_user_func(r, fd, e->args, e->arg_count);
+                    return call_user_func(r, fd, e->args, e->arg_count, span_of_expr(e));
                 }
                 /* #extern + #register ile kayıtlı C fonksiyonu */
-                return call_extern_func(r->env, fn, e->args, e->arg_count, r);
+                return call_extern_func(r->env, span_of_expr(e), fn, e->args, e->arg_count, r);
             }
             /* modül member çağrısı: Math.fn(...), Stdio.fn(...), Embed.fn(...) */
             if (callee && callee->kind == AST_EXPR_MEMBER) {
                 GclExpr *base = callee->left;
                 if (base && base->kind == AST_EXPR_VAR) {
                     /* #lib/.gclib feature removed — always dispatch to native modules */
-                    return call_native_member(base->name, callee->member_name, e->args, e->arg_count, r);
+                    return call_native_member(span_of_expr(e), base->name,
+                                              callee->member_name, e->args,
+                                              e->arg_count, r);
                 }
             }
             return 0.0;
@@ -1717,7 +2810,8 @@ static double eval_expr(GclExpr *e, Runner *r) {
         case AST_EXPR_MEMBER: {
             /* Native modül sabiti: Raylib.RED, Raylib.RAYWHITE gibi (parantezsiz) */
             if (e->left && e->left->kind == AST_EXPR_VAR && native_find(r->env, e->left->name)) {
-                return call_native_member(e->left->name, e->member_name, NULL, 0, r);
+                return call_native_member(span_of_expr(e), e->left->name,
+                                          e->member_name, NULL, 0, r);
             }
             /* Struct member oku (nested destekli) */
             GclStructValue *mv = resolve_member_chain(e, r);
@@ -1739,9 +2833,22 @@ static double eval_expr(GclExpr *e, Runner *r) {
                    Daha önce yalnızca argv destekleniyordu; int8 a[2]={...} gibi
                    diziler expression bağlamında hep 0 dönüyordu. */
                 Var *arr = env_find(r->env, e->left->name);
-                if (arr && idx >= 0) {
+                if (arr && idx < 0) {
+                    /* B12 — negatif index sessizdi (0.0 donerdi). */
+                    runtime_errorcf(GCL_E_SEM_OUT_OF_BOUNDS, span_of_expr(e),
+                                    "negative array index %d for '%s'",
+                                    idx, e->left->name);
+                } else if (arr && idx >= 0) {
                     int bounds = arr->arr_count > 0 ? arr->arr_count : arr->array_size;
                     if (bounds <= 0) bounds = (int)(arr->str ? strlen(arr->str) : 0);
+                    /* B12 — aralik disi OKUMA eskiden tamamen sessizdi (0.0).
+                       GCL_E_SEM_OUT_OF_BOUNDS tanilamasi uretilsin. */
+                    if (bounds > 0 && idx >= bounds) {
+                        runtime_errorcf(GCL_E_SEM_OUT_OF_BOUNDS, span_of_expr(e),
+                                        "array index %d out of bounds for '%s' (size %d)",
+                                        idx, e->left->name, bounds);
+                        return 0.0;
+                    }
                     if (arr->arr_vals && idx < arr->arr_count)
                         return arr->arr_vals[idx];
                     if (arr->arr_strs && idx < arr->arr_count)
@@ -1757,16 +2864,327 @@ static double eval_expr(GclExpr *e, Runner *r) {
     }
 }
 
+/* ---------- Slot -> struct degiskeni koprusu ----------------------------
+
+   raylib'de struct donduren cagrilar (GetMousePosition, GetWindowScaleDPI,
+   MeasureTextEx, GetWorldToScreen, ...) sonucu modulun g_last_* slotuna yazar
+   ve 0.0 dondurur: modul ABI'si tek bir double tasir. Modul bu degerleri
+   LastV2X, LastRectW, LastCamPosX gibi uyelerle parca parca yayinlar.
+
+   Eskiden `Raylib.Vector2 m = Raylib.GetMousePosition();` SESSIZCE (0,0)
+   veriyordu: bildirim baslaticisi bir cagri oldugunda yorumlayici yalnizca
+   kurucu bicimini (`Raylib.Vector2(a,b)`) biliyordu; slotu degiskene
+   kopyalayan hicbir yol yoktu (hata yok, yanlis deger var). Asagidaki tablo
+   her native struct tipinin DUZLESMIS skaler alanlarini sirayla okuyan
+   Last* uye adlarini tutar; modul cagrisindan sonra bunlar modulden cagrilip
+   degiskenin alanlarina yazilir. Sira, flatten_struct_members ile AYNIDIR. */
+
+typedef struct {
+    const char *type;
+    const char *const *accessors;
+    int count;
+} NativeLastMap;
+
+static const char *const last_vec2[]  = {"LastV2X","LastV2Y"};
+static const char *const last_vec3[]  = {"LastV3X","LastV3Y","LastV3Z"};
+static const char *const last_vec4[]  = {"LastV4X","LastV4Y","LastV4Z","LastV4W"};
+static const char *const last_rect[]  = {"LastRectX","LastRectY","LastRectW","LastRectH"};
+static const char *const last_cam[]   = {
+    "LastCamPosX","LastCamPosY","LastCamPosZ",
+    "LastCamTargetX","LastCamTargetY","LastCamTargetZ",
+    "LastCamUpX","LastCamUpY","LastCamUpZ",
+    "LastCamFovy","LastCamProjection"
+};
+static const char *const last_cam2d[] = {
+    "LastCam2DOffsetX","LastCam2DOffsetY",
+    "LastCam2DTargetX","LastCam2DTargetY",
+    "LastCam2DRotation","LastCam2DZoom"
+};
+static const char *const last_ray[]   = {
+    "LastRayX","LastRayY","LastRayZ","LastRayDirX","LastRayDirY","LastRayDirZ"
+};
+static const char *const last_raycol[] = {
+    "LastRayColHit","LastRayColDistance",
+    "LastRayColPX","LastRayColPY","LastRayColPZ",
+    "LastRayColNX","LastRayColNY","LastRayColNZ"
+};
+static const char *const last_bbox[]  = {
+    "LastBoxMinX","LastBoxMinY","LastBoxMinZ","LastBoxMaxX","LastBoxMaxY","LastBoxMaxZ"
+};
+static const char *const last_quat[]  = {"LastQuatX","LastQuatY","LastQuatZ","LastQuatW"};
+static const char *const last_xform[] = {
+    "LastTransformTX","LastTransformTY","LastTransformTZ",
+    "LastTransformRX","LastTransformRY","LastTransformRZ",
+    "LastTransformSX","LastTransformSY","LastTransformSZ"
+};
+static const char *const last_npatch[] = {
+    "LastNPatchX","LastNPatchY","LastNPatchW","LastNPatchH",
+    "LastNPatchLeft","LastNPatchTop","LastNPatchRight","LastNPatchBottom","LastNPatchLayout"
+};
+static const char *const last_glyph[] = {
+    "LastGlyphValue","LastGlyphOffsetX","LastGlyphOffsetY","LastGlyphAdvanceX",
+    "LastGlyphImgWidth","LastGlyphImgHeight"
+};
+static const char *const last_aevent[] = {
+    "LastAEventFrame","LastAEventType","LastAEventP0","LastAEventP1","LastAEventP2","LastAEventP3"
+};
+
+static const NativeLastMap g_native_last_maps[] = {
+    { "Vector2",         last_vec2,   (int)(sizeof(last_vec2)   / sizeof(last_vec2[0]))   },
+    { "Vector3",         last_vec3,   (int)(sizeof(last_vec3)   / sizeof(last_vec3[0]))   },
+    { "Vector4",         last_vec4,   (int)(sizeof(last_vec4)   / sizeof(last_vec4[0]))   },
+    { "Rectangle",       last_rect,   (int)(sizeof(last_rect)   / sizeof(last_rect[0]))   },
+    { "Camera",          last_cam,    (int)(sizeof(last_cam)    / sizeof(last_cam[0]))    },
+    { "Camera3D",        last_cam,    (int)(sizeof(last_cam)    / sizeof(last_cam[0]))    },
+    { "Camera2D",        last_cam2d,  (int)(sizeof(last_cam2d)  / sizeof(last_cam2d[0]))  },
+    { "Ray",             last_ray,    (int)(sizeof(last_ray)    / sizeof(last_ray[0]))    },
+    { "RayCollision",    last_raycol, (int)(sizeof(last_raycol) / sizeof(last_raycol[0])) },
+    { "BoundingBox",     last_bbox,   (int)(sizeof(last_bbox)   / sizeof(last_bbox[0]))   },
+    { "Quaternion",      last_quat,   (int)(sizeof(last_quat)   / sizeof(last_quat[0]))   },
+    { "Transform",       last_xform,  (int)(sizeof(last_xform)  / sizeof(last_xform[0]))  },
+    { "NPatchInfo",      last_npatch, (int)(sizeof(last_npatch) / sizeof(last_npatch[0])) },
+    { "GlyphInfo",       last_glyph,  (int)(sizeof(last_glyph)  / sizeof(last_glyph[0]))  },
+    { "AutomationEvent", last_aevent, (int)(sizeof(last_aevent) / sizeof(last_aevent[0])) },
+};
+
+#define GCL_NATIVE_LAST_MAP_COUNT \
+    ((int)(sizeof(g_native_last_maps) / sizeof(g_native_last_maps[0])))
+
+static const NativeLastMap *native_last_map(const char *type) {
+    if (!type || !type[0]) return NULL;
+    for (int i = 0; i < GCL_NATIVE_LAST_MAP_COUNT; i++)
+        if (strcmp(g_native_last_maps[i].type, type) == 0) return &g_native_last_maps[i];
+    return NULL;
+}
+
+/* Struct uye listesindeki skaler yapraklari sirayla topla (ic ice rekursif). */
+static void collect_scalar_leaves(GclStructValue *m, GclStructValue **out, int *n, int cap) {
+    for (; m && *n < cap; m = m->next) {
+        if (m->members) collect_scalar_leaves(m->members, out, n, cap);
+        else out[(*n)++] = m;
+    }
+}
+
+/* Bir modul uyesini sabit cagri olarak cagir (Last* erisimcileri gibi). */
+static double native_call_named(GclEnv *env, const char *module, const char *member, double dflt) {
+    NativeModule *mod = native_find(env, module);
+    if (!mod) mod = native_load(env, module);
+    if (!mod || !member) return dflt;
+    for (int i = 0; i < mod->entry_count; i++)
+        if (strcmp(mod->entries[i].name, member) == 0) return mod->entries[i].fn(0, NULL);
+    return dflt;
+}
+
+/* Slot dolduran bir native cagridan sonra degiskenin alanlarini doldur.
+   Tip icin tablo yoksa hicbir sey yapmaz (0 doner). */
+static int fill_native_from_last_slot(Runner *r, const char *var_name,
+                                      const char *module, const GclNativeStruct *ns) {
+    if (!r || !var_name || !module || !ns || !ns->type) return 0;
+    const NativeLastMap *map = native_last_map(ns->type);
+    if (!map) return 0;
+    Var *v = env_find(r->env, var_name);
+    if (!v || !v->members) return 0;
+    GclStructValue *leaves[256];
+    int n = 0;
+    collect_scalar_leaves(v->members, leaves, &n, 256);
+    if (n != map->count) return 0;
+    for (int i = 0; i < n; i++) {
+        double val = native_call_named(r->env, module, map->accessors[i], leaves[i]->num);
+        leaves[i]->num = truncate_to_declared_type(val, leaves[i]->decl_type);
+        leaves[i]->is_string = 0;
+    }
+    return 1;
+}
+
+/* ---------- defer ---------- */
+
+/* `defer <stmt>;` registers a cleanup action for the INNERMOST block (or one
+   loop iteration). Actions run in REVERSE order (LIFO) when that frame closes:
+   on the normal path, on `break`/`continue`, on `return`, and while an error
+   unwinds towards its `try`.
+
+   The stack is FILE SCOPE on purpose: call_user_func() copies the Runner with
+   memcpy (see the B31 note in `struct Runner`), so a per-Runner array would be
+   duplicated on every call and the copy would then run — or drop — the
+   caller's actions. One stack plus a per-frame MARK is correct for any number
+   of copied Runners, because a frame only ever truncates back to its own mark. */
+typedef struct { GclStmt *stmt; } DeferEntry;
+static DeferEntry *g_defers;
+static int g_defer_count;
+static int g_defer_cap;
+
+static int defer_push(GclStmt *s) {
+    if (!s) return 0;
+    if (g_defer_count >= g_defer_cap) {
+        int cap = g_defer_cap ? g_defer_cap * 2 : 32;
+        DeferEntry *grown = (DeferEntry *)realloc(g_defers, (size_t)cap * sizeof(DeferEntry));
+        if (!grown) return 0;
+        g_defers = grown;
+        g_defer_cap = cap;
+    }
+    g_defers[g_defer_count++].stmt = s;
+    return 1;
+}
+
+/* Run everything registered since `mark`, newest first, then drop the frame.
+   `exec_stmt` is declared just below; the definition comes later in the file
+   but the call is fine because the frame only runs at runtime. */
+static void defers_run_frame(Runner *r, int mark) {
+    while (g_defer_count > mark) {
+        GclStmt *s = g_defers[--g_defer_count].stmt;
+        int was_unwinding = g_unwinding;
+        if (!s) continue;
+        /* Run the cleanup in a CLEAN error state. While `g_unwinding` is set,
+           call_native_member() refuses to run native functions (the B33 guard
+           that stops `printf("{}", undefined)` from emitting a partial "0"),
+           and that guard would also silence every cleanup that closes a real
+           resource - `defer Stdio.closeFile(f)` must still close `f` while an
+           error unwinds. The action is a new, deliberate call, not the tail of
+           the expression that failed, so the guard must not apply to it. */
+        g_unwinding = 0;
+        run_cleanup_body(s, r);
+        if (g_unwinding) {
+            /* The cleanup itself failed: its error REPLACES the one in flight
+               and the remaining actions are skipped (Python's `finally` rule).
+               The new error keeps unwinding to the nearest `try`. */
+            break;
+        }
+        /* No new error: restore the state so the original error keeps
+           unwinding outwards. */
+        g_unwinding = was_unwinding;
+    }
+    /* Drop anything the cleanup itself registered (e.g. a `defer` inside a
+       deferred block): its frame is the one that is ending right now. */
+    if (g_defer_count > mark) g_defer_count = mark;
+}
+
 /* ---------- Statements ---------- */
 
 static int exec_stmt(GclStmt *s, Runner *r);
 
 static int exec_block(GclStmt *blk, Runner *r) {
     if (!blk || blk->kind != STMT_BLOCK) return 0;
+    /* C block scope (B4): remember the variable-list head on entry and drop
+       everything created inside on exit. Without this a bare `{ int fresh; }`
+       leaked `fresh` past the closing brace, and a block nested in a loop body
+       leaked its locals too. `global` variables are preserved by env_scope_exit(). */
+    Var *scope_mark = r->env->vars;
+    /* `defer` frame of this block: everything registered from here on runs when
+       the block closes. */
+    int defer_mark = g_defer_count;
+    int rc = 0;
     for (int i = 0; i < blk->u.block.count && !r->return_flag && !r->break_flag && !r->continue_flag; i++) {
-        if (exec_stmt(blk->u.block.stmts[i], r) != 0) return -1;
+        if (exec_stmt(blk->u.block.stmts[i], r) != 0) { rc = -1; break; }
+        /* try icinde bir hata olustuysa ifade 0 donse bile blok DEVAM ETMEZ:
+           denetim try sinirina kadar hizli cikis yapar. */
+        if (g_unwinding) { rc = -1; break; }
     }
-    return 0;
+    /* Deferred actions run BEFORE the block's variables disappear, so a
+       deferred call can still use the resource it is closing. This is the only
+       exit path check that matters: it runs for the normal end, for
+       break/continue, for return (return_flag) and for error unwinding. */
+    defers_run_frame(r, defer_mark);
+    env_scope_exit(r->env, scope_mark);
+    return rc;
+}
+
+/* ---------- try/catch yardimcilari ---------- */
+
+/* Bir govdeyi (blok ya da tek durum) calistirir; try/catch/finally ayni
+   yoldan gecer. */
+static int run_nested(GclStmt *body, Runner *r) {
+    if (!body) return 0;
+    if (body->kind == STMT_BLOCK) return exec_block(body, r);
+    return exec_stmt(body, r);
+}
+
+/* Run a body that MUST execute even while `return` / `break` / `continue` is
+   unwinding outwards: a `finally` block, a `catch` block, or a deferred
+   action.
+
+   exec_block() refuses to run any statement while one of those flags is set -
+   that is how a block stops early once control has been transferred out of it.
+   A `finally` body is just another block, so it was silently SKIPPED on
+   `return` (`try { return 1; } finally { printf("x"); }` printed nothing) and
+   the same held for `break` and `continue`. A braced `defer { ... }` action had
+   the identical hole, because defers_run_frame() runs the action through
+   exec_stmt() -> exec_block().
+
+   The flags are saved, cleared for the duration, and put back afterwards. A
+   `return` / `break` / `continue` issued BY the cleanup WINS over the one that
+   was in flight (Python's rule for `finally`); that is why the saved flags are
+   restored only when the body did not transfer control itself.
+
+   `g_unwinding` is deliberately NOT touched here: both callers (STMT_TRY and
+   defers_run_frame) clear it themselves so a cleanup that closes a real
+   resource can still run. */
+static int run_cleanup_body(GclStmt *body, Runner *r) {
+    if (!body) return 0;
+    int save_return = r->return_flag;
+    int save_break = r->break_flag;
+    int save_continue = r->continue_flag;
+    r->return_flag = 0;
+    r->break_flag = 0;
+    r->continue_flag = 0;
+    int rc = run_nested(body, r);
+    if (!r->return_flag && !r->break_flag && !r->continue_flag) {
+        r->return_flag = save_return;
+        r->break_flag = save_break;
+        r->continue_flag = save_continue;
+    }
+    return rc;
+}
+
+/* Hata nesnesinin bir alanini uretir (GclStructValue zinciri). */
+static GclStructValue *mk_member_node(const char *name, double num, const char *str) {
+    GclStructValue *m = (GclStructValue *)calloc(1, sizeof(GclStructValue));
+    if (!m) return NULL;
+    m->name = strdup(name ? name : "");
+    m->num = num;
+    if (str) { m->str = strdup(str); m->is_string = 1; }
+    return m;
+}
+
+/* `catch (err)` — hata nesnesini env'e baglar. Alanlar `.uye` erisimiyle
+   okunur (resolve_member_chain struct yolunu kullanir):
+       err.message (metin), err.code / err.line / err.col (sayi). */
+static void bind_error_object(Runner *r, const char *name, const char *msg,
+                              int code, int line, int col) {
+    if (!r || !name) return;
+    env_set_num(r->env, name, 0.0);
+    Var *v = env_find(r->env, name);
+    if (!v) return;
+    if (v->members) { free_struct_members(v->members); v->members = NULL; }
+    GclStructValue *head = mk_member_node("message", 0.0, msg ? msg : "");
+    GclStructValue *cur = head;
+    static const char *field_names[3] = { "code", "line", "col" };
+    double field_vals[3] = { (double)code, (double)line, (double)col };
+    for (int i = 0; i < 3; i++) {
+        GclStructValue *m = mk_member_node(field_names[i], field_vals[i], NULL);
+        if (!m) continue;
+        if (!cur) { head = m; cur = m; continue; }
+        cur->next = m;
+        cur = m;
+    }
+    v->members = head;
+}
+
+/* Yakalanmayan hata en distaki try'dan tasiyor: RAPORLA.
+   * `throw` ile uretilen hata programi DURDURUR (Python gibi) — g_unwinding
+     korunur, bloklar -1 dondurur ve surec 1 ile cikar.
+   * siradan runtime hatasi TOLERANSLI moda doner: mesaj basildiktan sonra akis
+     try'dan SONRAKI durumdan devam eder (legacy sozlesme; 17 altin test).
+   Dis bir try varsa hicbir sey yapilmaz: hata ona kadar tasinir. */
+static void error_escalate(void) {
+    if (!g_err_valid) return;
+    if (g_try_depth > 0) return;
+    gcl_runtime_errors++;
+    fputs("Runtime error: ", stderr);
+    fputs(g_err_msg, stderr);
+    if (g_err_line > 0) fprintf(stderr, " at %d:%d", g_err_line, g_err_col);
+    fputc('\n', stderr);
+    g_err_valid = 0;
+    if (!g_err_is_throw) g_unwinding = 0;
 }
 
 static int exec_stmt(GclStmt *s, Runner *r) {
@@ -1808,6 +3226,21 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                     return 0;
                 }
             }
+            /* B4 blok scope: her bildirim YENI bir Var yaratir (listenin basina
+               eklenir). Boylece ic bloktaki `int x = 10;` distaki `x`'i GOLGELER
+               (paylasmaz) ve exec_block cikisinda env_scope_exit onu siler.
+               Aksi halde bildirim env_find ile distaki Var'i bulup degerini
+               EZIYORDU: `int x = 5; { int x = 10; }` sonrasi x = 10 kaliyordu.
+               `global` birlesme yolu (yukarida) bundan muaftir. */
+            if (name && !s->u.var_decl.is_global) {
+                Var *decl = (Var *)calloc(1, sizeof(Var));
+                if (decl) {
+                    decl->name = strdup(name);
+                    decl->next = r->env->vars;
+                    r->env->vars = decl;
+                    if (type && type[0]) decl->decl_type = strdup(type);
+                }
+            }
             /* struct tipi mi? */
             if (type && strncmp(type, "struct ", 7) == 0) {
                 StructDef *sd = find_struct(r->env, type + 7);
@@ -1824,6 +3257,15 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                     env_set_num(r->env, name, 0.0);
                     Var *vv = env_find(r->env, name);
                     if (vv) {
+                        /* Dongu icinde tekrar bildirilen struct dizisi: onceki
+                           iterasyonun elemanlarini serbest birak, yoksa her
+                           karede belleK sizar. */
+                        if (vv->arr_members) {
+                            for (int ai = 0; ai < vv->arr_count; ai++)
+                                if (vv->arr_members[ai]) free_struct_members(vv->arr_members[ai]);
+                            free(vv->arr_members);
+                            vv->arr_members = NULL;
+                        }
                         vv->arr_count = cnt;
                         vv->arr_members = (GclStructValue **)calloc((size_t)cnt, sizeof(GclStructValue *));
                         for (int ai = 0; ai < cnt; ai++) {
@@ -1922,6 +3364,71 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                     return 0;
                 }
             }
+            /* Native modül struct tipi: `Raylib.Rectangle r;` ya da düz `Rectangle r;`.
+               Kullanıcı tanımlı struct/typedef YUKARIDA ele alınır ve kazanır
+               (complete_type.c'deki gölgeleme kuralı); bu yüzden buraya yalnızca
+               hiçbir kullanıcı tipi uymadığında gelinir. Alan listesi olmadan
+               `r.x` sessizce 0 dönerdi (hata yok, yanlış değer var). */
+            if (type && !base) {
+                const GclNativeStruct *ns = lookup_native_struct(type);
+                if (ns) {
+                    /* tek native struct değişkeni */
+                    if (!(s->u.var_decl.array_size >= 1)) {
+                        env_set_native_struct(r->env, name, ns);
+                        if (s->u.var_decl.init) {
+                            GclExpr *init = s->u.var_decl.init;
+                            if (!fill_native_from_constructor(r, name, ns, init)) {
+                                /* Baslatici bir MODUL cagrisi mi (Raylib.GetMousePosition()
+                                   gibi)? Oyleyse cagri modulun g_last_* slotunu doldurur;
+                                   degeri oradan degiskene kopyala. Boyle bir kopya olmadan
+                                   `Raylib.Vector2 m = Raylib.GetMousePosition();` sessizce
+                                   (0,0) veriyordu. Cagri bir modul uyesi degilse (kullanici
+                                   fonksiyonu) eski fill_struct_init yolu calisir. */
+                                const char *init_mod = NULL;
+                                if (init->kind == AST_EXPR_CALL && init->left &&
+                                    init->left->kind == AST_EXPR_MEMBER && init->left->left &&
+                                    init->left->left->kind == AST_EXPR_VAR)
+                                    init_mod = init->left->left->name;
+                                if (init_mod) {
+                                    eval_expr(init, r);   /* modul cagrisi -> slot dolar */
+                                    fill_native_from_last_slot(r, name, init_mod, ns);
+                                } else {
+                                    fill_struct_init(r, name, init);
+                                }
+                            }
+                        }
+                        return 0;
+                    }
+                    /* native struct dizisi: alanları her eleman için kur */
+                    int cnt = s->u.var_decl.array_size;
+                    if (s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_INIT_LIST)
+                        cnt = s->u.var_decl.init->arg_count;
+                    env_set_num(r->env, name, 0.0);
+                    Var *vv = env_find(r->env, name);
+                    if (vv) {
+                        /* Dongu icinde tekrar bildirilen native struct dizisi:
+                           onceki elemanlari serbest birak (bellek sizmasin). */
+                        if (vv->arr_members) {
+                            for (int ai = 0; ai < vv->arr_count; ai++)
+                                if (vv->arr_members[ai]) free_struct_members(vv->arr_members[ai]);
+                            free(vv->arr_members);
+                            vv->arr_members = NULL;
+                        }
+                        vv->arr_count = cnt;
+                        vv->arr_members = (GclStructValue **)calloc((size_t)cnt, sizeof(GclStructValue *));
+                        for (int ai = 0; ai < cnt; ai++)
+                            build_native_members(&vv->arr_members[ai], ns);
+                        if (s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_INIT_LIST) {
+                            GclExpr *init = s->u.var_decl.init;
+                            for (int ai = 0; ai < init->arg_count && ai < cnt; ai++) {
+                                if (init->args[ai] && init->args[ai]->kind == AST_EXPR_INIT_LIST)
+                                    fill_members_from_init_list(r, vv->arr_members[ai], init->args[ai]);
+                            }
+                        }
+                    }
+                    return 0;
+                }
+            }
             /* char[] boş bildirim — yalnızca initializer yoksa hata ver
                (ör. `char name[] = "Hello";` veya `char a[] = {'A','B'};` desteklenir) */
             if (type && strcmp(type, "char") == 0 && s->u.var_decl.array_size == -1 &&
@@ -1937,6 +3444,21 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                 /* gcChar → UTF-8 string */
                 if (s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_STRING) {
                     env_set_str(r->env, name, s->u.var_decl.init->str);
+                } else if (s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_VAR) {
+                    /* B5: `gcChar h2 = h;` — kaynak bir STRING DEĞİŞKENİ ise
+                       değeri kopyala. Eskiden "" yazılıyordu (sessiz kayıp);
+                       yalnızca `h2 = h;` (atama) yolu bunu doğru yapıyordu. */
+                    Var *src = env_find(r->env, s->u.var_decl.init->name);
+                    env_set_str(r->env, name, (src && src->is_string && src->str) ? src->str : "");
+                } else if (s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_CALL) {
+                    /* B5 (call half): the text a function returns lives in
+                       return_str, not in the double `v` - `gcChar g = greet();`
+                       stored "". The call was already evaluated by the
+                       `double v = eval_expr(...)` above, so the channel holds
+                       THIS call's text; a numeric return falls back to the
+                       number, the choice the char-array path already makes. */
+                    if (r->return_str) env_set_str(r->env, name, r->return_str);
+                    else env_set_num(r->env, name, v);
                 } else {
                     env_set_str(r->env, name, "");
                 }
@@ -1962,36 +3484,58 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                             Var *vv = env_find(r->env, name);
                             if (vv) {
                                 vv->arr_count = cnt;
-                                if (vv->arr_strs) { for (int ii = 0; vv->arr_strs[ii]; ii++) free(vv->arr_strs[ii]); free(vv->arr_strs); vv->arr_strs = NULL; }
-                                /* if all entries are strings, copy them into arr_strs */
-                                int all_strings = 1;
-                                for (int ai = 0; ai < cnt; ai++) { if (!init->args[ai] || init->args[ai]->kind != AST_EXPR_STRING) { all_strings = 0; break; } }
-                                if (all_strings) {
-                                    vv->arr_strs = (char **)calloc((size_t)cnt + 1, sizeof(char *));
-                                    for (int ai = 0; ai < cnt; ai++) vv->arr_strs[ai] = strdup(init->args[ai]->str ? init->args[ai]->str : "");
-                                    vv->arr_strs[cnt] = NULL;
+                                if (vv->arr_strs) {
+                                    for (int ii = 0; ii < cnt && vv->arr_strs[ii]; ii++) free(vv->arr_strs[ii]);
+                                    free(vv->arr_strs);
+                                    vv->arr_strs = NULL;
+                                }
+                                if (vv->arr_vals) { free(vv->arr_vals); vv->arr_vals = NULL; }
+                                /* B5 - an entry is TEXT when it is a literal, a string
+                                   VARIABLE or a CALL (see collect_text_row). The old gate
+                                   accepted only a literal, so `{ a, "two" }` fell through to
+                                   the numeric branch and printed "" / "t". */
+                                double *vals = (double *)calloc((size_t)cnt + 1, sizeof(double));
+                                char  **texts = (char **)calloc((size_t)cnt + 1, sizeof(char *));
+                                if (!vals || !texts) {
+                                    free(vals);
+                                    free(texts);
+                                } else if (collect_text_row(r, init, cnt, vals, texts)) {
+                                    free(vals);
+                                    vv->arr_strs = texts;      /* texts[] is the row table */
                                 } else {
-                                    /* fallback: store as numeric char codes */
-                                    if (vv->arr_vals) free(vv->arr_vals);
-                                    vv->arr_vals = (double *)calloc((size_t)cnt, sizeof(double));
-                                    for (int ai = 0; ai < cnt; ai++) {
-                                        GclExpr *it = init->args[ai];
-                                        double val = 0.0;
-                                        if (it) {
-                                            if (it->kind == AST_EXPR_STRING && it->str && it->str[0]) val = (double)(unsigned char)it->str[0];
-                                            else val = eval_expr(it, r);
-                                        }
-                                        vv->arr_vals[ai] = val;
-                                    }
+                                    for (int ai = 0; ai < cnt; ai++) if (texts[ai]) free(texts[ai]);
+                                    free(texts);
+                                    vv->arr_vals = vals;       /* chars by code */
                                 }
                             }
                         } else {
                             env_set_str(r->env, name, "");
                         }
                     } else {
-                        /* single-dimension char array */
-                        if (s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_STRING) {
-                            env_set_str(r->env, name, s->u.var_decl.init->str);
+                        /* single-dimension char array. B5 - the initializer may be
+                           a string VARIABLE or a CALL too (`char buf[16] = s;`),
+                           not only a literal; init_text_value() decides. */
+                        const char *csrc = init_text_value(r, s->u.var_decl.init);
+                        if (csrc) {
+                            /* B24 — `char buf[4] = "abcdefghij";` bildirilen boyutu
+                               UYGULAMIYORDU: 10 karakter saklaniyor, ne kirpma ne
+                               hata oluyordu (C'de derleme hatasi). Tasi mayi
+                               onlemek icin N karaktere KIRP — sessizce buyutmek
+                               B22'deki kapasite modelini tutarsiz yapiyordu. */
+                            const char *src = csrc;
+                            int cap = s->u.var_decl.array_size;
+                            if (cap >= 1 && src && (int)strlen(src) > cap) {
+                                char *clipped = (char *)calloc((size_t)cap + 1, 1);
+                                if (clipped) {
+                                    memcpy(clipped, src, (size_t)cap);
+                                    env_set_str(r->env, name, clipped);
+                                    free(clipped);
+                                } else {
+                                    env_set_str(r->env, name, src);
+                                }
+                            } else {
+                                env_set_str(r->env, name, src);
+                            }
                         } else if (s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_INIT_LIST) {
                             /* Populate numeric arr_vals with char codes from initializer list */
                             GclExpr *init = s->u.var_decl.init;
@@ -2038,11 +3582,39 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                     if (!vv->is_string && vv->decl_type)
                         vv->num = truncate_to_declared_type(vv->num, vv->decl_type);
                 }
+                /* B22 — char[N] GERÇEK kapasite. Başlatıcısız `char small[3];`
+                   yalnızca strdup("") = 1 bayt ayırıyordu, ama eleman yazımı
+                   array_size (3) ile sınırlandığı için `small[1]='B'` tahsisin
+                   1 bayt ÖTESİNE yazıyordu (heap taşması). Tamponu en az N+1
+                   bayta çıkar; mevcut içerik korunur. */
+                {
+                    Var *cv = env_find(r->env, name);
+                    if (cv && s->u.var_decl.array_size >= 1 && !s->u.var_decl.is_pointer) {
+                        size_t need = (size_t)s->u.var_decl.array_size + 1;
+                        size_t have = cv->str ? strlen(cv->str) + 1 : 0;
+                        if (have < need) {
+                            char *nb = (char *)calloc(need, 1);
+                            if (nb) {
+                                if (cv->str) {
+                                    memcpy(nb, cv->str, have > 0 ? have - 1 : 0);
+                                    free(cv->str);
+                                }
+                                cv->str = nb;
+                                cv->is_string = 1;
+                            }
+                        }
+                    }
+                }
             } else {
                 if (s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_STRING) {
                     env_set_str(r->env, name, s->u.var_decl.init->str);
                 } else if (s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_CALL) {
-                    env_set_num(r->env, name, v);
+                    /* Fonksiyonun dondurdugu METIN yalnizca return_str'den gelir
+                       (`v` bir double'dir, metni tasimaz). Eskiden kosulsuz
+                       env_set_num cagriliyordu: `gcChar g = greet();` BOS
+                       string veriyordu. */
+                    if (r->return_str) env_set_str(r->env, name, r->return_str);
+                    else env_set_num(r->env, name, v);
                 } else if (s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_INIT_LIST) {
                     /* Array initializer: allocate arr_vals or arr_strs depending on contents */
                     GclExpr *init = s->u.var_decl.init;
@@ -2068,6 +3640,19 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                                     const char *tdbase = type ? find_typedef_base(r->env, type) : NULL;
                                     if (!eff_type && tdbase) eff_type = tdbase;
                                     if (!eff_type && tdbase) eff_type = tdbase;
+                                    /* TURN 32: the same rule as the scalar path - an element whose
+                                       written value is not representable in the declared type must
+                                       fall through to the NUMERIC branch, otherwise the array would
+                                       print digits the element cannot hold. */
+                                    if (all_num_with_lex) {
+                                        for (int ai = 0; ai < cnt; ai++) {
+                                            if (!init->args[ai] ||
+                                                !unsigned_mirror_digits_fit(init->args[ai]->str, eff_type)) {
+                                                all_num_with_lex = 0;
+                                                break;
+                                            }
+                                        }
+                                    }
                                     if (all_strings) {
                                         vv->arr_strs = (char **)calloc((size_t)cnt + 1, sizeof(char *));
                                         for (int ai = 0; ai < cnt; ai++) vv->arr_strs[ai] = strdup(init->args[ai]->str ? init->args[ai]->str : "");
@@ -2100,7 +3685,9 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                 /* Preserve exact literal string for large unsigned types so printing
                    shows the original value instead of a rounded double. */
                 if (vv && type && (strcmp(type, "uint64") == 0 || strcmp(type, "uint128") == 0) &&
-                    s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_FLOAT && s->u.var_decl.init->str) {
+                    s->u.var_decl.init && s->u.var_decl.init->kind == AST_EXPR_FLOAT &&
+                    s->u.var_decl.init->str &&
+                    unsigned_mirror_digits_fit(s->u.var_decl.init->str, type)) {
                     if (vv->str) free(vv->str);
                     vv->str = strdup(s->u.var_decl.init->str);
                 }
@@ -2128,18 +3715,45 @@ static int exec_stmt(GclStmt *s, Runner *r) {
             return 0;
         }
         case STMT_WHILE: {
+            /* Dongu govdesi blok kapsamlidir: govdede tanimlanan degiskenler
+               dongu bitince env'den silinir (C blok-scope). Disaridaki ve
+               `global` degiskenler korunur. */
+            Var *scope_mark = r->env->vars;
             int guard = 0;
-            while (!r->break_flag && !r->return_flag) {
+            r->loop_depth++;
+            r->breakable_depth++;
+            while (!r->break_flag && !r->return_flag && !g_unwinding) {
                 double cond = s->u.while_.cond ? eval_expr(s->u.while_.cond, r) : 0.0;
                 if (!cond) break;
-                if (++guard > 1000000) { fprintf(stderr, "Runtime error: possible infinite loop\n"); return -1; }
+                if (++guard > max_loop_iterations()) {
+                    runtime_errorcf(GCL_RT_CODE_INFINITE_LOOP,
+                                    "possible infinite loop (GCL3009)");
+                    /* B34 - inside a `try` the guard is a CATCHABLE error: stop
+                       this loop and let the nearest `try` pick the error up off
+                       the normal channel. Outside a `try` a runaway loop cannot
+                       be recovered from, so the process stops (exit != 0) - the
+                       legacy behaviour, unchanged. */
+                    if (g_unwinding) break;
+                    return -1;
+                }
                 /* continue: sonraki iterasyona geç (continue_flag'i temizle) */
                 r->continue_flag = 0;
+                /* One frame per ITERATION: a `defer` in a loop body (braced or
+                   not) runs when that iteration ends, not when the loop does. */
+                int iter_defer_mark = g_defer_count;
                 if (s->u.while_.body->kind == STMT_BLOCK) exec_block(s->u.while_.body, r);
                 else exec_stmt(s->u.while_.body, r);
+                defers_run_frame(r, iter_defer_mark);
                 if (r->continue_flag) r->continue_flag = 0;
+                /* try icinde hata olustu: donguden CIK, denetim try sinirina
+                   gitsin (aksi halde ayni hata her iterasyonda tekrarlanirdi). */
+                if (g_unwinding) break;
             }
             r->break_flag = 0; r->continue_flag = 0;
+            r->loop_depth--;
+            r->breakable_depth--;
+            env_scope_exit(r->env, scope_mark);
+            if (g_unwinding) return -1;
             return 0;
         }
         case STMT_FOR: {
@@ -2157,23 +3771,49 @@ static int exec_stmt(GclStmt *s, Runner *r) {
             /* Aynı isimli değişken döngüden ÖNCE var mı? (for (i = 0; ...) dış değişken) */
             Var *for_existing = for_var_name ? env_find(r->env, for_var_name) : NULL;
             if (s->u.for_.var) eval_expr(s->u.for_.var, r);
+            /* Govde blok kapsami: for-init'ten SONRA isaretle; boylece init
+               degiskeni korunur, govdede tanimlananlar dongu sonunda silinir. */
+            Var *scope_mark = r->env->vars;
             int guard = 0;
-            while (!r->break_flag && !r->return_flag) {
+            r->loop_depth++;
+            r->breakable_depth++;
+            while (!r->break_flag && !r->return_flag && !g_unwinding) {
                 if (s->u.for_.cond) {
                     double cond = eval_expr(s->u.for_.cond, r);
                     if (!cond) break;
                 }
-                if (++guard > 1000000) { fprintf(stderr, "Runtime error: possible infinite loop\n"); return -1; }
+                if (++guard > max_loop_iterations()) {
+                    runtime_errorcf(GCL_RT_CODE_INFINITE_LOOP,
+                                    "possible infinite loop (GCL3009)");
+                    /* B34 - see the STMT_WHILE guard above. */
+                    if (g_unwinding) break;
+                    return -1;
+                }
                 /* continue: inc'e atla (continue_flag'i temizle) */
                 r->continue_flag = 0;
+                /* Same per-iteration frame as STMT_WHILE. It is closed BEFORE
+                   the increment, so a deferred action observes the state the
+                   body left behind (C++ body-scope ordering). */
+                int iter_defer_mark = g_defer_count;
                 if (s->u.for_.body->kind == STMT_BLOCK) exec_block(s->u.for_.body, r);
                 else exec_stmt(s->u.for_.body, r);
+                defers_run_frame(r, iter_defer_mark);
                 if (r->continue_flag) r->continue_flag = 0;
                 if (s->u.for_.inc) eval_expr(s->u.for_.inc, r);
+                /* try icinde hata: donguden cik (bkz. STMT_WHILE). */
+                if (g_unwinding) break;
             }
             r->break_flag = 0; r->continue_flag = 0;
-            /* for-init'te YENİ oluşturulan değişkeni kaldır (dış değişkeni değil) */
+            r->loop_depth--;
+            r->breakable_depth--;
+            /* Once GOVDE degiskenlerini sil (env_scope_exit `scope_mark`i
+               for-init dugumunde durur). Sonra for-init degiskenini kaldir.
+               Sira TERS olursa env_remove_var, scope_mark'in isaret ettigi
+               dugumu serbest birakir; env_scope_exit askida kalan isaretciyle
+               karsilastirir ve TUM listeyi siler (use-after-free). */
+            env_scope_exit(r->env, scope_mark);
             if (for_var_name && !for_existing) env_remove_var(r->env, for_var_name);
+            if (g_unwinding) return -1;
             return 0;
         }
         case STMT_RETURN:
@@ -2193,16 +3833,52 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                 r->return_value = 0.0;
                 return 0;
             }
+            /* Metin donduren `return` (gcChar / char*). Runner'da metin kanali
+               YOKTU: `eval_expr` bir double dondurur ve metin kayboluyordu —
+               `gcChar greet() { return "hi"; }` cagrisi 0 veriyordu. */
+            if (s->u.ret.expr) {
+                const char *ret_text = NULL;
+                if (s->u.ret.expr->kind == AST_EXPR_STRING) {
+                    ret_text = s->u.ret.expr->str;
+                } else if (s->u.ret.expr->kind == AST_EXPR_VAR) {
+                    Var *rv = env_find(r->env, s->u.ret.expr->name);
+                    if (rv && rv->is_string) ret_text = rv->str;
+                }
+                if (ret_text) {
+                    if (r->return_str) free(r->return_str);
+                    r->return_str = strdup(ret_text);
+                    r->return_value = 0.0;
+                    return 0;
+                }
+            }
             r->return_value = s->u.ret.expr ? eval_expr(s->u.ret.expr, r) : 0.0;
             return 0;
         case STMT_BREAK:
+            /* B31 — dongu/switch DISINDA `break`: blogu sessizce bitirmek
+               yerine hata ver (eskiden hata yok, exit 0 idi). */
+            if (r->breakable_depth <= 0) {
+                runtime_errorf("'break' outside a loop or switch at %d:%d", s->line, s->col);
+                return -1;
+            }
             r->break_flag = 1;
             return 0;
         case STMT_CONTINUE:
+            /* B31 — dongu DISINDA `continue` ayni sekilde sessizdi. */
+            if (r->loop_depth <= 0) {
+                runtime_errorf("'continue' outside a loop at %d:%d", s->line, s->col);
+                return -1;
+            }
             r->continue_flag = 1;
             return 0;
         case STMT_SWITCH: {
-            double val = s->u.switch_.name ? env_get_num(r->env, s->u.switch_.name) : 0.0;
+            /* B31: switch de `break` icin gecerli bir baglamdir (ama `continue`
+               degildir — loop_depth artmaz). */
+            r->breakable_depth++;
+            /* Prefer the parsed condition expression (supports `switch (v + 1)`,
+               `switch (f(x))`); fall back to the legacy plain-variable name. */
+            double val = s->u.switch_.cond
+                             ? eval_expr(s->u.switch_.cond, r)
+                             : (s->u.switch_.name ? env_get_num(r->env, s->u.switch_.name) : 0.0);
             int matched = 0;
             for (int i = 0; i < s->u.switch_.case_count; i++) {
                 if (!matched && s->u.switch_.case_vals[i]) {
@@ -2212,15 +3888,101 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                 if (matched) {
                     if (s->u.switch_.cases[i]) exec_stmt(s->u.switch_.cases[i], r);
                     if (r->break_flag) { r->break_flag = 0; break; }
-                    if (r->return_flag) return 0;
+                    if (r->return_flag) { r->breakable_depth--; return 0; }
+                    /* try icinde hata: switch'ten cik (case govdesi yarida kalir). */
+                    if (g_unwinding) { r->breakable_depth--; return -1; }
                 }
             }
             if (!matched && s->u.switch_.default_case) {
                 exec_stmt(s->u.switch_.default_case, r);
                 if (r->break_flag) r->break_flag = 0;
             }
+            r->breakable_depth--;
+            if (g_unwinding) return -1;
             return 0;
         }
+        case STMT_TRY: {
+            /* try { body } [catch (err) { ... }] [finally { ... }]
+               Hata yakalama akisi:
+                 1) try govdesi kosar; ic hata olusursa `g_unwinding` ile erken
+                    cikilir ve hata global slotta durur.
+                 2) catch dali varsa hata YAKALANIR: hata nesnesi `err` adina
+                    baglanir (message/code/line/col) ve catch govdesi kosar.
+                 3) finally govdesi HER durumda kosar (hata olsa da, catch olsa
+                    da). finally icinde olusan YENI hata oncekini EZER.
+                 4) Hala cozulmemis bir hata varsa: `error_escalate()` en distaki
+                    try'da raporlar — `throw` programi durdurur, siradan runtime
+                    hatasi toleransli moda doner. */
+            int pending = 0;
+            g_try_depth++;
+            run_nested(s->u.try_.body, r);
+            g_try_depth--;
+            int had_error = g_unwinding ? 1 : 0;
+
+            if (had_error) {
+                if (s->u.try_.catch_body) {
+                    char msg[GCL_ERR_MSG_MAX];
+                    snprintf(msg, sizeof(msg), "%s", g_err_msg);
+                    int code = g_err_code, eline = g_err_line, ecol = g_err_col;
+                    g_unwinding = 0;
+                    g_err_valid = 0;
+                    /* catch degiskeni KENDI blok kapsaminda yasar: disari sizmaz
+                       ve ayni adli bir dis degiskeni kalici olarak bozmaz. */
+                    Var *mark = r->env->vars;
+                    if (s->u.try_.err_name)
+                        bind_error_object(r, s->u.try_.err_name, msg, code, eline, ecol);
+                    g_try_depth++;
+                    run_cleanup_body(s->u.try_.catch_body, r);
+                    g_try_depth--;
+                    env_scope_exit(r->env, mark);
+                    pending = g_unwinding;   /* catch icinde YENI hata olustu mu? */
+                } else {
+                    pending = 1;             /* catch yok: hata disari tasinir */
+                }
+            }
+
+            if (s->u.try_.finally_body) {
+                g_unwinding = 0;
+                g_try_depth++;
+                run_cleanup_body(s->u.try_.finally_body, r);
+                g_try_depth--;
+                if (g_unwinding) pending = 1;   /* finally hatasi oncekini ezer */
+            }
+
+            g_unwinding = pending;
+            if (pending) error_escalate();
+            if (g_unwinding) return -1;
+            return 0;
+        }
+        case STMT_THROW: {
+            /* throw <expr>; / raise <expr>;
+               Metin ifadesi mesaj olur; sayi ifadesi de mesaja yazilir. */
+            char msg[GCL_ERR_MSG_MAX];
+            GclExpr *v = s->u.throw_.expr;
+            if (v) {
+                if (v->kind == AST_EXPR_STRING) {
+                    snprintf(msg, sizeof(msg), "%s", v->str ? v->str : "");
+                } else if (v->kind == AST_EXPR_VAR) {
+                    Var *src = env_find(r->env, v->name);
+                    if (src && src->is_string && src->str) snprintf(msg, sizeof(msg), "%s", src->str);
+                    else snprintf(msg, sizeof(msg), "%.17g", src ? src->num : 0.0);
+                } else {
+                    snprintf(msg, sizeof(msg), "%.17g", eval_expr(v, r));
+                }
+            } else {
+                snprintf(msg, sizeof(msg), "throw");
+            }
+            error_capture(msg, GCL_RT_CODE_THROW, s->line, s->col, 1);
+            return -1;   /* yakalanana kadar ya da program durana dek tasinir */
+        }
+        case STMT_DEFER:
+            /* Registration only: the action itself runs when its frame closes
+               (block exit or end of the loop iteration). */
+            if (!defer_push(s->u.defer_.stmt)) {
+                runtime_errorf("out of memory while registering 'defer'");
+                return -1;
+            }
+            return 0;
         case STMT_BLOCK:
             return exec_block(s, r);
         case STMT_TYPEDEF: {
@@ -2269,10 +4031,16 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                 if (fd) {
                     fd->name = strdup(s->u.func_decl.name);
                     fd->param_count = s->u.func_decl.param_count;
+                    fd->return_type = s->u.func_decl.return_type ? strdup(s->u.func_decl.return_type) : NULL;
                     if (fd->param_count > 0) {
-                        fd->params = (char **)calloc((size_t)fd->param_count, sizeof(char *));
+                        /* TURN 26 — one entry per parameter: name + optional
+                           type, copied in the SAME loop. The runner can no
+                           longer hold a name without its own type slot. */
+                        fd->params = (GclParam *)calloc((size_t)fd->param_count, sizeof(GclParam));
                         for (int pi = 0; pi < fd->param_count; pi++) {
-                            fd->params[pi] = strdup(s->u.func_decl.params[pi]);
+                            const GclParam *src = &s->u.func_decl.params[pi];
+                            fd->params[pi].name = src->name ? strdup(src->name) : NULL;
+                            fd->params[pi].type = src->type ? strdup(src->type) : NULL;
                         }
                     }
                     fd->body = s->u.func_decl.body; /* body AST'ye ait — deep-free AST'de */
@@ -2326,7 +4094,15 @@ static void env_cleanup(GclEnv *env) {
     for (FuncDef *fd = env->funcs; fd;) {
         FuncDef *nx = fd->next;
         free(fd->name);
-        if (fd->params) { for (int pi = 0; pi < fd->param_count; pi++) free(fd->params[pi]); free(fd->params); }
+        if (fd->params) {
+            /* TURN 26 — each entry owns its name and its optional type. */
+            for (int pi = 0; pi < fd->param_count; pi++) {
+                free(fd->params[pi].name);
+                free(fd->params[pi].type);
+            }
+            free(fd->params);
+        }
+        free(fd->return_type);
         free(fd);
         fd = nx;
     }
@@ -2347,6 +4123,17 @@ int gcl_run_program(GclProgram *prog,
                     int argc,
                     char **argv) {
     if (!prog) return -1;
+    gcl_runtime_errors = 0;   /* B17: her kosu kendi hata sayaciyla baslar */
+    /* try/catch durumu da her kosuda sifirlanir: onceki kosudan kalan bir
+       "bekleyen hata" yeni programi etkilememelidir. */
+    g_err_msg[0] = '\0';
+    g_err_code = 0;
+    g_err_line = 0;
+    g_err_col = 0;
+    g_err_valid = 0;
+    g_err_is_throw = 0;
+    g_unwinding = 0;
+    g_try_depth = 0;
     if (gcl_debug) fprintf(stderr, "gcl_run_program: start\n");
     GclEnv env = { 0 };
     Runner r = { 0 };
@@ -2363,7 +4150,22 @@ int gcl_run_program(GclProgram *prog,
 
     /* #native ile bildirilen modülleri yükle (Library/ dizininden) */
     for (int i = 0; i < native_count; i++) {
-        if (native_modules[i]) native_load(&env, native_modules[i]);
+        if (!native_modules[i]) continue;
+        /* B27 — YUKLEME ANI TANILAMASI. Eskiden `native_load` basarisiz olunca
+           HICBIR SEY soylenmiyordu: hata ancak modulun bir uyesi CAGRILINCA
+           stderr'e dusuyordu ve o ana kadar exit kodu 0 kaliyordu. Bozuk bir
+           `#native <X>` bildirimi artik program BASLARKEN bildirilir.
+
+           Neden tanilama burada: `native_load` basarisizlikta yalnizca NULL
+           DONER ve hicbir sey basmaz (govdesindeki her hata yolu
+           `free(m->name); free(m); return NULL;` seklindedir) — cagiranin
+           karar vermesi icin sessizlik kasitli bir tasarimdir, cunku
+           `call_native_member` ayni modulu TEMBEL olarak yeniden yuklemeyi
+           deneyebilir (Math/Stdio/Embed icin). */
+        if (!native_load(&env, native_modules[i])) {
+            runtime_errorcf(GCL_RT_CODE_UNKNOWN_MODULE, "unknown module '%s' (#native) - module could not be loaded",
+                           native_modules[i]);
+        }
     }
     /* NOTE: #lib/.gclib support removed — do not load GCL library bundles here. */
 
@@ -2385,6 +4187,13 @@ int gcl_run_program(GclProgram *prog,
             exec_stmt(s, &r);
         }
     }
+    /* Program scope: a file-level `defer` runs when the program finishes.
+       Top-level statements run through this plain loop rather than exec_block,
+       so this is the frame their registrations belong to. `g_defer_count` is
+       reset first so a previous run in the same process cannot leak into this
+       one (the IDE and the test harness both call gcl_run_program repeatedly). */
+    g_defer_count = 0;
+    int top_defer_mark = g_defer_count;
     for (int i = 0; i < prog->count; i++) {
         GclStmt *s = prog->stmts[i];
         if (s && (s->kind == STMT_FUNC_DECL || s->kind == STMT_TYPEDEF ||
@@ -2392,9 +4201,18 @@ int gcl_run_program(GclProgram *prog,
             continue;
         }
         if (exec_stmt(s, &r) != 0) {
-            fprintf(stderr, "Runtime error: top-level statement %d (kind=%d) returned error\n", i, (int)(s ? s->kind : (GclStmtKind)-1));
+            /* Hata ZATEN raporlandiysa (ya da `throw` ile uretildiyse) ikinci bir
+               ic-iz satiri basmak kullaniciyi yaniltir: gercek mesaj stderr'de
+               duruyor. Yalnizca ACIKLANAMAYAN bir -1 icin ek satir basilir. */
+            if (!g_err_valid && gcl_runtime_errors == 0)
+                runtime_errorf("top-level statement %d (kind=%d) returned error", i, (int)(s ? s->kind : (GclStmtKind)-1));
             env_cleanup(&env);
-            fprintf(stderr, "gcl_run_program: returning -1 due to top-level stmt\n");
+            /* DIKKAT: bu satir eskiden `gcl_debug` kapisi OLMADAN basiliyordu.
+               `-debug` verilmese bile kullanicinin stderr'ine bir IC iz dusuyordu
+               (golden test ciktilarinda da goruluyordu: "gcl_run_program: returning
+               -1 due to top-level stmt"). Diger tum debug ciktisi gcl_debugf() ile
+               kapili oldugu icin bu satir da ayni kapiya baglandi. */
+            if (gcl_debug) fprintf(stderr, "gcl_run_program: returning -1 due to top-level stmt\n");
             return -1;
         }
         if (r.return_flag) break;
@@ -2404,6 +4222,7 @@ int gcl_run_program(GclProgram *prog,
     env.arg_count = argc;
     env.arg_vals = argv;
     FuncDef *main_fd = find_func(&env, "main");
+    int main_rc = 0;
     if (main_fd) {
         Runner sub;
         memcpy(&sub, &r, sizeof(sub));
@@ -2411,13 +4230,35 @@ int gcl_run_program(GclProgram *prog,
         sub.return_value = 0;
         sub.break_flag = 0;
         sub.continue_flag = 0;
+        /* B31: main() de dongu baglamini devralmaz. */
+        sub.loop_depth = 0;
+        sub.breakable_depth = 0;
         /* argc parametresi */
-        if (main_fd->param_count > 0) env_set_num(&env, main_fd->params[0], (double)argc);
-        if (main_fd->body && main_fd->body->kind == STMT_BLOCK) exec_block(main_fd->body, &sub);
-        else if (main_fd->body) exec_stmt(main_fd->body, &sub);
+        if (main_fd->param_count > 0) env_set_num(&env, main_fd->params[0].name, (double)argc);
+        int rc = 0;
+        if (main_fd->body && main_fd->body->kind == STMT_BLOCK) rc = exec_block(main_fd->body, &sub);
+        else if (main_fd->body) rc = exec_stmt(main_fd->body, &sub);
+        /* B17 — main()'in donus degeri artik YOK SAYILMIYOR: exit code olur.
+           exec_stmt/exec_block -1 donerse (guard/erken hata) 1'e eslenir. */
+        if (rc != 0) main_rc = 1;
+        else if (sub.return_value != 0) main_rc = (int)sub.return_value;
     }
 
+    /* Run program-level deferred actions now: after main(), while the globals
+       they may reference are still alive. */
+    defers_run_frame(&r, top_defer_mark);
+
     env_cleanup(&env);
+    /* B17 — yakalanmamis runtime hatasi varsa exit code ≠ 0. Eskiden her hata
+       stderr'e yazilip program 0 ile cikiyordu; CI/IDE hatayi goremiyordu. */
+    if (gcl_runtime_errors > 0) {
+        if (gcl_debug) fprintf(stderr, "gcl_run_program: %d runtime error(s)\n", gcl_runtime_errors);
+        return 1;
+    }
+    if (main_rc != 0) {
+        if (gcl_debug) fprintf(stderr, "gcl_run_program: main returned %d\n", main_rc);
+        return main_rc;
+    }
     if (gcl_debug) fprintf(stderr, "gcl_run_program: return 0\n");
     return 0;
 }

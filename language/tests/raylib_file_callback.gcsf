@@ -56,11 +56,16 @@ int onSaveData(gcChar path, int size) {
 }
 
 int main() {
-    /* ---- METİN okuma ---- */
+    /* ---- METİN okuma ----
+       DÖNÜŞ DEĞERİ SÖZLEŞMESİ: LoadFileText metni g_str'ye yazar ve BAYT
+       SAYISINI döner (LoadUTF8 ile aynı şekil). Dönen sayı LastStringLen()
+       ile AYNI olmak zorundadır. Eski kod 0.0 dönüyordu; o sözleşmede
+       "boş dosya" ile "okunamadı" ayırt edilemiyordu. */
     Raylib.SetLoadFileTextCallback("onLoadText");
-    Raylib.LoadFileText("hayali.txt");
+    int lret = Raylib.LoadFileText("hayali.txt");
     int n = Raylib.LastStringLen();
-    Stdio.printf("text-load: calls={} len={} baytlar=", loadTextCalls, n);
+    Stdio.printf("text-load: calls={} ret={} len={} baytlar=",
+                 loadTextCalls, lret, n);
     int i = 0;
     while (i < n) {
         Stdio.printf("{}", Raylib.LastStringByte(i));
@@ -94,5 +99,17 @@ int main() {
     Raylib.SetLoadFileDataCallback("");
     Raylib.LoadFileData("hayali2.bin");
     Stdio.printf("detach-sonrasi calls={}\n", loadDataCalls);
+
+    /* ---- Okunamayan GERÇEK dosya: dönüş 0 VE metin yuvası TEMİZLENİR ----
+       ÖNCE metin callback'i kaldırılır (veri callback'ini kaldırmak YETMEZ:
+       ilk denemede metin callback'i bağlı kaldığı için LoadFileText yine
+       onLoadText'e gitti ve yuva yine "MERHABA" oldu — ret=7 len=7).
+       Artık gerçek dosya sistemi denenir. Yuva hâlâ "MERHABA" (len=7)
+       tutuyor; bu yüzden len=0 olması yuvanın temizlendiğini KANITLAR -
+       başarısız bir yükleme önceki metni bırakmaz. */
+    Raylib.SetLoadFileTextCallback("");
+    int missText = Raylib.LoadFileText("_temp/raylib_no_such_file_xyz.txt");
+    Stdio.printf("text-missing: ret={} len={}\n",
+                 missText, Raylib.LastStringLen());
     return 0;
 }
