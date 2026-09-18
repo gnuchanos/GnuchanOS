@@ -199,6 +199,37 @@ def dll_ext() -> str:
     return "dll" if os_name() == "windows" else "so"
 
 
+# Lua kaynaklari (loslib.c) Linux'ta POSIX yapilandirmasiyla derlenir:
+#   * os.tmpname -> tmpnam yerine mkstemp (loslib.c: <unistd.h> + mkstemp).
+#     tmpnam'e referans veren obje, GNU ld'ye her linkte
+#       "warning: the use of `tmpnam' is dangerous, better use `mkstemp'"
+#     uyarisini bastirir; Embed.so + lua.so + LuaRaylib.so + LuaRaygui.so
+#     dort kez ayni uyariyi veriyordu.
+#   * os.date/os.time -> gmtime/localtime yerine gmtime_r/localtime_r
+#     (bunlar _POSIX_C_SOURCE=200809L ile bildirilir; bayrak zaten veriliyor).
+# luaconf.h'deki tek koruma LUA_USE_C89 ile cakismadir ("POSIX is not compatible
+# with C89"); derleme -std=c99 oldugu icin tetiklenmez. LUA_USE_POSIX tek basina
+# LUA_USE_DLOPEN'i (ve -ldl ihtiyacini) ACMAZ: o yalnizca LUA_USE_LINUX blogunda
+# tanimlanir.
+#
+# _DEFAULT_SOURCE NEDEN GEREKLI: LUA_USE_POSIX, ldo.c'de hata firlatmayi
+# _longjmp/_setjmp ciftine cevirir (upstream'in Linux derlemesi de bunu yapar).
+# glibc'de _setjmp kosulsuz bildirilir, ama _longjmp setjmp.h'de
+#     #if defined __USE_MISC || defined __USE_XOPEN
+# blogunun ICINDEDIR. Bu betik Lua'yi -D_POSIX_C_SOURCE=200809L ile derledigi
+# icin glibc _DEFAULT_SOURCE'u kendiliginden tanimlamaz (features.h:
+# "... && !defined _POSIX_C_SOURCE"), yani __USE_MISC kapali kalir ve _longjmp
+# ORTUK bildirilmis olur - GCC 14+ bunu hata sayar. _DEFAULT_SOURCE, glibc'nin
+# varsayilan (BSD + POSIX) bildirim kumesini geri getirir; upstream'in Linux
+# derlemesinin sahip oldugu kume de tam olarak budur.
+# (mkstemp icin gerekli DEGILDIR: stdlib.h onu __USE_XOPEN_EXTENDED ||
+#  __USE_XOPEN2K8 altinda bildirir ve _POSIX_C_SOURCE=200809L zaten
+#  __USE_XOPEN2K8'i acar.)
+# Windows'ta tanimlanmaz - orada mkstemp yoktur.
+LUA_POSIX_FLAG = ([] if os_name() == "windows"
+                  else ["-DLUA_USE_POSIX", "-D_DEFAULT_SOURCE"])
+
+
 # ---------- Linux sistem geliştirme paketleri ----------
 # Raylib kaynaktan derlenir ve raylib'in kendi Makefile'ı GLFW'yi X11 ile
 # derler (GLFW_LINUX_ENABLE_X11 ?= TRUE → CFLAGS += -D_GLFW_X11). Bu durumda
@@ -837,6 +868,9 @@ def build_modules(build_dir: Path) -> None:
         cmd += ["-I", "_SRC/include",
                 "-I", "_SRC/embed",
                 "-I", str(LUA_SRC)]
+        # Embed.so, Lua kaynaklarini derler (bkz. LUA_POSIX_FLAG).
+        if name == "Embed":
+            cmd += LUA_POSIX_FLAG
         if cmd_get_raylib:
             cmd += ["-I", str(RAYLIB_SRC),
                     "-I", str(RAYLIB_SRC / "external" / "glfw" / "include"),
@@ -977,6 +1011,7 @@ def build_lua_runtime(build_dir: Path) -> None:
     skip_lua = {"onelua.c", "lua.c", "luac.c", "ltests.c"}
     sources = [str(p) for p in sorted(LUA_SRC.glob("*.c"), key=lambda p: p.name) if p.name not in skip_lua]
     cmd = ["gcc", "-std=c99", "-shared", "-fPIC", "-D_POSIX_C_SOURCE=200809L", "-I", str(LUA_SRC)]
+    cmd += LUA_POSIX_FLAG
     cmd += sources
     cmd += ["-o", str(out)]
     if os_name() == "windows":
@@ -1004,6 +1039,7 @@ def build_lua_runtime(build_dir: Path) -> None:
                "-I", str(RAYLIB_SRC),
                "-I", str(RAYLIB_SRC / "external" / "glfw" / "include"),
                "-I", str(RAYGUI_SRC)]
+        cmd += LUA_POSIX_FLAG   # Lua kaynaklari bu komutta da derlenir
         if needs_raygui:
             cmd += ["-DRAYGUI_IMPLEMENTATION"]
         cmd += [f"_SRC/embed/{src_base}.c"]

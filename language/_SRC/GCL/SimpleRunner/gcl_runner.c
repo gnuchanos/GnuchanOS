@@ -77,7 +77,6 @@ int gcl_runtime_errors = 0;
    HIC YOKTU - yorumlayici, sozlugun tanimadigi bir kod uretiyor ve `-explain`
    onu "diagnostic" diye cevapliyordu. Kodlar artik gercek basliktan gelir
    (yukaridaki include); THROW/LOOP_CONTROL/CALL_DEPTH oraya eklendi. */
-*/
 
 #define GCL_ERR_MSG_MAX 512
 
@@ -90,6 +89,10 @@ static int  g_err_valid;     /* yakalanmayi bekleyen bir hata var mi? */
 static int  g_err_is_throw;  /* hata acik `throw` ile mi uretildi? */
 static int  g_unwinding;     /* 1 = govdeler hizli cikisa zorlanir */
 static int  g_try_depth;     /* kac `try` govdesi icindeyiz? */
+/* Bir sonraki raporlamaya eklenecek "= help:" satiri (bkz. runtime_errorf_hint).
+   Yalnizca hata URETILIRKEN ile RAPORLANANA kadar yasar; `error_capture`
+   tuketir, bu yuzden baska bir hataya sizamaz. */
+static const char *g_err_hint;
 
 /* ---------- runtime tanilama HAVUZU (TURN 50) ----------
 
@@ -173,8 +176,24 @@ static void runtime_report_pending(void) {
     span.col  = g_err_col;
     span.len  = g_err_len;
     gcl_runtime_errors++;
-    (void)gcl_diag_add(rt_diags(), g_err_code, GCL_SEV_ERROR, span,
-                       "%s", g_err_msg);
+    GclDiag *diag = gcl_diag_add(rt_diags(), g_err_code, GCL_SEV_ERROR, span,
+                                 "%s", g_err_msg);
+    /* The explanation the message cannot carry: the printed line stays the
+       pinned "Runtime error: <message>" form (golden tests match it as a
+       substring), while the IDE gets the "= help:" line from the renderer. */
+    if (diag && g_err_hint) gcl_diag_hint(diag, "%s", g_err_hint);
+    g_err_hint = NULL;
+    /* The diag list above is what the IDE reads; the LINE BELOW is what the
+       user reads. Both belong here, at the single reporting point, because the
+       legacy contract (17 golden tests) is that a runtime failure outside a
+       `try` is written to stderr IMMEDIATELY and the program keeps going.
+       The wording is pinned by errors/runtime_diagnostics.gcsf and friends:
+       "Runtime error: <message>", with the GCL3xxx code travelling inside the
+       message text at the call sites that carry one. */
+    fputs("Runtime error: ", stderr);
+    fputs(g_err_msg, stderr);
+    if (g_err_line > 0) fprintf(stderr, " at %d:%d", g_err_line, g_err_col);
+    fputc('\n', stderr);
 }
 
 /* Hatayi kaydet. Raporlama karari modu belirler (bkz. yukaridaki aciklama).
@@ -189,7 +208,7 @@ static void error_capture(const char *msg, GclDiagCode code, GclSpan span,
     g_err_len  = span.len;
     g_err_valid = 1;
     g_err_is_throw = is_throw;
-    if (g_try_depth > 0) { g_unwinding = 1; return; }   /* try yakalayabilir */
+    if (g_try_depth > 0) { g_unwinding = 1; g_err_hint = NULL; return; }   /* try yakalayabilir */
     runtime_report_pending();
     /* Acik `throw` yakalanmadiysa program DURUR (Python gibi); siradan runtime
        hatasi toleransli modda akisa devam eder (legacy sozlesme). */
@@ -205,6 +224,20 @@ static void runtime_errorf(GclSpan span, const char *fmt, ...) {
     va_start(ap, fmt);
     vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);
+    error_capture(msg, GCL_E_SEM_RUNTIME, span, 0);
+}
+
+/* Ipucu tasiyan varyant: mesaj kisa kalir (altin testler
+   "Runtime error: <mesaj>" satirini birebir sabitler), aciklama ise
+   tanilamanin "= help:" satirina gider - IDE onu okur, kullanicinin gordugu
+   duz satir degismez. */
+static void runtime_errorf_hint(GclSpan span, const char *hint, const char *fmt, ...) {
+    char msg[GCL_ERR_MSG_MAX];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    va_end(ap);
+    g_err_hint = hint;
     error_capture(msg, GCL_E_SEM_RUNTIME, span, 0);
 }
 
@@ -2524,7 +2557,7 @@ static double eval_expr(GclExpr *e, Runner *r) {
                 case OP_DIV:
                     if (rr == 0.0) {
                         runtime_errorcf(GCL_E_SEM_DIV_ZERO, span_of_expr(e),
-                                        "division by zero");
+                                        "division by zero (GCL3008)");
                         if (l == 0.0) return NAN;              /* 0/0 */
                         return (l > 0.0) ? HUGE_VAL : -HUGE_VAL;
                     }
@@ -2532,7 +2565,7 @@ static double eval_expr(GclExpr *e, Runner *r) {
                 case OP_MOD:
                     if (rr == 0.0) {
                         runtime_errorcf(GCL_E_SEM_DIV_ZERO, span_of_expr(e),
-                                        "modulo by zero");
+                                        "modulo by zero (GCL3008)");
                         return NAN;
                     }
                     return fmod(l, rr);
@@ -2653,7 +2686,7 @@ static double eval_expr(GclExpr *e, Runner *r) {
                     if (arr && idx < 0) {
                         /* B12 — negatif index eskiden tamamen sessizdi. */
                         runtime_errorcf(GCL_E_SEM_OUT_OF_BOUNDS, span_of_expr(arr_expr),
-                                        "negative array index %d for '%s'",
+                                        "negative array index %d for '%s' [GCL3010]",
                                         idx, arr_base->name);
                     } else if (arr && idx >= 0) {
                         int bounds = arr->arr_count > 0 ? arr->arr_count : arr->array_size;
@@ -2662,7 +2695,7 @@ static double eval_expr(GclExpr *e, Runner *r) {
                            (ne hata ne uyari vardi). Artik tanilama uretilir. */
                         if (bounds > 0 && idx >= bounds) {
                             runtime_errorcf(GCL_E_SEM_OUT_OF_BOUNDS, span_of_expr(arr_expr),
-                                            "array index %d out of bounds for '%s' (size %d)",
+                                            "array index %d out of bounds for '%s' (size %d) [GCL3010]",
                                             idx, arr_base->name, bounds);
                         } else if (arr->arr_vals && idx < arr->arr_count) {
                             /* String değer verilirse arr_strs'e, sayı verilirse arr_vals'e yaz */
@@ -2710,10 +2743,10 @@ static double eval_expr(GclExpr *e, Runner *r) {
                     case AST_EXPR_UNOP:   what = "a unary expression"; break;
                     default: break;
                 }
-                runtime_errorf(span_of_expr(e->left),
-                               "cannot assign to %s - the left side of '=' must be "
-                               "a variable, a struct member or an array element",
-                               what);
+                runtime_errorf_hint(span_of_expr(e->left),
+                                    "the left side of '=' must be a variable, "
+                                    "a struct member or an array element",
+                                    "cannot assign to %s", what);
             }
             return v;
         }
@@ -2836,7 +2869,7 @@ static double eval_expr(GclExpr *e, Runner *r) {
                 if (arr && idx < 0) {
                     /* B12 — negatif index sessizdi (0.0 donerdi). */
                     runtime_errorcf(GCL_E_SEM_OUT_OF_BOUNDS, span_of_expr(e),
-                                    "negative array index %d for '%s'",
+                                    "negative array index %d for '%s' [GCL3010]",
                                     idx, e->left->name);
                 } else if (arr && idx >= 0) {
                     int bounds = arr->arr_count > 0 ? arr->arr_count : arr->array_size;
@@ -2845,7 +2878,7 @@ static double eval_expr(GclExpr *e, Runner *r) {
                        GCL_E_SEM_OUT_OF_BOUNDS tanilamasi uretilsin. */
                     if (bounds > 0 && idx >= bounds) {
                         runtime_errorcf(GCL_E_SEM_OUT_OF_BOUNDS, span_of_expr(e),
-                                        "array index %d out of bounds for '%s' (size %d)",
+                                        "array index %d out of bounds for '%s' (size %d) [GCL3010]",
                                         idx, e->left->name, bounds);
                         return 0.0;
                     }
@@ -3178,11 +3211,10 @@ static void bind_error_object(Runner *r, const char *name, const char *msg,
 static void error_escalate(void) {
     if (!g_err_valid) return;
     if (g_try_depth > 0) return;
-    gcl_runtime_errors++;
-    fputs("Runtime error: ", stderr);
-    fputs(g_err_msg, stderr);
-    if (g_err_line > 0) fprintf(stderr, " at %d:%d", g_err_line, g_err_col);
-    fputc('\n', stderr);
+    /* Same single reporting point as the tolerant path: record for the IDE,
+       count for the exit code, print for the user. Keeping ONE place that
+       formats the line is what stops the two paths from drifting apart. */
+    runtime_report_pending();
     g_err_valid = 0;
     if (!g_err_is_throw) g_unwinding = 0;
 }
@@ -3726,7 +3758,7 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                 double cond = s->u.while_.cond ? eval_expr(s->u.while_.cond, r) : 0.0;
                 if (!cond) break;
                 if (++guard > max_loop_iterations()) {
-                    runtime_errorcf(GCL_RT_CODE_INFINITE_LOOP,
+                    runtime_errorcf(GCL_E_SEM_INFINITE_LOOP, span_of_stmt(s),
                                     "possible infinite loop (GCL3009)");
                     /* B34 - inside a `try` the guard is a CATCHABLE error: stop
                        this loop and let the nearest `try` pick the error up off
@@ -3783,7 +3815,7 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                     if (!cond) break;
                 }
                 if (++guard > max_loop_iterations()) {
-                    runtime_errorcf(GCL_RT_CODE_INFINITE_LOOP,
+                    runtime_errorcf(GCL_E_SEM_INFINITE_LOOP, span_of_stmt(s),
                                     "possible infinite loop (GCL3009)");
                     /* B34 - see the STMT_WHILE guard above. */
                     if (g_unwinding) break;
@@ -3857,7 +3889,7 @@ static int exec_stmt(GclStmt *s, Runner *r) {
             /* B31 — dongu/switch DISINDA `break`: blogu sessizce bitirmek
                yerine hata ver (eskiden hata yok, exit 0 idi). */
             if (r->breakable_depth <= 0) {
-                runtime_errorf("'break' outside a loop or switch at %d:%d", s->line, s->col);
+                runtime_errorf(span_of_stmt(s), "'break' outside a loop or switch");
                 return -1;
             }
             r->break_flag = 1;
@@ -3865,7 +3897,7 @@ static int exec_stmt(GclStmt *s, Runner *r) {
         case STMT_CONTINUE:
             /* B31 — dongu DISINDA `continue` ayni sekilde sessizdi. */
             if (r->loop_depth <= 0) {
-                runtime_errorf("'continue' outside a loop at %d:%d", s->line, s->col);
+                runtime_errorf(span_of_stmt(s), "'continue' outside a loop");
                 return -1;
             }
             r->continue_flag = 1;
@@ -3972,14 +4004,14 @@ static int exec_stmt(GclStmt *s, Runner *r) {
             } else {
                 snprintf(msg, sizeof(msg), "throw");
             }
-            error_capture(msg, GCL_RT_CODE_THROW, s->line, s->col, 1);
+            error_capture(msg, GCL_E_SEM_THROW, span_of_stmt(s), 1);
             return -1;   /* yakalanana kadar ya da program durana dek tasinir */
         }
         case STMT_DEFER:
             /* Registration only: the action itself runs when its frame closes
                (block exit or end of the loop iteration). */
             if (!defer_push(s->u.defer_.stmt)) {
-                runtime_errorf("out of memory while registering 'defer'");
+                runtime_errorf(span_of_stmt(s), "out of memory while registering 'defer'");
                 return -1;
             }
             return 0;
@@ -4163,7 +4195,8 @@ int gcl_run_program(GclProgram *prog,
            `call_native_member` ayni modulu TEMBEL olarak yeniden yuklemeyi
            deneyebilir (Math/Stdio/Embed icin). */
         if (!native_load(&env, native_modules[i])) {
-            runtime_errorcf(GCL_RT_CODE_UNKNOWN_MODULE, "unknown module '%s' (#native) - module could not be loaded",
+            runtime_errorcf(GCL_E_SEM_UNKNOWN_MODULE, span_none(),
+                            "unknown module '%s' (#native) - module could not be loaded",
                            native_modules[i]);
         }
     }
@@ -4205,7 +4238,8 @@ int gcl_run_program(GclProgram *prog,
                ic-iz satiri basmak kullaniciyi yaniltir: gercek mesaj stderr'de
                duruyor. Yalnizca ACIKLANAMAYAN bir -1 icin ek satir basilir. */
             if (!g_err_valid && gcl_runtime_errors == 0)
-                runtime_errorf("top-level statement %d (kind=%d) returned error", i, (int)(s ? s->kind : (GclStmtKind)-1));
+                runtime_errorf(span_of_stmt(s), "top-level statement %d (kind=%d) returned error",
+                               i, (int)(s ? s->kind : (GclStmtKind)-1));
             env_cleanup(&env);
             /* DIKKAT: bu satir eskiden `gcl_debug` kapisi OLMADAN basiliyordu.
                `-debug` verilmese bile kullanicinin stderr'ine bir IC iz dusuyordu
