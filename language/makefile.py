@@ -199,51 +199,81 @@ def dll_ext() -> str:
     return "dll" if os_name() == "windows" else "so"
 
 
-# ---------- Linux sistem geliştirme paketleri (Debian/Ubuntu) ----------
-# Raylib kaynaktan derlenir ve raylib'in kendi Makefile'i GLFW'yi X11 ile
+# ---------- Linux sistem geliştirme paketleri ----------
+# Raylib kaynaktan derlenir ve raylib'in kendi Makefile'ı GLFW'yi X11 ile
 # derler (GLFW_LINUX_ENABLE_X11 ?= TRUE → CFLAGS += -D_GLFW_X11). Bu durumda
-# GLFW'nin include/GLFW/glfw3native.h dosyasi <X11/Xlib.h> basligini ceker ve
-# o basligi tasiyan -dev paketi kurulu degilse derleme cok daha anlasilmaz bir
-# yerde patlar:
+# GLFW'nin include/GLFW/glfw3native.h dosyası <X11/Xlib.h> başlığını çeker
+# (satır 118) ve onu taşıyan -dev paketi kurulu değilse derleme anlaşılmaz bir
+# yerde düşer:
 #     external/glfw/include/GLFW/glfw3native.h:118:12:
 #     fatal error: X11/Xlib.h: No such file or directory
 #     make: *** [Makefile:854: rglfw.o] Error 1
-# Asagidaki kontrol bu hatayi kaynaginda yakalar ve kurulacak paketi isimle soyler.
-# Baslik listesi external/glfw/src/x11_platform.h'deki include'lardan gelir.
+# Bu adım eksik paketleri dağıtımın kendi paket yöneticisiyle KURAR ve derlemeye
+# devam eder; kurulumu kullanıcıya bırakıp build'i durdurmaz.
+# Başlık listesi external/glfw/src/x11_platform.h'deki include'lardan gelir.
 LINUX_DEV_HEADERS = (
-    ("X11/Xlib.h", "libx11-dev"),
-    ("X11/keysym.h", "libx11-dev"),
-    ("X11/Xatom.h", "libx11-dev"),
-    ("X11/Xresource.h", "libx11-dev"),
-    ("X11/XKBlib.h", "libx11-dev"),
-    ("X11/Xcursor/Xcursor.h", "libxcursor-dev"),
-    ("X11/extensions/Xrandr.h", "libxrandr-dev"),
-    ("X11/extensions/Xinerama.h", "libxinerama-dev"),
-    ("X11/extensions/XInput2.h", "libxi-dev"),
-    ("X11/extensions/shape.h", "libxext-dev"),
-    ("GL/gl.h", "libgl1-mesa-dev"),
+    # (başlık, paket anahtarı)
+    ("X11/Xlib.h", "x11"),
+    ("X11/keysym.h", "x11"),
+    ("X11/Xatom.h", "x11"),
+    ("X11/Xresource.h", "x11"),
+    ("X11/XKBlib.h", "x11"),
+    ("X11/Xcursor/Xcursor.h", "xcursor"),
+    ("X11/extensions/Xrandr.h", "xrandr"),
+    ("X11/extensions/Xinerama.h", "xinerama"),
+    ("X11/extensions/XInput2.h", "xi"),
+    ("X11/extensions/shape.h", "xext"),
+    ("GL/gl.h", "gl"),
 )
 
-# Kendi gcc satirlarimizin linkledigi kutuphaneler (-lGL -lX11).
+# Kendi gcc satırlarımızın linklediği kütüphaneler (-lGL -lX11).
 LINUX_DEV_LIBS = (
-    ("GL", "libgl1-mesa-dev"),
-    ("X11", "libx11-dev"),
+    ("GL", "gl"),
+    ("X11", "x11"),
+)
+
+# Paket anahtarı → dağıtım paket adı.
+LINUX_DEV_PACKAGES = {
+    "apt": {"x11": "libx11-dev", "xcursor": "libxcursor-dev",
+            "xrandr": "libxrandr-dev", "xinerama": "libxinerama-dev",
+            "xi": "libxi-dev", "xext": "libxext-dev",
+            "gl": "libgl1-mesa-dev"},
+    "dnf": {"x11": "libX11-devel", "xcursor": "libXcursor-devel",
+            "xrandr": "libXrandr-devel", "xinerama": "libXinerama-devel",
+            "xi": "libXi-devel", "xext": "libXext-devel",
+            "gl": "mesa-libGL-devel"},
+    "pacman": {"x11": "libx11", "xcursor": "libxcursor",
+               "xrandr": "libxrandr", "xinerama": "libxinerama",
+               "xi": "libxi", "xext": "libxext", "gl": "mesa"},
+    "zypper": {"x11": "libX11-devel", "xcursor": "libXcursor-devel",
+               "xrandr": "libXrandr-devel", "xinerama": "libXinerama-devel",
+               "xi": "libXi-devel", "xext": "libXext-devel",
+               "gl": "Mesa-libGL-devel"},
+}
+
+# (yetenek dosyası, paket ailesi, kurulum komutu, güncelleme komutu)
+LINUX_PACKAGE_MANAGERS = (
+    ("apt-get", "apt", ["apt-get", "install", "-y"], ["apt-get", "update"]),
+    ("dnf", "dnf", ["dnf", "install", "-y"], None),
+    ("yum", "dnf", ["yum", "install", "-y"], None),
+    ("pacman", "pacman", ["pacman", "-S", "--noconfirm", "--needed"], None),
+    ("zypper", "zypper", ["zypper", "--non-interactive", "install"], None),
 )
 
 
 def _gcc_probe_header(gcc: str, header: str) -> bool:
-    """Basligi gcc'ye sor: bulunamazsa gcc sifirdan farkli doner."""
+    """Başlığı gcc'ye sor: bulunamazsa gcc sıfırdan farklı döner."""
     try:
         result = subprocess.run([gcc, "-E", "-xc", "-"],
                                 input=f"#include <{header}>\n",
                                 text=True, capture_output=True, check=False)
     except OSError:
-        return True  # gcc yok — karari gercek derlemeye birak
+        return True  # gcc yok — kararı gerçek derlemeye bırak
     return result.returncode == 0
 
 
 def _gcc_probe_lib(gcc: str, lib: str) -> bool:
-    """Kucuk bir programi -l<lib> ile linklemeyi dene."""
+    """Küçük bir programı -l<lib> ile linklemeyi dene."""
     try:
         result = subprocess.run([gcc, "-xc", "-", "-o", os.devnull, f"-l{lib}"],
                                 input="int main(void){return 0;}\n",
@@ -253,44 +283,98 @@ def _gcc_probe_lib(gcc: str, lib: str) -> bool:
     return result.returncode == 0
 
 
-def check_linux_dev_deps() -> bool:
-    """Linux'ta X11/OpenGL gelistirme paketlerini onden dogrular.
+def _missing_linux_dev_keys(gcc: str) -> set:
+    """Eksik başlık/kütüphane anahtarlarını döndür (boş küme = her şey tam)."""
+    missing = set()
+    for header, key in LINUX_DEV_HEADERS:
+        if not _gcc_probe_header(gcc, header):
+            missing.add(key)
+    for lib, key in LINUX_DEV_LIBS:
+        if not _gcc_probe_lib(gcc, lib):
+            missing.add(key)
+    return missing
 
-    Eksik varsa eksikleri ve tek satirlik apt komutunu basar, False doner.
-    Baska platformlarda (ve gcc yoksa) hicbir seye karismaz: True.
+
+def _detect_linux_pkg_manager():
+    """(paket ailesi, kurulum komutu, güncelleme komutu); yoksa (None, None, None)."""
+    for tool, family, install_cmd, update_cmd in LINUX_PACKAGE_MANAGERS:
+        if shutil.which(tool):
+            return family, install_cmd, update_cmd
+    return None, None, None
+
+
+def _run_as_root(cmd: list[str]) -> bool:
+    """Komutu root olarak koş (gerekirse sudo ile); başarılı mı?"""
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        full = list(cmd)
+    else:
+        sudo = shutil.which("sudo")
+        if sudo is None:
+            return False
+        full = [sudo] + list(cmd)
+    print(f"[gcl] {' '.join(full)}", flush=True)
+    try:
+        result = subprocess.run(full, cwd=REPO_ROOT, check=False)
+    except OSError as e:
+        print(f"[gcl] warning: komut çalıştırılamadı: {e}", flush=True)
+        return False
+    return result.returncode == 0
+
+
+def ensure_linux_dev_deps() -> bool:
+    """Linux'ta eksik X11/OpenGL geliştirme paketlerini KURAR, sonra True döner.
+
+    Bu betiğin işi kurulumu yapmak; eksik sistem paketi yüzünden derlemeyi
+    durdurmak değil. Paketler dağıtımın paket yöneticisiyle kurulur, kurulumdan
+    sonra başlıklar yeniden yoklanır ve derleme kesintisiz devam eder. Kurulum
+    gerçekten mümkün değilse (root/sudo yok, tanınmayan dağıtım) eksikler
+    isimle söylenir ve False döner — sadece o zaman build durur.
     """
     if os_name() != "gnuLinux":
         return True
     gcc = os.environ.get("CC") or "gcc"
     if shutil.which(gcc) is None:
-        print(f"[gcl] uyari: '{gcc}' bulunamadi — sistem paket kontrolu atlandi",
+        print(f"[gcl] uyarı: '{gcc}' bulunamadı — sistem paket kontrolü atlandı",
               flush=True)
         return True
 
-    missing: dict = {}
-    for header, package in LINUX_DEV_HEADERS:
-        if not _gcc_probe_header(gcc, header):
-            missing.setdefault(package, []).append(header)
-    for lib, package in LINUX_DEV_LIBS:
-        if not _gcc_probe_lib(gcc, lib):
-            missing.setdefault(package, []).append(f"lib{lib}.so")
-
+    missing = _missing_linux_dev_keys(gcc)
     if not missing:
-        print("[gcl] sistem paketleri: X11/OpenGL basliklari tam", flush=True)
         return True
 
-    packages = sorted(missing)
-    print("[gcl] ERROR: Linux gelistirme paketleri eksik — derleme durduruldu. "
-          "Eksik baslik/kutuphaneler:", file=sys.stderr, flush=True)
-    for package in packages:
-        print(f"[gcl]   {package}: {', '.join(missing[package])}",
+    family, install_cmd, update_cmd = _detect_linux_pkg_manager()
+    table = LINUX_DEV_PACKAGES.get(family) if family else None
+    if not table:
+        print("[gcl] ERROR: Linux geliştirme paketleri eksik "
+              f"({', '.join(sorted(missing))}) ve tanınan bir paket yöneticisi yok.",
               file=sys.stderr, flush=True)
-    print("[gcl] Kurmak icin (Debian/Ubuntu):", file=sys.stderr, flush=True)
-    print(f"[gcl]   sudo apt update && sudo apt install -y {' '.join(packages)}",
+        return False
+
+    unknown = sorted(key for key in missing if key not in table)
+    if unknown:
+        print(f"[gcl] ERROR: şu eksikler paket adına çevrilemedi: {', '.join(unknown)}",
+              file=sys.stderr, flush=True)
+        return False
+
+    packages = sorted({table[key] for key in missing})
+    print(f"[gcl] eksik sistem paketleri: {', '.join(packages)} — kuruluyor",
+          flush=True)
+    if update_cmd:
+        _run_as_root(update_cmd)
+    install_ok = _run_as_root(install_cmd + packages)
+
+    still = _missing_linux_dev_keys(gcc)
+    if not still:
+        print("[gcl] sistem paketleri kuruldu, derlemeye devam ediliyor", flush=True)
+        return True
+
+    print("[gcl] ERROR: paket kurulumu tamamlanmadı "
+          f"(eksik: {', '.join(sorted(still))})", file=sys.stderr, flush=True)
+    print(f"[gcl] Elle kurmak için: sudo {' '.join(install_cmd + packages)}",
           file=sys.stderr, flush=True)
-    print("[gcl] Not: GLFW'nin X11 backend'i (glfw3native.h → <X11/Xlib.h>) bu "
-          "paketler olmadan derlenmez; raylib Makefile'i 'rglfw.o' adiminda duser.",
-          file=sys.stderr, flush=True)
+    if not install_ok:
+        print("[gcl] (kurulum komutu hata verdi — root yetkisi ya da ağ erişimi "
+              "olmayabilir)", file=sys.stderr, flush=True)
     return False
 
 
@@ -1417,10 +1501,10 @@ def main() -> int:
               f"geçerli hedefler: {', '.join(KNOWN_TARGETS)}", file=sys.stderr, flush=True)
         return 2
 
-    # Eksik X11/OpenGL -dev paketi varsa raylib'in Makefile'i yerine burada,
-    # anlasilir bir mesajla dur.
-    if not check_linux_dev_deps():
-        print("[gcl] hata: eksik sistem gelistirme paketleri — derleme durduruldu",
+    # Eksik X11/OpenGL -dev paketleri varsa önce onları kur, sonra derlemeye
+    # devam et. Kurulum gerçekten mümkün değilse (root/sudo yok) durur.
+    if not ensure_linux_dev_deps():
+        print("[gcl] hata: sistem geliştirme paketleri kurulamadı — derleme durduruldu",
               file=sys.stderr, flush=True)
         return 1
 
