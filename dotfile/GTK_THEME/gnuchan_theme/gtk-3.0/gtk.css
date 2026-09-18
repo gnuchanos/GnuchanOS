@@ -67,11 +67,18 @@
 @define-color gnuchan_selection_soft  rgba(168, 85, 247, 0.30);
 
 /* ----------------------------------------------------------------------------
- * 2. Remap the named colours Adwaita and third party apps rely on
+ * 2. Remap the named colours third party apps and older tools read
  * ----------------------------------------------------------------------------
- * Every Adwaita widget derives its colours from these names, so remapping them
- * repaints the whole toolkit consistently, including widgets this file never
- * mentions and applications that reference the names from their own CSS.
+ * Adwaita publishes these names "for apps to use". Its own widgets are painted
+ * by gtk/theme/Adwaita/_common.scss, whose Sass variables are compiled to
+ * literal colours, so remapping a name here does NOT repaint an Adwaita widget
+ * that this file never names.
+ *
+ * What it does fix is every application and shell component that reads the
+ * names directly: Firefox, LibreOffice, xfce4-notifyd, GTK 2 applications
+ * through the scheme table, and most third party themes layered on top of this
+ * one. The widgets that are merely inherited from Adwaita are covered in
+ * section 18.
  * -------------------------------------------------------------------------- */
 
 /* Classic Adwaita 3 names, GTK 3.20 - 3.22 */
@@ -192,10 +199,6 @@
   outline-style: solid;
   outline-offset: -2px;
   -gtk-outline-radius: 6px;
-  -GtkWidget-link-color: @gnuchan_accent_light;
-  -GtkWidget-visited-link-color: @gnuchan_accent_pale;
-  -GtkWidget-focus-line-width: 0;
-  -GtkWidget-focus-padding: 0;
   caret-color: @gnuchan_accent_pale;
   -gtk-secondary-caret-color: @gnuchan_accent;
 }
