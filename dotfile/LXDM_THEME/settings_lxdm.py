@@ -22,8 +22,8 @@
 #      and the avatar shown for every account that has no ~/.face of its own;
 #   3. merges the greeter settings into /etc/lxdm/lxdm.conf, touching only the
 #      keys this theme owns - the theme, the wallpaper, the panel switches, the
-#      clock format, the language and keyboard choosers, the GTK theme, the
-#      greeter binary and the account list - and keeping every comment, blank
+#      clock format, the language and keyboard choosers, the greeter binary, the
+#      X server command and the account list - and keeping every comment, blank
 #      line and unrelated key of the file it finds. The greeter binary is the
 #      one key that is never left out of the file: lxdm starts no greeter at all
 #      when it is missing or empty, so the X server it started for the greeter
@@ -64,6 +64,27 @@
 #      because every one of those being wrong ends in the same place, the text
 #      login on tty1, and a run that installs a display manager which cannot
 #      start is the run that should have said so.
+#
+# The X server command
+# --------------------
+# One key written into that configuration has nothing to do with this theme and
+# everything to do with the machine ending up at the text login on tty1: the
+# [server] arg line, which is given a VT when the file it is merged into does
+# not name one. Debian, Ubuntu and the upstream copy all ship it commented out.
+#
+# lxdm reads that key once, in lxdm_get_tty(), for one thing: whether it names a
+# VT. When it does not, and plymouth is running - which on a Debian desktop it
+# is, from the splash on the kernel command line - lxdm asks plymouth to quit
+# with --retain-splash. That does not quit it: plymouth keeps the DRM master and
+# the splash on the screen, so the X server lxdm starts next cannot take the
+# display, xconn_open() fails all hundred of its retries, and lxdm exits. Its
+# exit handler puts the console back on the VT it was started from - tty1 - and
+# systemd restarts it, so the machine sits at a text login with a display
+# manager installed, enabled and aliased, and no greeter. When the key does name
+# a VT, lxdm quits plymouth properly first and X comes up on that VT instead.
+#
+# The VT is 7 and not 1: Debian's lxdm unit does not stop getty@tty1, so a
+# greeter put on tty1 shares the screen with the text login.
 #
 # At the end it starts lxdm, rather than promising it for the next reboot. A
 # display manager that cannot come up is a black screen and a login on tty1 with
@@ -262,6 +283,16 @@ LXDM_LOG = Path("/var/log/lxdm.log")
 #: how much of the log is shown when they did not come up.
 LXDM_START_GRACE_SECONDS = 6
 LXDM_LOG_LINES = 20
+
+#: The [server] group key that holds the X server command line, and the command
+#: line written into it when the file being merged into names none. The vt07 is
+#: what makes lxdm quit plymouth before starting X - see the section above.
+XSERVER_ARG_KEY = "arg"
+DEFAULT_XSERVER_ARG = "/usr/bin/X vt07"
+
+#: The VT the greeter is put on when the configuration names none. It is lxdm's
+#: own default, and it is deliberately not tty1.
+XSERVER_VT = "vt07"
 
 #: Display managers lxdm replaces when they are enabled. XLDM is not among
 #: them, and neither is anything that is not a display manager.
@@ -1325,6 +1356,55 @@ def greeter_path(existing: str) -> str:
     return str(DEFAULT_GREETER_PATHS.get(distro_family(), FALLBACK_GREETER))
 
 
+def has_vt_argument(arg: str | None) -> bool:
+    """Whether an X server command line names a VT, the way lxdm reads one.
+
+    The test is lxdm_get_tty()'s own: a word that starts with "vt", follows it
+    with one or two digits and then ends. Anything else in the line is the
+    machine's business.
+    """
+    if not arg:
+        return False
+    for word in arg.split():
+        if not word.startswith("vt") or len(word) < 3 or not word[2].isdigit():
+            continue
+        if len(word) == 3 or (len(word) == 4 and word[3].isdigit()):
+            return True
+    return False
+
+
+def plymouth_running() -> bool:
+    """Whether a plymouth daemon is holding the display, as lxdm asks it.
+
+    lxdm runs /bin/plymouth --ping and takes exit status 0 for yes. The same
+    question is asked here for the same reason: it decides whether the missing
+    VT in the X server command line is the thing that is stopping the greeter,
+    and so whether to say so while the install is running.
+    """
+    program = shutil.which("plymouth")
+    if program is None:
+        return False
+    return run([program, "--ping"], capture=True).returncode == 0
+
+
+def xserver_arg(existing: str) -> str | None:
+    """The [server] arg value to write, or None to leave the file's own alone.
+
+    A command line that names no VT is given one, and a command line that
+    already names one is left exactly as it is: it may name a different X
+    server, or carry options this script knows nothing about, and all lxdm needs
+    from it is the VT word. lxdm takes that word out again when it builds the
+    real command line and puts its own on the end, so the word is a statement of
+    intent rather than the argument itself.
+    """
+    configured = read_ini_value(existing, "server", XSERVER_ARG_KEY)
+    if configured is None or not configured.strip():
+        return DEFAULT_XSERVER_ARG
+    if has_vt_argument(configured):
+        return None
+    return f"{configured.strip()} {XSERVER_VT}"
+
+
 def managed_settings(existing: str, gtk_theme_installed: bool) -> dict[str, dict[str, str]]:
     """Every key this run owns, grouped by section."""
     managed: dict[str, dict[str, str]] = {
@@ -1343,6 +1423,13 @@ def managed_settings(existing: str, gtk_theme_installed: bool) -> dict[str, dict
     # greeter key, or with one no longer on the machine, is one lxdm reads and
     # then shows nothing for.
     managed["base"] = {"greeter": greeter_path(existing)}
+    # The X server command line, written only when the file's own names no VT.
+    # This key has nothing to do with the theme and everything to do with the
+    # machine reaching the greeter at all: see the section at the top of this
+    # file. It is left alone, not dropped, when the file already names a VT.
+    arg = xserver_arg(existing)
+    if arg is not None:
+        managed["server"] = {XSERVER_ARG_KEY: arg}
     return managed
 
 
@@ -1434,6 +1521,15 @@ def install_configuration(log: Log, gtk_theme_installed: bool) -> None:
     managed = managed_settings(existing, gtk_theme_installed)
     merged = merge_conf(existing, managed)
     write_text(CONFIG_FILE, merged)
+    if "server" in managed and plymouth_running():
+        log.detail(
+            f"plymouth is running and [server] {XSERVER_ARG_KEY} named no VT; "
+            f"{XSERVER_VT} was added to it"
+        )
+        log.detail(
+            "without it lxdm only asks plymouth to keep its splash up, and the X "
+            "server it starts next cannot take the screen"
+        )
     # 0644 rather than the 0640 lxdm's own build rules set: the greeter opens
     # this file itself, and lxdm starts it as the "lxdm" account when that
     # account exists, so a file only root can read is a file the greeter
