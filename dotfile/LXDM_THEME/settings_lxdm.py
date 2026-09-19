@@ -22,9 +22,16 @@
 #      and the avatar shown for every account that has no ~/.face of its own;
 #   3. merges the greeter settings into /etc/lxdm/lxdm.conf, touching only the
 #      keys this theme owns - the theme, the wallpaper, the panel switches, the
-#      clock format, the language and keyboard choosers, the GTK theme and the
-#      account list - and keeping every comment, blank line and unrelated key of
-#      the file it finds;
+#      clock format, the language and keyboard choosers, the GTK theme, the
+#      greeter binary and the account list - and keeping every comment, blank
+#      line and unrelated key of the file it finds. The greeter binary is the
+#      one key that is never left out of the file: lxdm starts no greeter at all
+#      when it is missing or empty, so the X server it started for the greeter
+#      is a black screen with nothing drawn on it while the text login on tty1
+#      stays where it was - which reads as a display manager that did not start.
+#      What is written is the installed greeter when there is one, and the path
+#      this distribution is expected to install it to when there is not, so the
+#      key cannot be missing after a run;
 #   4. copies the GnuchanPurple GTK theme from dotfile/GTK_THEME to
 #      /usr/share/themes, where the greeter can find it, because the greeter
 #      runs as the lxdm account, or as root when there is none, before anyone
@@ -33,13 +40,24 @@
 #   5. makes lxdm the display manager: writes the Debian default display
 #      manager file, which lxdm's own systemd unit checks before it will start,
 #      disables any other display manager that was enabled so that two of them
-#      are never fighting over the screen, and points systemd's
+#      are never fighting over the screen, points systemd's
 #      display-manager.service alias at lxdm, which is how a unit with no
-#      [Install] section is made to start at boot at all;
+#      [Install] section is made to start at boot at all, and makes the machine
+#      boot into graphical.target. That last one is not decoration: a display
+#      manager is started by graphical.target and by nothing else, so a machine
+#      whose default target is still multi-user.target has lxdm installed,
+#      enabled, aliased and unreachable, and boots to the text login on tty1 -
+#      which is what a display manager that does not start looks like. The
+#      target that was there is kept beside the one that replaced it;
 #   6. checks the result and says what is wrong if anything is: the theme files
 #      are parsed, both greeter interfaces are checked for every widget id
-#      greeter.c looks up by name, the generated images are decoded, and the
-#      configuration is read back the way the greeter reads it.
+#      greeter.c looks up by name, the generated images are decoded, the
+#      configuration is read back the way the greeter reads it, and the display
+#      manager itself is asked about - the file lxdm's own unit reads before it
+#      will start, the default target, the display-manager.service alias -
+#      because every one of those being wrong ends in the same place, the text
+#      login on tty1, and a run that installs a display manager which cannot
+#      start is the run that should have said so.
 #
 # It does not start lxdm. Starting a display manager from inside a running
 # session takes the screen away from it, so the switch happens on the next
@@ -56,12 +74,16 @@
 #
 # Undo
 # ----
-# There are no flags, so undoing is by hand and always possible. Both files this
-# script rewrote are kept, and both have to be put back:
+# There are no flags, so undoing is by hand and always possible. Every file this
+# script rewrote is kept, and every one has to be put back:
 #
 #     rm -rf /usr/share/lxdm/themes/GnuchanPurple
 #     cp /etc/lxdm/lxdm.conf.gnuchan-backup /etc/lxdm/lxdm.conf
 #     cp /etc/X11/default-display-manager.gnuchan-backup /etc/X11/default-display-manager
+#     mv /etc/systemd/system/default.target.gnuchan-backup /etc/systemd/system/default.target
+#
+# The last one is a symlink and is put back by naming it again rather than by
+# copying over it.
 #
 # and then enable the display manager that was enabled before, whose name the
 # script prints while it runs. The last file is the one worth remembering: the
@@ -192,6 +214,31 @@ GREETER_CANDIDATES = (
     Path("/usr/local/libexec/lxdm-greeter-gtk"),
     Path("/usr/lib/lxdm/lxdm-greeter-gtk2"),
 )
+
+#: Where a distribution that has not installed its greeter yet is expected to
+#: put it: Debian and Ubuntu configure --libexecdir=/usr/lib/lxdm, and the
+#: automake default everywhere else is /usr/libexec. This is what the [base]
+#: greeter key is given when the machine has no greeter at all, because leaving
+#: the key out is not an option - see greeter_path below for what lxdm does with
+#: a configuration that has no greeter in it.
+DEFAULT_GREETER_PATHS: dict[str, Path] = {
+    "debian": Path("/usr/lib/lxdm/lxdm-greeter-gtk"),
+    "arch": Path("/usr/libexec/lxdm-greeter-gtk"),
+    "fedora": Path("/usr/libexec/lxdm-greeter-gtk"),
+    "suse": Path("/usr/libexec/lxdm-greeter-gtk"),
+}
+
+#: The path of last resort, for a distribution this script cannot name.
+FALLBACK_GREETER = Path("/usr/libexec/lxdm-greeter-gtk")
+
+#: The target systemd boots into, and the symlink under /etc that names it.
+#: graphical.target is what wants display-manager.service; multi-user.target
+#: does not want it at all, so a machine left on multi-user.target boots to the
+#: text login on tty1 however well lxdm itself is installed and enabled. A
+#: display manager that does not start is usually this one line of systemd
+#: configuration, and nothing in lxdm's own files can make up for it.
+GRAPHICAL_TARGET = "graphical.target"
+DEFAULT_TARGET_LINK = Path("/etc/systemd/system/default.target")
 
 #: Display managers lxdm replaces when they are enabled. XLDM is not among
 #: them, and neither is anything that is not a display manager.
@@ -380,15 +427,55 @@ PACKAGES: dict[str, tuple[str, ...]] = {
     "fedora": ("lxdm", "xorg-x11-server-Xorg", "gnome-themes-extra"),
     "suse": ("lxdm", "xorg-x11-server", "gtk2-metatheme-adwaita"),
 }
+
+#: The same two tables keyed by the package manager's own program name, which is
+#: what is used when /etc/os-release does not name a family this script knows.
+#: A distribution built by hand can call itself anything, and the markers above
+#: then match nothing: without these tables the theme and the configuration land
+#: on a machine where nothing ever installs lxdm, and it keeps booting to the
+#: login on tty1. A machine that has apt-get is a machine where lxdm is
+#: installed with apt-get, whatever its ID line says.
+PACKAGE_MANAGERS_BY_PROGRAM: dict[str, tuple[str, ...]] = {
+    "apt-get": PACKAGE_MANAGERS["debian"],
+    "pacman": PACKAGE_MANAGERS["arch"],
+    "dnf": PACKAGE_MANAGERS["fedora"],
+    "zypper": PACKAGE_MANAGERS["suse"],
+}
+
+PACKAGES_BY_PROGRAM: dict[str, tuple[str, ...]] = {
+    "apt-get": PACKAGES["debian"],
+    "pacman": PACKAGES["arch"],
+    "dnf": PACKAGES["fedora"],
+    "zypper": PACKAGES["suse"],
+}
 # --- installing the packages ---------------------------------------------------
 
 
+def package_program() -> str | None:
+    """The package manager to use, by program name, or None if there is none.
+
+    The distribution decides first, because a family that is recognised has a
+    preferred manager and package names of its own. When the family is not
+    recognised - or its manager is not installed - the machine decides instead:
+    the first of the four managers that is really there. That is what makes
+    "install lxdm when it is not installed" hold on a distribution whose
+    /etc/os-release says something this script has never heard of, which is the
+    one case it is most likely to meet.
+    """
+    family = distro_family()
+    preferred = PACKAGE_MANAGERS.get(family, (None,))[0]
+    if preferred and shutil.which(preferred):
+        return preferred
+    for program in PACKAGE_MANAGERS_BY_PROGRAM:
+        if shutil.which(program):
+            return program
+    return None
+
+
 def package_manager() -> tuple[str, ...] | None:
-    """The install command for this distribution, or None if unsupported."""
-    command = PACKAGE_MANAGERS.get(distro_family())
-    if command is None or shutil.which(command[0]) is None:
-        return None
-    return command
+    """The install command for this machine, or None if it has none of them."""
+    program = package_program()
+    return PACKAGE_MANAGERS_BY_PROGRAM.get(program) if program else None
 
 
 def package_environment() -> dict[str, str]:
@@ -410,38 +497,36 @@ def package_environment() -> dict[str, str]:
 
 
 def package_command() -> list[str] | None:
-    """The command that installs lxdm and an X server here, or None."""
-    packages = PACKAGES.get(distro_family())
-    manager = package_manager()
-    if not packages or manager is None:
+    """The command that installs lxdm and an X server here, or None.
+
+    The manager and the package names always come from the same table, so a
+    machine that installs with pacman is never handed the Debian package names.
+    """
+    program = package_program()
+    if program is None:
         return None
-    return [*manager, *packages]
+    return [*PACKAGE_MANAGERS_BY_PROGRAM[program], *PACKAGES_BY_PROGRAM[program]]
 
 
 def manual_package_hint() -> str:
     """What to tell the user when the script cannot install the packages.
 
-    The hint names the packages rather than a command when the distribution is
-    not known, because a user there knows what their package manager calls
-    them.
+    The command is built from the manager that was found rather than named by
+    hand, so the hint is the command that would have run on this machine. It
+    names the packages only when there is no manager at all to name them.
     """
-    family = distro_family()
-    packages = PACKAGES.get(family)
-    if family == "arch":
-        return (
-            "lxdm is in the AUR on Arch: build it with your AUR helper "
-            "(for example 'yay -S lxdm'), then run this script again"
-        )
-    if not packages:
+    command = package_command()
+    if command is None:
         return (
             "install lxdm and an X server for your distribution "
             f"({distro_description()}), then run this script again"
         )
-    if family == "debian":
-        return f"run: apt-get install {' '.join(packages)}"
-    if family == "fedora":
-        return f"run: dnf install {' '.join(packages)}"
-    return f"run: zypper install {' '.join(packages)}"
+    if command[0] == "pacman":
+        return (
+            "lxdm is in the AUR on Arch: build it with your AUR helper "
+            "(for example 'yay -S lxdm'), then run this script again"
+        )
+    return "run: " + " ".join(command)
 
 
 def lxdm_present() -> bool:
@@ -1180,23 +1265,39 @@ def read_ini_value(text: str, section: str, key: str) -> str | None:
     return None
 
 
-def greeter_path_fix(existing: str) -> str | None:
-    """The greeter binary to write into the configuration, or None.
+def greeter_path(existing: str) -> str:
+    """The greeter binary to write into the configuration, always a path.
 
     The [base] greeter key names a binary by absolute path, and the copy lxdm
     ships names /usr/libexec/lxdm-greeter-gtk while both Debian and Ubuntu
-    install it in /usr/lib/lxdm. A configuration that names a path which does
-    not exist is a greeter that cannot start, and the startup failure is a black
-    screen, so the path is corrected here - and only when it is wrong, so a
-    distribution that got it right keeps its own value.
+    install theirs in /usr/lib/lxdm, so the shipped value is wrong on half the
+    systems that have the package.
+
+    This key is the one this script cannot leave to the distribution's copy of
+    the file, and cannot drop on a machine where nothing is installed yet:
+
+      * lxdm's ui_prepare() spawns a greeter only when this key names a
+        non-empty path. With the key absent, or empty, lxdm starts the X server
+        and puts no window on it at all: a black screen, with the text login
+        still sitting on tty1 behind it;
+      * a path that does not exist is nearly as bad, because the spawn fails and
+        ui_prepare() returns without a word.
+
+    So a configured path is kept only when the binary is really there, any
+    installed candidate is taken next, and when the machine has no greeter at
+    all the path its distribution is expected to install it to is written
+    instead. That last case is a machine where lxdm is not installed yet: the
+    configuration is written for the moment it arrives, and lxdm reads this file
+    afterwards - not the package's own conffile, which is not installed over a
+    file that is already there.
     """
     configured = read_ini_value(existing, "base", "greeter")
     if configured and Path(configured).exists():
-        return None
+        return configured
     for candidate in GREETER_CANDIDATES:
         if candidate.exists():
             return str(candidate)
-    return None
+    return str(DEFAULT_GREETER_PATHS.get(distro_family(), FALLBACK_GREETER))
 
 
 def managed_settings(existing: str, gtk_theme_installed: bool) -> dict[str, dict[str, str]]:
@@ -1212,9 +1313,10 @@ def managed_settings(existing: str, gtk_theme_installed: bool) -> dict[str, dict
         # is deliberately not set here - the greeter's icon lookups go to
         # whatever GTK has selected, because lxdm has no key of its own for it.
         managed["display"]["gtk_theme"] = THEME_NAME
-    fix = greeter_path_fix(existing)
-    if fix is not None:
-        managed["base"] = {"greeter": fix}
+    # Always written, never dropped: a configuration that arrives without a
+    # greeter key, or with one no longer on the machine, is one lxdm reads and
+    # then shows nothing for.
+    managed["base"] = {"greeter": greeter_path(existing)}
     return managed
 
 
@@ -1377,13 +1479,94 @@ def disable_other_display_managers(log: Log) -> str | None:
     return replaced[0] if replaced else None
 
 
+def systemd_default_target() -> str | None:
+    """What systemd boots into, or None when it will not say.
+
+    ``systemctl get-default`` prints the target name, or the path of the unit
+    file when the target has been set by hand, hence the last component of
+    whatever comes back.
+    """
+    if not systemd_running():
+        return None
+    result = run(["systemctl", "get-default"], capture=True)
+    answer = (result.stdout or "").strip()
+    if result.returncode != 0 or not answer:
+        return None
+    return answer.rsplit("/", 1)[-1]
+
+
+def keep_default_target(log: Log) -> None:
+    """Keep the default.target symlink before it is replaced.
+
+    What is worth keeping here is the link rather than the unit it points at, so
+    it is put back by naming it again - see the undo at the top of this file. A
+    machine with no link at all was booting systemd's built in default, and that
+    is written down as having been the case rather than guessed at.
+    """
+    link = DEFAULT_TARGET_LINK
+    backup = link.with_name(link.name + BACKUP_SUFFIX)
+    if backup.exists() or backup.is_symlink():
+        return
+    try:
+        if link.is_symlink():
+            pointed_at = os.readlink(link)
+            backup.symlink_to(pointed_at)
+            log.detail(f"backed up {link.name} to {backup.name} (it named {pointed_at})")
+        elif link.exists():
+            shutil.copy2(link, backup)
+            log.detail(f"backed up {link.name} to {backup.name}")
+        else:
+            log.detail(f"there is no {link} to keep; systemd was booting its own default")
+    except OSError as error:
+        log.warn(f"could not back up {link}: {error}")
+
+
+def boot_to_graphical_target(log: Log) -> str | None:
+    """Make the machine boot into graphical.target, returning what it booted.
+
+    A display manager is not run by multi-user.target: it is run because
+    graphical.target wants display-manager.service, and systemd only reaches
+    graphical.target when that is the default target. Making lxdm the display
+    manager is therefore half the job. A machine left on multi-user.target has
+    lxdm installed, enabled, aliased and correct in every file this script
+    writes, and still boots to the text login on tty1 - which is exactly what
+    "the display manager does not start" looks like from the other side of a
+    reboot.
+
+    The target is changed only when it is not graphical already, and the link
+    that was there is kept. Without systemd, or where systemctl cannot be asked,
+    everything is left as it was: this is not the only init system there is, and
+    guessing for the others is worse than saying nothing.
+    """
+    current = systemd_default_target()
+    if current is None:
+        log.detail("systemd was not asked what it boots; the default target is left alone")
+        return None
+    if current == GRAPHICAL_TARGET:
+        log.detail(f"the default target is already {GRAPHICAL_TARGET}")
+        return None
+
+    keep_default_target(log)
+    if run(["systemctl", "set-default", GRAPHICAL_TARGET], capture=True).returncode == 0:
+        log.detail(f"the default target was {current}; it is now {GRAPHICAL_TARGET}")
+        return current
+    log.warn(
+        f"could not change the default target from {current} to {GRAPHICAL_TARGET}: "
+        f"only {GRAPHICAL_TARGET} starts a display manager, so this machine may "
+        "still come up on the login on tty1"
+    )
+    return None
+
+
 def activate_display_manager(log: Log) -> str | None:
     """Point the machine at lxdm, returning the display manager it replaced.
 
-    The three things a distribution needs are done in the order that leaves the
+    The four things a distribution needs are done in the order that leaves the
     system consistent if the script is interrupted: the file the unit and the
     Debian init script both read, then the enablement, then the alias systemd
-    uses to know which unit is ``display-manager.service``.
+    uses to know which unit is ``display-manager.service``, and then the default
+    target, because the alias decides which unit is the display manager and the
+    target decides whether a display manager is started at all.
     """
     try:
         # Backed up like lxdm.conf, and for the same reason: this is the file
@@ -1394,8 +1577,12 @@ def activate_display_manager(log: Log) -> str | None:
         if backup is not None:
             log.detail(f"backed up {DEFAULT_DM_FILE.name} to {backup.name}")
         DEFAULT_DM_FILE.parent.mkdir(parents=True, exist_ok=True)
-        DEFAULT_DM_FILE.write_text(str(LXDM_DAEMON) + "\n", encoding="utf-8")
-        log.detail(f"wrote {DEFAULT_DM_FILE}: {LXDM_DAEMON}")
+        # as_posix() rather than str(): this file is compared literally. lxdm's
+        # own unit and the Debian init script both test it for equality with
+        # /usr/sbin/lxdm, so the one spelling that may be written into it is the
+        # one they test against, whatever running this produced.
+        DEFAULT_DM_FILE.write_text(LXDM_DAEMON.as_posix() + "\n", encoding="utf-8")
+        log.detail(f"wrote {DEFAULT_DM_FILE}: {LXDM_DAEMON.as_posix()}")
     except OSError as error:
         log.warn(f"could not write {DEFAULT_DM_FILE}: {error}")
 
@@ -1409,6 +1596,11 @@ def activate_display_manager(log: Log) -> str | None:
         return None
 
     replaced = disable_other_display_managers(log)
+
+    # Before the unit is looked for, and not after it: the default target is a
+    # fact about the machine rather than about this unit, and a machine that
+    # boots multi-user.target starts no display manager whichever unit it has.
+    boot_to_graphical_target(log)
 
     unit = unit_path("lxdm.service")
     if unit is None:
@@ -1526,8 +1718,17 @@ def check_configuration() -> list[str]:
             f"({background})"
         )
     greeter = read_ini_value(text, "base", "greeter")
-    if greeter and not Path(greeter).exists():
-        problems.append(f"{CONFIG_FILE}: the greeter {greeter} does not exist")
+    if not greeter:
+        problems.append(
+            f"{CONFIG_FILE} names no greeter, and lxdm starts none at all without "
+            "one: the X server comes up with an empty black screen while tty1 "
+            "keeps the login"
+        )
+    elif not Path(greeter).exists():
+        problems.append(
+            f"{CONFIG_FILE}: the greeter {greeter} does not exist, so lxdm cannot "
+            "start one and the screen stays black"
+        )
     if (
         read_ini_value(text, "display", "gtk_theme") == THEME_NAME
         and not gtk_theme_available(THEME_NAME)
@@ -1545,9 +1746,58 @@ def check_configuration() -> list[str]:
     return problems
 
 
+def check_display_manager() -> list[str]:
+    """Problems with the machine actually showing a display manager.
+
+    Everything here ends the same way - the text login on tty1 instead of the
+    greeter - and every one of them is possible while the theme, the
+    configuration and the enabled unit are all exactly as this script wrote
+    them. The run that finishes by promising a greeter at the next boot is the
+    run that owes the user this list.
+    """
+    problems: list[str] = []
+    named = read_text(DEFAULT_DM_FILE).strip()
+    if not named:
+        problems.append(
+            f"{DEFAULT_DM_FILE} is missing or empty, and lxdm's own unit, and the "
+            "Debian init script, both refuse to start unless it names "
+            f"{LXDM_DAEMON.as_posix()}"
+        )
+    elif named != LXDM_DAEMON.as_posix():
+        problems.append(
+            f"{DEFAULT_DM_FILE} names {named} instead of {LXDM_DAEMON.as_posix()}"
+        )
+
+    unit = unit_path("lxdm.service")
+    if unit is None:
+        problems.append(
+            "there is no lxdm.service, so nothing starts lxdm at boot: install "
+            "lxdm and run this script again"
+        )
+        return problems
+    if not systemd_running():
+        return problems
+
+    target = systemd_default_target()
+    if target is not None and target != GRAPHICAL_TARGET:
+        problems.append(
+            f"this machine boots {target}, and only {GRAPHICAL_TARGET} starts a "
+            "display manager: lxdm is installed and enabled but is never run, so "
+            "the machine stops at the login on tty1"
+        )
+    link = DISPLAY_MANAGER_ALIAS
+    if not link.is_symlink():
+        problems.append(f"{link} is missing, so systemd has no display manager")
+    elif link.resolve() != unit.resolve():
+        problems.append(
+            f"{link} points at {link.resolve()} instead of {unit}"
+        )
+    return problems
+
+
 def check_result(log: Log) -> int:
     """Report what is wrong with the install, returning how many things are."""
-    problems = check_theme() + check_configuration()
+    problems = check_theme() + check_configuration() + check_display_manager()
     if not problems:
         log.note(f"No problems found in {INSTALLED_THEME_DIR}.")
         return 0
@@ -1603,8 +1853,12 @@ def main() -> int:
     log.note("")
     if replaced:
         log.note(f"{replaced} was the display manager; it has been disabled in favour of lxdm.")
-    log.note("lxdm starts at the next boot, not before: starting it now would take")
-    log.note("the screen from the session this was run in.")
+    if problems:
+        log.note("The problems listed above have to be fixed before a reboot will show the")
+        log.note("greeter; until then this machine comes up on the login on tty1.")
+    else:
+        log.note("lxdm starts at the next boot, not before: starting it now would take")
+        log.note("the screen from the session this was run in.")
     return 1 if problems else 0
 
 
