@@ -26,12 +26,15 @@
     keyboard, label_keyboard    the keyboard layout chooser
     exit                        reboot and shut down
 
-  @THEME_DIR@ is replaced with the installed theme directory by
-  settings_lxdm.py, so the logo is named by an absolute path. How GtkBuilder
-  resolves a relative pixbuf path is a detail that has differed between
-  toolkits and between versions - the upstream Industrial theme gets away with
-  a bare "login.png" - and a path written out in full leaves nothing to
-  resolve, whatever loaded this file and from which directory.
+  The logo is named by the relative path login.png, exactly as the upstream
+  Industrial theme names its own, and it sits beside this file: GtkBuilder
+  resolves a pixbuf path against the directory of the interface file it is
+  loading, and that is the one form known to load on the greeter every
+  distribution ships. A path written out in full was tried here and removed
+  again - a pixbuf the builder cannot resolve takes the window with it, and a
+  greeter with no window is a black screen, which is the failure this theme
+  must not have. gtk.css still names the wallpaper through @THEME_DIR@, which
+  settings_lxdm.py replaces, because CSS resolves a url() its own way.
 -->
 <interface>
   <!-- interface-requires gtk+ 2.12 -->
@@ -78,7 +81,7 @@
                         <child>
                           <object class="GtkImage" id="image1">
                             <property name="visible">True</property>
-                            <property name="pixbuf">@THEME_DIR@/login.png</property>
+                            <property name="pixbuf">login.png</property>
                             <property name="yalign">0.8</property>
                           </object>
                           <packing>

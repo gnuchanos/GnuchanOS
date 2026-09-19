@@ -33,10 +33,16 @@
 #      this distribution is expected to install it to when there is not, so the
 #      key cannot be missing after a run;
 #   4. copies the GnuchanPurple GTK theme from dotfile/GTK_THEME to
-#      /usr/share/themes, where the greeter can find it, because the greeter
-#      runs as the lxdm account, or as root when there is none, before anyone
-#      logs in and a theme installed in a user's home directory is not visible
-#      to it;
+#      /usr/share/themes, where the desktop can find it, because a theme
+#      installed in a user's home directory is not visible to a process that
+#      runs, as the greeter does, as the lxdm account or as root before anyone
+#      has logged in. The greeter is deliberately NOT pointed at it: the
+#      [display] gtk_theme key is left exactly as the distribution set it. That
+#      key selects the GTK theme for the greeter's own widgets, and it was
+#      working before this script ran - a GTK theme the greeter cannot load is
+#      a greeter that does not come up at all, which is the whole thing this
+#      script exists to avoid. The palette is carried by the theme's own gtkrc
+#      and gtk.css, which do not depend on it;
 #   5. makes lxdm the display manager: writes the Debian default display
 #      manager file, which lxdm's own systemd unit checks before it will start,
 #      disables any other display manager that was enabled so that two of them
@@ -1064,13 +1070,15 @@ def read_png(path: Path) -> Raster | None:
 def render_theme(log: Log, background: Path, logo: Path) -> None:
     """Write the installed theme: the committed files, and the three images.
 
-    The interfaces name their images through @THEME_DIR@, and the placeholder is
-    replaced here with the directory the theme is being written to, so the
-    installed file carries an absolute path. That is what makes the two images
-    independent of how the interface was loaded: lxdm hands GtkBuilder the
-    absolute path of the .ui file, and a relative pixbuf path is then resolved
-    against whatever directory GtkBuilder decided the file came from. Written
-    out absolute, there is nothing left to resolve.
+    The placeholder @THEME_DIR@ is replaced here with the directory the theme is
+    being written to, so an installed file can carry an absolute path. Only
+    gtk.css uses it: the wallpaper is a CSS url(), which a style provider does
+    not resolve the way GtkBuilder resolves a pixbuf, so it is written out in
+    full. The two interfaces deliberately do not use it - their logo is named by
+    the relative path login.png, which is the form the upstream Industrial theme
+    uses and the form GtkBuilder resolves against the directory of the
+    interface file it is loading. A pixbuf it cannot resolve takes the whole
+    window with it, so that form is the one to keep.
 
     The logo is scaled twice from the same source: once for the image on the
     login box, once as the avatar the greeter falls back to for an account with
@@ -1323,13 +1331,14 @@ def managed_settings(existing: str, gtk_theme_installed: bool) -> dict[str, dict
         "display": dict(DISPLAY_SETTINGS),
         "userlist": dict(USERLIST_SETTINGS),
     }
-    if gtk_theme_installed:
-        # Only when the theme is really installed: naming a GTK theme that is
-        # not there makes GTK print a warning and fall back anyway, and the
-        # greeter's own stylesheet already carries the palette. The icon theme
-        # is deliberately not set here - the greeter's icon lookups go to
-        # whatever GTK has selected, because lxdm has no key of its own for it.
-        managed["display"]["gtk_theme"] = THEME_NAME
+    # gtk_theme is deliberately not one of the keys written here, and neither is
+    # any icon theme: the greeter's own gtkrc and gtk.css carry the palette, and
+    # these keys select the GTK theme its widgets are drawn with. Overwriting
+    # the distribution's choice with a theme of ours is how a greeter that was
+    # coming up stops coming up - the X server starts, the window is never drawn,
+    # and the machine looks like a display manager that will not start. The
+    # parameter is kept so that callers read the same way.
+    _ = gtk_theme_installed
     # Always written, never dropped: a configuration that arrives without a
     # greeter key, or with one no longer on the machine, is one lxdm reads and
     # then shows nothing for.
@@ -1870,9 +1879,18 @@ def start_display_manager(log: Log) -> bool:
         log.note("at every boot from here on.")
         return True
 
+    journal = run(
+        ["journalctl", "-u", "lxdm.service", "-n", str(LXDM_LOG_LINES), "--no-pager"],
+        capture=True,
+    )
+    if (journal.stdout or "").strip():
+        log.note("  ---- journalctl -u lxdm.service ----")
+        for line in journal.stdout.strip().splitlines()[-LXDM_LOG_LINES:]:
+            log.note("  " + line)
+
     log.warn(
-        "lxdm is not running: the lines above are lxdm's own account of why it "
-        f"stopped, and they stay in {LXDM_LOG}"
+        "lxdm is not running: the two listings above - lxdm's own log and "
+        "systemd's - say what stopped it, and they stay there to be read again"
     )
     return False
 
