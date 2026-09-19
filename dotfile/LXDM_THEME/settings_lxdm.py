@@ -59,9 +59,14 @@
 #      login on tty1, and a run that installs a display manager which cannot
 #      start is the run that should have said so.
 #
-# It does not start lxdm. Starting a display manager from inside a running
-# session takes the screen away from it, so the switch happens on the next
-# reboot - which the script says in its last line.
+# At the end it starts lxdm, rather than promising it for the next reboot. A
+# display manager that cannot come up is a black screen and a login on tty1 with
+# nothing to read, and a reboot is a slow way to find that out: starting it here
+# either puts the greeter on the screen immediately or leaves lxdm's own account
+# of what it did - /var/log/lxdm.log, which is also where the greeter's stderr
+# goes - on the terminal, naming whichever of the X server and the greeter
+# failed. Nothing is stopped afterwards: the greeter on the screen is the result
+# that was asked for.
 #
 # The two greeters
 # ----------------
@@ -105,6 +110,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ElementTree
 import zlib
 from pathlib import Path
@@ -239,6 +245,17 @@ FALLBACK_GREETER = Path("/usr/libexec/lxdm-greeter-gtk")
 #: configuration, and nothing in lxdm's own files can make up for it.
 GRAPHICAL_TARGET = "graphical.target"
 DEFAULT_TARGET_LINK = Path("/etc/systemd/system/default.target")
+
+#: Where lxdm writes what it did. log_init() in lxdm.c sends lxdm's own stdout
+#: and stderr here, and the greeter inherits both, so this file is where a
+#: greeter that did not appear says why - which X server was exec'd, whether it
+#: could be connected to, and why every session was let go of.
+LXDM_LOG = Path("/var/log/lxdm.log")
+
+#: How long the X server and the greeter are given before the log is read, and
+#: how much of the log is shown when they did not come up.
+LXDM_START_GRACE_SECONDS = 6
+LXDM_LOG_LINES = 20
 
 #: Display managers lxdm replaces when they are enabled. XLDM is not among
 #: them, and neither is anything that is not a display manager.
@@ -1807,6 +1824,59 @@ def check_result(log: Log) -> int:
     return len(problems)
 
 
+# --- starting it ---------------------------------------------------------------
+
+
+def start_display_manager(log: Log) -> bool:
+    """Start lxdm now, and show what it logged, returning whether it is up.
+
+    The switch belongs to the next boot either way, but a reboot is a slow way
+    to discover that the X server or the greeter cannot start: the symptom is a
+    black screen and a login prompt on tty1, and there is nothing on the screen
+    to read. lxdm keeps its own account of the attempt in /var/log/lxdm.log -
+    the X server it exec'd, whether it could be connected to within the retry
+    budget, and why it let the session go - and the greeter's stderr goes to the
+    same file, so starting it here and reading that file turns the reboot into a
+    message on the terminal.
+
+    Nothing is stopped afterwards. This is the display manager the machine is
+    being given, and the greeter on the screen is the result that was asked for.
+    """
+    if not systemd_running():
+        log.detail("there is no systemd here to start lxdm with; it starts with the machine")
+        return False
+
+    log.step("Starting lxdm, so a greeter that cannot come up says why here")
+    result = run(["systemctl", "start", "lxdm.service"])
+    if result.returncode != 0:
+        log.warn(
+            "systemctl could not start lxdm.service, and its own message is above: "
+            "systemctl status lxdm.service and journalctl -u lxdm.service have the rest"
+        )
+        return False
+
+    log.detail(f"started; the X server and the greeter get {LXDM_START_GRACE_SECONDS} seconds")
+    time.sleep(LXDM_START_GRACE_SECONDS)
+
+    lines = read_text(LXDM_LOG).splitlines()
+    if lines:
+        log.note(f"  ---- {LXDM_LOG} ----")
+        for line in lines[-LXDM_LOG_LINES:]:
+            log.note("  " + line)
+
+    active = (run(["systemctl", "is-active", "lxdm.service"], capture=True).stdout or "").strip()
+    if active == "active":
+        log.note("lxdm is up: the greeter is on the screen now, and it comes up on its own")
+        log.note("at every boot from here on.")
+        return True
+
+    log.warn(
+        "lxdm is not running: the lines above are lxdm's own account of why it "
+        f"stopped, and they stay in {LXDM_LOG}"
+    )
+    return False
+
+
 # --- entry point ---------------------------------------------------------------
 
 
@@ -1856,10 +1926,15 @@ def main() -> int:
     if problems:
         log.note("The problems listed above have to be fixed before a reboot will show the")
         log.note("greeter; until then this machine comes up on the login on tty1.")
-    else:
-        log.note("lxdm starts at the next boot, not before: starting it now would take")
-        log.note("the screen from the session this was run in.")
-    return 1 if problems else 0
+        return 1
+    if not installed:
+        log.note("lxdm itself is not installed yet, so there is nothing to start:")
+        log.note(f"  {manual_package_hint()}")
+        return 0
+    # Everything is in place, so it is started here rather than promised for a
+    # reboot: the greeter either appears now, or lxdm's log says what stopped it.
+    start_display_manager(log)
+    return 0
 
 
 if __name__ == "__main__":
