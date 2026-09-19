@@ -13,6 +13,13 @@
     frame_color = "#6d28d9"
     separator_color = "auto"
     font = Sans 10
+    # Fallbacks. The three urgency sections below set these for every
+    # notification that carries an urgency hint, which is all of them in
+    # practice; these three exist so nothing at all falls through to dunst's
+    # built in palette if a rule is ever missed.
+    background = "#180a22"
+    foreground = "#ead7ff"
+    timeout = 10
     # dunst defaults highlight to #4499cc, a blue that would otherwise leak
     # into an all purple notification. "highlight" colours a matched
     # substring, "highlight_bg" fills behind it.

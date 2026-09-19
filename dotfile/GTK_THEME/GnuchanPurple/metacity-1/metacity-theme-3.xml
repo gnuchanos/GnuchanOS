@@ -11,6 +11,17 @@
      Note: an XML comment may not contain a double hyphen, so this header uses
      blank lines instead of a rule. Writing one here makes the whole file
      unparseable and Metacity silently falls back to its built in theme.
+
+     The frame_style_sets below list normal, maximized and shaded windows for
+     both focus states. There is no entry for the tiled or attached states:
+     their names come from the theme schema in Metacity's own theme parser, and
+     the format is not documented anywhere this repository can check without
+     the Metacity source. A wrong token there does not degrade gracefully, it
+     makes Metacity reject the whole file and fall back to its built in theme,
+     which is worse than the current state; so those entries are left out
+     until they can be verified against the parser. Metacity falls back to the
+     closest listed state for a window it has no exact entry for, which for a
+     tiled window is the normal frame, and that is what this theme draws today.
 -->
 <metacity_theme>
   <info>
@@ -56,7 +67,10 @@
     <distance name="titlebar_bottom_pad" value="0"/>
     <border name="title_border" left="6" right="6" top="4" bottom="4"/>
     <border name="button_border" left="4" right="4" top="2" bottom="2"/>
-    <aspect_ratio name="titlebar" value="0"/>
+    <!-- No aspect_ratio element: "titlebar" is the only name the schema
+         accepts here, and the value was 0, which the parser accepts and the
+         geometry code then ignores. The height comes from TITLE_HEIGHT in
+         theme_install.py, which is what renders the xfwm4 title bar. -->
   </frame_geometry>
 
   <frame_geometry name="max" parent="normal" has_title="false">

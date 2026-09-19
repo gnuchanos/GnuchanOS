@@ -210,8 +210,8 @@ style "gnuchan-tooltip"
   ythickness = 4
   bg[NORMAL] = "#180A22"
   fg[NORMAL] = "#EAD7FF"
-  bg[SELECTED] = "#542080"
-  fg[SELECTED] = "#FFFFFF"
+  # No bg[SELECTED] / fg[SELECTED] here any more: GTK 2 draws a tooltip in the
+  # NORMAL state only, so both lines were never read.
 }
 widget "gtk-tooltip*"       style "gnuchan-tooltip"
 widget "gtk-tooltips*"      style "gnuchan-tooltip"
@@ -315,7 +315,11 @@ style "gnuchan-scrollbar"
 class "GtkScrollbar" style "gnuchan-scrollbar"
 class "GtkVScrollbar" style "gnuchan-scrollbar"
 class "GtkHScrollbar" style "gnuchan-scrollbar"
-class "GtkScrolledWindow" style "gnuchan-scrollbar"
+# GtkScrolledWindow is deliberately not mapped to this style. It is the
+# container, not a scrollbar, so all it ever picked up was bg[NORMAL] - a
+# viewport one shade off the window background - while the slider width,
+# stepper size and trough properties are read from the widget the style is
+# actually applied to, which the three classes above already cover.
 
 # -----------------------------------------------------------------------------
 # Sliders (GtkScale)

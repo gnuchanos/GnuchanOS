@@ -12,8 +12,8 @@
 #      GTK 4, xfwm4, Marco/Metacity and Openbox read;
 #   2. renders the xfwm4 decoration images (title bar, borders and every title
 #      button) plus the preview that appearance settings show, straight into
-#      the installed theme, because xfwm4 composites PNGs and the theme itself
-#      ships no binaries;
+#      the installed theme, because xfwm4 composites PNGs. The same renderer
+#      produced the copies committed under GnuchanPurple/;
 #   3. installs the GTK 4 / libadwaita overlay as ~/.config/gtk-4.0/gtk.css,
 #      which is how libadwaita applications get the palette without GTK_THEME;
 #   4. writes ~/.gtkrc-2.0 for GTK 2 and the GTK 3 and GTK 4 settings.ini
@@ -22,12 +22,16 @@
 #   5. copies the terminal / launcher / bar extras to ~/.config/gnuchan-purple.
 #
 # Existing files are moved aside to <name>.gnuchan-backup instead of being
-# overwritten silently, and --uninstall puts them back.
+# overwritten silently, so nothing this installer touches is lost.
 #
-#     python theme_install.py              # install
-#     python theme_install.py --apply      # install and select it
-#     python theme_install.py --dry-run    # show the plan, change nothing
-#     python theme_install.py --uninstall  # undo
+#     python theme_install.py                  # install
+#     python theme_install.py --render-assets  # regenerate the repo PNGs
+#
+# GnuchanPurple/xfwm4 and GnuchanPurple/thumbnail.png hold the images the
+# renderer produces, so a plain "cp -r GnuchanPurple ~/.themes" works without
+# running this script at all. --render-assets is how those files are made
+# again after a palette change, and the install path regenerates them into the
+# installed copy regardless of what the checked in files contain.
 #
 # License: GPL3
 # =============================================================================
@@ -40,7 +44,6 @@ import os
 import re
 import shutil
 import struct
-import subprocess
 import sys
 import zlib
 from pathlib import Path
@@ -54,8 +57,6 @@ THEME_NAME = "GnuchanPurple"
 CONFIG_DIR_NAME = "gnuchan-purple"
 BACKUP_SUFFIX = ".gnuchan-backup"
 GENERATED_MARKER = "written by theme_install.py"
-# Mirrors ButtonLayout in GnuchanPurple/index.theme.
-BUTTON_LAYOUT = ":minimize,maximize,close"
 IGNORED_COPY_NAMES = {"__pycache__", ".DS_Store", "Thumbs.db"}
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -348,7 +349,10 @@ def _png_chunk(tag: bytes, data: bytes) -> bytes:
 
 # --- xfwm4 decoration images -------------------------------------------------
 # xfwm4 composites PNGs for the title bar, the border and every title button,
-# so these are rendered at install time instead of being shipped in git.
+# so these are rendered rather than drawn by hand. The same images are
+# committed under GnuchanPurple/ so that copying the theme directory by hand
+# without running this script still produces a complete xfwm4 theme; see
+# --render-assets.
 
 BUTTON_SIZE = 24
 BUTTON_RADIUS = 5.0
@@ -660,11 +664,11 @@ def copy_tree(source: Path, destination: Path) -> int:
 def backup_file(path: Path) -> Path | None:
     """Move an existing file aside, returning where it went.
 
-    The backup is written once, not once per run. Overwriting it on a second
-    install put this installer's own output in the backup, so a later
-    ``--uninstall`` restored the theme's file instead of whatever the user had
-    before the first run. Keeping the oldest copy is what makes the promise in
-    the header true however many times the installer has run since.
+    The backup is written once, not once per run: a second run must not
+    overwrite it with this installer's own output, because the file worth
+    keeping is the one the user had before the script ever touched it. Keeping
+    the oldest copy is what makes the promise in the header true however many
+    times the script is run.
     """
     if not path.exists():
         return None
@@ -675,28 +679,9 @@ def backup_file(path: Path) -> Path | None:
     return backup
 
 
-def restore_backup(path: Path) -> bool:
-    """Put a backup back in place, reporting whether one was found."""
-    backup = path.with_name(path.name + BACKUP_SUFFIX)
-    if not backup.exists():
-        return False
-    if path.exists():
-        path.unlink()
-    shutil.move(str(backup), str(path))
-    return True
-
-
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
-
-
-def is_generated_file(path: Path) -> bool:
-    """True when a file on disk was written by this installer."""
-    try:
-        return GENERATED_MARKER in path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return False
 
 
 # --- generated configuration -------------------------------------------------
@@ -853,11 +838,10 @@ def gtk4_overlay_content() -> str:
 
 
 class Log:
-    """Progress output, honouring --quiet and --dry-run."""
+    """Progress output, honouring --quiet."""
 
-    def __init__(self, quiet: bool = False, dry_run: bool = False) -> None:
+    def __init__(self, quiet: bool = False) -> None:
         self.quiet = quiet
-        self.dry_run = dry_run
 
     def step(self, message: str) -> None:
         if not self.quiet:
@@ -865,14 +849,11 @@ class Log:
 
     def detail(self, message: str) -> None:
         if not self.quiet:
-            print(f"    {'would ' if self.dry_run else ''}{message}")
+            print(f"    {message}")
 
     def note(self, message: str) -> None:
         if not self.quiet:
             print(message)
-
-    def warn(self, message: str) -> None:
-        print(f"warning: {message}", flush=True)
 
 
 # --- installing --------------------------------------------------------------
@@ -910,6 +891,22 @@ def write_theme_tree(log: Log, target: Path, render_assets: bool) -> None:
     log.detail(f"rendered the theme preview into {target / 'thumbnail.png'}")
 
 
+def render_source_assets(log: Log) -> int:
+    """Render the decoration images into the source tree in this repository.
+
+    This is what fills GnuchanPurple/xfwm4 with the 74 tiles xfwm4 composites
+    and GnuchanPurple/thumbnail.png with the preview, so that a user who copies
+    the directory into ~/.themes by hand gets a working theme without running
+    the installer. It writes only inside the repository.
+    """
+    count = render_xfwm4_assets(SOURCE_THEME_DIR)
+    thumbnail = SOURCE_THEME_DIR / "thumbnail.png"
+    render_thumbnail().save(thumbnail)
+    log.detail(f"rendered {count} xfwm4 images into {SOURCE_THEME_DIR / 'xfwm4'}")
+    log.detail(f"rendered the theme preview into {thumbnail}")
+    return count
+
+
 def install_theme(log: Log, theme_dirs: tuple[Path, ...], render_assets: bool) -> list[Path]:
     """Install the theme and link every directory after the first to it.
 
@@ -924,44 +921,29 @@ def install_theme(log: Log, theme_dirs: tuple[Path, ...], render_assets: bool) -
     for directory in theme_dirs:
         target = directory / THEME_NAME
         if primary is not None and target != primary:
-            if log.dry_run:
-                log.detail(f"link {target} -> {primary}")
-            elif link_theme_dir(target, primary):
+            if link_theme_dir(target, primary):
                 log.detail(f"linked {target} -> {primary}")
             else:
                 log.detail(f"{target} is already a real directory; filling it instead")
                 write_theme_tree(log, target, render_assets)
             installed.append(target)
             continue
-        if log.dry_run:
-            log.detail(f"copy {SOURCE_THEME_DIR} -> {target}")
-            if render_assets:
-                log.detail(f"render the xfwm4 images and the theme preview into {target}")
-        else:
-            write_theme_tree(log, target, render_assets)
+        write_theme_tree(log, target, render_assets)
         installed.append(target)
     return installed
 
 
 def write_config(
-    log: Log, path: Path, content: str, force: bool, merge: bool = False
+    log: Log, path: Path, content: str, merge: bool = False
 ) -> None:
     """Write one configuration file, backing up whatever was already there.
 
-    A file this installer did not write is left alone unless --force is given,
-    so a hand made configuration is never replaced by surprise. Files written
-    with ``merge=True`` already carry the user's own settings, so they are
-    written even without --force; they are still backed up first.
+    There is no mode that refuses to write: the installer is meant to be run,
+    and running it has to leave a current configuration behind. What protects a
+    file this installer does not own is the merge in the callers - those files
+    keep every line the installer does not set - and the ``.gnuchan-backup``
+    copy taken here before anything is replaced.
     """
-    if path.exists() and not is_generated_file(path) and not force and not merge:
-        log.warn(
-            f"{path} was not written by this installer; leaving it alone "
-            "(pass --force to replace it)"
-        )
-        return
-    if log.dry_run:
-        log.detail(f"write {path}")
-        return
     backup = backup_file(path)
     write_text(path, content)
     if backup is not None:
@@ -970,7 +952,7 @@ def write_config(
 
 
 def install_configuration(
-    log: Log, theme_dir: Path, force: bool, settings_ini: bool, include_theme: bool
+    log: Log, theme_dir: Path, settings_ini: bool, include_theme: bool
 ) -> None:
     """Install the files GTK 2, GTK 4 and libadwaita read from the home directory.
 
@@ -984,13 +966,12 @@ def install_configuration(
         log,
         gtk2_rc_file(),
         gtk2_rc_content(theme_dir, include_theme=include_theme),
-        force,
         merge=True,
     )
-    write_config(log, gtk4_user_file(), gtk4_overlay_content(), force)
+    write_config(log, gtk4_user_file(), gtk4_overlay_content())
     if settings_ini:
         for path in (gtk3_settings_file(), gtk4_settings_file()):
-            write_config(log, path, settings_ini_content(path), force, merge=True)
+            write_config(log, path, settings_ini_content(path), merge=True)
 
 
 def install_extras(log: Log) -> None:
@@ -998,101 +979,8 @@ def install_extras(log: Log) -> None:
     if not SOURCE_EXTRAS_DIR.is_dir():
         raise SystemExit(f"error: missing extras directory: {SOURCE_EXTRAS_DIR}")
     target = extras_dir()
-    if log.dry_run:
-        log.detail(f"copy {SOURCE_EXTRAS_DIR} -> {target}")
-        return
     copied = copy_tree(SOURCE_EXTRAS_DIR, target)
     log.detail(f"installed {copied} extras into {target}")
-
-
-# --- making the theme active -------------------------------------------------
-# Every desktop answers to a different tool, so the list covers the common ones
-# and each entry is skipped when its tool is not installed.
-
-APPLY_COMMANDS: tuple[tuple[str, ...], ...] = (
-    ("gsettings", "set", "org.gnome.desktop.interface", "gtk-theme", THEME_NAME),
-    ("gsettings", "set", "org.gnome.desktop.wm.preferences", "theme", THEME_NAME),
-    ("gsettings", "set", "org.mate.interface", "gtk-theme", THEME_NAME),
-    ("gsettings", "set", "org.mate.Marco.general", "theme", THEME_NAME),
-    ("gsettings", "set", "org.cinnamon.desktop.interface", "gtk-theme", THEME_NAME),
-    # Button layout, so a session that follows gsettings places the buttons the
-    # same way index.theme asks for when the metatheme is selected by hand.
-    (
-        "gsettings",
-        "set",
-        "org.gnome.desktop.wm.preferences",
-        "button-layout",
-        BUTTON_LAYOUT,
-    ),
-    ("xfconf-query", "-c", "xsettings", "-p", "/Net/ThemeName", "-n", "-t", "string", "-s", THEME_NAME),
-    ("xfconf-query", "-c", "xfwm4", "-p", "/general/theme", "-n", "-t", "string", "-s", THEME_NAME),
-)
-
-
-def run_command(log: Log, argv: tuple[str, ...]) -> None:
-    if shutil.which(argv[0]) is None:
-        log.detail(f"skipped, {argv[0]} is not installed")
-        return
-    completed = subprocess.run(list(argv), capture_output=True, text=True, check=False)
-    if completed.returncode != 0:
-        output = (completed.stderr or completed.stdout).strip().splitlines()
-        log.warn(f"{' '.join(argv)} failed: {output[0] if output else 'unknown error'}")
-        return
-    log.detail(f"ran {' '.join(argv)}")
-
-
-# --- uninstalling ------------------------------------------------------------
-
-
-def uninstall_config(log: Log, path: Path) -> None:
-    """Restore a backup if there is one, otherwise delete our own file."""
-    backup = path.with_name(path.name + BACKUP_SUFFIX)
-    if not path.exists() and not backup.exists():
-        return
-    ours = is_generated_file(path)
-    if backup.exists() and (ours or not path.exists()):
-        if log.dry_run:
-            log.detail(f"restore {path} from {backup.name}")
-        else:
-            restore_backup(path)
-            log.detail(f"restored {path} from its backup")
-        return
-    if ours:
-        if log.dry_run:
-            log.detail(f"remove {path}")
-        else:
-            path.unlink()
-            log.detail(f"removed {path}")
-        return
-    log.warn(f"leaving {path} alone: it was not written by this installer")
-
-
-def uninstall(log: Log, theme_dirs: tuple[Path, ...]) -> None:
-    for directory in theme_dirs:
-        target = directory / THEME_NAME
-        # A symlink to a missing directory is still something we created.
-        if not target.exists() and not target.is_symlink():
-            log.detail(f"not installed: {target}")
-            continue
-        if log.dry_run:
-            log.detail(f"remove {target}")
-        elif target.is_symlink():
-            target.unlink()
-            log.detail(f"removed the link {target}")
-        else:
-            shutil.rmtree(target)
-            log.detail(f"removed {target}")
-
-    for path in (gtk2_rc_file(), gtk3_settings_file(), gtk4_settings_file(), gtk4_user_file()):
-        uninstall_config(log, path)
-
-    target = extras_dir()
-    if target.exists():
-        if log.dry_run:
-            log.detail(f"remove {target}")
-        else:
-            shutil.rmtree(target)
-            log.detail(f"removed {target}")
 
 
 # --- entry point -------------------------------------------------------------
@@ -1126,22 +1014,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="do not write the GTK 3 and GTK 4 settings.ini files",
     )
     parser.add_argument(
-        "--apply", action="store_true", help="make the theme the active one for this desktop"
-    )
-    parser.add_argument("--uninstall", action="store_true", help="remove everything it installed")
-    parser.add_argument(
-        "--force",
+        "--render-assets",
         action="store_true",
-        help="overwrite configuration files this installer did not write",
+        help="render the xfwm4 images and the theme preview into the theme "
+        "source in this repository, then stop",
     )
-    parser.add_argument("--dry-run", action="store_true", help="show the plan, change nothing")
     parser.add_argument("--quiet", action="store_true", help="only print problems")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    log = Log(quiet=args.quiet, dry_run=args.dry_run)
+    log = Log(quiet=args.quiet)
 
     if args.theme_dir:
         theme_dirs = tuple(Path(value).expanduser() for value in args.theme_dir)
@@ -1152,11 +1036,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: theme source is missing: {SOURCE_THEME_DIR}", file=sys.stderr)
         return 1
 
-    if args.uninstall:
-        log.step(f"Uninstalling {THEME_NAME}")
-        uninstall(log, theme_dirs)
+    if args.render_assets:
+        log.step(f"Rendering the {THEME_NAME} assets")
+        render_source_assets(log)
         log.note("")
-        log.note("Done. Log out and back in to see the change.")
+        log.note(f"Done. {SOURCE_THEME_DIR / 'xfwm4'} and")
+        log.note(f"{SOURCE_THEME_DIR / 'thumbnail.png'} now hold the rendered images.")
         return 0
 
     log.step(f"Installing {THEME_NAME}")
@@ -1166,36 +1051,24 @@ def main(argv: list[str] | None = None) -> int:
         install_configuration(
             log,
             theme_dirs[0] / THEME_NAME,
-            force=args.force,
             settings_ini=not args.no_settings,
             include_theme=not args.no_theme,
         )
     if not args.no_extras:
         install_extras(log)
-    if args.apply and not args.dry_run:
-        log.step("Applying the theme")
-        for command in APPLY_COMMANDS:
-            run_command(log, command)
 
     log.note("")
-    if args.dry_run:
-        log.note("Dry run: nothing was changed.")
-    else:
-        log.note(f"{THEME_NAME} installed into:")
-        for directory in theme_dirs:
-            log.note(f"  {directory / THEME_NAME}")
-        log.note("")
-        log.note("Log out and back in, or run with --apply, to make it active.")
-        log.note("")
-        log.note("Window managers with no XSettings daemon - i3, sway, Openbox,")
-        log.note("bspwm - do not read the settings files above. For those, add")
-        log.note("this line to ~/.profile (or ~/.xprofile) and log back in:")
-        log.note("")
-        log.note(f"  . {extras_dir() / 'gtk-env.sh'}")
-        log.note("")
-        log.note("That line lives outside this installer's own files, so it is")
-        log.note("the one thing --uninstall leaves behind: delete it by hand to")
-        log.note("go back to GTK_THEME being unset.")
+    log.note(f"{THEME_NAME} installed into:")
+    for directory in theme_dirs:
+        log.note(f"  {directory / THEME_NAME}")
+    log.note("")
+    log.note("Log out and back in to make it active.")
+    log.note("")
+    log.note("Window managers with no XSettings daemon - i3, sway, Openbox,")
+    log.note("bspwm - do not read the settings files above. For those, add")
+    log.note("this line to ~/.profile (or ~/.xprofile) and log back in:")
+    log.note("")
+    log.note(f"  . {extras_dir() / 'gtk-env.sh'}")
     return 0
 
 
