@@ -44,6 +44,7 @@ import os
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import zlib
 from pathlib import Path
@@ -67,6 +68,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 # directory called anything else is silently ignored by every toolkit.
 SOURCE_THEME_DIR = SCRIPT_DIR / THEME_NAME
 SOURCE_THEME_OVERLAY = SOURCE_THEME_DIR / "gtk-4.0" / "user.css"
+SOURCE_THEME_OVERLAY_GTK3 = SOURCE_THEME_DIR / "gtk-3.0" / "user.css"
 SOURCE_EXTRAS_DIR = SOURCE_THEME_DIR / "extras"
 
 # --- palette -----------------------------------------------------------------
@@ -631,6 +633,10 @@ def gtk4_settings_file() -> Path:
     return xdg_config_home() / "gtk-4.0" / "settings.ini"
 
 
+def gtk3_user_file() -> Path:
+    return xdg_config_home() / "gtk-3.0" / "gtk.css"
+
+
 def gtk4_user_file() -> Path:
     return xdg_config_home() / "gtk-4.0" / "gtk.css"
 
@@ -688,9 +694,16 @@ def write_text(path: Path, text: str) -> None:
 
 
 # Keys the installer owns. Anything else in the user's file is left alone.
+#
+# gtk-theme-name only: no gtk-application-prefer-dark-theme. That key is what
+# makes GTK 3 load <theme>/gtk-3.0/gtk-dark.css instead of gtk.css, and this
+# theme's gtk-dark.css is a forwarder whose relative @import is one more thing
+# that has to resolve before any colour at all applies. The theme has no light
+# variant - gtk-3.0/gtk.css is dark, and the GTK 4 overlay defines its colours
+# unconditionally - so plain gtk-theme-name is both simpler and one failure
+# mode shorter.
 SETTINGS_INI_KEYS: dict[str, str] = {
     "gtk-theme-name": THEME_NAME,
-    "gtk-application-prefer-dark-theme": "1",
 }
 
 
@@ -834,6 +847,23 @@ def gtk4_overlay_content() -> str:
     return header + SOURCE_THEME_OVERLAY.read_text(encoding="utf-8")
 
 
+def gtk3_overlay_content() -> str:
+    """Body of ``~/.config/gtk-3.0/gtk.css``, the theme plus a provenance header.
+
+    This is the GTK 3 counterpart of the libadwaita overlay above, and it is
+    what makes the palette independent of theme selection: a user stylesheet is
+    loaded at user priority by every GTK 3 application, whether or not this
+    theme is the one the session selected.
+    """
+    header = (
+        f"/* GnuchanPurple - {GENERATED_MARKER}\n"
+        f" * Installed for theme: {THEME_NAME}\n"
+        " * Remove this file to fall back to the stock theme's colours.\n"
+        " */\n\n"
+    )
+    return header + SOURCE_THEME_OVERLAY_GTK3.read_text(encoding="utf-8")
+
+
 # --- logging -----------------------------------------------------------------
 
 
@@ -879,10 +909,36 @@ def link_theme_dir(target: Path, primary: Path) -> bool:
     return True
 
 
+def materialise_dark_variants(log: Log, target: Path) -> None:
+    """Make each gtk-dark.css a real copy of that toolkit's gtk.css.
+
+    In the source tree gtk-dark.css is a one line ``@import url("gtk.css")``,
+    which keeps the two files from drifting apart. In the *installed* tree that
+    indirection is a liability: GTK 3.20 and newer load gtk-dark.css whenever an
+    application asks for the dark variant (or whenever GTK_THEME ends in
+    ":dark"), and if that relative import does not resolve the application gets
+    no stylesheet from this theme at all - it keeps the toolkit default, which
+    is the grey that makes the theme look as if it had not been installed. GTK
+    reports nothing louder than a warning when an import fails.
+
+    Copying the maintained file over the variant removes that failure mode
+    completely, and costs one duplicated file per toolkit in the installed tree
+    only - the repository keeps the forwarder and its single source of truth.
+    """
+    for version in ("gtk-3.0", "gtk-4.0"):
+        source = target / version / "gtk.css"
+        variant = target / version / "gtk-dark.css"
+        if not source.is_file():
+            continue
+        shutil.copy2(source, variant)
+        log.detail(f"copied {version}/gtk.css over {version}/gtk-dark.css")
+
+
 def write_theme_tree(log: Log, target: Path, render_assets: bool) -> None:
-    """Copy the theme tree into ``target`` and render its decoration images."""
+    """Copy the theme tree into ``target``, render its images, fill the variants."""
     copied = copy_tree(SOURCE_THEME_DIR, target)
     log.detail(f"copied {copied} files into {target}")
+    materialise_dark_variants(log, target)
     if not render_assets:
         return
     count = render_xfwm4_assets(target)
@@ -951,6 +1007,41 @@ def write_config(
     log.detail(f"merged {path}" if merge else f"wrote {path}")
 
 
+def apply_theme(log: Log) -> None:
+    """Ask the session's own settings backend to select this theme.
+
+    Writing ``~/.config/gtk-3.0/settings.ini`` is enough only on a session
+    where no settings daemon is running. As soon as one is - xfsettingsd on
+    Xfce, gnome-settings-daemon, mate-settings-daemon, lxsettings-daemon,
+    xsettingsd - it owns ``gtk-theme-name`` through XSettings and its value
+    overrides the file. A theme that is installed but never selected there is
+    never loaded: every widget keeps the toolkit's own default, which is the
+    grey that makes a finished installation look as if nothing had happened.
+
+    xfconf and gsettings are therefore asked directly when they exist. Both are
+    optional: a bare window manager session has neither, and then the
+    settings.ini the caller already wrote is what applies.
+    """
+    xfconf = shutil.which("xfconf-query")
+    if xfconf is not None:
+        for prop in ("/Net/ThemeName", "/Net/IconThemeName"):
+            subprocess.run(
+                [xfconf, "-c", "xsettings", "-p", prop, "-s", THEME_NAME],
+                check=False,
+            )
+        log.detail("selected the theme through xfconf (Xfce XSettings)")
+    gsettings = shutil.which("gsettings")
+    if gsettings is not None:
+        for schema, key in (
+            ("org.gnome.desktop.interface", "gtk-theme"),
+            ("org.gnome.desktop.interface", "icon-theme"),
+        ):
+            subprocess.run([gsettings, "set", schema, key, THEME_NAME], check=False)
+        log.detail("selected the theme through gsettings")
+    if xfconf is None and gsettings is None:
+        log.detail("no settings backend found; pick the theme in your appearance settings")
+
+
 def install_configuration(
     log: Log, theme_dir: Path, settings_ini: bool, include_theme: bool
 ) -> None:
@@ -968,10 +1059,12 @@ def install_configuration(
         gtk2_rc_content(theme_dir, include_theme=include_theme),
         merge=True,
     )
+    write_config(log, gtk3_user_file(), gtk3_overlay_content())
     write_config(log, gtk4_user_file(), gtk4_overlay_content())
     if settings_ini:
         for path in (gtk3_settings_file(), gtk4_settings_file()):
             write_config(log, path, settings_ini_content(path), merge=True)
+    apply_theme(log)
 
 
 def install_extras(log: Log) -> None:
@@ -1136,8 +1229,9 @@ def uninstall_configuration(log: Log) -> None:
     elif rc_file.exists():
         remove_generated_file(log, rc_file, strip_gtk2_rc(read_existing(rc_file)))
 
-    overlay = gtk4_user_file()
-    if overlay.exists():
+    for overlay in (gtk3_user_file(), gtk4_user_file()):
+        if not overlay.exists():
+            continue
         if GENERATED_MARKER in read_existing(overlay):
             overlay.unlink()
             log.detail(f"removed {overlay}")

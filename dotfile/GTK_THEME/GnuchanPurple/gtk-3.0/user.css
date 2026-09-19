@@ -1,0 +1,381 @@
+/* ============================================================================
+ * GnuchanPurple - GTK 3 user overlay
+ * ----------------------------------------------------------------------------
+ * This file is installed as ~/.config/gtk-3.0/gtk.css. GTK 3 loads that file
+ * as the per-user stylesheet at USER priority, which sits above the theme and
+ * above Adwaita's own provider - and, crucially, it is loaded whether or not
+ * this theme is the one selected in the session.
+ *
+ * Why it exists
+ * -------------
+ * `gtk-theme-name` is owned by the running settings daemon (xfsettingsd,
+ * gnome-settings-daemon, mate-settings-daemon, xsettingsd) whenever there is
+ * one, and by ~/.config/gtk-3.0/settings.ini only when there is not. A session
+ * whose daemon still names Adwaita therefore renders every GTK 3 widget with
+ * Adwaita's colours no matter how complete the theme is, which is exactly what
+ * "everything is grey even though the theme is installed" looks like.
+ *
+ * This overlay closes that hole: the palette is applied from the user
+ * stylesheet, so the colours are right from the first frame of every GTK 3
+ * application, and the theme is then only what supplies the rest.
+ *
+ * It deliberately contains colours only:
+ *   - no base stylesheet is imported, so Adwaita keeps drawing the widgets and
+ *     nothing that is not purple in nature changes;
+ *   - geometry, spacing and icon rendering are left alone;
+ *   - every colour Adwaita and Adwaita-based themes publish by name is set, so
+ *     an application that reads the names gets this palette too.
+ *
+ * Because it is a user stylesheet and not a theme, it also works inside Flatpak
+ * and Snap applications that can see ~/.config.
+ *
+ * License: GPL3
+ * ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+ * Palette
+ * -------------------------------------------------------------------------- */
+
+@define-color gnuchan_bg_darkest      #09030d;
+@define-color gnuchan_bg              #0e0614;
+@define-color gnuchan_bg_alt          #0f0615;
+@define-color gnuchan_surface         #12071a;
+@define-color gnuchan_surface_alt     #180a22;
+@define-color gnuchan_raised          #1c0b27;
+@define-color gnuchan_hover           #21102b;
+@define-color gnuchan_raised_hover    #281036;
+@define-color gnuchan_border_alt      #24102f;
+@define-color gnuchan_border          #32143f;
+@define-color gnuchan_border_strong   #6d28d9;
+@define-color gnuchan_accent          #a855f7;
+@define-color gnuchan_accent_hover    #b76eff;
+@define-color gnuchan_accent_active   #9333ea;
+@define-color gnuchan_accent_light    #c77dff;
+@define-color gnuchan_accent_pale     #d8a4ff;
+@define-color gnuchan_selected_bg     #542080;
+@define-color gnuchan_selected_bg_alt #6d28d9;
+@define-color gnuchan_fg              #ead7ff;
+@define-color gnuchan_fg_bright       #f3e8ff;
+@define-color gnuchan_fg_dim          #b78ed6;
+@define-color gnuchan_fg_disabled     #70458a;
+@define-color gnuchan_white           #ffffff;
+@define-color gnuchan_error           #e879f9;
+@define-color gnuchan_warning         #c77dff;
+@define-color gnuchan_success         #d8a4ff;
+@define-color gnuchan_shade           rgba(0, 0, 0, 0.36);
+@define-color gnuchan_shadow          rgba(0, 0, 0, 0.60);
+@define-color gnuchan_selection_soft  rgba(168, 85, 247, 0.30);
+
+/* ----------------------------------------------------------------------------
+ * Classic names, the layer Adwaita-based themes and third party applications
+ * read by name
+ * -------------------------------------------------------------------------- */
+
+@define-color theme_bg_color                        @gnuchan_bg;
+@define-color theme_base_color                      @gnuchan_bg_darkest;
+@define-color theme_fg_color                        @gnuchan_fg;
+@define-color theme_text_color                      @gnuchan_fg;
+@define-color theme_selected_bg_color               @gnuchan_selected_bg;
+@define-color theme_selected_fg_color               @gnuchan_white;
+@define-color theme_unfocused_bg_color              @gnuchan_bg;
+@define-color theme_unfocused_base_color            @gnuchan_bg_darkest;
+@define-color theme_unfocused_fg_color              @gnuchan_fg_dim;
+@define-color theme_unfocused_text_color            @gnuchan_fg_dim;
+@define-color theme_unfocused_selected_bg_color     @gnuchan_selected_bg;
+@define-color theme_unfocused_selected_fg_color     @gnuchan_fg_bright;
+@define-color theme_tooltip_bg_color                @gnuchan_surface_alt;
+@define-color theme_tooltip_fg_color                @gnuchan_fg;
+@define-color theme_error_color                     @gnuchan_error;
+@define-color theme_error_bg_color                  #86198f;
+@define-color theme_warning_color                   @gnuchan_warning;
+@define-color theme_warning_bg_color                @gnuchan_accent_active;
+@define-color theme_success_color                   @gnuchan_success;
+@define-color theme_success_bg_color                @gnuchan_selected_bg_alt;
+@define-color theme_info_color                      @gnuchan_accent_light;
+@define-color theme_info_bg_color                   @gnuchan_bg_alt;
+@define-color insensitive_bg_color                  @gnuchan_bg_alt;
+@define-color insensitive_base_color                @gnuchan_bg;
+@define-color insensitive_fg_color                  @gnuchan_fg_disabled;
+@define-color borders                               @gnuchan_border;
+@define-color unfocused_borders                     @gnuchan_border_alt;
+@define-color content_view_bg                       @gnuchan_bg_darkest;
+@define-color text_view_bg                          @gnuchan_bg_darkest;
+
+/* ----------------------------------------------------------------------------
+ * Modern Adwaita 3.24 names
+ * -------------------------------------------------------------------------- */
+
+@define-color window_bg_color                       @gnuchan_bg;
+@define-color window_fg_color                       @gnuchan_fg;
+@define-color view_bg_color                         @gnuchan_bg_darkest;
+@define-color view_fg_color                         @gnuchan_fg;
+@define-color headerbar_bg_color                    @gnuchan_bg_darkest;
+@define-color headerbar_fg_color                    @gnuchan_fg;
+@define-color headerbar_border_color                @gnuchan_border;
+@define-color headerbar_backdrop_color              @gnuchan_bg_darkest;
+@define-color headerbar_shade_color                 @gnuchan_shade;
+@define-color sidebar_bg_color                      @gnuchan_surface;
+@define-color sidebar_fg_color                      @gnuchan_fg;
+@define-color sidebar_backdrop_color                @gnuchan_bg_alt;
+@define-color sidebar_border_color                  @gnuchan_border;
+@define-color secondary_sidebar_bg_color            @gnuchan_bg_alt;
+@define-color secondary_sidebar_fg_color            @gnuchan_fg;
+@define-color secondary_sidebar_backdrop_color      @gnuchan_bg;
+@define-color secondary_sidebar_border_color        @gnuchan_border;
+@define-color card_bg_color                         @gnuchan_surface_alt;
+@define-color card_fg_color                         @gnuchan_fg;
+@define-color dialog_bg_color                       @gnuchan_surface_alt;
+@define-color dialog_fg_color                       @gnuchan_fg;
+@define-color popover_bg_color                      @gnuchan_surface_alt;
+@define-color popover_fg_color                      @gnuchan_fg;
+@define-color thumbnail_bg_color                    @gnuchan_surface_alt;
+@define-color thumbnail_fg_color                    @gnuchan_fg;
+@define-color shade_color                           @gnuchan_shade;
+@define-color scrollbar_outline_color               rgba(9, 3, 13, 0.95);
+
+@define-color destructive_color                     @gnuchan_error;
+@define-color destructive_bg_color                  #86198f;
+@define-color destructive_fg_color                  @gnuchan_white;
+@define-color error_color                           @gnuchan_error;
+@define-color error_bg_color                        #86198f;
+@define-color error_fg_color                        @gnuchan_white;
+@define-color warning_color                         @gnuchan_warning;
+@define-color warning_bg_color                      @gnuchan_accent_active;
+@define-color warning_fg_color                      @gnuchan_white;
+@define-color success_color                         @gnuchan_success;
+@define-color success_bg_color                      @gnuchan_selected_bg_alt;
+@define-color success_fg_color                      @gnuchan_white;
+@define-color accent_color                          @gnuchan_accent_light;
+@define-color accent_bg_color                       @gnuchan_accent;
+@define-color accent_fg_color                       @gnuchan_white;
+@define-color link_color                            @gnuchan_accent_light;
+@define-color link_visited_color                    @gnuchan_accent_pale;
+@define-color placeholder_text_color                @gnuchan_fg_disabled;
+@define-color scrollbar_bg_color                    @gnuchan_bg_alt;
+@define-color scrollbar_slider_color                #6d28d9;
+@define-color scrollbar_slider_hover_color          #9333ea;
+@define-color scrollbar_slider_active_color         #c77dff;
+
+/* Window manager colours: for a client side decorated window these are the
+ * whole title bar, and without them a CSD window keeps Adwaita's grey strip. */
+@define-color wm_bg                                 @gnuchan_bg_darkest;
+@define-color wm_bg_backdrop                        @gnuchan_bg_darkest;
+@define-color wm_bg_unfocused                       @gnuchan_bg_darkest;
+@define-color wm_fg                                 @gnuchan_fg;
+@define-color wm_border                             @gnuchan_border;
+@define-color wm_border_backdrop                    @gnuchan_border_alt;
+@define-color wm_title                              @gnuchan_fg;
+@define-color wm_title_backdrop                     @gnuchan_fg_dim;
+@define-color wm_subtitle                           @gnuchan_fg_dim;
+@define-color wm_unfocused_title                    @gnuchan_fg_dim;
+@define-color wm_unfocused_control                  @gnuchan_fg_disabled;
+@define-color wm_highlight                          rgba(0, 0, 0, 0);
+
+@define-color osd_bg_color                          @gnuchan_bg_darkest;
+@define-color osd_fg_color                          @gnuchan_fg;
+@define-color osd_base_color                        @gnuchan_bg_darkest;
+@define-color osd_text_color                        @gnuchan_fg;
+@define-color osd_borders_color                     @gnuchan_border;
+
+/* ----------------------------------------------------------------------------
+ * The rules a colour cannot express
+ * ----------------------------------------------------------------------------
+ * Kept intentionally short: the widgets whose colours Adwaita writes out as
+ * literals rather than reading a name. Without these, an application that is
+ * painted from Adwaita's own stylesheet keeps Adwaita's grey on exactly these
+ * surfaces even though every name above is purple.
+ * -------------------------------------------------------------------------- */
+
+/* Adwaita paints most containers with a background *image* (a gradient) over
+ * the background colour, so a colour-only overlay leaves that gradient
+ * painted. Clearing it is what makes the colours above the only thing drawn;
+ * it sits first so a rule below that wants a gradient of its own still wins. */
+* {
+  background-image: none;
+}
+
+/* Plain layout containers carry no surface of their own: making them
+ * transparent guarantees they show the nearest ancestor that does have one. */
+box,
+grid,
+stack,
+overlay,
+revealer,
+paned,
+viewport {
+  background-color: transparent;
+  background-image: none;
+}
+
+window,
+window.background,
+.background {
+  background-color: @gnuchan_bg;
+  color: @gnuchan_fg;
+}
+
+label:disabled,
+label.dim-label,
+.dim-label {
+  color: @gnuchan_fg_disabled;
+}
+
+selection,
+label > selection,
+entry selection,
+textview selection,
+text selection {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+separator {
+  background-color: @gnuchan_border;
+  min-width: 1px;
+  min-height: 1px;
+}
+
+headerbar,
+.titlebar {
+  background-color: @gnuchan_bg_darkest;
+  background-image: none;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+notebook > header,
+notebook > stack,
+notebook > header > tabs,
+notebook > header > tabs > tab {
+  background-color: @gnuchan_bg;
+  background-image: none;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+notebook > header > tabs > tab:checked {
+  background-color: @gnuchan_raised;
+  color: @gnuchan_fg_bright;
+}
+
+list,
+list.view,
+treeview,
+treeview.view,
+.view,
+viewport,
+textview,
+textview text {
+  background-color: @gnuchan_bg_darkest;
+  background-image: none;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+list row:selected,
+treeview.view > row:selected,
+treeview.view:selected,
+.view:selected {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+entry,
+spinbutton,
+combobox button,
+button {
+  background-image: none;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+entry,
+spinbutton {
+  background-color: @gnuchan_bg_darkest;
+}
+
+button {
+  background-color: @gnuchan_raised;
+}
+
+button:hover {
+  background-color: @gnuchan_raised_hover;
+  color: @gnuchan_fg_bright;
+}
+
+button:active,
+button:checked {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+button:disabled {
+  background-color: @gnuchan_bg_alt;
+  color: @gnuchan_fg_disabled;
+}
+
+popover,
+popover.background,
+menu,
+.menu,
+.context-menu,
+tooltip,
+tooltip.background {
+  background-color: @gnuchan_surface_alt;
+  background-image: none;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border_strong;
+}
+
+frame,
+frame > border {
+  border-color: @gnuchan_border;
+  background-color: transparent;
+  color: @gnuchan_fg;
+}
+
+scrollbar,
+scrollbar trough {
+  background-color: @gnuchan_bg_alt;
+  border-color: @gnuchan_border_alt;
+}
+
+scrollbar slider {
+  background-color: @gnuchan_border_strong;
+  border-color: transparent;
+}
+
+progressbar > trough {
+  background-color: @gnuchan_bg_darkest;
+  border-color: @gnuchan_border;
+}
+
+progressbar > trough > progress {
+  background-color: @gnuchan_accent_active;
+  border-color: transparent;
+}
+
+check,
+radio {
+  background-color: @gnuchan_bg_darkest;
+  border-color: @gnuchan_border_strong;
+}
+
+check:checked,
+radio:checked {
+  background-color: @gnuchan_accent_active;
+  border-color: @gnuchan_accent;
+  color: @gnuchan_white;
+}
+
+link,
+*:link {
+  color: @gnuchan_accent_light;
+}
+
+link:visited,
+*:visited {
+  color: @gnuchan_accent_pale;
+}

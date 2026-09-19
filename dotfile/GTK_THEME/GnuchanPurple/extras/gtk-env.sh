@@ -20,14 +20,17 @@
 
 # Theme every toolkit an application may pull in.
 #
-# The ":dark" suffix is the variant, and it is the *only* way to ask for the
-# dark variant from the environment: GTK 3.20 and newer split GTK_THEME on the
-# last colon and look for <theme>/gtk-3.0/gtk-dark.css. The older, separate
-# GTK_THEME_VARIANT variable that used to be exported from this file does not
-# exist in any GTK release - GTK 3 ignores it and GTK 4 never reads it - so it
-# was removed rather than left in as a trap. Both gtk-dark.css files in this
-# theme simply import gtk.css, so setting the variant costs nothing.
-GTK_THEME=GnuchanPurple:dark
+# No ":dark" suffix here, on purpose. GTK 3.20 and newer split GTK_THEME on the
+# last colon and then load *only* <theme>/gtk-3.0/gtk-dark.css; gtk.css is not
+# read at all. This theme's gtk-dark.css is a one line forwarder to gtk.css, so
+# the variant used to work by that indirection - but it made the whole theme
+# depend on one relative @import resolving, and when it does not (GTK reports
+# nothing useful) the application ends up with no stylesheet of ours at all and
+# keeps the toolkit's default grey. Naming the theme without the variant loads
+# gtk.css directly, which is the file this theme actually maintains, and the
+# theme is dark-only anyway: gtk-application-prefer-dark-theme in the settings
+# files keeps its dark appearance with or without the suffix.
+GTK_THEME=GnuchanPurple
 export GTK_THEME
 
 # GTK 2 applications read this file directly, and GTK 2 does not understand the
