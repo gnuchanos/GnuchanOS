@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- mate-sensors-applet -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M50 12L50 12A10 10 0 0 1 60 22L60 58A10 10 0 0 1 50 68L50 68A10 10 0 0 1 40 58L40 22A10 10 0 0 1 50 12Z" fill="#a855f7"/>
-  <path d="M32 74a18 18 0 1 0 36 0a18 18 0 1 0 -36 0Z" fill="#a855f7"/>
-  <path d="M41 74a9 9 0 1 0 18 0a9 9 0 1 0 -18 0Z" fill="#f3e8ff"/>
-  <path d="M50 34L50 60" fill="none" stroke="#f3e8ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

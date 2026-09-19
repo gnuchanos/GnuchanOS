@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- network-wireless-signal-excellent -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M21 66L28 66A3 3 0 0 1 31 69L31 79A3 3 0 0 1 28 82L21 82A3 3 0 0 1 18 79L18 69A3 3 0 0 1 21 66Z" fill="#d8a4ff"/>
-  <path d="M39 51L46 51A3 3 0 0 1 49 54L49 79A3 3 0 0 1 46 82L39 82A3 3 0 0 1 36 79L36 54A3 3 0 0 1 39 51Z" fill="#d8a4ff"/>
-  <path d="M57 36L64 36A3 3 0 0 1 67 39L67 79A3 3 0 0 1 64 82L57 82A3 3 0 0 1 54 79L54 39A3 3 0 0 1 57 36Z" fill="#d8a4ff"/>
-  <path d="M75 21L82 21A3 3 0 0 1 85 24L85 79A3 3 0 0 1 82 82L75 82A3 3 0 0 1 72 79L72 24A3 3 0 0 1 75 21Z" fill="#d8a4ff"/>
-</svg>

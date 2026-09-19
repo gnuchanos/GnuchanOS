@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- cinnamon-settings-fonts -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M24.16 84L50 19.4" fill="none" stroke="#d8a4ff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M50 19.4L75.84 84" fill="none" stroke="#d8a4ff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M33.68 60.88L66.32 60.88" fill="none" stroke="#d8a4ff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

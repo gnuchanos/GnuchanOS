@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- app-letter-x -->
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
-  <path d="M27 11L73 11A16 16 0 0 1 89 27L89 73A16 16 0 0 1 73 89L27 89A16 16 0 0 1 11 73L11 27A16 16 0 0 1 27 11Z" fill="#9333ea"/>
-  <path d="M27 14L73 14A13 13 0 0 1 86 27L86 73A13 13 0 0 1 73 86L27 86A13 13 0 0 1 14 73L14 27A13 13 0 0 1 27 14Z" fill="#542080"/>
-  <path d="M34.6 26L65.4 72" fill="none" stroke="#f3e8ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M65.4 26L34.6 72" fill="none" stroke="#f3e8ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- gnome-shell-magnifier -->
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
-  <path d="M66 42A24 24 0 1 1 66 42" fill="none" stroke="#a855f7" stroke-width="8" stroke-linecap="round"/>
-  <path d="M60 60L84 84" fill="none" stroke="#a855f7" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- player_pause -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M33 18L42 18A3 3 0 0 1 45 21L45 79A3 3 0 0 1 42 82L33 82A3 3 0 0 1 30 79L30 21A3 3 0 0 1 33 18Z" fill="#d8a4ff"/>
-  <path d="M58 18L67 18A3 3 0 0 1 70 21L70 79A3 3 0 0 1 67 82L58 82A3 3 0 0 1 55 79L55 21A3 3 0 0 1 58 18Z" fill="#d8a4ff"/>
-</svg>

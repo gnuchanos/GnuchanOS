@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- video-projector-symbolic -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
-  <path d="M58 42L96 20L96 64L58 58Z" fill="#ead7ff" fill-opacity="0.333333" fill-rule="evenodd"/>
-  <path d="M13 36L55 36A5 5 0 0 1 60 41L60 71A5 5 0 0 1 55 76L13 76A5 5 0 0 1 8 71L8 41A5 5 0 0 1 13 36Z" fill="#ead7ff"/>
-  <path d="M11 56a11 11 0 1 0 22 0a11 11 0 1 0 -22 0Z" fill="#09030d" fill-opacity="0.533333"/>
-  <path d="M17 56a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#ead7ff"/>
-  <path d="M44 46a4 4 0 1 0 8 0a4 4 0 1 0 -8 0Z" fill="#f3e8ff"/>
-</svg>

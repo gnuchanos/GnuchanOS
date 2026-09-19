@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- drive-ssd -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M19 26L81 26A5 5 0 0 1 86 31L86 65A5 5 0 0 1 81 70L19 70A5 5 0 0 1 14 65L14 31A5 5 0 0 1 19 26Z" fill="#6d28d9"/>
-  <path d="M24 34L40 34A2 2 0 0 1 42 36L42 44A2 2 0 0 1 40 46L24 46A2 2 0 0 1 22 44L22 36A2 2 0 0 1 24 34Z" fill="#f3e8ff"/>
-  <path d="M48 34L76 34A2 2 0 0 1 78 36L78 38A2 2 0 0 1 76 40L48 40A2 2 0 0 1 46 38L46 36A2 2 0 0 1 48 34Z" fill="#f3e8ff"/>
-  <path d="M48 44L70 44A2 2 0 0 1 72 46L72 48A2 2 0 0 1 70 50L48 50A2 2 0 0 1 46 48L46 46A2 2 0 0 1 48 44Z" fill="#f3e8ff"/>
-  <path d="M24 54L76 54A2 2 0 0 1 78 56L78 58A2 2 0 0 1 76 60L24 60A2 2 0 0 1 22 58L22 56A2 2 0 0 1 24 54Z" fill="#f3e8ff"/>
-</svg>

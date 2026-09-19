@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- mousetweaks -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M39 20a11 11 0 1 0 22 0a11 11 0 1 0 -22 0Z" fill="#a855f7"/>
-  <path d="M50 32L50 62" fill="none" stroke="#a855f7" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M22 42L78 42" fill="none" stroke="#a855f7" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M50 62L30 88" fill="none" stroke="#a855f7" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M50 62L70 88" fill="none" stroke="#a855f7" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

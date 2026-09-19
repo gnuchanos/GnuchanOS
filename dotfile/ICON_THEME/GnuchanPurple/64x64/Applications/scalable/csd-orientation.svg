@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- csd-orientation -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M40 20L60 20A6 6 0 0 1 66 26L66 48A6 6 0 0 1 60 54L40 54A6 6 0 0 1 34 48L34 26A6 6 0 0 1 40 20Z" fill="#a855f7"/>
-  <path d="M42 8L42 22" fill="none" stroke="#a855f7" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M58 8L58 22" fill="none" stroke="#a855f7" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M50 54L50 72" fill="none" stroke="#a855f7" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M41 70L59 70A5 5 0 0 1 64 75L64 83A5 5 0 0 1 59 88L41 88A5 5 0 0 1 36 83L36 75A5 5 0 0 1 41 70Z" fill="#a855f7"/>
-</svg>

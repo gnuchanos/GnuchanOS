@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- grsync -->
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 100 100">
-  <path d="M72.517 37A26 26 0 0 1 41.107 74.432" fill="none" stroke="#a855f7" stroke-width="8" stroke-linecap="round"/>
-  <path d="M27.483 63A26 26 0 0 1 58.893 25.568" fill="none" stroke="#a855f7" stroke-width="8" stroke-linecap="round"/>
-  <path d="M41.107 74.432L53.91 72.175L49.464 84.391Z" fill="#a855f7" fill-rule="evenodd"/>
-  <path d="M58.893 25.568L46.09 27.825L50.536 15.609Z" fill="#a855f7" fill-rule="evenodd"/>
-</svg>

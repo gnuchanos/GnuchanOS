@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- application-x-7z-compressed -->
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
-  <path d="M24 12L64 12L80 28L80 86L24 86Z" fill="#f3e8ff" fill-rule="evenodd"/>
-  <path d="M64 12L80 28L64 28Z" fill="#b78ed6" fill-rule="evenodd"/>
-  <path d="M47 48L53 48A3 3 0 0 1 56 51L56 75A3 3 0 0 1 53 78L47 78A3 3 0 0 1 44 75L44 51A3 3 0 0 1 47 48Z" fill="#c77dff"/>
-  <path d="M48 54L52 54A1 1 0 0 1 53 55L53 58A1 1 0 0 1 52 59L48 59A1 1 0 0 1 47 58L47 55A1 1 0 0 1 48 54Z" fill="#f3e8ff"/>
-  <path d="M48 64L52 64A1 1 0 0 1 53 65L53 68A1 1 0 0 1 52 69L48 69A1 1 0 0 1 47 68L47 65A1 1 0 0 1 48 64Z" fill="#f3e8ff"/>
-</svg>

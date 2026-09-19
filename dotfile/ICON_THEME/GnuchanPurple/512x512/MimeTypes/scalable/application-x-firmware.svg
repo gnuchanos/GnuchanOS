@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- application-x-firmware -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M24 12L64 12L80 28L80 86L24 86Z" fill="#f3e8ff" fill-rule="evenodd"/>
-  <path d="M64 12L80 28L64 28Z" fill="#b78ed6" fill-rule="evenodd"/>
-  <path d="M37 52L63 52A3 3 0 0 1 66 55L66 77A3 3 0 0 1 63 80L37 80A3 3 0 0 1 34 77L34 55A3 3 0 0 1 37 52Z" fill="#c77dff"/>
-  <path d="M50 44L50 52" fill="none" stroke="#c77dff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

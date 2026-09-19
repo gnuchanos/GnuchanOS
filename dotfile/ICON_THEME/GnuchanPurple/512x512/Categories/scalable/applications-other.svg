@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- applications-other -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M22 22L46 22L46 14L62 14L62 22L78 22L78 78L22 78Z" fill="#c77dff" fill-rule="evenodd"/>
-  <path d="M24 50a10 10 0 1 0 20 0a10 10 0 1 0 -20 0Z" fill="#542080"/>
-</svg>

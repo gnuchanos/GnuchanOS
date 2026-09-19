@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- gnome-session -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M21 14L55 14A5 5 0 0 1 60 19L60 81A5 5 0 0 1 55 86L21 86A5 5 0 0 1 16 81L16 19A5 5 0 0 1 21 14Z" fill="#a855f7"/>
-  <path d="M45 52a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#09030d" fill-opacity="0.533333"/>
-  <path d="M64 50L84 50" fill="none" stroke="#a855f7" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M78 38L92 50L78 62Z" fill="#a855f7" fill-rule="evenodd"/>
-</svg>

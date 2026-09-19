@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- application-x-raw-disk-image -->
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
-  <path d="M22 20L78 20A6 6 0 0 1 84 26L84 74A6 6 0 0 1 78 80L22 80A6 6 0 0 1 16 74L16 26A6 6 0 0 1 22 20Z" fill="#c77dff"/>
-  <path d="M16 44L84 44" fill="none" stroke="#09030d77" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M26 32a4 4 0 1 0 8 0a4 4 0 1 0 -8 0Z" fill="#f3e8ff"/>
-  <path d="M28 56L58 56A2 2 0 0 1 60 58L60 60A2 2 0 0 1 58 62L28 62A2 2 0 0 1 26 60L26 58A2 2 0 0 1 28 56Z" fill="#f3e8ff"/>
-</svg>

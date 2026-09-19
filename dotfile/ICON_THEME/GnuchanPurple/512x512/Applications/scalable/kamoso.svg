@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- kamoso -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M26 46a24 24 0 1 0 48 0a24 24 0 1 0 -48 0Z" fill="#a855f7"/>
-  <path d="M38 46a12 12 0 1 0 24 0a12 12 0 1 0 -24 0Z" fill="#09030d" fill-opacity="0.533333"/>
-  <path d="M33 70L67 70A3 3 0 0 1 70 73L70 77A3 3 0 0 1 67 80L33 80A3 3 0 0 1 30 77L30 73A3 3 0 0 1 33 70Z" fill="#a855f7"/>
-  <path d="M66 78A16 16 0 0 1 34 78" fill="none" stroke="#a855f7" stroke-width="5" stroke-linecap="round"/>
-</svg>

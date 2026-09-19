@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- qt-fsarchiver-symbolic -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
-  <path d="M16 26L84 26A4 4 0 0 1 88 30L88 44A4 4 0 0 1 84 48L16 48A4 4 0 0 1 12 44L12 30A4 4 0 0 1 16 26Z" fill="#ead7ff"/>
-  <path d="M16 56L48 56A4 4 0 0 1 52 60L52 74A4 4 0 0 1 48 78L16 78A4 4 0 0 1 12 74L12 60A4 4 0 0 1 16 56Z" fill="#ead7ff"/>
-  <path d="M20 32L36 32A2 2 0 0 1 38 34L38 40A2 2 0 0 1 36 42L20 42A2 2 0 0 1 18 40L18 34A2 2 0 0 1 20 32Z" fill="#f3e8ff"/>
-  <path d="M58 62L80 62A2 2 0 0 1 82 64L82 70A2 2 0 0 1 80 72L58 72A2 2 0 0 1 56 70L56 64A2 2 0 0 1 58 62Z" fill="#f3e8ff"/>
-</svg>

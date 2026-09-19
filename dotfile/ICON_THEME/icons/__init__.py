@@ -37,6 +37,11 @@ The pipeline is five steps, each of which is one module:
     writing the generated tree: directories, the spinner, ``index.theme`` and
     the files.
 
+``install``
+    placing the generated tree in the directories a desktop reads, selecting it
+    in the session, and reporting where it went. ``icon_install.py`` next to the
+    package is a three line caller of this module.
+
 ``sheet``
     contact sheets, for reviewing the set as a whole rather than one icon at a
     time.
@@ -52,6 +57,7 @@ __all__ = [
     "catalogue_programs",
     "catalogue_xfce",
     "gif",
+    "install",
     "glyphs_actions",
     "glyphs_apps",
     "glyphs_base",

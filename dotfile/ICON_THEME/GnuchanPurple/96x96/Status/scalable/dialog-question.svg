@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- dialog-question -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M14 50a36 36 0 1 0 72 0a36 36 0 1 0 -72 0Z" fill="#d8a4ff"/>
-  <path d="M38.742 44.5A13 13 0 1 1 61.258 44.5" fill="none" stroke="#09030d" stroke-width="8" stroke-linecap="round"/>
-  <path d="M50 51L50 58" fill="none" stroke="#09030d" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M45 70a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#09030d"/>
-</svg>

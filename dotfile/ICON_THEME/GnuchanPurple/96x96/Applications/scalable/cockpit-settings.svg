@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- cockpit-settings -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M18 20L82 20A6 6 0 0 1 88 26L88 60A6 6 0 0 1 82 66L18 66A6 6 0 0 1 12 60L12 26A6 6 0 0 1 18 20Z" fill="#a855f7"/>
-  <path d="M21 26L79 26A3 3 0 0 1 82 29L82 57A3 3 0 0 1 79 60L21 60A3 3 0 0 1 18 57L18 29A3 3 0 0 1 21 26Z" fill="#f3e8ff"/>
-  <path d="M42 66L58 66A2 2 0 0 1 60 68L60 72A2 2 0 0 1 58 74L42 74A2 2 0 0 1 40 72L40 68A2 2 0 0 1 42 66Z" fill="#a855f7"/>
-  <path d="M29 74L71 74A3 3 0 0 1 74 77L74 79A3 3 0 0 1 71 82L29 82A3 3 0 0 1 26 79L26 77A3 3 0 0 1 29 74Z" fill="#a855f7"/>
-</svg>

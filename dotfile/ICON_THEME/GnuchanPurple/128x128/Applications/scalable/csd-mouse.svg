@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- csd-mouse -->
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 100 100">
-  <path d="M30 22L70 22L78 52L70 82L30 82L22 52Z" fill="#a855f7" fill-rule="evenodd"/>
-  <path d="M50 22L50 46" fill="none" stroke="#09030d88" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

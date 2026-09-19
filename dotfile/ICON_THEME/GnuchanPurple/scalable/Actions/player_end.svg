@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- player_end -->
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
-  <path d="M22 22L58 50L22 78Z" fill="#d8a4ff" fill-rule="evenodd"/>
-  <path d="M67 22L75 22A3 3 0 0 1 78 25L78 75A3 3 0 0 1 75 78L67 78A3 3 0 0 1 64 75L64 25A3 3 0 0 1 67 22Z" fill="#d8a4ff"/>
-</svg>

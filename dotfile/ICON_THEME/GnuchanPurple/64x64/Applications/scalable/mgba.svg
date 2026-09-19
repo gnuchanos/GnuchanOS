@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- mgba -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M22 40L78 40L90 62L78 78L22 78L10 62Z" fill="#a855f7" fill-rule="evenodd"/>
-  <path d="M30 58L42 58" fill="none" stroke="#09030d99" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M36 52L36 64" fill="none" stroke="#09030d99" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M59 54a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M67 62a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#09030d" fill-opacity="0.6"/>
-</svg>

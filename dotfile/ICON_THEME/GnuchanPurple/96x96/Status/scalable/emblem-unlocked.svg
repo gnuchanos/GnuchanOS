@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- emblem-unlocked -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M34 46L34 34" fill="none" stroke="#d8a4ff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M34 34L58 34" fill="none" stroke="#d8a4ff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M58 34L62 24" fill="none" stroke="#d8a4ff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M32 46L68 46A6 6 0 0 1 74 52L74 80A6 6 0 0 1 68 86L32 86A6 6 0 0 1 26 80L26 52A6 6 0 0 1 32 46Z" fill="#d8a4ff"/>
-  <path d="M44 62a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z" fill="#09030d" fill-opacity="0.533333"/>
-</svg>

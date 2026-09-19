@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- cinnamon-settings-desklets-symbolic -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
-  <path d="M16 34L84 34A6 6 0 0 1 90 40L90 60A6 6 0 0 1 84 66L16 66A6 6 0 0 1 10 60L10 40A6 6 0 0 1 16 34Z" fill="#ead7ff"/>
-  <path d="M18 50a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M41 44L65 44A3 3 0 0 1 68 47L68 53A3 3 0 0 1 65 56L41 56A3 3 0 0 1 38 53L38 47A3 3 0 0 1 41 44Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M72 50a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z" fill="#09030d" fill-opacity="0.6"/>
-</svg>

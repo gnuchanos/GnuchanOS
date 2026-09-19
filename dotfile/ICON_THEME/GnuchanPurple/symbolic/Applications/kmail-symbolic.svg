@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- kmail-symbolic -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
-  <path d="M16 26L84 26A6 6 0 0 1 90 32L90 70A6 6 0 0 1 84 76L16 76A6 6 0 0 1 10 70L10 32A6 6 0 0 1 16 26Z" fill="#ead7ff"/>
-  <path d="M12 30L50 56" fill="none" stroke="#09030d88" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M88 30L50 56" fill="none" stroke="#09030d88" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

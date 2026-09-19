@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- gtk-new -->
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 100 100">
-  <path d="M24 12L64 12L80 28L80 86L24 86Z" fill="#f3e8ff" fill-rule="evenodd"/>
-  <path d="M64 12L80 28L64 28Z" fill="#b78ed6" fill-rule="evenodd"/>
-  <path d="M37 62L67 62" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M52 47L52 77" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

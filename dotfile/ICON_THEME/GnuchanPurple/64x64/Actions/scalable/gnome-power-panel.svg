@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- gnome-power-panel -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M32 20L68 20A12 12 0 0 1 80 32L80 68A12 12 0 0 1 68 80L32 80A12 12 0 0 1 20 68L20 32A12 12 0 0 1 32 20Z" fill="#d8a4ff"/>
-  <path d="M31.5 40a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0 -13 0Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M55.5 40a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0 -13 0Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M59 58A9 9 0 1 1 59 58" fill="none" stroke="#09030d99" stroke-width="6" stroke-linecap="round"/>
-</svg>

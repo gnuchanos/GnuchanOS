@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- emblem-videos -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M14 50a36 36 0 1 0 72 0a36 36 0 1 0 -72 0Z" fill="#d8a4ff"/>
-  <path d="M34 32L66 32A4 4 0 0 1 70 36L70 62A4 4 0 0 1 66 66L34 66A4 4 0 0 1 30 62L30 36A4 4 0 0 1 34 32Z" fill="#09030d"/>
-  <path d="M44 39L61 49L44 59Z" fill="#d8a4ff" fill-rule="evenodd"/>
-</svg>

@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- xfce4-touchpad-settings -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M22 24L78 24A8 8 0 0 1 86 32L86 72A8 8 0 0 1 78 80L22 80A8 8 0 0 1 14 72L14 32A8 8 0 0 1 22 24Z" fill="#d8a4ff"/>
-  <path d="M25 30L75 30A5 5 0 0 1 80 35L80 69A5 5 0 0 1 75 74L25 74A5 5 0 0 1 20 69L20 35A5 5 0 0 1 25 30Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M41 50a9 9 0 1 0 18 0a9 9 0 1 0 -18 0Z" fill="#f3e8ff"/>
-  <path d="M49 54L51 54A5 5 0 0 1 56 59L56 63A5 5 0 0 1 51 68L49 68A5 5 0 0 1 44 63L44 59A5 5 0 0 1 49 54Z" fill="#f3e8ff"/>
-</svg>

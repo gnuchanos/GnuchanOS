@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- polkit-gnome -->
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
-  <path d="M50 10L84 26L84 52L50 90L16 52L16 26Z" fill="#a855f7" fill-rule="evenodd"/>
-  <path d="M41 44a9 9 0 1 0 18 0a9 9 0 1 0 -18 0Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M49 46L51 46A3 3 0 0 1 54 49L54 61A3 3 0 0 1 51 64L49 64A3 3 0 0 1 46 61L46 49A3 3 0 0 1 49 46Z" fill="#09030d" fill-opacity="0.6"/>
-</svg>

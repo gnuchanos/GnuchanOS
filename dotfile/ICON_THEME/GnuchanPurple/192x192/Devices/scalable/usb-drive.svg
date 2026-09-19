@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- usb-drive -->
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
-  <path d="M45 8L69 8A3 3 0 0 1 72 11L72 29A3 3 0 0 1 69 32L45 32A3 3 0 0 1 42 29L42 11A3 3 0 0 1 45 8Z" fill="#6d28d9"/>
-  <path d="M48 12L66 12A2 2 0 0 1 68 14L68 26A2 2 0 0 1 66 28L48 28A2 2 0 0 1 46 26L46 14A2 2 0 0 1 48 12Z" fill="#f3e8ff"/>
-  <path d="M42 32L72 32A6 6 0 0 1 78 38L78 86A6 6 0 0 1 72 92L42 92A6 6 0 0 1 36 86L36 38A6 6 0 0 1 42 32Z" fill="#6d28d9"/>
-  <path d="M50 58a7 7 0 1 0 14 0a7 7 0 1 0 -14 0Z" fill="#09030d" fill-opacity="0.533333"/>
-</svg>

@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- media-floppy -->
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
-  <path d="M20 16L80 16A4 4 0 0 1 84 20L84 80A4 4 0 0 1 80 84L20 84A4 4 0 0 1 16 80L16 20A4 4 0 0 1 20 16Z" fill="#6d28d9"/>
-  <path d="M33 16L61 16A3 3 0 0 1 64 19L64 33A3 3 0 0 1 61 36L33 36A3 3 0 0 1 30 33L30 19A3 3 0 0 1 33 16Z" fill="#f3e8ff"/>
-  <path d="M29 52L71 52A3 3 0 0 1 74 55L74 81A3 3 0 0 1 71 84L29 84A3 3 0 0 1 26 81L26 55A3 3 0 0 1 29 52Z" fill="#f3e8ff"/>
-  <path d="M40 30L48 30A2 2 0 0 1 50 32L50 38A2 2 0 0 1 48 40L40 40A2 2 0 0 1 38 38L38 32A2 2 0 0 1 40 30Z" fill="#6d28d9"/>
-</svg>

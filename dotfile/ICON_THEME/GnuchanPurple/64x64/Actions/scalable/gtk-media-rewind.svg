@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- gtk-media-rewind -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M78 22L42 50L78 78Z" fill="#d8a4ff" fill-rule="evenodd"/>
-  <path d="M25 22L33 22A3 3 0 0 1 36 25L36 75A3 3 0 0 1 33 78L25 78A3 3 0 0 1 22 75L22 25A3 3 0 0 1 25 22Z" fill="#d8a4ff"/>
-</svg>

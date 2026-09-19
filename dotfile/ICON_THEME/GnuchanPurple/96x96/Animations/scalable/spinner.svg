@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- spinner -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M82 50A32 32 0 1 1 82 49.999" fill="none" stroke="#a855f7" stroke-width="6" stroke-linecap="round"/>
-  <path d="M50 18A32 32 0 0 1 82 50" fill="none" stroke="#a855f7" stroke-width="10" stroke-linecap="round"/>
-</svg>

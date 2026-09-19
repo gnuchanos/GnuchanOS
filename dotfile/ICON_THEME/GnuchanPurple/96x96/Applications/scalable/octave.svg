@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- octave -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M38 14L62 14L62 40L84 82L16 82L38 40Z" fill="#a855f7" fill-rule="evenodd"/>
-  <path d="M24 68L76 68L84 82L16 82Z" fill="#f3e8ff" fill-rule="evenodd"/>
-  <path d="M36 20L64 20" fill="none" stroke="#f3e8ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

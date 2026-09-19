@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- battery-040 -->
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
-  <path d="M19 30L73 30A7 7 0 0 1 80 37L80 63A7 7 0 0 1 73 70L19 70A7 7 0 0 1 12 63L12 37A7 7 0 0 1 19 30Z" fill="#d8a4ff"/>
-  <path d="M20 35L72 35A3 3 0 0 1 75 38L75 62A3 3 0 0 1 72 65L20 65A3 3 0 0 1 17 62L17 38A3 3 0 0 1 20 35Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M85 42L87 42A3 3 0 0 1 90 45L90 55A3 3 0 0 1 87 58L85 58A3 3 0 0 1 82 55L82 45A3 3 0 0 1 85 42Z" fill="#d8a4ff"/>
-  <path d="M20 35L45.9 35A3 3 0 0 1 48.9 38L48.9 62A3 3 0 0 1 45.9 65L20 65A3 3 0 0 1 17 62L17 38A3 3 0 0 1 20 35Z" fill="#d8a4ff"/>
-</svg>

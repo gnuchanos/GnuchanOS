@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- simple-scan -->
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
-  <path d="M14 30L86 42L86 54L14 42Z" fill="#a855f7" fill-rule="evenodd"/>
-  <path d="M24 58L76 58A4 4 0 0 1 80 62L80 80A4 4 0 0 1 76 84L24 84A4 4 0 0 1 20 80L20 62A4 4 0 0 1 24 58Z" fill="#a855f7"/>
-  <path d="M28 64L72 64A2 2 0 0 1 74 66L74 76A2 2 0 0 1 72 78L28 78A2 2 0 0 1 26 76L26 66A2 2 0 0 1 28 64Z" fill="#f3e8ff"/>
-</svg>

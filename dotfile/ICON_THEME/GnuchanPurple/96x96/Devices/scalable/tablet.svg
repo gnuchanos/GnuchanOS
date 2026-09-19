@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- tablet -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M29 10L71 10A9 9 0 0 1 80 19L80 81A9 9 0 0 1 71 90L29 90A9 9 0 0 1 20 81L20 19A9 9 0 0 1 29 10Z" fill="#6d28d9"/>
-  <path d="M29 20L71 20A3 3 0 0 1 74 23L74 75A3 3 0 0 1 71 78L29 78A3 3 0 0 1 26 75L26 23A3 3 0 0 1 29 20Z" fill="#09030d" fill-opacity="0.533333"/>
-  <path d="M46 84a4 4 0 1 0 8 0a4 4 0 1 0 -8 0Z" fill="#09030d" fill-opacity="0.533333"/>
-</svg>

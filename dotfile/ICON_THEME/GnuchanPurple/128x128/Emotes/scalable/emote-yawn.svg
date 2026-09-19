@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- emote-yawn -->
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 100 100">
-  <path d="M16 50a34 34 0 1 0 68 0a34 34 0 1 0 -68 0Z" fill="#f2c73d"/>
-  <path d="M31 41L45 44" fill="none" stroke="#09030d" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M55 44L69 41" fill="none" stroke="#09030d" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M39 64a11 11 0 1 0 22 0a11 11 0 1 0 -22 0Z" fill="#09030d"/>
-  <path d="M44 69a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z" fill="#e0556b"/>
-</svg>

@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- weather-clear-night -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M16 48a30 30 0 1 0 60 0a30 30 0 1 0 -60 0Z" fill="#f3e8ff"/>
-  <path d="M43.9 35.25a27.6 27.6 0 1 0 55.2 0a27.6 27.6 0 1 0 -55.2 0Z" fill="#09030d"/>
-  <path d="M72 26a4 4 0 1 0 8 0a4 4 0 1 0 -8 0Z" fill="#f3e8ff"/>
-  <path d="M83 46a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z" fill="#f3e8ff"/>
-</svg>

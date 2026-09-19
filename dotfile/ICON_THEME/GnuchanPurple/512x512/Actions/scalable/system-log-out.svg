@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- system-log-out -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M21 20L45 20A5 5 0 0 1 50 25L50 75A5 5 0 0 1 45 80L21 80A5 5 0 0 1 16 75L16 25A5 5 0 0 1 21 20Z" fill="#d8a4ff"/>
-  <path d="M56 50L86 50" fill="none" stroke="#d8a4ff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M78 38L92 50L78 62Z" fill="#d8a4ff" fill-rule="evenodd"/>
-</svg>

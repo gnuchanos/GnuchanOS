@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- copy -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M29.5 15.5L84.5 15.5" fill="none" stroke="#d8a4ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M84.5 15.5L84.5 66.5" fill="none" stroke="#d8a4ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M84.5 66.5L29.5 66.5" fill="none" stroke="#d8a4ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M29.5 66.5L29.5 15.5" fill="none" stroke="#d8a4ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M19 30L67 30A5 5 0 0 1 72 35L72 83A5 5 0 0 1 67 88L19 88A5 5 0 0 1 14 83L14 35A5 5 0 0 1 19 30Z" fill="#d8a4ff"/>
-</svg>

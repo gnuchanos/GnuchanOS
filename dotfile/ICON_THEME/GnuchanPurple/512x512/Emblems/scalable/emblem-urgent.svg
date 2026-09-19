@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- emblem-urgent -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M18 52a32 32 0 1 0 64 0a32 32 0 1 0 -64 0Z" fill="#c77dff"/>
-  <path d="M50 32L50 32A4 4 0 0 1 54 36L54 54A4 4 0 0 1 50 58L50 58A4 4 0 0 1 46 54L46 36A4 4 0 0 1 50 32Z" fill="#09030d"/>
-  <path d="M45 70a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#09030d"/>
-</svg>

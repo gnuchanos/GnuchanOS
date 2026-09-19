@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- kcm_autostart-symbolic -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
-  <path d="M50 10L64 44L64 66L36 66L36 44Z" fill="#ead7ff" fill-rule="evenodd"/>
-  <path d="M36 52L20 70L36 66Z" fill="#ead7ff" fill-rule="evenodd"/>
-  <path d="M64 52L80 70L64 66Z" fill="#ead7ff" fill-rule="evenodd"/>
-  <path d="M43 34a7 7 0 1 0 14 0a7 7 0 1 0 -14 0Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M44 70L56 70L50 90Z" fill="#b76eff" fill-rule="evenodd"/>
-</svg>

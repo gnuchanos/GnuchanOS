@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- camera-photo -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M34 30L42 20L58 20L66 30Z" fill="#6d28d9" fill-rule="evenodd"/>
-  <path d="M18 30L82 30A8 8 0 0 1 90 38L90 70A8 8 0 0 1 82 78L18 78A8 8 0 0 1 10 70L10 38A8 8 0 0 1 18 30Z" fill="#6d28d9"/>
-  <path d="M34 54a16 16 0 1 0 32 0a16 16 0 1 0 -32 0Z" fill="#09030d" fill-opacity="0.533333"/>
-  <path d="M41 54a9 9 0 1 0 18 0a9 9 0 1 0 -18 0Z" fill="#6d28d9"/>
-  <path d="M72 38a4 4 0 1 0 8 0a4 4 0 1 0 -8 0Z" fill="#09030d" fill-opacity="0.533333"/>
-</svg>

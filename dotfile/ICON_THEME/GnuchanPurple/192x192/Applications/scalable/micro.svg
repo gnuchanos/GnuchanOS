@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- micro -->
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
-  <path d="M20 16L60 16L76 32L76 84L20 84Z" fill="#a855f7" fill-rule="evenodd"/>
-  <path d="M60 16L76 32L60 32Z" fill="#f3e8ff" fill-rule="evenodd"/>
-  <path d="M30 46L64 46" fill="none" stroke="#f3e8ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M30 58L64 58" fill="none" stroke="#f3e8ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M30 70L50 70" fill="none" stroke="#f3e8ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

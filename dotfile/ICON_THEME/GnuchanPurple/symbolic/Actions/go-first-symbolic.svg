@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- go-first-symbolic -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
-  <path d="M28 28L72 50" fill="none" stroke="#ead7ff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 50 50)"/>
-  <path d="M72 50L28 72" fill="none" stroke="#ead7ff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 50 50)"/>
-</svg>

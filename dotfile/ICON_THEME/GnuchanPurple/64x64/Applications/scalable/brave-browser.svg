@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- brave-browser -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M82 50A32 32 0 1 1 82 49.999" fill="none" stroke="#a855f7" stroke-width="7" stroke-linecap="round"/>
-  <path d="M50 18L50 82" fill="none" stroke="#a855f7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M18 50L82 50" fill="none" stroke="#a855f7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M67 50A17 17 0 1 1 67 50" fill="none" stroke="#a855f7" stroke-width="6" stroke-linecap="round"/>
-</svg>

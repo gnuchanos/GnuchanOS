@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- application-x-msi -->
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 100 100">
-  <path d="M21 34L79 34A5 5 0 0 1 84 39L84 79A5 5 0 0 1 79 84L21 84A5 5 0 0 1 16 79L16 39A5 5 0 0 1 21 34Z" fill="#c77dff"/>
-  <path d="M16 34L50 20L84 34L50 48Z" fill="#f3e8ff" fill-rule="evenodd"/>
-  <path d="M46 40L54 40A2 2 0 0 1 56 42L56 82A2 2 0 0 1 54 84L46 84A2 2 0 0 1 44 82L44 42A2 2 0 0 1 46 40Z" fill="#f3e8ff"/>
-</svg>

@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- balena-etcher -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M35 12L65 12A5 5 0 0 1 70 17L70 83A5 5 0 0 1 65 88L35 88A5 5 0 0 1 30 83L30 17A5 5 0 0 1 35 12Z" fill="#a855f7"/>
-  <path d="M42 24L58 24L52 44L62 44L44 72L50 50L40 50Z" fill="#f3e8ff" fill-rule="evenodd"/>
-  <path d="M30 26L70 26" fill="none" stroke="#09030d77" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

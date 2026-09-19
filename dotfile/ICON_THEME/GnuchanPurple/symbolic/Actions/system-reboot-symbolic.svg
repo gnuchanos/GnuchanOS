@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- system-reboot-symbolic -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
-  <path d="M37 76.517A26 26 0 1 1 63 76.517" fill="none" stroke="#ead7ff" stroke-width="9" stroke-linecap="round"/>
-  <path d="M50 16L50 46" fill="none" stroke="#ead7ff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

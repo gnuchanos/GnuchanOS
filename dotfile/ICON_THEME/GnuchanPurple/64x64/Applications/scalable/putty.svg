@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- putty -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M22 24L78 24A6 6 0 0 1 84 30L84 70A6 6 0 0 1 78 76L22 76A6 6 0 0 1 16 70L16 30A6 6 0 0 1 22 24Z" fill="#a855f7"/>
-  <path d="M24 30L76 30A2 2 0 0 1 78 32L78 40A2 2 0 0 1 76 42L24 42A2 2 0 0 1 22 40L22 32A2 2 0 0 1 24 30Z" fill="#09030d" fill-opacity="0.533333"/>
-  <path d="M24 48L76 48A2 2 0 0 1 78 50L78 58A2 2 0 0 1 76 60L24 60A2 2 0 0 1 22 58L22 50A2 2 0 0 1 24 48Z" fill="#09030d" fill-opacity="0.533333"/>
-  <path d="M26 68a4 4 0 1 0 8 0a4 4 0 1 0 -8 0Z" fill="#f3e8ff"/>
-  <path d="M44 64L72 64A2 2 0 0 1 74 66L74 70A2 2 0 0 1 72 72L44 72A2 2 0 0 1 42 70L42 66A2 2 0 0 1 44 64Z" fill="#f3e8ff"/>
-</svg>

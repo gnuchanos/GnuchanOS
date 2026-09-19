@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- flag-ro -->
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
-  <path d="M13 23L87 23A4 4 0 0 1 91 27L91 73A4 4 0 0 1 87 77L13 77A4 4 0 0 1 9 73L9 27A4 4 0 0 1 13 23Z" fill="#32143f"/>
-  <path d="M12 26L37.333 26L37.333 74L12 74Z" fill="#2f8fdf"/>
-  <path d="M36.333 26L62.667 26L62.667 74L36.333 74Z" fill="#e0a020"/>
-  <path d="M61.667 26L88 26L88 74L61.667 74Z" fill="#b21f36"/>
-</svg>

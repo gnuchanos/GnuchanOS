@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- deadbeef -->
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
-  <path d="M30.5 66a13.5 13.5 0 1 0 27 0a13.5 13.5 0 1 0 -27 0Z" fill="#a855f7"/>
-  <path d="M55.475 66L55.475 18" fill="none" stroke="#a855f7" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M51.725 18L77.975 36L77.975 52.2L51.725 37.8Z" fill="#a855f7" fill-rule="evenodd"/>
-  <path d="M64 26L86 20" fill="none" stroke="#a855f7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M64 38L86 32" fill="none" stroke="#a855f7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

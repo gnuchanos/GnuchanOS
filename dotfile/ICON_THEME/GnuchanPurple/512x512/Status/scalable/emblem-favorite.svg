@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- emblem-favorite -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M14 50a36 36 0 1 0 72 0a36 36 0 1 0 -72 0Z" fill="#d8a4ff"/>
-  <path d="M50 26L56.466 43.101L74.727 43.966L60.462 55.399L65.282 73.034L50 63L34.718 73.034L39.538 55.399L25.273 43.966L43.534 43.101Z" fill="#09030d" fill-rule="evenodd"/>
-</svg>

@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- emblem-export -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M50 60L50 22.2" fill="none" stroke="#c77dff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M50 12L58.5 26.722L41.5 26.722Z" fill="#c77dff" fill-rule="evenodd"/>
-  <path d="M18 56L18 82" fill="none" stroke="#c77dff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M18 82L82 82" fill="none" stroke="#c77dff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M82 82L82 56" fill="none" stroke="#c77dff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

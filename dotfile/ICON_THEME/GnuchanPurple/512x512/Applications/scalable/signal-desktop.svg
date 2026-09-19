@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- signal-desktop -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M20 18L80 18A10 10 0 0 1 90 28L90 60A10 10 0 0 1 80 70L20 70A10 10 0 0 1 10 60L10 28A10 10 0 0 1 20 18Z" fill="#a855f7"/>
-  <path d="M26 66L48 66L28 88Z" fill="#a855f7" fill-rule="evenodd"/>
-  <path d="M30.5 44a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M45.5 44a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0Z" fill="#09030d" fill-opacity="0.6"/>
-  <path d="M60.5 44a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0Z" fill="#09030d" fill-opacity="0.6"/>
-</svg>

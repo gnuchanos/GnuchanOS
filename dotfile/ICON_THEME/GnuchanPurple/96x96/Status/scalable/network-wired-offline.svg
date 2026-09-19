@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- network-wired-offline -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M36 12L64 12A4 4 0 0 1 68 16L68 38A4 4 0 0 1 64 42L36 42A4 4 0 0 1 32 38L32 16A4 4 0 0 1 36 12Z" fill="#d8a4ff"/>
-  <path d="M38 42L62 42L70 74L30 74Z" fill="#d8a4ff" fill-rule="evenodd"/>
-  <path d="M23 74L77 74A3 3 0 0 1 80 77L80 83A3 3 0 0 1 77 86L23 86A3 3 0 0 1 20 83L20 77A3 3 0 0 1 23 74Z" fill="#d8a4ff"/>
-</svg>

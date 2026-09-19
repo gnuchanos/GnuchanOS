@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- channel-insecure -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M50 10L86 24L86 50L50 90L14 50L14 24Z" fill="#d8a4ff" fill-rule="evenodd"/>
-  <path d="M36 48L64 48" fill="none" stroke="#09030d" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

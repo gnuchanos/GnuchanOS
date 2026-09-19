@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- radio-mixed -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
-  <path d="M82 50A32 32 0 1 1 82 49.999" fill="none" stroke="#d8a4ff" stroke-width="10" stroke-linecap="round"/>
-  <path d="M41 50a9 9 0 1 0 18 0a9 9 0 1 0 -18 0Z" fill="#d8a4ff"/>
-</svg>

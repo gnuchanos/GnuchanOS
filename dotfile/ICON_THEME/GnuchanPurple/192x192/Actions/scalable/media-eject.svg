@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- media-eject -->
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
-  <path d="M50 18L82 56L18 56Z" fill="#d8a4ff" fill-rule="evenodd"/>
-  <path d="M21 64L79 64A3 3 0 0 1 82 67L82 75A3 3 0 0 1 79 78L21 78A3 3 0 0 1 18 75L18 67A3 3 0 0 1 21 64Z" fill="#d8a4ff"/>
-</svg>

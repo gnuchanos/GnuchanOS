@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- gtk-justify-center -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
-  <path d="M22 30L78 30" fill="none" stroke="#d8a4ff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M22 50L78 50" fill="none" stroke="#d8a4ff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M22 70L78 70" fill="none" stroke="#d8a4ff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

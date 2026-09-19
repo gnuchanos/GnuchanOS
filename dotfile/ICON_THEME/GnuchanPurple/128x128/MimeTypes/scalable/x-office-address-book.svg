@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- x-office-address-book -->
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 100 100">
-  <path d="M24 12L64 12L80 28L80 86L24 86Z" fill="#f3e8ff" fill-rule="evenodd"/>
-  <path d="M64 12L80 28L64 28Z" fill="#b78ed6" fill-rule="evenodd"/>
-  <path d="M42 58a8 8 0 1 0 16 0a8 8 0 1 0 -16 0Z" fill="#c77dff"/>
-  <path d="M36 80L64 80L50 64Z" fill="#c77dff" fill-rule="evenodd"/>
-</svg>
