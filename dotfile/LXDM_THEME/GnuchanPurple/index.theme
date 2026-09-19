@@ -1,0 +1,21 @@
+[LXDM Theme]
+Name=GnuchanPurple
+Comment=Dark purple LXDM greeter with the GnuchanOS wallpaper and logo
+Author=GnuchanOS
+License=GPL3
+
+# Read by lxdm-config (and by anyone browsing /usr/share/lxdm/themes) so the
+# theme can be named; the greeter itself is pointed at the directory by the
+# [display] theme= key in /etc/lxdm/lxdm.conf.
+#
+# The files a theme may carry, and which of them lxdm reads, depends on how the
+# greeter was built:
+#
+#   greeter-gtk3.ui + gtk.css      the GTK+ 3 greeter (built with --enable-gtk3)
+#   greeter.ui     + gtkrc         the GTK+ 2 greeter (the default build, and
+#                                 the one Debian and Ubuntu ship)
+#   nobody.png                     avatar shown for a user with no ~/.face
+#
+# bg.png, login.png and nobody.png are generated here by settings_lxdm.py from
+# the images in the repository's assets/ directory; the rest of this directory
+# is committed as is.
