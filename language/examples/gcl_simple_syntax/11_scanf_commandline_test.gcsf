@@ -1,0 +1,32 @@
+#pragma commendline 
+
+#|
+    How #pragma commendline works
+    1: if #pragma commendline is present at the top of the file, the operating system terminal opens automatically
+    2: the gcl program opens there
+    3: if python and lua are present via Embeded.run, a separate terminal also opens for them and they start there
+    4: unless the terminal is closed manually, for example by pressing the x key or typing exit, the program keeps the terminal open
+|#
+
+#native <Stdio>
+
+int main() {
+
+    int test = 0;
+    Stdio.printf("Variable:-> ");
+    Stdio.scanf(test);
+    Stdio.printf("Variable: {}\n", test);
+
+    #// when scanf calls are consecutive it may skip 
+
+    gcChar test1 = "";
+    Stdio.printf("Variable:-> ");
+    Stdio.scanf(test1);
+    Stdio.printf("Variable: {}\n", test1);
+
+
+
+
+
+    return 0;
+}

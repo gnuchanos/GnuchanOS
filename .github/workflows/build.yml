@@ -1,0 +1,141 @@
+name: GnuchanOS Build
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+    paths:
+      - 'language/**'
+      - '.github/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'language/**'
+      - '.github/**'
+  workflow_dispatch:      # manual trigger
+
+# Each platform builds the FULL pipeline (full):
+#   gcl.exe (IDE + LSP + embed Lua/Python/Raylib)  ->  language/build/<os>/
+#   python makefile.py   (no arguments: the whole build chain in one command)
+# The build output is uploaded to the artifact as a single zip/tar.gz file;
+# on v* tag pushes an automatic GitHub Release is also created.
+jobs:
+  build:
+    name: full (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: gnulinux, os: ubuntu-24.04, py: python3 }
+          - { platform: windows,  os: windows-2022, py: python }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc make python3 python3-dev tar gzip zip \
+            zlib1g-dev libffi-dev libssl-dev xorg-dev libx11-dev \
+            libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            libgl1-mesa-dev libasound2-dev pkg-config
+
+      - name: Install MinGW (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install mingw -y --no-progress
+          # niXman mingw package: C:\ProgramData\mingw64\mingw64\bin
+          # (gcc, mingw32-make, gendef, dlltool — all of them here)
+          echo "C:\ProgramData\mingw64\mingw64\bin" |
+            Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          choco install make -y --no-progress
+
+      - name: Build full pipeline
+        run: |
+          cd language
+          ${{ matrix.py }} makefile.py
+
+      # Upload the build outputs DIRECTLY as an artifact.
+      # (We do not produce a separate zip — GitHub Actions already creates a zip automatically when downloading;
+      #  if we produced a separate zip it would be a "zip inside a zip".)
+      - name: Upload artifact (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcl-linux-build
+          path: |
+            language/build/gnuLinux/gcl
+            language/build/gnuLinux/Library
+            language/build/gnuLinux/Assets
+            language/build/gnuLinux/Programs
+          # If Programs/ide.so is missing the CI must FAIL — "warn" would hide the missing IDE.
+          # (In the Linux case-sensitive build, Programs/ was never created; catch this.)
+          if-no-files-found: error
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcl-win-build
+          path: |
+            language/build/windows/gcl.exe
+            language/build/windows/Library
+            language/build/windows/Assets
+            language/build/windows/Programs
+          if-no-files-found: error
+
+  # On v* tag pushes: attaches the packages of all platform builds
+  # to the GitHub Release (automatic release + assets).
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # The artifacts are the build output directly (directories). Produce a SINGLE real
+      # package from them — it does not clash with the "outer zip" GitHub creates during download.
+      - name: Package release
+        shell: bash
+        run: |
+          set -e
+          mkdir -p release
+          # The artifact folder names must be the SAME as the names in the build job:
+          # gcl-linux-build / gcl-win-build. Let the output package names differ
+          # so that a "zip inside a zip with the same name" is not created.
+          # Linux — Programs/ is a required part of the IDE; if missing, FAIL.
+          if [ -d artifacts/gcl-linux-build ]; then
+            if [ ! -e artifacts/gcl-linux-build/Programs/ide.so ]; then
+              echo "::error::Programs/ide.so is missing — the IDE was not built. The src/→_SRC/ path fix in makefile.py must have been applied."
+              exit 1
+            fi
+            ( cd artifacts/gcl-linux-build && tar czf "$OLDPWD/release/gcl-linux-full.tar.gz" gcl Library Assets Programs )
+          fi
+          # Windows
+          if [ -d artifacts/gcl-win-build ]; then
+            if [ ! -e artifacts/gcl-win-build/Programs/ide.dll ]; then
+              echo "::error::Programs/ide.dll is missing — the IDE was not built."
+              exit 1
+            fi
+            ( cd artifacts/gcl-win-build && zip -r "$OLDPWD/release/gcl-win-full.zip" gcl.exe Library Assets Programs )
+          fi
+          ls -la release
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" --generate-notes || true
+          gh release upload "$GITHUB_REF_NAME" \
+            release/*.tar.gz release/*.zip \
+            --repo "$GITHUB_REPOSITORY" --clobber

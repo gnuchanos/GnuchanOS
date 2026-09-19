@@ -1,0 +1,15 @@
+# ── Line ending policy ─────────────────────────────────────
+# Keep files in LF form in the repo even if edited on Windows.
+# Otherwise scripts break in Linux/CI due to CRLF line endings (shebang breaks).
+
+* text=auto
+
+# Shell and boot scripts must always use LF
+*.sh      text eol=lf
+os/boot/init    text eol=lf
+os/boot/initrc  text eol=lf
+os/boot/inittab text eol=lf
+os/boot/grub.cfg    text eol=lf
+os/boot/os-release  text eol=lf
+os/build/gnuchanos-build.conf text eol=lf
+.github/workflows/*.yml text eol=lf

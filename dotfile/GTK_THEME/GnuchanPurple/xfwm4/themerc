@@ -1,0 +1,74 @@
+# =============================================================================
+# GnuchanPurple - Xfwm4 window manager theme
+# -----------------------------------------------------------------------------
+# Xfce's window manager reads these keys for everything IT draws itself: the
+# title text, the frame geometry, where the buttons sit and the fallback
+# colours. The title bar, the border and every title button are painted from
+# PNG images, because xfwm4 composites images and cannot draw a frame from
+# colours alone.
+#
+# Those images are not committed to this repository. theme_install.py renders
+# the whole set into <theme>/xfwm4 when the theme is installed, so the theme
+# stays text-only in git and the decorations always match the GTK 3 / GTK 4
+# palette. Re-running the installer regenerates them.
+#
+# Every key below is one xfwm4 itself reads; unknown keys are ignored, but
+# keeping the list clean makes it obvious what actually has an effect.
+#
+# License: GPL3
+# =============================================================================
+
+# --- Title bar ---------------------------------------------------------------
+active_text_color=#ead7ff
+inactive_text_color=#70458a
+active_text_shadow_color=#09030d
+inactive_text_shadow_color=#09030d
+
+title_horizontal_offset=4
+title_vertical_offset_active=3
+title_vertical_offset_inactive=3
+title_alignment=center
+title_shadow_active=false
+title_shadow_inactive=false
+show_app_icon=false
+
+# --- Frame -------------------------------------------------------------------
+active_border_color=#32143f
+inactive_border_color=#24102f
+
+frame_border_top=1
+frame_border_bottom=1
+frame_border_left=1
+frame_border_right=1
+
+full_width_title=true
+maximized_border=1
+borderless_maximize=false
+
+# --- Buttons -----------------------------------------------------------------
+# O = window menu, | = group separator, S = shade, H = hide (minimise),
+# M = maximise, C = close. This is xfwm4's own default arrangement.
+button_layout=O|SHMC
+button_offset=4
+button_spacing=3
+
+# --- Resize handles ----------------------------------------------------------
+handle_width=5
+
+# --- Fallback colours --------------------------------------------------------
+# Used by the title bar and the frame wherever a rendered image is missing, and
+# by xfwm4's own theme previews. Kept in step with the images the installer
+# generates so a half-installed theme still looks like GnuchanPurple.
+active_color_1=#1c0b27
+active_hilight_1=#281036
+active_shadow_1=#09030d
+inactive_color_1=#12071a
+inactive_hilight_1=#180a22
+inactive_shadow_1=#09030d
+
+active_color_2=#1c0b27
+active_hilight_2=#281036
+active_shadow_2=#09030d
+inactive_color_2=#12071a
+inactive_hilight_2=#180a22
+inactive_shadow_2=#09030d

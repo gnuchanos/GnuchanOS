@@ -1,0 +1,33 @@
+#native <Stdio>
+#native <Raylib>
+
+/* Geri çağrı köprüsü testi.
+   raylib'e verilen C callback'i modülün TRAMBOLİNİDİR; trambolin, çağrılacak
+   GCL fonksiyonunu ADIYLA bulur ve host->call_gcl ile çalıştırır. Burada
+   SetTraceLogCallback("onTrace") ile bağlanır ve TraceLog ile tetiklenir.
+   Sayaç global'i her tetiklemede artmalı. */
+
+int traceCalls = 0;
+int traceLevel = -1;
+
+void onTrace(int level, gcChar text) {
+    traceCalls = traceCalls + 1;
+    traceLevel = level;
+    Stdio.printf("[cb] level={} calls={} text={}\n", level, traceCalls, text);
+}
+
+int main() {
+    /* NOT: raylib kendi günlük seviyesinin ALTINDAKİ mesajları callback'e
+       ULAŞTIRMADAN eler (varsayılan LOG_INFO=3). Bu yüzden test 3 ve 4
+       kullanır — aksi hâlde "callback çağrılmadı" sanılır. */
+    Raylib.SetTraceLogCallback("onTrace");
+    Raylib.TraceLog(3, "birinci");
+    Raylib.TraceLog(4, "ikinci");
+    Stdio.printf("SONUC calls={} lastLevel={}\n", traceCalls, traceLevel);
+
+    /* Ayırma: callback kaldırıldıktan sonra GCL fonksiyonu çağrıLMAMALI. */
+    Raylib.SetTraceLogCallback("");
+    Raylib.TraceLog(3, "ucuncu");
+    Stdio.printf("DETACH-SONRASI calls={}\n", traceCalls);
+    return 0;
+}

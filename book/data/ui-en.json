@@ -1,0 +1,31 @@
+{
+  "brand": "GnuchanOS",
+  "brandSub": "GCL Book",
+  "menu": "Menu",
+  "tabs": {
+    "gcl": "GCL",
+    "lua": "Lua",
+    "python": "Python"
+  },
+  "sidebar": {
+    "chapters": "Chapters",
+    "comingSoon": "Coming Soon",
+    "comingSoonDesc": "Lua and Python sections will be added very soon."
+  },
+  "labels": {
+    "example": "Example",
+    "note": "Note",
+    "warning": "Warning",
+    "tip": "Tip",
+    "output": "Output"
+  },
+  "comingCard": {
+    "title": "Content for this language is being prepared",
+    "desc": "Currently the book is only ready for the GCL language. Lua and Python sections will be added here very soon.",
+    "badge": "Coming soon"
+  },
+  "footer": {
+    "text": "GnuchanOS GCL Book",
+    "made": "made with"
+  }
+}

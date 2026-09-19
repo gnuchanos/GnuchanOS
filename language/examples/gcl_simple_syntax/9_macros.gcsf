@@ -1,0 +1,69 @@
+#native <Stdio>
+
+// #define
+#define VERSION 1
+#define MAX_USERS 100
+#define APP_NAME "GnuchanOS"
+
+Stdio.printf("VERSION: {}\n", VERSION);
+Stdio.printf("MAX_USERS: {}\n", MAX_USERS);
+Stdio.printf("APP_NAME: {}\n", APP_NAME);
+
+
+// #if / #elif / #else / #endif
+#if VERSION == 1
+Stdio.printf("Version 1\n");
+#elif VERSION == 2
+Stdio.printf("Version 2\n");
+#else
+Stdio.printf("Unknown version\n");
+#endif
+
+
+// #ifdef
+#ifdef MAX_USERS
+Stdio.printf("MAX_USERS is defined\n");
+#endif
+
+
+// #ifndef
+#ifndef DEBUG_MODE
+Stdio.printf("DEBUG_MODE is not defined\n");
+#endif
+
+
+// #undef
+#define TEMP_VALUE 123
+
+Stdio.printf("TEMP_VALUE: {}\n", TEMP_VALUE);
+
+#undef TEMP_VALUE
+
+#ifndef TEMP_VALUE
+Stdio.printf("TEMP_VALUE was undefined\n");
+#endif
+
+
+// #warning
+#warning This is a warning message
+#warning Check configuration
+
+
+// #error
+#if VERSION < 0
+#error Invalid VERSION
+#endif
+
+
+// #debug
+#debug Starting program
+#debug Loading configuration
+#debug Program initialized
+
+
+int main() {
+
+    Stdio.printf("Program started\n");
+
+    return 0;
+}

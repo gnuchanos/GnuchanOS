@@ -1,0 +1,78 @@
+# =============================================================================
+# GnuchanPurple - Alacritty colour scheme
+# -----------------------------------------------------------------------------
+# Copy to ~/.config/alacritty/gnuchan-purple.toml, then in alacritty.toml:
+#
+#   import = ["~/.config/alacritty/gnuchan-purple.toml"]
+#
+# "import" is a top level key, not a table. Alacritty has no [general] section,
+# and a line placed under one is silently ignored, which is what the earlier
+# version of this file told you to do.
+#
+# Alacritty 0.13 and newer read "import". Older releases only load a single
+# file, so with those copy the blocks below straight into your alacritty.toml.
+#
+# License: GPL3
+# =============================================================================
+
+[colors.primary]
+background = "#09030d"
+foreground = "#ead7ff"
+dim_foreground = "#b78ed6"
+bright_foreground = "#ffffff"
+
+[colors.cursor]
+text = "#09030d"
+cursor = "#ddb3ff"
+
+[colors.vi_mode_cursor]
+text = "#09030d"
+cursor = "#c77dff"
+
+[colors.search.matches]
+foreground = "#09030d"
+background = "#a855f7"
+
+[colors.search.focused_match]
+foreground = "#09030d"
+background = "#d8a4ff"
+
+[colors.footer_bar]
+foreground = "#0e0614"
+background = "#b78ed6"
+
+[colors.selection]
+text = "#ffffff"
+background = "#542080"
+
+# The sixteen ANSI slots are the ones dotfile/vscodium_theme/settings.json
+# gives to terminal.ansiBlack .. terminal.ansiBrightWhite, so VSCodium's
+# integrated terminal and Alacritty show the same colours. That palette file
+# is the source of truth: change it there first, then copy the values here,
+# to kitty.conf and to Xresources.
+[colors.normal]
+black = "#170a20"
+red = "#c084fc"
+green = "#b56cff"
+yellow = "#d8a4ff"
+blue = "#9d4edd"
+magenta = "#c77dff"
+cyan = "#b76eff"
+white = "#ead7ff"
+
+[colors.bright]
+black = "#70458a"
+red = "#d8a4ff"
+green = "#c084fc"
+yellow = "#e0aaff"
+blue = "#b76eff"
+magenta = "#e0aaff"
+cyan = "#d8a4ff"
+white = "#ffffff"
+
+[window]
+opacity = 0.96
+
+[window.padding]
+x = 8
+y = 8

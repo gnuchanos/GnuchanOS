@@ -1,0 +1,228 @@
+/* ===========================================================================
+ * GnuchanPurple - LXDM greeter styles for the GTK+ 3 greeter
+ * ---------------------------------------------------------------------------
+ * Read by lxdm-greeter-gtk when it was built with --enable-gtk3: the greeter
+ * loads this file as a user priority style provider for the whole screen. The
+ * GTK+ 2 counterpart is gtkrc, and the widget names used here are the ids in
+ * greeter-gtk3.ui; the two stylesheets are kept in step by hand.
+ *
+ * The colours are the GnuchanPurple palette, the same values as gtkrc,
+ * dotfile/GTK_THEME/GnuchanPurple and dotfile/vscodium_theme/settings.json.
+ * The VSCodium file is the source of truth for that table; change it there
+ * first, then copy the values here.
+ *
+ * The wallpaper is painted twice, deliberately. The bg key in
+ * /etc/lxdm/lxdm.conf is what the greeter uses: it loads that image, stretches
+ * it to the screen and sets it as the background of both its own window and the
+ * root window (ui_set_bg in greeter-utils.c). The rule below is the same image
+ * drawn by GTK on the window, which costs nothing and is what fills the screen
+ * if that key is ever removed or the file it names cannot be loaded.
+ *
+ * @THEME_DIR@ is replaced with the installed theme directory by
+ * settings_lxdm.py, so the wallpaper is named by an absolute path. GTK resolves
+ * a relative url() against the stylesheet it appears in, which would also work;
+ * writing it out absolute keeps this file and the two interfaces using one
+ * substitution, and leaves nothing for a loader to interpret.
+ * ===========================================================================
+ */
+
+/* --- the window ---------------------------------------------------------- */
+
+#lxdm {
+	background-color: #09030d;
+	background-image: url("@THEME_DIR@/bg.png");
+	background-size: 100% 100%;
+	color: #ead7ff;
+	font-family: "Sans", "DejaVu Sans", sans-serif;
+	font-size: 10pt;
+}
+
+/* --- the login box ------------------------------------------------------- */
+/* The dark purple panel the logo, the prompt, the account list and the
+ * password field sit on. The translucent colour lets the wallpaper's own
+ * shapes show through it without making the text hard to read. */
+
+#login_box {
+	background-color: rgba(42, 18, 56, 0.94);
+	border: 1px solid rgba(168, 85, 247, 0.55);
+	border-radius: 16px;
+	box-shadow: 0 8px 40px rgba(0, 0, 0, 0.55);
+}
+
+/* --- the clock ----------------------------------------------------------- */
+/* A shadow behind the text is what keeps it readable over a photograph. */
+
+#time {
+	color: #f3e8ff;
+	font-size: 16pt;
+	font-weight: bold;
+	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+/* --- captions ------------------------------------------------------------ */
+
+#prompt,
+#label2,
+#label_lang,
+#label_keyboard {
+	color: #d8a4ff;
+	font-size: 10pt;
+	font-weight: bold;
+}
+
+/* --- the account list ---------------------------------------------------- */
+/* The avatars: the greeter shows the picture it found for the account, or
+ * nobody.png from this directory when there is none. */
+
+#user_list {
+	background-color: transparent;
+	color: #ead7ff;
+}
+
+#user_list:selected {
+	background-color: rgba(84, 32, 128, 0.9);
+	color: #ffffff;
+	border-radius: 12px;
+}
+
+/* --- text entry --------------------------------------------------------- */
+/* This reaches the password field and the entries inside the session,
+ * language and keyboard choosers, which is wanted: they are the only other
+ * editable fields on the screen. */
+
+#login_entry,
+#sessions entry,
+#lang entry,
+#keyboard entry {
+	background-color: #180a22;
+	background-image: none;
+	color: #ead7ff;
+	border: 1px solid #6d28d9;
+	border-radius: 6px;
+	padding: 6px 10px;
+	caret-color: #ddb3ff;
+	font-size: 11pt;
+}
+
+#login_entry:focus,
+#sessions entry:focus,
+#lang entry:focus,
+#keyboard entry:focus {
+	border-color: #c77dff;
+	box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.35);
+}
+
+#login_entry selection,
+#sessions entry selection,
+#lang entry selection,
+#keyboard entry selection {
+	background-color: #542080;
+	color: #ffffff;
+}
+
+/* --- the choosers -------------------------------------------------------- */
+
+#sessions button,
+#lang button,
+#keyboard button {
+	background-color: #2a1238;
+	background-image: none;
+	color: #d8a4ff;
+	border: 1px solid #6d28d9;
+	border-radius: 6px;
+}
+
+#sessions button:hover,
+#lang button:hover,
+#keyboard button:hover {
+	background-color: #542080;
+	color: #ffffff;
+}
+
+#sessions button:active,
+#lang button:active,
+#keyboard button:active {
+	background-color: #32143f;
+}
+
+/* --- the exit button ----------------------------------------------------- */
+
+#exit {
+	background-color: #2a1238;
+	background-image: none;
+	color: #d8a4ff;
+	border: 1px solid #6d28d9;
+	border-radius: 8px;
+	padding: 5px 10px;
+}
+
+#exit:hover {
+	background-color: #9333ea;
+	color: #ffffff;
+}
+
+#exit:active {
+	background-color: #7c3aed;
+}
+
+/* --- the bottom bar ------------------------------------------------------ */
+
+#bottom_pane {
+	background-color: rgba(9, 3, 13, 0.78);
+	border-top: 1px solid rgba(196, 125, 255, 0.28);
+}
+
+#bottom_pane label {
+	color: #b78ed6;
+}
+
+/* --- menus and popups ---------------------------------------------------- */
+/* The exit menu and the popup of the language chooser are made by the
+ * greeter at runtime, so they are matched here by type. */
+
+menu {
+	background-color: #180a22;
+	border: 1px solid #6d28d9;
+	border-radius: 8px;
+	padding: 4px;
+}
+
+menuitem {
+	color: #ead7ff;
+	padding: 6px 10px;
+}
+
+menuitem:hover {
+	background-color: #542080;
+	color: #ffffff;
+}
+
+/* --- scrollbars ---------------------------------------------------------- */
+
+scrollbar {
+	background-color: transparent;
+	border: none;
+}
+
+scrollbar slider {
+	background-color: rgba(124, 58, 237, 0.6);
+	border-radius: 6px;
+	min-width: 6px;
+	min-height: 6px;
+}
+
+scrollbar slider:hover {
+	background-color: rgba(147, 51, 234, 0.85);
+}
+
+/* --- tooltips ------------------------------------------------------------ */
+
+tooltip {
+	background-color: #180a22;
+	border: 1px solid #6d28d9;
+	border-radius: 6px;
+}
+
+tooltip label {
+	color: #ead7ff;
+}

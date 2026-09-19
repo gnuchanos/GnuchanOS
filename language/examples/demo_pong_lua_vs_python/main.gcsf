@@ -1,0 +1,420 @@
+#| ============================================================================
+#|  GnuchanOS  .  Embed demo  .  main.gcsf   --   the REFEREE
+#| ----------------------------------------------------------------------------
+#|  This file is GCL.  It owns ONE shared playfield of 1600 x 600 and it owns
+#|  THE BALL.  It never opens a window and it never draws anything.
+#|
+#|        virtual x =    0 ..  800  ->  the LUA window     (scripts/main.lua)
+#|        virtual x =  800 .. 1600  ->  the PYTHON window  (scripts/main.py)
+#|
+#|  Each frame the referee publishes the ball and the score, reads the two
+#|  paddles back, and collides the ball against them.  So the ball really does
+#|  travel from one window into the other: it leaves the right edge of the Lua
+#|  window and appears at the left edge of the Python window, because both are
+#|  drawing the same ball of the same playfield from two different origins.
+#|
+#|      Embed.Run(type="lua")        -> spawns gcl -luarun scripts/main.lua
+#|      Embed.Run(type="python")     -> spawns gcl -pyrun  scripts/main.py
+#|
+#|  The whole protocol is five published values and three read back:
+#|
+#|      referee -> window   ball_x, ball_y, ball_vx, ball_vy, score
+#|      window  -> referee  ready, paddle_y, quit
+#|
+#|  Nothing else crosses, and "score" is always the score of the window it is
+#|  addressed to: a court knows the ball, its own score and its own paddle.
+#|
+#|  Run it from the repository root against a built tree:
+#|
+#|      language\build\windows\gcl.exe -run language\examples\demo_pong_lua_vs_python\main.gcsf
+#| ============================================================================ |#
+
+#native <Stdio>
+#native <Embed>
+#native <Math>
+
+#| ---------------------------------------------------------------------------
+#|  The court.  Both windows are FIELD_H tall, and each protects one wall.
+#| --------------------------------------------------------------------------- |#
+
+#| the shared virtual playfield, in px |#
+#define FIELD_W        1600
+#define FIELD_H        600
+#define BALL_R         10
+#define PADDLE_W       18
+#define PADDLE_H       96
+#| Lua guards the LEFT wall (virtual x 0) |#
+#define LUA_PADDLE_X   36
+#| Python guards the RIGHT wall (x 1600) |#
+#define PY_PADDLE_X    1546
+
+#| ---------------------------------------------------------------------------
+#|  The ball.
+#| --------------------------------------------------------------------------- |#
+
+#define BASE_SPEED_X   380.0
+#define BASE_SPEED_Y   130.0
+#define MAX_SPEED_X    780.0
+#define MAX_SPEED_Y    620.0
+#| the ball sharpens up on every return |#
+#define SPEEDUP_X      1.015
+#define SPEEDUP_Y      1.06
+#| how hard a paddle edge steers the ball |#
+#define EDGE_SPIN      150.0
+#| where a fresh ball is put down, near half |#
+#define SERVE_X        450.0
+#define SERVE_X_FAR    1150.0
+#define SERVE_Y        220.0
+#define SERVE_Y_SPAN   160.0
+
+#| ---------------------------------------------------------------------------
+#|  The match.
+#| --------------------------------------------------------------------------- |#
+
+#define WIN_SCORE      7
+#| ~0.75 s the ball hangs before it is live |#
+#define SERVE_WAIT     45
+#| ~3 s the winner banner stays up |#
+#define WIN_HOLD       180
+#| the referee's fixed simulation step |#
+#define DT             0.016
+#| ~55 min backstop, far below the GCL interpreter's 1,000,000 iteration guard |#
+#define MAX_FRAMES     200000
+#| 30 s for both windows to open |#
+#define HANDSHAKE_MAX  600
+
+#| ---------------------------------------------------------------------------
+#|  Helpers.  They touch no global state, so they can never be confused by
+#|  the shared-store traffic.
+#| --------------------------------------------------------------------------- |#
+
+double clamp_f(double v, double lo, double hi) {
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
+}
+
+#| A paddle may only be hit while the ball is coming AT it: that window is
+#| what makes a point possible at all. |#
+int paddle_covers(double ball_y, double paddle_y) {
+    if (ball_y < paddle_y - PADDLE_H / 2.0 - BALL_R) {
+        return 0;
+    }
+    if (ball_y > paddle_y + PADDLE_H / 2.0 + BALL_R) {
+        return 0;
+    }
+    return 1;
+}
+
+#| ---------------------------------------------------------------------------
+#|  The shared store, before anything is launched.  An earlier run may have
+#|  left quit=1 or a stale score behind, so every key this demo uses is
+#|  written here, for both windows, BEFORE the runtimes start.
+#| --------------------------------------------------------------------------- |#
+
+int reset_store(double ball_x, double ball_y) {
+    Embed.SendValue(type="lua", name="running",  value=1);
+    Embed.SendValue(type="lua", name="quit",     value=0);
+    Embed.SendValue(type="lua", name="ready",    value=0);
+    Embed.SendValue(type="lua", name="paddle_y", value=FIELD_H / 2.0);
+    Embed.SendValue(type="lua", name="score",    value=0);
+    Embed.SendValue(type="lua", name="ball_x",   value=ball_x);
+    Embed.SendValue(type="lua", name="ball_y",   value=ball_y);
+    Embed.SendValue(type="lua", name="ball_vx",  value=0);
+    Embed.SendValue(type="lua", name="ball_vy",  value=0);
+
+    Embed.SendValue(type="python", name="running",  value=1);
+    Embed.SendValue(type="python", name="quit",     value=0);
+    Embed.SendValue(type="python", name="ready",    value=0);
+    Embed.SendValue(type="python", name="paddle_y", value=FIELD_H / 2.0);
+    Embed.SendValue(type="python", name="score",    value=0);
+    Embed.SendValue(type="python", name="ball_x",   value=ball_x);
+    Embed.SendValue(type="python", name="ball_y",   value=ball_y);
+    Embed.SendValue(type="python", name="ball_vx",  value=0);
+    Embed.SendValue(type="python", name="ball_vy",  value=0);
+    return 0;
+}
+
+#| Hand back this frame's ball and score.  The ball is the same for both
+#| courts; the score is not -- each court only ever sees its own. |#
+int publish(double ball_x, double ball_y, double ball_vx, double ball_vy,
+            int lua_score, int py_score) {
+    Embed.SendValue(type="lua", name="ball_x",  value=ball_x);
+    Embed.SendValue(type="lua", name="ball_y",  value=ball_y);
+    Embed.SendValue(type="lua", name="ball_vx", value=ball_vx);
+    Embed.SendValue(type="lua", name="ball_vy", value=ball_vy);
+    Embed.SendValue(type="lua", name="score",   value=lua_score);
+
+    Embed.SendValue(type="python", name="ball_x",  value=ball_x);
+    Embed.SendValue(type="python", name="ball_y",  value=ball_y);
+    Embed.SendValue(type="python", name="ball_vx", value=ball_vx);
+    Embed.SendValue(type="python", name="ball_vy", value=ball_vy);
+    Embed.SendValue(type="python", name="score",   value=py_score);
+    return 0;
+}
+
+#| Wait until both courts have opened and announced themselves; otherwise the
+#| opening frames would collide the ball against two paddles parked at y = 0.
+#| Returns 1 when both are up. |#
+int wait_for_courts() {
+    int tries = 0;
+    while (tries < HANDSHAKE_MAX) {
+        if (Embed.GetValue(type="lua", name="ready") > 0.5
+            && Embed.GetValue(type="python", name="ready") > 0.5) {
+            Stdio.printf("[referee] both courts are up after {} polls.\n", tries);
+            return 1;
+        }
+        Stdio.sleep(0.05);
+        tries = tries + 1;
+    }
+    return 0;
+}
+
+int main() {
+    Stdio.printf("\n");
+    Stdio.printf("=================================================================\n");
+    Stdio.printf("  GnuchanOS Embed demo   LUA  vs  PYTHON\n");
+    Stdio.printf("  one ball, two windows, two languages, one playfield\n");
+    Stdio.printf("=================================================================\n");
+    Stdio.printf("  main.gcsf (this file, GCL) is the referee and owns the ball.\n");
+    Stdio.printf("  The Lua window runs scripts/main.lua (LuaRaylib), the Python\n");
+    Stdio.printf("  window runs scripts/main.py (PyRaylib).  Each window owns its\n");
+    Stdio.printf("  own AI paddle, draws its own court and reads its own score.\n");
+    Stdio.printf("  The ball position travels over Embed.SendValue / GetValue.\n\n");
+
+    #| match state.  Every GCL value is a double, so the ball is one. |#
+    double ball_x = SERVE_X;
+    double ball_y = FIELD_H / 2.0;
+    double ball_vx = 0.0;
+    double ball_vy = 0.0;
+    double pending_vx = BASE_SPEED_X;
+    double pending_vy = 60.0;
+    double lua_paddle_y = FIELD_H / 2.0;
+    double py_paddle_y = FIELD_H / 2.0;
+
+    int lua_score = 0;
+    int py_score = 0;
+    #| open with a 1.5 s "GET READY" |#
+    int serve_wait = 90;
+    #| 0 = nobody, 1 = Lua took it, 2 = Python |#
+    int winner = 0;
+    int win_hold = 0;
+    int running = 1;
+    int frame = 0;
+
+    reset_store(ball_x, ball_y);
+
+    #| launch both runtimes.  Each becomes its own gcl process through
+    #| -luarun / -pyrun, with its own raylib window; they inherit
+    #| GCL_SHARED_FILE, so all three processes share one store. |#
+    Stdio.printf("[referee] starting the Lua runtime   (scripts/main.lua)\n");
+    if (Embed.Run(type="lua") < 0.5) {
+        Stdio.printf("[referee] ERROR: could not start the Lua runtime.\n");
+        return 1;
+    }
+    Stdio.printf("[referee] starting the Python runtime (scripts/main.py)\n");
+    if (Embed.Run(type="python") < 0.5) {
+        Stdio.printf("[referee] ERROR: could not start the Python runtime.\n");
+        Embed.Stop(type="lua");
+        return 1;
+    }
+
+    if (wait_for_courts() == 0) {
+        Stdio.printf("[referee] ERROR: the courts did not come up.\n");
+        Stdio.printf("[referee] Check that Library/Embed and the Lua/Python\n");
+        Stdio.printf("[referee] runtimes exist next to the gcl executable.\n");
+        Embed.SendValue(type="lua", name="running", value=0);
+        Embed.SendValue(type="python", name="running", value=0);
+        Embed.Stop(type="lua");
+        Embed.Stop(type="python");
+        return 1;
+    }
+
+    Stdio.printf("[referee] match on: first to {} points.\n", WIN_SCORE);
+    Stdio.printf("[referee] close either window (or press ESC in it) to end.");
+    Stdio.printf(" The referee never opens a window of its own.\n\n");
+
+    #| -----------------------------------------------------------------
+    #|  The match loop.
+    #|
+    #|  The period is a hard 16 ms sleep and not a rendering frame,
+    #|  because the referee has no window of its own; that keeps the
+    #|  simulation at a steady ~60 Hz for both courts and holds the two
+    #|  windows in step.
+    #|
+    #|  The sleep must be Stdio.sleep and NOT Raylib.WaitTime: raylib's
+    #|  clock starts in InitWindow, and this process never opens a
+    #|  window, so GetTime() stays 0.0 and WaitTime() never returns --
+    #|  the whole match would sit frozen on "GET READY" forever.
+    #| ---------------------------------------------------------------- |#
+    while (running == 1 && frame < MAX_FRAMES) {
+        frame = frame + 1;
+
+        #| ---- 1. where are the two paddles this frame? ------------------ |#
+        lua_paddle_y = Embed.GetValue(type="lua", name="paddle_y");
+        py_paddle_y = Embed.GetValue(type="python", name="paddle_y");
+        if (lua_paddle_y < 1.0) {
+            #| not reported yet: park it mid-field |#
+            lua_paddle_y = FIELD_H / 2.0;
+        }
+        if (py_paddle_y < 1.0) {
+            py_paddle_y = FIELD_H / 2.0;
+        }
+        lua_paddle_y = clamp_f(lua_paddle_y, PADDLE_H / 2.0,
+                               FIELD_H - PADDLE_H / 2.0);
+        py_paddle_y = clamp_f(py_paddle_y, PADDLE_H / 2.0,
+                              FIELD_H - PADDLE_H / 2.0);
+
+        #| ---- 2. advance the ball -------------------------------------- |#
+        if (win_hold > 0) {
+            #| the match has just been decided: park the ball so both
+            #| windows can hold the winning frame, then start a new match |#
+            ball_vx = 0.0;
+            ball_vy = 0.0;
+            win_hold = win_hold - 1;
+            if (win_hold == 0) {
+                lua_score = 0;
+                py_score = 0;
+                winner = 0;
+                ball_x = SERVE_X;
+                ball_y = FIELD_H / 2.0;
+                pending_vx = BASE_SPEED_X;
+                pending_vy = Math.randFloat(-90.0, 90.0);
+                serve_wait = SERVE_WAIT;
+            }
+        } else if (serve_wait > 0) {
+            #| the ball hangs on the serve spot, then it is released |#
+            ball_vx = 0.0;
+            ball_vy = 0.0;
+            serve_wait = serve_wait - 1;
+            if (serve_wait == 0) {
+                ball_vx = pending_vx;
+                ball_vy = pending_vy;
+            }
+        } else {
+            ball_x = ball_x + ball_vx * DT;
+            ball_y = ball_y + ball_vy * DT;
+
+            #| the two long walls |#
+            if (ball_y - BALL_R <= 0.0) {
+                ball_y = BALL_R;
+                ball_vy = -ball_vy;
+            }
+            if (ball_y + BALL_R >= FIELD_H) {
+                ball_y = FIELD_H - BALL_R;
+                ball_vy = -ball_vy;
+            }
+
+            #| ---- the LUA paddle, on the left wall ------------------- |#
+            if (ball_vx < 0.0
+                && ball_x - BALL_R <= LUA_PADDLE_X + PADDLE_W
+                && ball_x - BALL_R >= LUA_PADDLE_X - 14.0
+                && paddle_covers(ball_y, lua_paddle_y) == 1) {
+                double off = (ball_y - lua_paddle_y) / (PADDLE_H / 2.0);
+                ball_x = LUA_PADDLE_X + PADDLE_W + BALL_R;
+                ball_vx = clamp_f(-ball_vx * SPEEDUP_X, 0.0, MAX_SPEED_X);
+                ball_vy = clamp_f(ball_vy * SPEEDUP_Y + off * EDGE_SPIN,
+                                  -MAX_SPEED_Y, MAX_SPEED_Y);
+            }
+
+            #| ---- the PYTHON paddle, on the right wall --------------- |#
+            if (ball_vx > 0.0
+                && ball_x + BALL_R >= PY_PADDLE_X
+                && ball_x + BALL_R <= PY_PADDLE_X + PADDLE_W + 14.0
+                && paddle_covers(ball_y, py_paddle_y) == 1) {
+                double off = (ball_y - py_paddle_y) / (PADDLE_H / 2.0);
+                ball_x = PY_PADDLE_X - BALL_R;
+                ball_vx = clamp_f(-ball_vx * SPEEDUP_X, -MAX_SPEED_X, 0.0);
+                ball_vy = clamp_f(ball_vy * SPEEDUP_Y + off * EDGE_SPIN,
+                                  -MAX_SPEED_Y, MAX_SPEED_Y);
+            }
+
+            #| ---- the goals ----------------------------------------- |#
+            if (ball_x - BALL_R <= 0.0) {
+                #| the ball beat the Lua paddle and reached the left wall |#
+                py_score = py_score + 1;
+                Stdio.printf("[referee] point to PYTHON, past the Lua paddle.");
+                Stdio.printf("  LUA {} : {} PYTHON\n", lua_score, py_score);
+                ball_x = SERVE_X_FAR;
+                ball_y = SERVE_Y + Math.randFloat(0.0, SERVE_Y_SPAN);
+                pending_vx = -BASE_SPEED_X;
+                pending_vy = Math.randFloat(-BASE_SPEED_Y, BASE_SPEED_Y);
+                serve_wait = SERVE_WAIT;
+            } else if (ball_x + BALL_R >= FIELD_W) {
+                #| the ball beat the Python paddle and reached the right wall |#
+                lua_score = lua_score + 1;
+                Stdio.printf("[referee] point to LUA, past the Python paddle.");
+                Stdio.printf("  LUA {} : {} PYTHON\n", lua_score, py_score);
+                ball_x = SERVE_X;
+                ball_y = SERVE_Y + Math.randFloat(0.0, SERVE_Y_SPAN);
+                pending_vx = BASE_SPEED_X;
+                pending_vy = Math.randFloat(-BASE_SPEED_Y, BASE_SPEED_Y);
+                serve_wait = SERVE_WAIT;
+            }
+
+            #| ---- has anybody taken the match? ---------------------- |#
+            if (lua_score >= WIN_SCORE && winner == 0) {
+                winner = 1;
+                win_hold = WIN_HOLD;
+                Stdio.printf("[referee] *** LUA WINS THE MATCH {} : {} ***\n",
+                             lua_score, py_score);
+            } else if (py_score >= WIN_SCORE && winner == 0) {
+                winner = 2;
+                win_hold = WIN_HOLD;
+                Stdio.printf("[referee] *** PYTHON WINS THE MATCH {} : {} ***\n",
+                             lua_score, py_score);
+            }
+        }
+
+        #| ---- 3. hand the ball and the score to both courts ------------- |#
+        publish(ball_x, ball_y, ball_vx, ball_vy, lua_score, py_score);
+
+        #| ---- 4. a heartbeat on the console every 2 s ------------------- |#
+        if (frame % 120 == 0) {
+            Stdio.printf("[referee] frame {}  ball x={.2f} y={.2f}",
+                         frame, ball_x, ball_y);
+            Stdio.printf("  LUA {} : {} PYTHON\n", lua_score, py_score);
+        }
+
+        #| ---- 5. did either window close? ------------------------------ |#
+        if (Embed.GetValue(type="lua", name="quit") > 0.5) {
+            Stdio.printf("\n[referee] the LUA window closed the match.\n");
+            running = 0;
+        }
+        if (Embed.GetValue(type="python", name="quit") > 0.5) {
+            Stdio.printf("\n[referee] the PYTHON window closed the match.\n");
+            running = 0;
+        }
+
+        Stdio.sleep(DT);
+    }
+
+    #| -----------------------------------------------------------------
+    #|  Shut down.  running = 0 makes both windows leave their own loops
+    #|  and close cleanly, and Embed.Stop waits for them to do it.
+    #| ---------------------------------------------------------------- |#
+    if (frame >= MAX_FRAMES) {
+        Stdio.printf("\n[referee] the {} frame backstop was reached.\n", MAX_FRAMES);
+    }
+
+    Stdio.printf("\n[referee] stopping the courts...\n");
+    Embed.SendValue(type="lua", name="running", value=0);
+    Embed.SendValue(type="python", name="running", value=0);
+    Embed.Stop(type="lua");
+    Embed.Stop(type="python");
+
+    Stdio.printf("[referee] final score  LUA {} : {} PYTHON\n", lua_score, py_score);
+    if (winner == 1) {
+        Stdio.printf("[referee] LUA left with the trophy.\n");
+    } else if (winner == 2) {
+        Stdio.printf("[referee] PYTHON left with the trophy.\n");
+    } else {
+        Stdio.printf("[referee] match abandoned mid-rally.\n");
+    }
+    Stdio.printf("[referee] done.\n");
+    return 0;
+}

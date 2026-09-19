@@ -1,0 +1,284 @@
+<?xml version="1.0"?>
+<!--
+  The GTK+ 2 greeter for the GnuchanPurple LXDM theme.
+
+  lxdm's greeter is a GtkBuilder file plus a stylesheet, not an HTML page, and
+  this is the GTK+ 2 half of the theme: the greeter Debian, Ubuntu and most RPM
+  distributions build by default, because a GTK+ 3 greeter is only compiled
+  when the build is told to use GTK+ 3 and those rules do not tell it that. It
+  is read together with gtkrc; greeter-gtk3.ui and gtk.css are the same theme
+  for a greeter built the other way.
+
+  The greeter looks several of these widgets up by the id they carry here, so
+  the ids are part of the interface and must not be renamed:
+
+    lxdm                        the login window itself
+    time                        the clock in the top right
+    prompt                      the "User:" / "Password:" label
+    login_entry                 where a typed user name and password go
+    user_list_scrolled          the scroller around the user list
+    user_list                   the GtkIconView of accounts and their avatars
+    alignment2                  realigned by the greeter when the account list
+                                is longer than three names
+    bottom_pane                 the session, language, keyboard and exit bar
+    sessions_box, sessions      the desktop chooser
+    lang_box, lang              the language chooser
+    keyboard, label_keyboard    the keyboard layout chooser
+    exit                        reboot and shut down
+
+  @THEME_DIR@ is replaced with the installed theme directory by
+  settings_lxdm.py, so the logo is named by an absolute path. How GtkBuilder
+  resolves a relative pixbuf path is a detail that has differed between
+  toolkits and between versions - the upstream Industrial theme gets away with
+  a bare "login.png" - and a path written out in full leaves nothing to
+  resolve, whatever loaded this file and from which directory.
+-->
+<interface>
+  <!-- interface-requires gtk+ 2.12 -->
+  <object class="GtkWindow" id="lxdm">
+    <property name="decorated">False</property>
+    <child>
+      <object class="GtkVBox" id="vbox1">
+        <property name="visible">True</property>
+        <property name="orientation">vertical</property>
+        <child>
+          <object class="GtkLabel" id="time">
+            <property name="visible">True</property>
+            <property name="xalign">1</property>
+            <property name="xpad">18</property>
+            <property name="ypad">14</property>
+            <property name="single_line_mode">True</property>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="position">0</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkAlignment" id="alignment1">
+            <property name="visible">True</property>
+            <property name="xscale">0.5</property>
+            <property name="yscale">0.5</property>
+            <property name="xalign">0.5</property>
+            <property name="yalign">0.5</property>
+            <child>
+              <object class="GtkVBox" id="vbox2">
+                <property name="visible">True</property>
+                <property name="orientation">vertical</property>
+                <child>
+                  <object class="GtkEventBox" id="login_box">
+                    <property name="visible">True</property>
+                    <property name="visible_window">True</property>
+                    <child>
+                      <object class="GtkVBox" id="login_inner">
+                        <property name="visible">True</property>
+                        <property name="orientation">vertical</property>
+                        <property name="border_width">22</property>
+                        <property name="spacing">14</property>
+                        <child>
+                          <object class="GtkImage" id="image1">
+                            <property name="visible">True</property>
+                            <property name="pixbuf">@THEME_DIR@/login.png</property>
+                            <property name="yalign">0.8</property>
+                          </object>
+                          <packing>
+                            <property name="expand">False</property>
+                            <property name="position">0</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="GtkAlignment" id="alignment2">
+                            <property name="visible">True</property>
+                            <property name="yalign">0.1</property>
+                            <property name="xscale">0</property>
+                            <property name="yscale">0</property>
+                            <child>
+                              <object class="GtkHBox" id="hbox3">
+                                <property name="visible">True</property>
+                                <property name="spacing">12</property>
+                                <child>
+                                  <object class="GtkLabel" id="prompt">
+                                    <property name="visible">True</property>
+                                    <property name="label" translatable="yes">User:</property>
+                                    <property name="yalign">0.2</property>
+                                  </object>
+                                  <packing>
+                                    <property name="expand">False</property>
+                                    <property name="fill">False</property>
+                                    <property name="position">0</property>
+                                  </packing>
+                                </child>
+                                <child>
+                                  <object class="GtkScrolledWindow" id="user_list_scrolled">
+                                    <property name="visible">True</property>
+                                    <property name="can_focus">False</property>
+                                    <property name="hscrollbar_policy">GTK_POLICY_NEVER</property>
+                                    <property name="vscrollbar_policy">GTK_POLICY_NEVER</property>
+                                    <child>
+                                      <object class="GtkIconView" id="user_list">
+                                        <property name="visible">True</property>
+                                        <property name="can_focus">True</property>
+                                        <property name="item-padding">2</property>
+                                        <property name="margin">2</property>
+                                        <property name="column-spacing">0</property>
+                                        <property name="row-spacing">2</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkEntry" id="login_entry">
+                                    <property name="visible">True</property>
+                                    <property name="can_focus">True</property>
+                                    <property name="width_chars">18</property>
+                                    <property name="invisible_char">&#x2022;</property>
+                                  </object>
+                                  <packing>
+                                    <property name="expand">False</property>
+                                    <property name="fill">False</property>
+                                    <property name="position">1</property>
+                                  </packing>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                          <packing>
+                            <property name="expand">False</property>
+                            <property name="position">1</property>
+                          </packing>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="position">0</property>
+                  </packing>
+                </child>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="expand">True</property>
+            <property name="position">1</property>
+          </packing>
+        </child>
+        <child>
+          <!-- app_paintable is what makes the greeter draw this box itself: it
+               watches for the property and connects the expose handler that
+               paints the "bottom" style from gtkrc into the box. Without it the
+               bar keeps whatever the GTK theme paints. -->
+          <object class="GtkEventBox" id="bottom_pane">
+            <property name="visible">True</property>
+            <property name="app_paintable">True</property>
+            <property name="visible_window">False</property>
+            <child>
+              <object class="GtkHBox" id="bottom_hbox">
+                <property name="visible">True</property>
+                <property name="border_width">8</property>
+                <property name="spacing">12</property>
+                <child>
+                  <object class="GtkHBox" id="sessions_box">
+                    <property name="visible">True</property>
+                    <property name="spacing">6</property>
+                    <child>
+                      <object class="GtkLabel" id="label2">
+                        <property name="visible">True</property>
+                        <property name="label" translatable="yes">Desktop:</property>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="position">0</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkComboBoxEntry" id="sessions">
+                        <property name="visible">True</property>
+                        <property name="text_column">0</property>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="position">1</property>
+                      </packing>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="position">0</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkHBox" id="lang_box">
+                    <property name="visible">True</property>
+                    <property name="spacing">6</property>
+                    <child>
+                      <object class="GtkLabel" id="label_lang">
+                        <property name="visible">True</property>
+                        <property name="label" translatable="yes">Language:</property>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="position">0</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkComboBoxEntry" id="lang">
+                        <property name="visible">True</property>
+                        <property name="text_column">0</property>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="position">1</property>
+                      </packing>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="position">1</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkLabel" id="label_keyboard">
+                    <property name="label" translatable="yes">Keyboard:</property>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="position">2</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkComboBoxEntry" id="keyboard">
+                    <property name="text_column">0</property>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="position">3</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkButton" id="exit">
+                    <property name="label">gtk-quit</property>
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="receives_default">True</property>
+                    <property name="relief">none</property>
+                    <property name="use_stock">True</property>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="pack_type">end</property>
+                    <property name="position">4</property>
+                  </packing>
+                </child>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="position">2</property>
+          </packing>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

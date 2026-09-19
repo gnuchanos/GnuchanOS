@@ -1,0 +1,99 @@
+#native <Stdio>
+
+#include <10_include.gcsf>
+
+int main() {
+
+    number value = 100;
+
+    Stdio.printf("VERSION: {}\n", VERSION);
+    Stdio.printf("MAX_USERS: {}\n", MAX_USERS);
+    Stdio.printf("APP_NAME: {}\n", APP_NAME);
+
+    Stdio.printf("number: {}\n", value);
+
+
+    int8 int8Array[3] = {
+        INT8_VALUE,
+        20,
+        30
+    };
+
+    int int8Size = sizeof(int8Array) / sizeof(int8Array[0]);
+
+    for (int i = 0; i < int8Size; i++) {
+        Stdio.printf("int8[{}]: {}\n", i, int8Array[i]);
+    }
+
+
+    float32 floatArray[3] = {
+        FLOAT32_VALUE,
+        6.28,
+        9.42
+    };
+
+    int floatSize = sizeof(floatArray) / sizeof(floatArray[0]);
+
+    for (int i = 0; i < floatSize; i++) {
+        Stdio.printf("float32[{}]: {}\n", i, floatArray[i]);
+    }
+
+
+    uint64 uintArray[3] = {
+        UINT64_VALUE,
+        2000000000,
+        3000000000
+    };
+
+    int uintSize = sizeof(uintArray) / sizeof(uintArray[0]);
+
+    for (int i = 0; i < uintSize; i++) {
+        Stdio.printf("uint64[{}]: {}\n", i, uintArray[i]);
+    }
+
+
+    struct Person person = {
+        1,
+        25,
+        "Ali"
+    };
+
+    Stdio.printf(
+        "Person: {} {} {}\n",
+        person.id,
+        person.age,
+        person.name
+    );
+
+
+    User user = {
+        2,
+        30,
+        "Veli"
+    };
+
+    Stdio.printf(
+        "User: {} {} {}\n",
+        user.id,
+        user.age,
+        user.name
+    );
+
+
+    int a = 10;
+    int b = 20;
+
+    if (a < b AND a != b) {
+        Stdio.printf("AND works\n");
+    }
+
+
+    #undef TEMP_VALUE
+
+    #ifndef TEMP_VALUE
+    #debug TEMP_VALUE is undefined
+    #endif
+
+
+    return 0;
+}

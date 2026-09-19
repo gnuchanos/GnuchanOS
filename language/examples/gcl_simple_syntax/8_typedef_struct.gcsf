@@ -1,0 +1,81 @@
+#native <Stdio>
+
+struct Person {
+    int id;
+    int age;
+    char name[20];
+};
+
+typedef struct {
+    int id;
+    int age;
+    char name[20];
+} User;
+
+int main() {
+
+    struct Person person = {
+        1,
+        25,
+        "Ali"
+    };
+
+    User user = {
+        2,
+        30,
+        "Veli"
+    };
+
+
+    struct Person people[3] = {
+        {1, 20, "Ali"},
+        {2, 25, "Veli"},
+        {3, 30, "Ahmet"}
+    };
+
+    int sizePeople = sizeof(people) / sizeof(people[0]);
+
+    for (int i = 0; i < sizePeople; i++) {
+        Stdio.printf(
+            "Person {}: ID={} Age={} Name={}\n",
+            i,
+            people[i].id,
+            people[i].age,
+            people[i].name
+        );
+    }
+
+
+    User users[3] = {
+        {1, 18, "Mehmet"},
+        {2, 22, "Ayse"},
+        {3, 27, "Fatma"}
+    };
+
+    int sizeUsers = sizeof(users) / sizeof(users[0]);
+
+    for (int i = 0; i < sizeUsers; i++) {
+        Stdio.printf(
+            "User {}: ID={} Age={} Name={}\n",
+            i,
+            users[i].id,
+            users[i].age,
+            users[i].name
+        );
+    }
+
+
+    Stdio.printf("Single Person: {} {} {}\n",
+        person.id,
+        person.age,
+        person.name
+    );
+
+    Stdio.printf("Single User: {} {} {}\n",
+        user.id,
+        user.age,
+        user.name
+    );
+
+    return 0;
+}

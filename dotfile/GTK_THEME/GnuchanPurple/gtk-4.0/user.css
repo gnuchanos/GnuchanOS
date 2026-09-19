@@ -1,0 +1,255 @@
+/* ============================================================================
+ * GnuchanPurple - GTK 4 user overlay for libadwaita applications
+ * ----------------------------------------------------------------------------
+ * This file is installed as ~/.config/gtk-4.0/gtk.css (GTK 4 loads it as the
+ * per-user stylesheet, at user priority, which sits *above* libadwaita's own
+ * stylesheet provider). That is what makes libadwaita applications - Files,
+ * Text Editor, Console, Settings and every other GTK 4 app - pick up the
+ * GnuchanPurple palette without having to export GTK_THEME.
+ *
+ * It deliberately contains colours only:
+ *   - no base stylesheet is imported, so libadwaita keeps drawing its own
+ *     widgets and nothing that is not purple in nature changes;
+ *   - geometry, spacing and icon rendering are left alone;
+ *   - both colour layers libadwaita uses are overridden: the named colours
+ *     (@define-color) and the matching :root custom properties.
+ *
+ * Because it is a user stylesheet and not a theme, it also works inside
+ * Flatpak and Snap applications that can see ~/.config.
+ *
+ * License: GPL3
+ * ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+ * Named colours
+ * -------------------------------------------------------------------------- */
+
+@define-color gnuchan_bg_darkest      #09030d;
+@define-color gnuchan_bg              #0e0614;
+@define-color gnuchan_bg_alt          #0f0615;
+@define-color gnuchan_surface         #12071a;
+@define-color gnuchan_surface_alt     #180a22;
+@define-color gnuchan_raised          #1c0b27;
+@define-color gnuchan_hover           #21102b;
+@define-color gnuchan_raised_hover    #281036;
+@define-color gnuchan_border_alt      #24102f;
+@define-color gnuchan_border          #32143f;
+@define-color gnuchan_border_strong   #6d28d9;
+@define-color gnuchan_accent          #a855f7;
+@define-color gnuchan_accent_hover    #b76eff;
+@define-color gnuchan_accent_active   #9333ea;
+@define-color gnuchan_accent_light    #c77dff;
+@define-color gnuchan_accent_pale     #d8a4ff;
+@define-color gnuchan_selected_bg     #542080;
+@define-color gnuchan_selected_bg_alt #6d28d9;
+@define-color gnuchan_fg              #ead7ff;
+@define-color gnuchan_fg_bright       #f3e8ff;
+@define-color gnuchan_fg_dim          #b78ed6;
+@define-color gnuchan_fg_disabled     #70458a;
+@define-color gnuchan_white           #ffffff;
+@define-color gnuchan_shade           rgba(0, 0, 0, 0.36);
+@define-color gnuchan_selection_soft  rgba(168, 85, 247, 0.30);
+
+@define-color window_bg_color                  @gnuchan_bg;
+@define-color window_fg_color                  @gnuchan_fg;
+@define-color view_bg_color                    @gnuchan_bg_darkest;
+@define-color view_fg_color                    @gnuchan_fg;
+@define-color headerbar_bg_color               @gnuchan_bg_darkest;
+@define-color headerbar_fg_color               @gnuchan_fg;
+@define-color headerbar_border_color           @gnuchan_border;
+@define-color headerbar_backdrop_color         @gnuchan_bg_darkest;
+@define-color headerbar_shade_color            @gnuchan_shade;
+@define-color headerbar_darker_shade_color     rgba(0, 0, 0, 0.90);
+@define-color sidebar_bg_color                 @gnuchan_surface;
+@define-color sidebar_fg_color                 @gnuchan_fg;
+@define-color sidebar_backdrop_color           @gnuchan_bg_alt;
+@define-color sidebar_shade_color              @gnuchan_shade;
+@define-color sidebar_border_color             @gnuchan_border;
+@define-color secondary_sidebar_bg_color       @gnuchan_bg_alt;
+@define-color secondary_sidebar_fg_color       @gnuchan_fg;
+@define-color secondary_sidebar_backdrop_color @gnuchan_bg;
+@define-color secondary_sidebar_shade_color    @gnuchan_shade;
+@define-color secondary_sidebar_border_color   @gnuchan_border;
+@define-color card_bg_color                    @gnuchan_surface_alt;
+@define-color card_fg_color                    @gnuchan_fg;
+@define-color card_shade_color                 @gnuchan_shade;
+@define-color dialog_bg_color                  @gnuchan_surface_alt;
+@define-color dialog_fg_color                  @gnuchan_fg;
+@define-color popover_bg_color                 @gnuchan_surface_alt;
+@define-color popover_fg_color                 @gnuchan_fg;
+@define-color popover_shade_color              @gnuchan_shade;
+@define-color thumbnail_bg_color               @gnuchan_surface_alt;
+@define-color thumbnail_fg_color               @gnuchan_fg;
+@define-color shade_color                      @gnuchan_shade;
+@define-color scrollbar_outline_color          rgba(9, 3, 13, 0.95);
+
+@define-color accent_bg_color                  @gnuchan_accent;
+@define-color accent_fg_color                  @gnuchan_white;
+@define-color accent_color                     @gnuchan_accent_light;
+@define-color destructive_bg_color             #86198f;
+@define-color destructive_fg_color             @gnuchan_white;
+@define-color destructive_color                #e879f9;
+@define-color success_bg_color                 #6d28d9;
+@define-color success_fg_color                 @gnuchan_white;
+@define-color success_color                    @gnuchan_accent_pale;
+@define-color warning_bg_color                 @gnuchan_accent_active;
+@define-color warning_fg_color                 @gnuchan_white;
+@define-color warning_color                    @gnuchan_accent_light;
+@define-color error_bg_color                   #86198f;
+@define-color error_fg_color                   @gnuchan_white;
+@define-color error_color                      #e879f9;
+
+@define-color theme_bg_color                   @gnuchan_bg;
+@define-color theme_base_color                 @gnuchan_bg_darkest;
+@define-color theme_fg_color                   @gnuchan_fg;
+@define-color theme_text_color                 @gnuchan_fg;
+@define-color theme_selected_bg_color          @gnuchan_selected_bg;
+@define-color theme_selected_fg_color          @gnuchan_white;
+@define-color insensitive_bg_color             @gnuchan_bg_alt;
+@define-color insensitive_base_color           @gnuchan_bg;
+@define-color insensitive_fg_color             @gnuchan_fg_disabled;
+@define-color borders                          @gnuchan_border;
+@define-color content_view_bg                  @gnuchan_bg_darkest;
+@define-color text_view_bg                     @gnuchan_bg_darkest;
+@define-color link_color                       @gnuchan_accent_light;
+@define-color link_visited_color               @gnuchan_accent_pale;
+@define-color placeholder_text_color           @gnuchan_fg_disabled;
+
+/* ----------------------------------------------------------------------------
+ * Custom properties, the layer libadwaita 1.7+ widgets read
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --accent-blue: #a855f7;
+  --accent-teal: #a855f7;
+  --accent-green: #a855f7;
+  --accent-yellow: #c77dff;
+  --accent-orange: #b76eff;
+  --accent-red: #86198f;
+  --accent-pink: #d8a4ff;
+  --accent-purple: #a855f7;
+  --accent-slate: #b78ed6;
+
+  --accent-bg-color: #a855f7;
+  --accent-fg-color: #ffffff;
+  --accent-color: #c77dff;
+
+  --destructive-bg-color: #86198f;
+  --destructive-fg-color: #ffffff;
+  --destructive-color: #e879f9;
+  --error-bg-color: #86198f;
+  --error-fg-color: #ffffff;
+  --error-color: #e879f9;
+  --warning-bg-color: #9333ea;
+  --warning-fg-color: #ffffff;
+  --warning-color: #c77dff;
+  --success-bg-color: #6d28d9;
+  --success-fg-color: #ffffff;
+  --success-color: #d8a4ff;
+
+  --window-bg-color: #0e0614;
+  --window-fg-color: #ead7ff;
+  --view-bg-color: #09030d;
+  --view-fg-color: #ead7ff;
+
+  --headerbar-bg-color: #09030d;
+  --headerbar-fg-color: #ead7ff;
+  --headerbar-border-color: rgba(50, 20, 63, 0.85);
+  --headerbar-backdrop-color: #09030d;
+  --headerbar-shade-color: rgba(0, 0, 0, 0.36);
+  --headerbar-darker-shade-color: rgba(0, 0, 0, 0.9);
+
+  --sidebar-bg-color: #12071a;
+  --sidebar-fg-color: #ead7ff;
+  --sidebar-backdrop-color: #0f0615;
+  --sidebar-shade-color: rgba(0, 0, 0, 0.36);
+  --sidebar-border-color: rgba(50, 20, 63, 0.85);
+  --secondary-sidebar-bg-color: #0f0615;
+  --secondary-sidebar-fg-color: #ead7ff;
+  --secondary-sidebar-backdrop-color: #0e0614;
+  --secondary-sidebar-shade-color: rgba(0, 0, 0, 0.36);
+  --secondary-sidebar-border-color: rgba(50, 20, 63, 0.85);
+
+  --card-bg-color: #180a22;
+  --card-fg-color: #ead7ff;
+  --card-shade-color: rgba(0, 0, 0, 0.36);
+
+  --dialog-bg-color: #180a22;
+  --dialog-fg-color: #ead7ff;
+  --popover-bg-color: #180a22;
+  --popover-fg-color: #ead7ff;
+  --popover-shade-color: rgba(0, 0, 0, 0.36);
+
+  --thumbnail-bg-color: #180a22;
+  --thumbnail-fg-color: #ead7ff;
+  --shade-color: rgba(0, 0, 0, 0.36);
+  --scrollbar-outline-color: rgba(9, 3, 13, 0.95);
+
+  --active-toggle-bg-color: rgba(168, 85, 247, 0.35);
+  --active-toggle-fg-color: #ffffff;
+  --overview-bg-color: #0f0615;
+  --overview-fg-color: #ead7ff;
+
+  --border-color: rgba(50, 20, 63, 0.85);
+  --border-opacity: 25%;
+  --dim-opacity: 65%;
+  --disabled-opacity: 55%;
+  --standalone-color-oklab: max(l, 0.85) a b;
+}
+
+/* ----------------------------------------------------------------------------
+ * The few widget rules that named colours cannot express
+ * ----------------------------------------------------------------------------
+ * Kept intentionally short: text selection, disabled text and links are the
+ * places where Adwaita hard codes a colour instead of reading a named one.
+ * -------------------------------------------------------------------------- */
+
+/* libadwaita paints its containers with a background *image* - a gradient -
+ * laid over the background colour, so an overlay that only sets colours leaves
+ * that grey gradient painted on top. Clearing the image layer is what makes
+ * the palette above the only thing drawn. Placed before the widget rules so
+ * any rule further down that wants a gradient of its own still wins. */
+* {
+  background-image: none;
+}
+
+/* Plain layout containers have no surface of their own; a container that
+ * libadwaita paints with a literal grey would otherwise hide the window colour
+ * behind it. Widgets that really do carry a surface are not listed, so this
+ * rule cannot wash one of those out. */
+box,
+grid,
+stack,
+overlay,
+revealer,
+fixed,
+clamp,
+centerbox,
+windowhandle,
+box > box {
+  background-color: transparent;
+  background-image: none;
+}
+
+selection,
+label > selection,
+entry > text > selection,
+textview > text > selection {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+label:disabled,
+.dim-label {
+  color: @gnuchan_fg_disabled;
+}
+
+link,
+*:link {
+  color: @gnuchan_accent_light;
+}
+
+link:visited,
+*:visited {
+  color: @gnuchan_accent_pale;
+}

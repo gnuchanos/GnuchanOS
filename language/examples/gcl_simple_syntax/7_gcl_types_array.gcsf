@@ -1,0 +1,202 @@
+#native <Stdio>
+
+int main() {
+
+    // int8
+    int8 int8Array[5] = {
+        10, 20, 30, 40, 50
+    };
+
+    int int8Size = sizeof(int8Array) / sizeof(int8Array[0]);
+
+    for (int i = 0; i < int8Size; i++) {
+        Stdio.printf("Index: {} - int8: {}\n", i, int8Array[i]);
+    }
+
+
+    // int16
+    int16 int16Array[5] = {
+        1000, 2000, 3000, 4000, 5000
+    };
+
+    int int16Size = sizeof(int16Array) / sizeof(int16Array[0]);
+
+    for (int i = 0; i < int16Size; i++) {
+        Stdio.printf("Index: {} - int16: {}\n", i, int16Array[i]);
+    }
+
+
+    // int32
+    int32 int32Array[5] = {
+        100000, 200000, 300000, 400000, 500000
+    };
+
+    int int32Size = sizeof(int32Array) / sizeof(int32Array[0]);
+
+    for (int i = 0; i < int32Size; i++) {
+        Stdio.printf("Index: {} - int32: {}\n", i, int32Array[i]);
+    }
+
+
+    // int64
+    int64 int64Array[5] = {
+        1000000000,
+        2000000000,
+        3000000000,
+        4000000000,
+        5000000000
+    };
+
+    int int64Size = sizeof(int64Array) / sizeof(int64Array[0]);
+
+    for (int i = 0; i < int64Size; i++) {
+        Stdio.printf("Index: {} - int64: {}\n", i, int64Array[i]);
+    }
+
+
+    // int128
+    int128 int128Array[5] = {
+        1000000000000,
+        2000000000000,
+        3000000000000,
+        4000000000000,
+        5000000000000
+    };
+
+    int int128Size = sizeof(int128Array) / sizeof(int128Array[0]);
+
+    for (int i = 0; i < int128Size; i++) {
+        Stdio.printf("Index: {} - int128: {}\n", i, int128Array[i]);
+    }
+
+
+    // float16
+    float16 float16Array[5] = {
+        1.5, 2.5, 3.5, 4.5, 5.5
+    };
+
+    int float16Size = sizeof(float16Array) / sizeof(float16Array[0]);
+
+    for (int i = 0; i < float16Size; i++) {
+        Stdio.printf("Index: {} - float16: {}\n", i, float16Array[i]);
+    }
+
+
+    // float32
+    float32 float32Array[5] = {
+        1.1, 2.2, 3.3, 4.4, 5.5
+    };
+
+    int float32Size = sizeof(float32Array) / sizeof(float32Array[0]);
+
+    for (int i = 0; i < float32Size; i++) {
+        Stdio.printf("Index: {} - float32: {}\n", i, float32Array[i]);
+    }
+
+
+    // float64
+    float64 float64Array[5] = {
+        1.111111,
+        2.222222,
+        3.333333,
+        4.444444,
+        5.555555
+    };
+
+    int float64Size = sizeof(float64Array) / sizeof(float64Array[0]);
+
+    for (int i = 0; i < float64Size; i++) {
+        Stdio.printf("Index: {} - float64: {}\n", i, float64Array[i]);
+    }
+
+
+    // float128
+    float128 float128Array[5] = {
+        1.111111111111111,
+        2.222222222222222,
+        3.333333333333333,
+        4.444444444444444,
+        5.555555555555555
+    };
+
+    int float128Size = sizeof(float128Array) / sizeof(float128Array[0]);
+
+    for (int i = 0; i < float128Size; i++) {
+        Stdio.printf("Index: {} - float128: {}\n", i, float128Array[i]);
+    }
+
+
+    // uint8
+    uint8 uint8Array[5] = {
+        10, 20, 30, 40, 50
+    };
+
+    int uint8Size = sizeof(uint8Array) / sizeof(uint8Array[0]);
+
+    for (int i = 0; i < uint8Size; i++) {
+        Stdio.printf("Index: {} - uint8: {}\n", i, uint8Array[i]);
+    }
+
+
+    // uint16
+    uint16 uint16Array[5] = {
+        1000, 2000, 3000, 4000, 5000
+    };
+
+    int uint16Size = sizeof(uint16Array) / sizeof(uint16Array[0]);
+
+    for (int i = 0; i < uint16Size; i++) {
+        Stdio.printf("Index: {} - uint16: {}\n", i, uint16Array[i]);
+    }
+
+
+    // uint32
+    uint32 uint32Array[5] = {
+        100000,
+        200000,
+        300000,
+        400000,
+        500000
+    };
+
+    int uint32Size = sizeof(uint32Array) / sizeof(uint32Array[0]);
+
+    for (int i = 0; i < uint32Size; i++) {
+        Stdio.printf("Index: {} - uint32: {}\n", i, uint32Array[i]);
+    }
+
+
+    // uint64
+    uint64 uint64Array[5] = {
+        1000000000,
+        2000000000,
+        3000000000,
+        4000000000,
+        5000000000
+    };
+
+    int uint64Size = sizeof(uint64Array) / sizeof(uint64Array[0]);
+
+    for (int i = 0; i < uint64Size; i++) {
+        Stdio.printf("Index: {} - uint64: {}\n", i, uint64Array[i]);
+    }
+
+
+    // uint128
+    uint128 uint128Array[5] = {
+        1000000000000,
+        2000000000000,
+        3000000000000,
+        4000000000000,
+        5000000000000
+    };
+
+    int uint128Size = sizeof(uint128Array) / sizeof(uint128Array[0]);
+
+    for (int i = 0; i < uint128Size; i++) {
+        Stdio.printf("Index: {} - uint128: {}\n", i, uint128Array[i]);
+    }
+
+
+    return 0;
+}

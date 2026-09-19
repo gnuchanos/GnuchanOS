@@ -1,0 +1,152 @@
+# =============================================================================
+# GnuchanPurple - Openbox window manager theme
+# -----------------------------------------------------------------------------
+# Openbox draws its own decorations, so this file carries the palette for the
+# title bar, the frame, the menus and the on-screen display. Every surface is a
+# flat solid colour: no gradients, so the theme renders identically on every
+# X server and does not need image files.
+#
+# Button glyphs come from Openbox's built-in images and are recoloured through
+# the .image.color keys below, which keeps the theme a single text file.
+#
+# License: GPL3
+# =============================================================================
+
+# --- Frame geometry ----------------------------------------------------------
+border.width: 1
+padding.width: 2
+padding.height: 2
+window.handle.width: 4
+window.client.padding.width: 0
+window.client.padding.height: 0
+
+# Button outlines. Openbox falls back to its compiled in grey when these are
+# missing, which showed as off palette borders around every title button.
+window.active.button.border.width: 1
+window.active.button.border.color: #32143f
+window.inactive.button.border.width: 1
+window.inactive.button.border.color: #24102f
+
+# --- Window frame ------------------------------------------------------------
+window.active.border.color: #32143f
+window.inactive.border.color: #24102f
+window.active.client.color: #09030d
+window.inactive.client.color: #09030d
+
+# --- Title bar ---------------------------------------------------------------
+window.active.title.bg: flat solid
+window.active.title.bg.color: #0e0614
+window.inactive.title.bg: flat solid
+window.inactive.title.bg.color: #0e0614
+
+window.active.title.separator.color: #32143f
+window.inactive.title.separator.color: #24102f
+
+window.active.label.bg: parentrelative
+window.active.label.text.color: #ead7ff
+window.inactive.label.bg: parentrelative
+window.inactive.label.text.color: #70458a
+
+window.label.text.justify: center
+
+# --- Title bar buttons -------------------------------------------------------
+window.active.button.unpressed.bg: flat solid
+window.active.button.unpressed.bg.color: #1c0b27
+window.active.button.unpressed.image.color: #ead7ff
+window.active.button.hover.bg: flat solid
+window.active.button.hover.bg.color: #281036
+window.active.button.hover.image.color: #f3e8ff
+window.active.button.pressed.bg: flat solid
+window.active.button.pressed.bg.color: #542080
+window.active.button.pressed.image.color: #ffffff
+window.active.button.disabled.bg: flat solid
+window.active.button.disabled.bg.color: #0f0615
+window.active.button.disabled.image.color: #70458a
+
+window.inactive.button.unpressed.bg: flat solid
+window.inactive.button.unpressed.bg.color: #12071a
+window.inactive.button.unpressed.image.color: #70458a
+window.inactive.button.hover.bg: flat solid
+window.inactive.button.hover.bg.color: #1c0b27
+window.inactive.button.hover.image.color: #b78ed6
+window.inactive.button.pressed.bg: flat solid
+window.inactive.button.pressed.bg.color: #32143f
+window.inactive.button.pressed.image.color: #ead7ff
+window.inactive.button.disabled.bg: flat solid
+window.inactive.button.disabled.bg.color: #0f0615
+window.inactive.button.disabled.image.color: #70458a
+
+# Close buttons lean red, the rest of the title bar stays purple. Each close
+# variant repeats its own "bg" style line: Openbox only honours a
+# "*.bg.color" override when the matching "*.bg" is set on the same button.
+window.active.button.close.unpressed.bg: flat solid
+window.active.button.close.unpressed.bg.color: #2a0b2f
+window.active.button.close.unpressed.image.color: #e879f9
+window.active.button.close.hover.bg: flat solid
+window.active.button.close.hover.bg.color: #86198f
+window.active.button.close.hover.image.color: #ffffff
+window.active.button.close.pressed.bg: flat solid
+window.active.button.close.pressed.bg.color: #a21caf
+window.active.button.close.pressed.image.color: #ffffff
+
+# The unfocused close button keeps the magenta identity, dimmed. Without these
+# keys Openbox gave it the generic inactive button colours instead.
+window.inactive.button.close.unpressed.bg: flat solid
+window.inactive.button.close.unpressed.bg.color: #1c0b27
+window.inactive.button.close.unpressed.image.color: #86198f
+window.inactive.button.close.hover.bg: flat solid
+window.inactive.button.close.hover.bg.color: #86198f
+window.inactive.button.close.hover.image.color: #ffffff
+
+# --- Window handle and grips -------------------------------------------------
+# window.handle.width is set above, so the handle and the grips are drawn;
+# without a colour Openbox used its built in grey for both.
+window.active.handle.bg: flat solid
+window.active.handle.bg.color: #0e0614
+window.inactive.handle.bg: flat solid
+window.inactive.handle.bg.color: #09030d
+
+window.active.grip.bg: flat solid
+window.active.grip.bg.color: #32143f
+window.inactive.grip.bg: flat solid
+window.inactive.grip.bg.color: #24102f
+
+# --- Menus -------------------------------------------------------------------
+menu.border.width: 1
+menu.border.color: #6d28d9
+menu.overlap: 0
+
+menu.title.bg: flat solid
+menu.title.bg.color: #0f0615
+menu.title.text.color: #b78ed6
+menu.title.text.justify: left
+
+menu.items.bg: flat solid
+menu.items.bg.color: #180a22
+menu.items.text.color: #ead7ff
+menu.items.disabled.text.color: #70458a
+
+menu.items.active.bg: flat solid
+menu.items.active.bg.color: #542080
+menu.items.active.text.color: #ffffff
+menu.items.active.disabled.text.color: #d8a4ff
+
+menu.separator.color: #32143f
+menu.separator.width: 1
+
+# --- On-screen display (window switching, desktop switching) -----------------
+osd.bg: flat solid
+osd.bg.color: #180a22
+osd.border.width: 1
+osd.border.color: #6d28d9
+
+osd.active.label.bg: flat solid
+osd.active.label.bg.color: #542080
+osd.active.label.text.color: #ffffff
+osd.inactive.label.bg: parentrelative
+osd.inactive.label.text.color: #b78ed6
+
+osd.hilight.bg: flat solid
+osd.hilight.bg.color: #a855f7
+osd.unhilight.bg: flat solid
+osd.unhilight.bg.color: #32143f

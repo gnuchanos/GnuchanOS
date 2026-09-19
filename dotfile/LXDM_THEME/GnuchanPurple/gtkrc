@@ -1,0 +1,215 @@
+# =============================================================================
+# GnuchanPurple - LXDM greeter styles for the GTK+ 2 greeter
+# -----------------------------------------------------------------------------
+# Read by lxdm-greeter-gtk when it was built against GTK+ 2, which is the
+# default build (configure.ac only defines ENABLE_GTK3 when --enable-gtk3 is
+# passed, and the Debian, Ubuntu and RPM rules do not pass it). gtk.css is the
+# same theme for a greeter built against GTK+ 3; the widget names used here are
+# the ids in greeter.ui, and the two files are kept in step by hand.
+#
+# The colours are the GnuchanPurple palette: the same values as
+# dotfile/GTK_THEME/GnuchanPurple and dotfile/vscodium_theme/settings.json, of
+# which the VSCodium file is the source of truth. Change the palette there
+# first, then copy the values here.
+#
+# Two things about this file are worth knowing before editing it.
+#
+#   1. The wallpaper is not painted here. The greeter reads the image path from
+#      [display] bg in /etc/lxdm/lxdm.conf, scales it to the screen and sets it
+#      as the background pixmap of both the window and the root window, and
+#      because that key exists it also marks the window app_paintable, which is
+#      what stops GTK from painting a theme background over the pixmap. That is
+#      why the window style below sets no image: doing it here as well would
+#      need the pixmap engine (gtk2-engines-pixbuf on Debian) for no gain.
+#
+#   2. The login box is a GtkEventBox, not a GtkVBox, because GTK+ 2 only draws
+#      a background for a widget that has its own window. A box would take the
+#      colour and show none of it.
+#
+# Styles are matched on the widget name path that GtkBuilder gives every widget
+# from its id, so "lxdm.*.login_box" is the box: the greeting window, then any
+# number of widgets, then the one named login_box.
+#
+# License: GPL3
+# =============================================================================
+
+# --- the window --------------------------------------------------------------
+# A last resort background for the moment before the wallpaper is set, and the
+# colour the theme falls back to if the bg key is ever removed.
+style "gnuchan-window"
+{
+	bg[NORMAL] = "#09030d"
+	fg[NORMAL] = "#ead7ff"
+	font_name = "Sans 10"
+}
+widget "lxdm" style "gnuchan-window"
+
+# --- the login box -----------------------------------------------------------
+# The dark purple panel the logo, the prompt, the account list and the password
+# field sit on.
+style "gnuchan-login-box"
+{
+	bg[NORMAL] = "#2a1238"
+	bg[PRELIGHT] = "#2a1238"
+	bg[ACTIVE] = "#2a1238"
+	bg[SELECTED] = "#542080"
+	fg[NORMAL] = "#ead7ff"
+	fg[SELECTED] = "#ffffff"
+}
+widget "lxdm.*.login_box" style "gnuchan-login-box"
+
+# --- the clock ---------------------------------------------------------------
+style "gnuchan-time"
+{
+	fg[NORMAL] = "#f3e8ff"
+	font_name = "Sans Bold 15"
+}
+widget "lxdm.*.time" style "gnuchan-time"
+
+# --- labels ------------------------------------------------------------------
+# The prompt and the captions of the bottom bar. The broad class rule is what
+# catches the labels the greeter creates itself - the session and language
+# entries are combo boxes and their text comes from an entry, but the menu
+# items of the exit and language menus are made in code - and the name rules
+# below it are what make this theme's own captions the bright purple.
+style "gnuchan-label"
+{
+	fg[NORMAL] = "#d8a4ff"
+	fg[PRELIGHT] = "#ead7ff"
+	fg[INSENSITIVE] = "#70458a"
+	font_name = "Sans Bold 11"
+}
+widget "lxdm.*.prompt" style "gnuchan-label"
+widget "lxdm.*.label2" style "gnuchan-label"
+widget "lxdm.*.label_lang" style "gnuchan-label"
+widget "lxdm.*.label_keyboard" style "gnuchan-label"
+
+# --- text entry --------------------------------------------------------------
+# base is the colour of the text area, bg of the frame around it; a GtkEntry
+# only looks dark if both are set. This also reaches the entries inside the
+# session, language and keyboard combo boxes, which is wanted: they are the
+# only other editable fields on the screen.
+style "gnuchan-entry"
+{
+	bg[NORMAL] = "#180a22"
+	bg[PRELIGHT] = "#180a22"
+	bg[ACTIVE] = "#180a22"
+	base[NORMAL] = "#180a22"
+	base[PRELIGHT] = "#180a22"
+	base[ACTIVE] = "#180a22"
+	base[SELECTED] = "#542080"
+	text[NORMAL] = "#ead7ff"
+	text[SELECTED] = "#ffffff"
+	fg[NORMAL] = "#ead7ff"
+	font_name = "Sans 11"
+}
+widget_class "*.<GtkEntry>" style "gnuchan-entry"
+
+# --- the account list --------------------------------------------------------
+# The greeter fills this GtkIconView with one row per account: the avatar it
+# found, or nobody.png from this directory when the account has no ~/.face.
+style "gnuchan-user-list"
+{
+	base[NORMAL] = "#2a1238"
+	base[PRELIGHT] = "#32143f"
+	base[SELECTED] = "#542080"
+	text[NORMAL] = "#ead7ff"
+	text[SELECTED] = "#ffffff"
+	font_name = "Sans 10"
+}
+widget "lxdm.*.user_list" style "gnuchan-user-list"
+
+style "gnuchan-scroller"
+{
+	bg[NORMAL] = "#2a1238"
+	bg[PRELIGHT] = "#2a1238"
+}
+widget "lxdm.*.user_list_scrolled" style "gnuchan-scroller"
+
+# --- buttons -----------------------------------------------------------------
+# One rule for every button, so the arrows of the combo boxes are themed too,
+# and one for the exit button, which the greeter names, placed after it so the
+# name wins.
+style "gnuchan-button"
+{
+	bg[NORMAL] = "#2a1238"
+	bg[PRELIGHT] = "#542080"
+	bg[ACTIVE] = "#32143f"
+	fg[NORMAL] = "#d8a4ff"
+	fg[PRELIGHT] = "#ffffff"
+	fg[ACTIVE] = "#ffffff"
+	font_name = "Sans 10"
+}
+widget_class "*.<GtkButton>" style "gnuchan-button"
+
+style "gnuchan-exit"
+{
+	bg[NORMAL] = "#2a1238"
+	bg[PRELIGHT] = "#9333ea"
+	bg[ACTIVE] = "#7c3aed"
+	fg[NORMAL] = "#d8a4ff"
+	fg[PRELIGHT] = "#ffffff"
+	fg[ACTIVE] = "#ffffff"
+	font_name = "Sans 10"
+}
+widget "lxdm.*.exit" style "gnuchan-exit"
+
+# --- the session, language and keyboard choosers -----------------------------
+style "gnuchan-combo"
+{
+	bg[NORMAL] = "#2a1238"
+	bg[PRELIGHT] = "#542080"
+	bg[ACTIVE] = "#32143f"
+	fg[NORMAL] = "#ead7ff"
+	fg[PRELIGHT] = "#ffffff"
+	font_name = "Sans 10"
+}
+widget "lxdm.*.sessions" style "gnuchan-combo"
+widget "lxdm.*.lang" style "gnuchan-combo"
+widget "lxdm.*.keyboard" style "gnuchan-combo"
+
+# --- the bottom bar ----------------------------------------------------------
+# A near-black translucent-looking strip: GTK+ 2 rc files have no alpha, so the
+# colour is the opaque one that reads the same over the wallpaper. The class
+# rule keeps the captions of the bar in its dimmer colour when the theme is not
+# the one selected, because it matches by class rather than by name.
+style "gnuchan-bottom"
+{
+	bg[NORMAL] = "#0b0410"
+	bg[PRELIGHT] = "#0b0410"
+	fg[NORMAL] = "#b78ed6"
+	fg[PRELIGHT] = "#ead7ff"
+	font_name = "Sans 10"
+}
+widget "lxdm.*.bottom_pane" style "gnuchan-bottom"
+widget_class "GtkWindow.*.GtkEventBox.*.<GtkLabel>" style "gnuchan-bottom"
+
+# --- menus -------------------------------------------------------------------
+# The exit menu (reboot, shut down) and the popup of the language chooser.
+style "gnuchan-menu"
+{
+	bg[NORMAL] = "#180a22"
+	bg[PRELIGHT] = "#542080"
+	bg[ACTIVE] = "#542080"
+	fg[NORMAL] = "#ead7ff"
+	fg[PRELIGHT] = "#ffffff"
+	fg[ACTIVE] = "#ffffff"
+	font_name = "Sans 10"
+}
+widget_class "*.<GtkMenu>" style "gnuchan-menu"
+widget_class "*.<GtkMenuItem>" style "gnuchan-menu"
+
+# --- a general fallback ------------------------------------------------------
+# Anything the greeter creates that none of the rules above names - a tooltip,
+# a scrollbar trough - takes the palette rather than the GTK theme's default.
+style "gnuchan-default"
+{
+	bg[NORMAL] = "#0e0614"
+	fg[NORMAL] = "#ead7ff"
+	base[NORMAL] = "#12071a"
+	base[SELECTED] = "#542080"
+	text[NORMAL] = "#ead7ff"
+	text[SELECTED] = "#ffffff"
+	font_name = "Sans 10"
+}
+widget_class "*" style "gnuchan-default"

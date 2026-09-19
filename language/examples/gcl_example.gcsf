@@ -1,0 +1,31 @@
+#native <Stdio>
+
+int main() {
+    char c = 'A';
+    char *str = "Hello";
+    char str2[7] = "World";
+
+    short s = 10;
+    int i = 20;
+    float f = 3.14;
+    double d = 6.28;
+    long int li = 100000;
+    long long int lli = 9999999999;
+    long double ld = 3.1415926535;
+    unsigned int ui = 42;
+
+    Stdio.printf("char: {}\n", c);
+    Stdio.printf("char *: {}\n", str);
+    Stdio.printf("char []: {}\n", str2);
+
+    Stdio.printf("short: {}\n", s);
+    Stdio.printf("int: {}\n", i);
+    Stdio.printf("float: {}\n", f);
+    Stdio.printf("double: {}\n", d);
+    Stdio.printf("long int: {}\n", li);
+    Stdio.printf("long long int: {}\n", lli);
+    Stdio.printf("long double: {}\n", ld);
+    Stdio.printf("unsigned int: {}\n", ui);
+
+    return 0;
+}

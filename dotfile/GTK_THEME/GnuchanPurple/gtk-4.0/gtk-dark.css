@@ -1,0 +1,13 @@
+/* ============================================================================
+ * GnuchanPurple - GTK 4 dark variant
+ * ----------------------------------------------------------------------------
+ * GTK 4 loads gtk-dark.css instead of gtk.css when an application asks for the
+ * dark variant (GTK_THEME=GnuchanPurple:dark, or a prefers-dark setting).
+ *
+ * GnuchanPurple is dark only, so this file forwards to the main stylesheet
+ * instead of duplicating it and having to keep two copies in sync.
+ *
+ * License: GPL3
+ * ========================================================================== */
+
+@import url("gtk.css");
