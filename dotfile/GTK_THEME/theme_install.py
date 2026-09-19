@@ -983,6 +983,314 @@ def install_extras(log: Log) -> None:
     log.detail(f"installed {copied} extras into {target}")
 
 
+# --- uninstalling ------------------------------------------------------------
+# Everything below undoes what the installer wrote. It deliberately never looks
+# at SOURCE_THEME_DIR: a user uninstalls a theme from a machine where this
+# repository may no longer exist at all, so requiring the source tree to be
+# present would make --uninstall impossible exactly when it is needed.
+
+
+def looks_like_our_theme(path: Path) -> bool:
+    """Whether ``path`` holds this theme, and is therefore safe to delete.
+
+    --uninstall removes a whole directory tree. Before it does, it checks that
+    the directory carries one of this theme's own files with the theme name in
+    it, so a directory the user has since replaced by hand is left alone and
+    reported instead of being deleted.
+    """
+    if not path.is_dir():
+        return False
+    for marker in (
+        path / "index.theme",
+        path / "gtk-3.0" / "gtk.css",
+        path / "gtk-2.0" / "gtkrc",
+    ):
+        if marker.is_file():
+            try:
+                if THEME_NAME in marker.read_text(encoding="utf-8"):
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def remove_theme_dirs(log: Log, theme_dirs: tuple[Path, ...]) -> None:
+    """Remove the installed theme from every theme directory."""
+    for directory in theme_dirs:
+        target = directory / THEME_NAME
+        if target.is_symlink():
+            target.unlink()
+            log.detail(f"removed the symlink {target}")
+            continue
+        if not target.exists():
+            log.detail(f"{target} is not installed")
+            continue
+        if not looks_like_our_theme(target):
+            log.detail(f"kept {target}: it does not look like {THEME_NAME}")
+            continue
+        shutil.rmtree(target)
+        log.detail(f"removed {target}")
+
+
+def restore_backup(path: Path) -> bool:
+    """Put the ``.gnuchan-backup`` copy of ``path`` back, if there is one."""
+    backup = path.with_name(path.name + BACKUP_SUFFIX)
+    if not backup.exists():
+        return False
+    if path.exists():
+        path.unlink()
+    shutil.move(str(backup), str(path))
+    return True
+
+
+def strip_ini_keys(existing: str, section: str, keys: tuple[str, ...]) -> str:
+    """Remove ``keys`` from ``section``, keeping every other line.
+
+    The counterpart of ``merge_ini``: a fresh install that had no backup to
+    restore is undone by taking the installer's own keys back out, so the file
+    keeps whatever the user has added since.
+    """
+    wanted = {key.lower() for key in keys}
+    body: list[str] = []
+    current_section: str | None = None
+    for line in existing.splitlines():
+        if GENERATED_MARKER in line:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped[1:-1].strip()
+            body.append(line)
+            continue
+        if (
+            current_section is not None
+            and current_section.lower() == section.lower()
+            and "=" in stripped
+            and stripped.split("=", 1)[0].strip().lower() in wanted
+        ):
+            continue
+        body.append(line)
+    return "\n".join(body).strip("\n")
+
+
+def strip_gtk2_rc(existing: str) -> str:
+    """Remove this installer's lines from a ``~/.gtkrc-2.0``."""
+    kept: list[str] = []
+    for line in existing.splitlines():
+        if GENERATED_MARKER in line:
+            continue
+        stripped = line.strip()
+        if re.match(r"^\s*gtk-theme-name\s*=", stripped):
+            continue
+        if stripped.startswith("include") and THEME_NAME in stripped:
+            continue
+        if stripped == GTK2_OWNERSHIP_COMMENT:
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip("\n")
+
+
+def remove_generated_file(log: Log, path: Path, content: str) -> None:
+    """Delete a file this installer wrote, once its own lines are taken out."""
+    if not path.exists():
+        return
+    if content.strip():
+        write_text(path, content.rstrip("\n") + "\n")
+        log.detail(f"removed our keys from {path}")
+        return
+    path.unlink()
+    log.detail(f"removed {path}")
+
+
+def uninstall_configuration(log: Log) -> None:
+    """Undo ~/.gtkrc-2.0, the settings.ini files and the GTK 4 overlay.
+
+    Where a ``.gnuchan-backup`` copy exists it is put back, which is what
+    actually restores the user's own file; otherwise only this installer's
+    lines are removed and a file left empty is deleted. The GTK 4 overlay is
+    deleted only when it still carries this installer's provenance header, so a
+    user stylesheet that was edited by hand is never thrown away.
+    """
+    for path, section, keys, strip in (
+        (
+            gtk3_settings_file(),
+            "Settings",
+            tuple(SETTINGS_INI_KEYS),
+            strip_ini_keys,
+        ),
+        (
+            gtk4_settings_file(),
+            "Settings",
+            tuple(SETTINGS_INI_KEYS),
+            strip_ini_keys,
+        ),
+    ):
+        if restore_backup(path):
+            log.detail(f"restored {path} from its backup")
+            continue
+        if path.exists():
+            remove_generated_file(log, path, strip(read_existing(path), section, keys))
+
+    rc_file = gtk2_rc_file()
+    if restore_backup(rc_file):
+        log.detail(f"restored {rc_file} from its backup")
+    elif rc_file.exists():
+        remove_generated_file(log, rc_file, strip_gtk2_rc(read_existing(rc_file)))
+
+    overlay = gtk4_user_file()
+    if overlay.exists():
+        if GENERATED_MARKER in read_existing(overlay):
+            overlay.unlink()
+            log.detail(f"removed {overlay}")
+        else:
+            log.detail(f"kept {overlay}: it is not the file this installer wrote")
+
+
+def remove_extras(log: Log) -> None:
+    """Remove the terminal and bar colour files, if they are still ours."""
+    target = extras_dir()
+    if not target.is_dir():
+        return
+    shutil.rmtree(target)
+    log.detail(f"removed {target}")
+
+
+# --- checking the environment ------------------------------------------------
+# Two problems the theme cannot fix from inside its own files, both of them
+# diagnosed from the source of the tool that reports them.
+#
+# 1. lxappearance sorts icon and cursor themes by their localised Name with
+#    g_utf8_collate (lxappearance/src/icon-theme.c). A theme whose index.theme
+#    exists but has no Name - or is Hidden=true without one - leaves that field
+#    NULL, and GLib then prints
+#
+#        g_utf8_collate: assertion 'str1 != NULL' failed
+#
+#    once per comparison, four times in the reported session. The offending
+#    theme is not this one; --check finds it. It is also why the icon theme
+#    GnuchanOS generates writes Name= unconditionally: see
+#    dotfile/ICON_THEME/icon_install.py.
+#
+# 2. GtkFontButton builds a one line stylesheet from the current font
+#    description and loads it with gtk_css_provider_load_from_data
+#    (gtk/gtkfontbutton.c, pango_font_description_to_css). The family name is
+#    inserted without quotes, so an empty or unparsable gtk-font-name makes GTK
+#    report
+#
+#        Theme parsing error: <data>:1:17: Expected a string.
+#
+#    The installer now merges rather than replaces settings.ini, so it no
+#    longer drops that key. Where the key survives in a .gnuchan-backup but not
+#    in the live file, an older run did the damage and the backup has to go
+#    back; --check says so instead of leaving the user to find it.
+
+
+def theme_search_dirs() -> list[Path]:
+    """Where icon and cursor themes live, user level first.
+
+    Mirrors the two lists lxappearance and GTK both walk: the user locations
+    under $HOME, then the system ones from $XDG_DATA_DIRS.
+    """
+    return [
+        home_dir() / ".icons",
+        xdg_data_home() / "icons",
+        Path("/usr/local/share/icons"),
+        Path("/usr/share/icons"),
+    ]
+
+
+def read_ini_key(path: Path, section: str, key: str) -> str | None:
+    """Value of ``key`` inside ``section`` of an INI file, or None.
+
+    Deliberately small: the theme files are read here without configparser so
+    that a stray duplicate key or an unparseable line in someone else's theme
+    cannot raise and stop the check halfway.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    current: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith(";"):
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current = stripped[1:-1].strip()
+            continue
+        if current is None or current.lower() != section.lower():
+            continue
+        name, separator, value = stripped.partition("=")
+        if separator and name.strip().lower() == key.lower():
+            return value.strip()
+    return None
+
+
+def nameless_theme_problems() -> list[str]:
+    """Icon and cursor themes whose index.theme carries no Name.
+
+    A directory only counts as a theme for lxappearance when it has a cursors
+    subdirectory or an index.theme that lists Directories, so the same test is
+    applied here: a stray index.theme without a Name that no list would ever
+    show is not worth reporting.
+    """
+    problems: list[str] = []
+    for root in theme_search_dirs():
+        if not root.is_dir():
+            continue
+        try:
+            entries = sorted(root.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            index = entry / "index.theme"
+            if not index.is_file():
+                continue
+            has_directories = bool(read_ini_key(index, "Icon Theme", "Directories"))
+            has_cursors = (entry / "cursors").is_dir()
+            if not (has_directories or has_cursors):
+                continue
+            name = read_ini_key(index, "Icon Theme", "Name") or read_ini_key(
+                index, "Cursor Theme", "Name"
+            )
+            if not name:
+                problems.append(
+                    f"{entry}: index.theme has no Name (lxappearance prints "
+                    f"g_utf8_collate assertions for it)"
+                )
+    return problems
+
+
+FONT_KEY_RE = re.compile(r"^\s*gtk[-_]font[-_]name\s*=", re.MULTILINE)
+
+
+def font_name_problems() -> list[str]:
+    """Files where a backup holds gtk-font-name but the live file does not."""
+    problems: list[str] = []
+    for path in (gtk2_rc_file(), gtk3_settings_file(), gtk4_settings_file()):
+        backup = path.with_name(path.name + BACKUP_SUFFIX)
+        live = read_existing(path)
+        old = read_existing(backup)
+        if FONT_KEY_RE.search(old) and not FONT_KEY_RE.search(live):
+            problems.append(
+                f"{path}: gtk-font-name is in {backup.name} but not in the file "
+                f"in use; put the backup back (GtkFontButton reports "
+                f"'Expected a string' without it)"
+            )
+    return problems
+
+
+def check_environment(log: Log) -> int:
+    """Print the environment problems found, returning how many there are."""
+    problems = nameless_theme_problems() + font_name_problems()
+    if not problems:
+        log.note("No problems found.")
+        return 0
+    log.note(f"{len(problems)} problem(s) found:")
+    for problem in problems:
+        log.note(f"  {problem}")
+    return len(problems)
+
+
 # --- entry point -------------------------------------------------------------
 
 
@@ -1019,6 +1327,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="render the xfwm4 images and the theme preview into the theme "
         "source in this repository, then stop",
     )
+    parser.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="remove the installed theme, restore the settings files from "
+        "their backups and delete the extras, then stop",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="report the environment problems that break the theme's look "
+        "(a theme whose index.theme has no Name, a gtk-font-name an older run "
+        "dropped), then stop",
+    )
     parser.add_argument("--quiet", action="store_true", help="only print problems")
     return parser
 
@@ -1031,6 +1352,23 @@ def main(argv: list[str] | None = None) -> int:
         theme_dirs = tuple(Path(value).expanduser() for value in args.theme_dir)
     else:
         theme_dirs = tuple(user_theme_dirs())
+
+    # --uninstall and --check run without the theme source on purpose: they are
+    # how a user repairs or removes the theme on a machine where this
+    # repository is no longer present, so they must not be gated on it.
+    if args.uninstall:
+        log.step(f"Removing {THEME_NAME}")
+        remove_theme_dirs(log, theme_dirs)
+        uninstall_configuration(log)
+        remove_extras(log)
+        log.note("")
+        log.note(f"{THEME_NAME} removed. Log out and back in to fall back to")
+        log.note("the default theme.")
+        return 0
+
+    if args.check:
+        log.step(f"Checking the {THEME_NAME} environment")
+        return 1 if check_environment(log) else 0
 
     if not SOURCE_THEME_DIR.is_dir():
         print(f"error: theme source is missing: {SOURCE_THEME_DIR}", file=sys.stderr)

@@ -6,13 +6,19 @@
 ! Covers the classic X colours (*.color0 .. *.color15) that xterm, urxvt,
 ! st, xfontsel and many small X programs read, plus the cursor colour pair.
 !
+! The sixteen ANSI slots are the ones dotfile/vscodium_theme/settings.json
+! gives to terminal.ansiBlack .. terminal.ansiBrightWhite, so VSCodium's
+! integrated terminal and xterm show the same colours. That palette file is
+! the source of truth: change it there first, then copy the values here, to
+! kitty.conf and to alacritty.toml.
+!
 ! License: GPL3
 ! ============================================================================
 
 ! Special
 *foreground:     #ead7ff
 *background:     #09030d
-*cursorColor:    #d8a4ff
+*cursorColor:    #ddb3ff
 *pointerColorBackground: #32143f
 *pointerColorForeground: #c77dff
 
@@ -20,17 +26,17 @@
 *color0:  #170a20
 *color8:  #70458a
 
-! Red - kept inside the purple family on purpose
-*color1:  #86198f
-*color9:  #a21caf
+! Red
+*color1:  #c084fc
+*color9:  #d8a4ff
 
 ! Green
-*color2:  #6d28d9
-*color10: #7c3aed
+*color2:  #b56cff
+*color10: #c084fc
 
 ! Yellow
-*color3:  #9333ea
-*color11: #a855f7
+*color3:  #d8a4ff
+*color11: #e0aaff
 
 ! Blue
 *color4:  #9d4edd
@@ -38,11 +44,11 @@
 
 ! Magenta
 *color5:  #c77dff
-*color13: #d8a4ff
+*color13: #e0aaff
 
 ! Cyan
-*color6:  #b57edc
-*color14: #c9a0ff
+*color6:  #b76eff
+*color14: #d8a4ff
 
 ! White / bright white
 *color7:  #ead7ff

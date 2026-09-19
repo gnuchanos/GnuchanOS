@@ -315,11 +315,39 @@ style "gnuchan-scrollbar"
 class "GtkScrollbar" style "gnuchan-scrollbar"
 class "GtkVScrollbar" style "gnuchan-scrollbar"
 class "GtkHScrollbar" style "gnuchan-scrollbar"
-# GtkScrolledWindow is deliberately not mapped to this style. It is the
-# container, not a scrollbar, so all it ever picked up was bg[NORMAL] - a
-# viewport one shade off the window background - while the slider width,
-# stepper size and trough properties are read from the widget the style is
-# actually applied to, which the three classes above already cover.
+
+# GTK 2 paints the viewport inside a scrolled window with the *scrolled
+# window's* own bg[NORMAL], not with the child's, so a scrolled area left
+# unmapped keeps the engine default - which is the grey lxappearance showed
+# inside its theme list, its preview and every file chooser pane. The style is
+# separate from "gnuchan-scrollbar" on purpose: that one describes the slider,
+# this one the surface behind it.
+style "gnuchan-scrolledwindow"
+{
+  bg[NORMAL]      = "#0E0614"
+  bg[PRELIGHT]    = "#12071A"
+  bg[ACTIVE]      = "#180A22"
+  bg[INSENSITIVE] = "#0E0614"
+  fg[NORMAL]      = "#EAD7FF"
+  fg[INSENSITIVE] = "#70458A"
+}
+class "GtkScrolledWindow" style "gnuchan-scrolledwindow"
+widget_class "*<GtkScrolledWindow>*" style "gnuchan-scrolledwindow"
+
+# A viewport on its own is what a tree view, an icon view or the preview box
+# is put in when it is scrolled, so it needs the reading surface colour rather
+# than the window colour.
+style "gnuchan-viewport"
+{
+  bg[NORMAL]      = "#09030D"
+  bg[PRELIGHT]    = "#12071A"
+  bg[ACTIVE]      = "#180A22"
+  bg[INSENSITIVE] = "#0E0614"
+  fg[NORMAL]      = "#EAD7FF"
+  fg[INSENSITIVE] = "#70458A"
+}
+class "GtkViewport" style "gnuchan-viewport"
+widget_class "*<GtkViewport>*" style "gnuchan-viewport"
 
 # -----------------------------------------------------------------------------
 # Sliders (GtkScale)

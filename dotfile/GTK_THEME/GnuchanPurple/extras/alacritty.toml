@@ -23,7 +23,7 @@ bright_foreground = "#ffffff"
 
 [colors.cursor]
 text = "#09030d"
-cursor = "#d8a4ff"
+cursor = "#ddb3ff"
 
 [colors.vi_mode_cursor]
 text = "#09030d"
@@ -45,24 +45,29 @@ background = "#b78ed6"
 text = "#ffffff"
 background = "#542080"
 
+# The sixteen ANSI slots are the ones dotfile/vscodium_theme/settings.json
+# gives to terminal.ansiBlack .. terminal.ansiBrightWhite, so VSCodium's
+# integrated terminal and Alacritty show the same colours. That palette file
+# is the source of truth: change it there first, then copy the values here,
+# to kitty.conf and to Xresources.
 [colors.normal]
 black = "#170a20"
-red = "#86198f"
-green = "#6d28d9"
-yellow = "#9333ea"
+red = "#c084fc"
+green = "#b56cff"
+yellow = "#d8a4ff"
 blue = "#9d4edd"
 magenta = "#c77dff"
-cyan = "#b57edc"
+cyan = "#b76eff"
 white = "#ead7ff"
 
 [colors.bright]
 black = "#70458a"
-red = "#a21caf"
-green = "#7c3aed"
-yellow = "#a855f7"
+red = "#d8a4ff"
+green = "#c084fc"
+yellow = "#e0aaff"
 blue = "#b76eff"
-magenta = "#d8a4ff"
-cyan = "#c9a0ff"
+magenta = "#e0aaff"
+cyan = "#d8a4ff"
 white = "#ffffff"
 
 [window]

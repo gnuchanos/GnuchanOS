@@ -193,6 +193,22 @@
  * 3. Base
  * -------------------------------------------------------------------------- */
 
+/* Adwaita paints most of its containers with a background *image* - a
+ * linear-gradient - laid over the background colour: notebook > header,
+ * frame, toolbar, infobar, .view, popover, menu, scrollbar trough and more.
+ * Overriding background-color alone therefore leaves that grey gradient
+ * painted, which is exactly why a window could be themed and still show
+ * Adwaita grey. lxappearance was the clearest case: its whole window is one
+ * notebook, so its tab strip and page area stayed grey.
+ *
+ * Clearing the image everywhere is what makes the flat colours this theme
+ * defines the only thing that gets painted. It sits before the widget rules
+ * below so a rule of this file that does want a gradient of its own still wins
+ * on specificity - the radio dot is the one place that happens. */
+* {
+  background-image: none;
+}
+
 * {
   outline-color: @gnuchan_selection_soft;
   outline-width: 2px;
@@ -203,13 +219,22 @@
   -gtk-secondary-caret-color: @gnuchan_accent;
 }
 
+/* window.background is spelled out as well as .background on purpose:
+ * Adwaita's own rule for the generic background class is written as
+ * "window.background", which is one specificity step above a bare
+ * ".background", and a widget that only carries the class - lxappearance puts
+ * GTK_STYLE_CLASS_BACKGROUND on its preview box exactly like that - would
+ * otherwise keep Adwaita's grey. Both selectors are listed so the class always
+ * resolves to this palette whichever form the other stylesheet uses. */
 window,
+window.background,
 .background {
   background-color: @gnuchan_bg;
   color: @gnuchan_fg;
 }
 
 window:backdrop,
+window.background:backdrop,
 .background:backdrop {
   color: @gnuchan_fg_dim;
 }
@@ -468,11 +493,18 @@ button:backdrop,
   color: @gnuchan_fg_dim;
 }
 
+/* Flat buttons: toolbar icons, header bar icons, title buttons and links.
+ *
+ * button.text-button is deliberately not in this list. GTK 3 adds that style
+ * class to every button that carries a label (gtk_button_set_label in
+ * gtkbutton.c does gtk_style_context_add_class (context, "text-button")), so
+ * listing it here made every ordinary button transparent and the raised
+ * button style in section 5 above never reached a single button a user could
+ * click. Links keep their own rule further down. */
 button.flat,
 button.flat:backdrop,
 button.titlebutton,
 button.image-button,
-button.text-button,
 button:link,
 button:visited {
   background-color: transparent;
@@ -2120,3 +2152,160 @@ window.messagedialog {
 @define-color suggested_bg_color                     @gnuchan_accent_active;
 @define-color suggested_fg_color                     @gnuchan_white;
 @define-color unfocused_insensitive_bg_color         @gnuchan_bg_alt;
+/* ----------------------------------------------------------------------------
+ * 20. lxappearance, and the widget set it draws
+ * ----------------------------------------------------------------------------
+ * lxappearance is what most GTK 2 and GTK 3 setups use to pick a theme, and
+ * its window is built out of exactly these widgets: a notebook with one tab per
+ * category, a tree view of the installed themes, a combo box for the toolbar
+ * style, a font button, check buttons, a scale, and a preview box that carries
+ * the generic ".background" class. Naming each one here is what makes the tool
+ * fully themed instead of themed only around the edges - and because
+ * GTK_STYLE_CLASS_BACKGROUND carries no other hint, the preview box is spelled
+ * out with its own selector rather than relying on the bare class.
+ * -------------------------------------------------------------------------- */
+
+notebook,
+notebook > stack,
+notebook > stack > box,
+notebook > header,
+notebook > header > tabs,
+notebook > header > tabs > tab {
+  background-color: @gnuchan_bg;
+  background-image: none;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+notebook > header > tabs > tab:checked {
+  background-color: @gnuchan_raised;
+  color: @gnuchan_fg_bright;
+  border-color: @gnuchan_border;
+}
+
+notebook > header > tabs > tab:hover {
+  background-color: @gnuchan_hover;
+  color: @gnuchan_fg_bright;
+}
+
+/* The preview box in the "Widget" tab, plus any other plain container an
+ * application marks as background. */
+box.background,
+.background.view,
+.background box {
+  background-color: @gnuchan_bg;
+  color: @gnuchan_fg;
+}
+
+/* fontbutton, colorbutton and filechooserbutton each draw their own inner
+ * button, which Adwaita styles separately from the generic "button". */
+fontbutton,
+fontbutton > button,
+colorbutton,
+colorbutton > button,
+filechooserbutton,
+filechooserbutton > button {
+  background-color: @gnuchan_raised;
+  background-image: none;
+  color: @gnuchan_fg;
+  border: 1px solid @gnuchan_border;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+fontbutton > button:hover,
+colorbutton > button:hover,
+filechooserbutton > button:hover {
+  background-color: @gnuchan_raised_hover;
+  border-color: @gnuchan_border_strong;
+  color: @gnuchan_fg_bright;
+}
+
+fontbutton > button:active,
+fontbutton > button:checked,
+colorbutton > button:active {
+  background-color: @gnuchan_selected_bg;
+  border-color: @gnuchan_accent;
+  color: @gnuchan_white;
+}
+
+/* The label of a check or radio button is a child node in GTK 3, so it needs
+ * its own rule or it keeps Adwaita's near black text. */
+checkbutton > label,
+radiobutton > label {
+  color: @gnuchan_fg;
+}
+
+checkbutton:checked > label,
+radiobutton:checked > label {
+  color: @gnuchan_fg_bright;
+}
+
+/* Combo boxes and their popup list, used for the toolbar style. */
+combobox > box,
+combobox button.combo,
+combobox > box > button.combo {
+  background-color: @gnuchan_raised;
+  background-image: none;
+  color: @gnuchan_fg;
+  border: 1px solid @gnuchan_border;
+}
+
+combobox > box > button.combo:checked,
+combobox > box > button.combo:active {
+  background-color: @gnuchan_selected_bg;
+  border-color: @gnuchan_accent;
+  color: @gnuchan_white;
+}
+
+/* Scroll areas: the theme list and the preview are both scrolled. */
+scrolledwindow,
+scrolledwindow > viewport,
+scrolledwindow > viewport > box {
+  background-color: @gnuchan_bg_darkest;
+  background-image: none;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+/* Frames carry the category titles ("Widget", "Theme", "Icon Theme"...). */
+frame,
+frame > border,
+frame > label,
+frame > label > label {
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+frame > label {
+  color: @gnuchan_fg_dim;
+}
+
+/* Action areas: the footer of the theme dialogs and of the file chooser the
+ * font button opens. */
+.dialog-action-area,
+.dialog-action-box,
+dialog actionbar,
+dialog buttonbox,
+actionbar > revealer > box buttonbox {
+  background-color: @gnuchan_bg;
+  background-image: none;
+  border-top: 1px solid @gnuchan_border;
+  color: @gnuchan_fg;
+}
+
+/* The "Save as..." / "Open" file chooser lxappearance starts for a custom
+ * icon directory. */
+filechooser .dialog-action-box,
+filechooser placessidebar,
+filechooser placessidebar list,
+filechooser placessidebar row,
+filechooser treeview.view {
+  background-color: @gnuchan_surface;
+  color: @gnuchan_fg;
+  border-color: @gnuchan_border;
+}
+
+filechooser treeview.view {
+  background-color: @gnuchan_bg_darkest;
+}

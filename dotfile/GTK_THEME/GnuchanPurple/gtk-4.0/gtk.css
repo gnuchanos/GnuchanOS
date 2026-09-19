@@ -240,6 +240,16 @@
  * stay with libadwaita so nothing breaks when it is updated.
  * -------------------------------------------------------------------------- */
 
+/* Adwaita and libadwaita paint most containers with a background *image* - a
+ * linear-gradient - on top of the background colour, so overriding the colour
+ * alone leaves a grey gradient painted over it. Clearing the image everywhere
+ * is what makes the flat colours this file defines the only thing that gets
+ * drawn; the radio dot is the one rule below that paints a gradient of its own
+ * and it wins on specificity. */
+* {
+  background-image: none;
+}
+
 window,
 .background {
   background-color: @gnuchan_bg;
@@ -440,10 +450,17 @@ button:backdrop {
   color: @gnuchan_fg_dim;
 }
 
+/* Flat buttons: header bar icons, tool bar icons and the round / pill icon
+ * buttons.
+ *
+ * button.text-button is deliberately not in this list, for the same reason as
+ * in the GTK 3 file: GTK 4 adds that style class to every button carrying a
+ * label, so listing it here made every ordinary button transparent instead of
+ * using the raised background set above. Keeping both files identical on this
+ * point is what makes GTK 3 and GTK 4 applications look like one theme. */
 button.flat,
 button.flat:backdrop,
 button.image-button,
-button.text-button,
 button.circular,
 button.pill {
   background-color: transparent;
@@ -647,26 +664,42 @@ checkbutton > check:disabled {
   color: @gnuchan_fg_disabled;
 }
 
-radiobutton > radio {
+/* Radio buttons. GTK 4 has no GtkRadioButton widget and no "radio" CSS node:
+ * the radio button was folded into GtkCheckButton, which draws a single
+ * "check" child node and adds the .radio style class to it. The selector this
+ * file used to carry, "radiobutton > radio", therefore matched nothing on
+ * GTK 4 and every radio button kept libadwaita's own indicator.
+ *
+ * A checked radio also has to draw its dot here. The GTK 4 check mark comes
+ * from an icon, and a radio that showed a tick would look like a check box, so
+ * the dot is a radial gradient like the one the GTK 3 file paints. */
+checkbutton > check.radio {
   background-color: @gnuchan_bg_darkest;
   border: 1px solid @gnuchan_border_strong;
   border-radius: 9999px;
   color: @gnuchan_white;
 }
 
-radiobutton > radio:hover {
+checkbutton > check.radio:hover {
   background-color: @gnuchan_hover;
   border-color: @gnuchan_accent;
 }
 
-radiobutton > radio:checked {
+checkbutton > check.radio:checked {
   background-color: @gnuchan_accent_active;
+  background-image: radial-gradient(circle, @gnuchan_white 27%, transparent 30%);
   border-color: @gnuchan_accent;
   color: @gnuchan_white;
 }
 
-radiobutton > radio:disabled {
+checkbutton > check.radio:checked:hover {
+  background-color: @gnuchan_accent;
+  border-color: @gnuchan_accent_hover;
+}
+
+checkbutton > check.radio:disabled {
   background-color: @gnuchan_bg_alt;
+  background-image: none;
   border-color: @gnuchan_border_alt;
 }
 

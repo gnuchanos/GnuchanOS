@@ -204,6 +204,15 @@
  * places where Adwaita hard codes a colour instead of reading a named one.
  * -------------------------------------------------------------------------- */
 
+/* libadwaita paints its containers with a background *image* - a gradient -
+ * laid over the background colour, so an overlay that only sets colours leaves
+ * that grey gradient painted on top. Clearing the image layer is what makes
+ * the palette above the only thing drawn. Placed before the widget rules so
+ * any rule further down that wants a gradient of its own still wins. */
+* {
+  background-image: none;
+}
+
 selection,
 label > selection,
 entry > text > selection,
