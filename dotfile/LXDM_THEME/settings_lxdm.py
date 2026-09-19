@@ -56,13 +56,17 @@
 #
 # Undo
 # ----
-# There are no flags, so undoing is by hand and always possible:
+# There are no flags, so undoing is by hand and always possible. Both files this
+# script rewrote are kept, and both have to be put back:
 #
 #     rm -rf /usr/share/lxdm/themes/GnuchanPurple
 #     cp /etc/lxdm/lxdm.conf.gnuchan-backup /etc/lxdm/lxdm.conf
+#     cp /etc/X11/default-display-manager.gnuchan-backup /etc/X11/default-display-manager
 #
 # and then enable the display manager that was enabled before, whose name the
-# script prints while it runs.
+# script prints while it runs. The last file is the one worth remembering: the
+# manager being replaced reads it about itself and refuses to start when it
+# names lxdm, so restoring lxdm's own configuration is not enough on its own.
 #
 # The palette is the one the GTK theme, the icon theme and VSCodium use.
 # dotfile/vscodium_theme/settings.json is the source of truth for it; change it
@@ -104,6 +108,11 @@ INSTALLED_THEME_DIR = LXDM_THEMES_DIR / THEME_NAME
 CONFIG_FILE = Path("/etc/lxdm/lxdm.conf")
 DEFAULT_DM_FILE = Path("/etc/X11/default-display-manager")
 LXDM_DAEMON = Path("/usr/sbin/lxdm")
+
+#: What systemd starts when graphical.target comes up. lxdm's own unit has no
+#: [Install] section - upstream never wrote one - so systemctl cannot enable it
+#: at all, and this alias is the only thing that makes it the display manager.
+DISPLAY_MANAGER_ALIAS = Path("/etc/systemd/system/display-manager.service")
 
 BACKUP_SUFFIX = ".gnuchan-backup"
 
@@ -229,16 +238,27 @@ class Log:
 # --- running things -----------------------------------------------------------
 
 
-def run(command: list[str], capture: bool = False) -> subprocess.CompletedProcess[str]:
+def run(
+    command: list[str],
+    capture: bool = False,
+    environment: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Run a command, with its output kept only when it is asked for.
 
     Nothing here goes through a shell: every command is a list, so a path with
     a space in it - and /usr/share/lxdm/themes/... has none, but a user's
     home directory may - cannot turn into two arguments.
+
+    Keeping the output is for the short commands whose text is only wanted when
+    they fail. Anything long running, and anything that may want to ask a
+    question, is run with its output going to the terminal: a command whose
+    output is being swallowed looks exactly like a command that has hung.
     """
     if capture:
-        return subprocess.run(command, check=False, capture_output=True, text=True)
-    return subprocess.run(command, check=False, text=True)
+        return subprocess.run(
+            command, check=False, capture_output=True, text=True, env=environment
+        )
+    return subprocess.run(command, check=False, text=True, env=environment)
 
 
 def is_root() -> bool:
@@ -328,7 +348,23 @@ def distro_description() -> str:
 #: server is listed explicitly because Debian only recommends it, and a greeter
 #: with no X server is a greeter that cannot start.
 PACKAGE_MANAGERS: dict[str, tuple[str, ...]] = {
-    "debian": ("apt-get", "install", "-y", "--no-install-recommends"),
+    # -y answers apt's own questions and none of dpkg's. The two Dpkg::Options
+    # arguments are what stop dpkg asking what to do about a configuration file
+    # it finds edited, and /etc/lxdm/lxdm.conf is a conffile: a run that stops
+    # to ask about it stops before this script has seen the file at all.
+    # --force-confdef takes the package's answer where there is one,
+    # --force-confold keeps the file that is already on the machine otherwise,
+    # which is the rule this script follows for that file itself.
+    "debian": (
+        "apt-get",
+        "install",
+        "-y",
+        "--no-install-recommends",
+        "-o",
+        "Dpkg::Options::=--force-confdef",
+        "-o",
+        "Dpkg::Options::=--force-confold",
+    ),
     "arch": ("pacman", "-S", "--needed", "--noconfirm"),
     "fedora": ("dnf", "install", "-y"),
     "suse": ("zypper", "--non-interactive", "install"),
@@ -353,6 +389,24 @@ def package_manager() -> tuple[str, ...] | None:
     if command is None or shutil.which(command[0]) is None:
         return None
     return command
+
+
+def package_environment() -> dict[str, str]:
+    """The environment a package manager is run in.
+
+    On Debian and Ubuntu the debconf frontend is told to be non-interactive.
+    This installer has no options and asks nothing: a run that stops on a
+    question - which display manager should be the default, which keyboard
+    layout the X server should use - is a run that looks as if it has hung,
+    because the question is asked through a terminal nobody is watching. The
+    one answer that matters is given by this script, afterwards, when it makes
+    lxdm the display manager itself.
+    """
+    return dict(
+        os.environ,
+        DEBIAN_FRONTEND="noninteractive",
+        DEBCONF_NONINTERACTIVE_SEEN="true",
+    )
 
 
 def package_command() -> list[str] | None:
@@ -423,18 +477,20 @@ def install_packages(log: Log) -> bool:
         log.detail(manual_package_hint())
         return False
 
+    environment = package_environment()
     if command[0] == "apt-get":
         # A stale package list is the most common reason an apt-get install
         # fails on a machine that has never been updated.
         log.detail("refreshing the package list")
-        run(["apt-get", "update"])
+        run(["apt-get", "update"], environment=environment)
     log.detail("running: " + " ".join(command))
-    result = run(command, capture=True)
+    # The output is left where it can be seen. A package manager says what it
+    # is downloading and unpacking, and a download that prints nothing for a
+    # minute is indistinguishable from a run that has stopped - which is the
+    # difference between a user who waits and a user who kills the script.
+    result = run(command, environment=environment)
     if result.returncode != 0:
-        for stream in (result.stdout, result.stderr):
-            lines = [line for line in (stream or "").splitlines() if line.strip()]
-            if lines:
-                log.detail(lines[-1].strip())
+        log.detail("the package manager reported a failure")
         log.detail(manual_package_hint())
         return lxdm_present()
     if not lxdm_present():
@@ -1330,6 +1386,13 @@ def activate_display_manager(log: Log) -> str | None:
     uses to know which unit is ``display-manager.service``.
     """
     try:
+        # Backed up like lxdm.conf, and for the same reason: this is the file
+        # the display manager being replaced reads about itself and refuses to
+        # start over, so putting lxdm back is not the whole undo - the file has
+        # to name the other manager again before it will run.
+        backup = backup_once(DEFAULT_DM_FILE)
+        if backup is not None:
+            log.detail(f"backed up {DEFAULT_DM_FILE.name} to {backup.name}")
         DEFAULT_DM_FILE.parent.mkdir(parents=True, exist_ok=True)
         DEFAULT_DM_FILE.write_text(str(LXDM_DAEMON) + "\n", encoding="utf-8")
         log.detail(f"wrote {DEFAULT_DM_FILE}: {LXDM_DAEMON}")
@@ -1359,8 +1422,9 @@ def activate_display_manager(log: Log) -> str | None:
         # what makes systemd start it as the display manager either way.
         log.detail("lxdm.service has no [Install] section; using the alias instead")
 
-    link = Path("/etc/systemd/system/display-manager.service")
+    link = DISPLAY_MANAGER_ALIAS
     try:
+        link.parent.mkdir(parents=True, exist_ok=True)
         if link.is_symlink() and link.resolve() == unit.resolve():
             log.detail(f"{link} already points at lxdm")
             return replaced
@@ -1368,6 +1432,11 @@ def activate_display_manager(log: Log) -> str | None:
             link.unlink()
         link.symlink_to(unit)
         log.detail(f"linked {link} -> {unit}")
+        # systemd keeps the units it has already read in memory, so a new alias
+        # is one it does not know about until it is told to reread them. Without
+        # this the switch only takes effect at the next boot, and anything that
+        # asks for display-manager.service before then still gets the old one.
+        run(["systemctl", "daemon-reload"], capture=True)
     except OSError as error:
         log.warn(f"could not link {link}: {error}")
     return replaced
