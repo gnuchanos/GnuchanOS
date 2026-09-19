@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- pqiv-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M24 12L64 12L80 28L80 86L24 86Z" fill="#f3e8ff" fill-rule="evenodd"/>
+  <path d="M64 12L80 28L64 28Z" fill="#b78ed6" fill-rule="evenodd"/>
+  <path d="M29 50L71 50A3 3 0 0 1 74 53L74 79A3 3 0 0 1 71 82L29 82A3 3 0 0 1 26 79L26 53A3 3 0 0 1 29 50Z" fill="#ead7ff"/>
+  <path d="M34 60a4 4 0 1 0 8 0a4 4 0 1 0 -8 0Z" fill="#f3e8ff"/>
+  <path d="M30 80L48 62L70 80Z" fill="#f3e8ff" fill-rule="evenodd"/>
+</svg>

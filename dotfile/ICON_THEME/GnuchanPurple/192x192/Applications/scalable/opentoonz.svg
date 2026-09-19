@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- opentoonz -->
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
+  <path d="M16 22L84 22A6 6 0 0 1 90 28L90 72A6 6 0 0 1 84 78L16 78A6 6 0 0 1 10 72L10 28A6 6 0 0 1 16 22Z" fill="#a855f7"/>
+  <path d="M24 40a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z" fill="#f3e8ff"/>
+  <path d="M16 72L40 48L66 72Z" fill="#f3e8ff" fill-rule="evenodd"/>
+  <path d="M52 72L70 56L86 72Z" fill="#f3e8ff" fill-rule="evenodd"/>
+</svg>

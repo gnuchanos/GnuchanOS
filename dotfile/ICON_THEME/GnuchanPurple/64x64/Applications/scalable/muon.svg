@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- muon -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
+  <path d="M18 34L82 34L74 86L26 86Z" fill="#a855f7" fill-rule="evenodd"/>
+  <path d="M34 34A16 16 0 0 1 66 34" fill="none" stroke="#a855f7" stroke-width="7" stroke-linecap="round"/>
+  <path d="M30 44L70 44" fill="none" stroke="#09030d55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

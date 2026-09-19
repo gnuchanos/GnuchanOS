@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- io.elementary.feedback-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M14 50a36 36 0 1 0 72 0a36 36 0 1 0 -72 0Z" fill="#ead7ff"/>
+  <path d="M45 32a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#09030d"/>
+  <path d="M50 44L50 68" fill="none" stroke="#09030d" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

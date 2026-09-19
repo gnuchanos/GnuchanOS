@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- video-webm -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
+  <path d="M24 12L64 12L80 28L80 86L24 86Z" fill="#f3e8ff" fill-rule="evenodd"/>
+  <path d="M64 12L80 28L64 28Z" fill="#b78ed6" fill-rule="evenodd"/>
+  <path d="M31 50L69 50A3 3 0 0 1 72 53L72 77A3 3 0 0 1 69 80L31 80A3 3 0 0 1 28 77L28 53A3 3 0 0 1 31 50Z" fill="#c77dff"/>
+  <path d="M36 56L52 65L36 74Z" fill="#c77dff" fill-rule="evenodd"/>
+</svg>

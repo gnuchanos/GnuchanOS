@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- kcm_mouse -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
+  <path d="M30 22L70 22L78 52L70 82L30 82L22 52Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M50 22L50 46" fill="none" stroke="#09030d88" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

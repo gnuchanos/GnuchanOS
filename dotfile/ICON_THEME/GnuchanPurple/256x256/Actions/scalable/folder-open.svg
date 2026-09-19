@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- folder-open -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
+  <path d="M14 32L42 32L48 40L86 40L86 58L14 58Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M14 58L94 58L78 84L14 84Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M14 58L94 58" fill="none" stroke="#09030d55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

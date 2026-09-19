@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- video-display-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M18 16L82 16A6 6 0 0 1 88 22L88 60A6 6 0 0 1 82 66L18 66A6 6 0 0 1 12 60L12 22A6 6 0 0 1 18 16Z" fill="#ead7ff"/>
+  <path d="M20 21L80 21A3 3 0 0 1 83 24L83 58A3 3 0 0 1 80 61L20 61A3 3 0 0 1 17 58L17 24A3 3 0 0 1 20 21Z" fill="#09030d" fill-opacity="0.533333"/>
+  <path d="M42 66L58 66A2 2 0 0 1 60 68L60 74A2 2 0 0 1 58 76L42 76A2 2 0 0 1 40 74L40 68A2 2 0 0 1 42 66Z" fill="#ead7ff"/>
+  <path d="M27 76L73 76A3 3 0 0 1 76 79L76 81A3 3 0 0 1 73 84L27 84A3 3 0 0 1 24 81L24 79A3 3 0 0 1 27 76Z" fill="#ead7ff"/>
+</svg>

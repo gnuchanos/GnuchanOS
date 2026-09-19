@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- audio-card-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M17 30L83 30A5 5 0 0 1 88 35L88 65A5 5 0 0 1 83 70L17 70A5 5 0 0 1 12 65L12 35A5 5 0 0 1 17 30Z" fill="#ead7ff"/>
+  <path d="M23 50a11 11 0 1 0 22 0a11 11 0 1 0 -22 0Z" fill="#09030d" fill-opacity="0.533333"/>
+  <path d="M59 40L75 40A3 3 0 0 1 78 43L78 45A3 3 0 0 1 75 48L59 48A3 3 0 0 1 56 45L56 43A3 3 0 0 1 59 40Z" fill="#f3e8ff"/>
+  <path d="M59 54L75 54A3 3 0 0 1 78 57L78 59A3 3 0 0 1 75 62L59 62A3 3 0 0 1 56 59L56 57A3 3 0 0 1 59 54Z" fill="#f3e8ff"/>
+  <path d="M12 22L20 22L20 30L12 30Z" fill="#ead7ff" fill-rule="evenodd"/>
+  <path d="M80 22L88 22L88 30L80 30Z" fill="#ead7ff" fill-rule="evenodd"/>
+</svg>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- emblem-generic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
+  <path d="M14 36L58 36L86 50L58 64L14 64Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M22 50a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z" fill="#09030d" fill-opacity="0.6"/>
+</svg>

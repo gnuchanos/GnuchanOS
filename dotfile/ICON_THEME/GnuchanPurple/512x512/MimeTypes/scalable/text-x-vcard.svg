@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- text-x-vcard -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+  <path d="M24 12L64 12L80 28L80 86L24 86Z" fill="#f3e8ff" fill-rule="evenodd"/>
+  <path d="M64 12L80 28L64 28Z" fill="#b78ed6" fill-rule="evenodd"/>
+  <path d="M30 50L39 50A2 2 0 0 1 41 52L41 61A2 2 0 0 1 39 63L30 63A2 2 0 0 1 28 61L28 52A2 2 0 0 1 30 50Z" fill="#c77dff"/>
+  <path d="M30 66L39 66A2 2 0 0 1 41 68L41 77A2 2 0 0 1 39 79L30 79A2 2 0 0 1 28 77L28 68A2 2 0 0 1 30 66Z" fill="#c77dff"/>
+  <path d="M46 50L55 50A2 2 0 0 1 57 52L57 61A2 2 0 0 1 55 63L46 63A2 2 0 0 1 44 61L44 52A2 2 0 0 1 46 50Z" fill="#c77dff"/>
+  <path d="M46 66L55 66A2 2 0 0 1 57 68L57 77A2 2 0 0 1 55 79L46 79A2 2 0 0 1 44 77L44 68A2 2 0 0 1 46 66Z" fill="#c77dff"/>
+  <path d="M62 50L71 50A2 2 0 0 1 73 52L73 61A2 2 0 0 1 71 63L62 63A2 2 0 0 1 60 61L60 52A2 2 0 0 1 62 50Z" fill="#c77dff"/>
+  <path d="M62 66L71 66A2 2 0 0 1 73 68L73 77A2 2 0 0 1 71 79L62 79A2 2 0 0 1 60 77L60 68A2 2 0 0 1 62 66Z" fill="#c77dff"/>
+</svg>

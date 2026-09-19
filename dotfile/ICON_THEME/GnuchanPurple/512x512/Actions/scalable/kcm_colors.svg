@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- kcm_colors -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+  <path d="M50 10L74 52L26 52Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M24 60a26 26 0 1 0 52 0a26 26 0 1 0 -52 0Z" fill="#d8a4ff"/>
+  <path d="M36.844 55.212A14 14 0 0 1 63.156 55.212" fill="none" stroke="#09030d88" stroke-width="5" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- go-home -->
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
+  <path d="M50 14L88 46L76 46L76 82L24 82L24 46L12 46Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M44 58L56 58A2 2 0 0 1 58 60L58 80A2 2 0 0 1 56 82L44 82A2 2 0 0 1 42 80L42 60A2 2 0 0 1 44 58Z" fill="#09030d" fill-opacity="0.533333"/>
+</svg>

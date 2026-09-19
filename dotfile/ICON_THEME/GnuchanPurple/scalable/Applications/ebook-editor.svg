@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ebook-editor -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
+  <path d="M10 24L48 32L48 84L10 76Z" fill="#a855f7" fill-rule="evenodd"/>
+  <path d="M90 24L52 32L52 84L90 76Z" fill="#a855f7" fill-rule="evenodd"/>
+  <path d="M50 32L50 84" fill="none" stroke="#09030d66" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 41L40 46" fill="none" stroke="#f3e8ff55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M60 46L82 41" fill="none" stroke="#f3e8ff55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

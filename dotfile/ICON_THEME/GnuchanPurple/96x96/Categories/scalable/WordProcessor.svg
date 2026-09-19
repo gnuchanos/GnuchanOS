@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WordProcessor -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
+  <path d="M22 16L62 16L78 32L78 84L22 84Z" fill="#c77dff" fill-rule="evenodd"/>
+  <path d="M62 16L78 32L62 32Z" fill="#f3e8ff" fill-rule="evenodd"/>
+  <path d="M32 48L68 48" fill="none" stroke="#f3e8ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M32 60L68 60" fill="none" stroke="#f3e8ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M32 72L54 72" fill="none" stroke="#f3e8ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- emote-kiss -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 100 100">
+  <path d="M16 50a34 34 0 1 0 68 0a34 34 0 1 0 -68 0Z" fill="#f2c73d"/>
+  <path d="M33 42a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#09030d"/>
+  <path d="M55 43L68 41" fill="none" stroke="#09030d" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M43 62a7 7 0 1 0 14 0a7 7 0 1 0 -14 0Z" fill="#09030d"/>
+</svg>

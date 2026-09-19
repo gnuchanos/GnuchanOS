@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- emblem-photos -->
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
+  <path d="M14 50a36 36 0 1 0 72 0a36 36 0 1 0 -72 0Z" fill="#d8a4ff"/>
+  <path d="M32 34L68 34A4 4 0 0 1 72 38L72 62A4 4 0 0 1 68 66L32 66A4 4 0 0 1 28 62L28 38A4 4 0 0 1 32 34Z" fill="#09030d"/>
+  <path d="M33.5 44a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0Z" fill="#d8a4ff"/>
+  <path d="M32 66L48 50L68 66Z" fill="#d8a4ff" fill-rule="evenodd"/>
+</svg>

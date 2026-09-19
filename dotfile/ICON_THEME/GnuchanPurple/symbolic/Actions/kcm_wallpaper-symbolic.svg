@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- kcm_wallpaper-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M15 20L85 20A5 5 0 0 1 90 25L90 75A5 5 0 0 1 85 80L15 80A5 5 0 0 1 10 75L10 25A5 5 0 0 1 15 20Z" fill="#ead7ff"/>
+  <path d="M25 38a7 7 0 1 0 14 0a7 7 0 1 0 -14 0Z" fill="#09030d" fill-opacity="0.6"/>
+  <path d="M16 74L44 44L70 74Z" fill="#09030d" fill-opacity="0.6" fill-rule="evenodd"/>
+  <path d="M54 74L72 52L84 74Z" fill="#09030d" fill-opacity="0.6" fill-rule="evenodd"/>
+</svg>

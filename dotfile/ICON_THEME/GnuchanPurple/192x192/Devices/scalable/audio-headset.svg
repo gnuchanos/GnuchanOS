@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- audio-headset -->
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
+  <path d="M16 50A34 34 0 0 1 84 50" fill="none" stroke="#6d28d9" stroke-width="10" stroke-linecap="round"/>
+  <path d="M13 48L21 48A5 5 0 0 1 26 53L26 73A5 5 0 0 1 21 78L13 78A5 5 0 0 1 8 73L8 53A5 5 0 0 1 13 48Z" fill="#6d28d9"/>
+  <path d="M79 48L87 48A5 5 0 0 1 92 53L92 73A5 5 0 0 1 87 78L79 78A5 5 0 0 1 74 73L74 53A5 5 0 0 1 79 48Z" fill="#6d28d9"/>
+</svg>

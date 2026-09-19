@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- computer-workstation -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
+  <path d="M16 12L84 12A6 6 0 0 1 90 18L90 58A6 6 0 0 1 84 64L16 64A6 6 0 0 1 10 58L10 18A6 6 0 0 1 16 12Z" fill="#6d28d9"/>
+  <path d="M19 18L81 18A3 3 0 0 1 84 21L84 55A3 3 0 0 1 81 58L19 58A3 3 0 0 1 16 55L16 21A3 3 0 0 1 19 18Z" fill="#09030d" fill-opacity="0.533333"/>
+  <path d="M32 64L68 64A2 2 0 0 1 70 66L70 70A2 2 0 0 1 68 72L32 72A2 2 0 0 1 30 70L30 66A2 2 0 0 1 32 64Z" fill="#6d28d9"/>
+  <path d="M19 72L81 72A3 3 0 0 1 84 75L84 83A3 3 0 0 1 81 86L19 86A3 3 0 0 1 16 83L16 75A3 3 0 0 1 19 72Z" fill="#6d28d9"/>
+  <path d="M34 79L66 79" fill="none" stroke="#09030d88" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- security-low -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 100 100">
+  <path d="M50 10L86 24L86 50L50 90L14 50L14 24Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M43 48a7 7 0 1 0 14 0a7 7 0 1 0 -14 0Z" fill="#09030d"/>
+</svg>

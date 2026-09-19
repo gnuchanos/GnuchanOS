@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- view-fullscreen -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+  <path d="M40 40L19.515 19.515" fill="none" stroke="#d8a4ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14 14L26.557 17.365L17.365 26.557Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M40 60L19.515 80.485" fill="none" stroke="#d8a4ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14 86L17.365 73.443L26.557 82.635Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M60 40L80.485 19.515" fill="none" stroke="#d8a4ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M86 14L82.635 26.557L73.443 17.365Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M60 60L80.485 80.485" fill="none" stroke="#d8a4ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M86 86L73.443 82.635L82.635 73.443Z" fill="#d8a4ff" fill-rule="evenodd"/>
+</svg>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- gnome-volume-control-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M36 12L64 12A8 8 0 0 1 72 20L72 80A8 8 0 0 1 64 88L36 88A8 8 0 0 1 28 80L28 20A8 8 0 0 1 36 12Z" fill="#ead7ff"/>
+  <path d="M40 36a10 10 0 1 0 20 0a10 10 0 1 0 -20 0Z" fill="#09030d" fill-opacity="0.533333"/>
+  <path d="M34 66a16 16 0 1 0 32 0a16 16 0 1 0 -32 0Z" fill="#09030d" fill-opacity="0.533333"/>
+</svg>

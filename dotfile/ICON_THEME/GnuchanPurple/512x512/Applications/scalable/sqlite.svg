@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- sqlite -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+  <path d="M24 72a26 26 0 1 0 52 0a26 26 0 1 0 -52 0Z" fill="#a855f7"/>
+  <path d="M24 30L76 30L76 72L24 72Z" fill="#a855f7"/>
+  <path d="M24 30a26 26 0 1 0 52 0a26 26 0 1 0 -52 0Z" fill="#a855f7"/>
+  <path d="M68 30A18 18 0 1 1 68 30" fill="none" stroke="#09030d99" stroke-width="4" stroke-linecap="round"/>
+  <path d="M71.25 52.694A22 22 0 0 1 28.75 52.694" fill="none" stroke="#09030d77" stroke-width="4" stroke-linecap="round"/>
+</svg>

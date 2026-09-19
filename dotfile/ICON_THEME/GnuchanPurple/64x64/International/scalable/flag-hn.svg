@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- flag-hn -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
+  <path d="M13 23L87 23A4 4 0 0 1 91 27L91 73A4 4 0 0 1 87 77L13 77A4 4 0 0 1 9 73L9 27A4 4 0 0 1 13 23Z" fill="#32143f"/>
+  <path d="M12 26L88 26L88 35.6L12 35.6Z" fill="#2f8fdf"/>
+  <path d="M12 34.6L88 34.6L88 45.2L12 45.2Z" fill="#ffffff"/>
+  <path d="M12 44.2L88 44.2L88 54.8L12 54.8Z" fill="#2f8fdf"/>
+  <path d="M12 53.8L88 53.8L88 64.4L12 64.4Z" fill="#ffffff"/>
+  <path d="M12 63.4L88 63.4L88 74L12 74Z" fill="#2f8fdf"/>
+</svg>

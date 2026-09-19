@@ -9,6 +9,8 @@
 *.out
 nul
 todo.md
+# ...but the icon theme's plan is part of the theme, not a scratch note.
+!dotfile/ICON_THEME/TODO.md
 _temp/
 language/tests/*
 
@@ -37,4 +39,3 @@ __pycache__/
 *.pyc
 wwww
 export.py
-

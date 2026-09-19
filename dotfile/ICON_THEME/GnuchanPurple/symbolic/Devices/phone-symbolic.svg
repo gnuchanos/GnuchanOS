@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- phone-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M39 10L61 10A9 9 0 0 1 70 19L70 81A9 9 0 0 1 61 90L39 90A9 9 0 0 1 30 81L30 19A9 9 0 0 1 39 10Z" fill="#ead7ff"/>
+  <path d="M38 20L62 20A3 3 0 0 1 65 23L65 71A3 3 0 0 1 62 74L38 74A3 3 0 0 1 35 71L35 23A3 3 0 0 1 38 20Z" fill="#09030d" fill-opacity="0.533333"/>
+  <path d="M46 82a4 4 0 1 0 8 0a4 4 0 1 0 -8 0Z" fill="#09030d" fill-opacity="0.533333"/>
+</svg>

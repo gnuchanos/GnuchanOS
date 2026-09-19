@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- drive-removable-media-ieee1394-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M24 22L76 22A6 6 0 0 1 82 28L82 72A6 6 0 0 1 76 78L24 78A6 6 0 0 1 18 72L18 28A6 6 0 0 1 24 22Z" fill="#ead7ff"/>
+  <path d="M18 54L82 54L82 70L18 70Z" fill="#ead7ff" fill-rule="evenodd"/>
+  <path d="M32 32L68 32A2 2 0 0 1 70 34L70 44A2 2 0 0 1 68 46L32 46A2 2 0 0 1 30 44L30 34A2 2 0 0 1 32 32Z" fill="#f3e8ff"/>
+</svg>

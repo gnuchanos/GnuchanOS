@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- computer-laptop -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+  <path d="M22 20L78 20L82 62L18 62Z" fill="#6d28d9" fill-rule="evenodd"/>
+  <path d="M27 24L73 24A2 2 0 0 1 75 26L75 56A2 2 0 0 1 73 58L27 58A2 2 0 0 1 25 56L25 26A2 2 0 0 1 27 24Z" fill="#09030d" fill-opacity="0.533333"/>
+  <path d="M10 66L90 66L96 78L4 78Z" fill="#6d28d9" fill-rule="evenodd"/>
+</svg>

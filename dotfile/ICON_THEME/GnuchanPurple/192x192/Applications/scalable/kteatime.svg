@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- kteatime -->
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
+  <path d="M78 56A28 28 0 1 1 78 56" fill="none" stroke="#a855f7" stroke-width="8" stroke-linecap="round"/>
+  <path d="M50 56L50 36" fill="none" stroke="#a855f7" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 56L66 66" fill="none" stroke="#a855f7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M45 12L55 12A3 3 0 0 1 58 15L58 19A3 3 0 0 1 55 22L45 22A3 3 0 0 1 42 19L42 15A3 3 0 0 1 45 12Z" fill="#a855f7"/>
+  <path d="M68 24L78 34" fill="none" stroke="#a855f7" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

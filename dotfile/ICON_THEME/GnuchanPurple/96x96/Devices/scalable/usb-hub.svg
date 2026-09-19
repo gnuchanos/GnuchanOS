@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- usb-hub -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
+  <path d="M50 34L50 14" fill="none" stroke="#6d28d9" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M25 34L75 34A5 5 0 0 1 80 39L80 75A5 5 0 0 1 75 80L25 80A5 5 0 0 1 20 75L20 39A5 5 0 0 1 25 34Z" fill="#6d28d9"/>
+  <path d="M30 44L40 44A2 2 0 0 1 42 46L42 54A2 2 0 0 1 40 56L30 56A2 2 0 0 1 28 54L28 46A2 2 0 0 1 30 44Z" fill="#f3e8ff"/>
+  <path d="M60 44L70 44A2 2 0 0 1 72 46L72 54A2 2 0 0 1 70 56L60 56A2 2 0 0 1 58 54L58 46A2 2 0 0 1 60 44Z" fill="#f3e8ff"/>
+  <path d="M30 62L70 62A2 2 0 0 1 72 64L72 68A2 2 0 0 1 70 70L30 70A2 2 0 0 1 28 68L28 64A2 2 0 0 1 30 62Z" fill="#f3e8ff"/>
+</svg>

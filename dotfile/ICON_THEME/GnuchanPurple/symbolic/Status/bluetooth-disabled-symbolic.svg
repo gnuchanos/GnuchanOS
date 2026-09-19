@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bluetooth-disabled-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M42 22L64 44" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M64 44L42 64" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M42 36L64 36" fill="none" stroke="#ead7ff" stroke-width="0" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 14L50 86" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 14L68 30" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M68 30L42 58" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M42 58L64 74" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M64 74L50 86" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

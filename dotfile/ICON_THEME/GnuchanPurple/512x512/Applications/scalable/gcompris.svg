@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- gcompris -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+  <path d="M50 22L92 40L50 58L8 40Z" fill="#a855f7" fill-rule="evenodd"/>
+  <path d="M28 48L72 48L72 68L50 80L28 68Z" fill="#a855f7" fill-rule="evenodd"/>
+  <path d="M86 42L86 70" fill="none" stroke="#a855f7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M81 74a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#a855f7"/>
+</svg>

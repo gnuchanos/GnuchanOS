@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- swaync-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M28 64L33 34L50 22L67 34L72 64Z" fill="#ead7ff" fill-rule="evenodd"/>
+  <path d="M26 62L74 62A4 4 0 0 1 78 66L78 67A4 4 0 0 1 74 71L26 71A4 4 0 0 1 22 67L22 66A4 4 0 0 1 26 62Z" fill="#ead7ff"/>
+  <path d="M42 78a8 8 0 1 0 16 0a8 8 0 1 0 -16 0Z" fill="#ead7ff"/>
+  <path d="M45 18a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#ead7ff"/>
+</svg>

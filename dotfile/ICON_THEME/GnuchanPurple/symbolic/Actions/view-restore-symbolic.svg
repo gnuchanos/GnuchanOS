@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- view-restore-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M14 14L32.485 32.485" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M38 38L25.443 34.635L34.635 25.443Z" fill="#ead7ff" fill-rule="evenodd"/>
+  <path d="M14 86L32.485 67.515" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M38 62L34.635 74.557L25.443 65.365Z" fill="#ead7ff" fill-rule="evenodd"/>
+  <path d="M86 14L67.515 32.485" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M62 38L65.365 25.443L74.557 34.635Z" fill="#ead7ff" fill-rule="evenodd"/>
+  <path d="M86 86L67.515 67.515" fill="none" stroke="#ead7ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M62 62L74.557 65.365L65.365 74.557Z" fill="#ead7ff" fill-rule="evenodd"/>
+</svg>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- emblem-personal -->
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100">
+  <path d="M18 52a32 32 0 1 0 64 0a32 32 0 1 0 -64 0Z" fill="#d8a4ff"/>
+  <path d="M39 40a11 11 0 1 0 22 0a11 11 0 1 0 -22 0Z" fill="#09030d"/>
+  <path d="M39 56L61 56A11 11 0 0 1 72 67L72 67A11 11 0 0 1 61 78L39 78A11 11 0 0 1 28 67L28 67A11 11 0 0 1 39 56Z" fill="#09030d"/>
+</svg>

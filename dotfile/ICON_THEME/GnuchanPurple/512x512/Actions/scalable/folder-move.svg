@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- folder-move -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+  <path d="M12 24L42 24L50 34L88 34L88 80L12 80Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M12 44L88 44L88 80L12 80Z" fill="#f3e8ff" fill-opacity="0.14902" fill-rule="evenodd"/>
+  <path d="M28 60L69.6 60" fill="none" stroke="#f3e8ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M78 60L65.876 67L65.876 53Z" fill="#f3e8ff" fill-rule="evenodd"/>
+</svg>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- add-software -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+  <path d="M23 34L77 34A5 5 0 0 1 82 39L82 77A5 5 0 0 1 77 82L23 82A5 5 0 0 1 18 77L18 39A5 5 0 0 1 23 34Z" fill="#a855f7"/>
+  <path d="M18 34L50 22L82 34L50 46Z" fill="#f3e8ff" fill-rule="evenodd"/>
+  <path d="M47 40L53 40A3 3 0 0 1 56 43L56 67A3 3 0 0 1 53 70L47 70A3 3 0 0 1 44 67L44 43A3 3 0 0 1 47 40Z" fill="#f3e8ff"/>
+  <path d="M38 62L62 62L50 76Z" fill="#f3e8ff" fill-rule="evenodd"/>
+</svg>

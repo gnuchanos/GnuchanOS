@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- gtk-jump-to -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
+  <path d="M16 50L75.2 50" fill="none" stroke="#d8a4ff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M86 50L70.412 59L70.412 41Z" fill="#d8a4ff" fill-rule="evenodd"/>
+</svg>

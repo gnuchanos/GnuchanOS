@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- emblem-new -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
+  <path d="M18 52a32 32 0 1 0 64 0a32 32 0 1 0 -64 0Z" fill="#d8a4ff"/>
+  <path d="M50 28L55.657 46.343L74 52L55.657 57.657L50 76L44.343 57.657L26 52L44.343 46.343Z" fill="#09030d" fill-rule="evenodd"/>
+  <path d="M74 23L76.121 29.879L83 32L76.121 34.121L74 41L71.879 34.121L65 32L71.879 29.879Z" fill="#09030d" fill-rule="evenodd"/>
+</svg>

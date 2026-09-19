@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- weather-few-clouds -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
+  <path d="M22 32a12 12 0 1 0 24 0a12 12 0 1 0 -24 0Z" fill="#d8a4ff"/>
+  <path d="M51 32L61 32" fill="none" stroke="#d8a4ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M46.021 44.021L53.092 51.092" fill="none" stroke="#d8a4ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M34 49L34 59" fill="none" stroke="#d8a4ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21.979 44.021L14.908 51.092" fill="none" stroke="#d8a4ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M17 32L7 32" fill="none" stroke="#d8a4ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21.979 19.979L14.908 12.908" fill="none" stroke="#d8a4ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M34 15L34 5" fill="none" stroke="#d8a4ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M46.021 19.979L53.092 12.908" fill="none" stroke="#d8a4ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M32 62a12 12 0 1 0 24 0a12 12 0 1 0 -24 0Z" fill="#f3e8ff"/>
+  <path d="M53 63a13 13 0 1 0 26 0a13 13 0 1 0 -26 0Z" fill="#f3e8ff"/>
+  <path d="M41 54a15 15 0 1 0 30 0a15 15 0 1 0 -30 0Z" fill="#f3e8ff"/>
+  <path d="M47 62L65 62A5 5 0 0 1 70 67L70 71A5 5 0 0 1 65 76L47 76A5 5 0 0 1 42 71L42 67A5 5 0 0 1 47 62Z" fill="#f3e8ff"/>
+</svg>

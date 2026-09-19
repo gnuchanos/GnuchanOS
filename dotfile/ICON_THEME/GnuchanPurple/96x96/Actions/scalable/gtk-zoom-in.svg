@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- gtk-zoom-in -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
+  <path d="M66 42A24 24 0 1 1 66 42" fill="none" stroke="#d8a4ff" stroke-width="8" stroke-linecap="round"/>
+  <path d="M60 60L84 84" fill="none" stroke="#d8a4ff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M30 42L54 42" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M42 30L42 54" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

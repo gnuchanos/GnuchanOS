@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- kcm_icons -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
+  <path d="M28 14L72 14A14 14 0 0 1 86 28L86 72A14 14 0 0 1 72 86L28 86A14 14 0 0 1 14 72L14 28A14 14 0 0 1 28 14Z" fill="#d8a4ff"/>
+  <path d="M50 24L56.466 41.101L74.727 41.966L60.462 53.399L65.282 71.034L50 61L34.718 71.034L39.538 53.399L25.273 41.966L43.534 41.101Z" fill="#09030d" fill-opacity="0.666667" fill-rule="evenodd"/>
+</svg>

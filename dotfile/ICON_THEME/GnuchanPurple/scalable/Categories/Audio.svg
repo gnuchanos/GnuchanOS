@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Audio -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
+  <path d="M20 24L80 24A6 6 0 0 1 86 30L86 70A6 6 0 0 1 80 76L20 76A6 6 0 0 1 14 70L14 30A6 6 0 0 1 20 24Z" fill="#c77dff"/>
+  <path d="M40 38L64 50L40 62Z" fill="#c77dff" fill-rule="evenodd"/>
+</svg>

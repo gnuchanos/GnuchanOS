@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- nwg-menu -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 100 100">
+  <path d="M19 18L67 18A5 5 0 0 1 72 23L72 57A5 5 0 0 1 67 62L19 62A5 5 0 0 1 14 57L14 23A5 5 0 0 1 19 18Z" fill="#a855f7"/>
+  <path d="M25 28L61 28" fill="none" stroke="#09030d99" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M25 40L61 40" fill="none" stroke="#09030d99" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M25 52L61 52" fill="none" stroke="#09030d99" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M58 52L58 88L68 78L76 92L84 88L76 74L90 74Z" fill="#f3e8ff" fill-rule="evenodd"/>
+</svg>

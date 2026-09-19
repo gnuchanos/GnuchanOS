@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- list-drag-handle -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
+  <path d="M35 36a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#c77dff"/>
+  <path d="M55 36a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#c77dff"/>
+  <path d="M35 50a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#c77dff"/>
+  <path d="M55 50a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#c77dff"/>
+  <path d="M35 64a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#c77dff"/>
+  <path d="M55 64a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z" fill="#c77dff"/>
+</svg>

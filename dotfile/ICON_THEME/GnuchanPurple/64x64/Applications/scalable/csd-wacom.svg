@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- csd-wacom -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
+  <path d="M16 60L84 60A4 4 0 0 1 88 64L88 78A4 4 0 0 1 84 82L16 82A4 4 0 0 1 12 78L12 64A4 4 0 0 1 16 60Z" fill="#a855f7"/>
+  <path d="M50 12L50 54" fill="none" stroke="#a855f7" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 54L42 44L58 44Z" fill="#a855f7" fill-rule="evenodd"/>
+</svg>

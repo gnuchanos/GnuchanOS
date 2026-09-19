@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- emblem-default -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
+  <path d="M14 50a36 36 0 1 0 72 0a36 36 0 1 0 -72 0Z" fill="#c77dff"/>
+  <path d="M34 51L47 65" fill="none" stroke="#09030d" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M47 65L67 35" fill="none" stroke="#09030d" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

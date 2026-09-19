@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- format-list-ordered -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+  <path d="M22 18L44 18A4 4 0 0 1 48 22L48 44A4 4 0 0 1 44 48L22 48A4 4 0 0 1 18 44L18 22A4 4 0 0 1 22 18Z" fill="#d8a4ff"/>
+  <path d="M56 18L78 18A4 4 0 0 1 82 22L82 44A4 4 0 0 1 78 48L56 48A4 4 0 0 1 52 44L52 22A4 4 0 0 1 56 18Z" fill="#d8a4ff"/>
+  <path d="M22 52L44 52A4 4 0 0 1 48 56L48 78A4 4 0 0 1 44 82L22 82A4 4 0 0 1 18 78L18 56A4 4 0 0 1 22 52Z" fill="#d8a4ff"/>
+  <path d="M56 52L78 52A4 4 0 0 1 82 56L82 78A4 4 0 0 1 78 82L56 82A4 4 0 0 1 52 78L52 56A4 4 0 0 1 56 52Z" fill="#d8a4ff"/>
+</svg>

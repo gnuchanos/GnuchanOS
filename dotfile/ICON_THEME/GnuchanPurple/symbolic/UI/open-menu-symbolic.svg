@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- open-menu-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M16 28L84 28" fill="none" stroke="#ead7ff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M16 50L84 50" fill="none" stroke="#ead7ff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M16 72L84 72" fill="none" stroke="#ead7ff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

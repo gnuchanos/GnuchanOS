@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- weather-clear -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 100 100">
+  <path d="M33 50a17 17 0 1 0 34 0a17 17 0 1 0 -34 0Z" fill="#d8a4ff"/>
+  <path d="M75 50L95 50" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M67.678 67.678L81.82 81.82" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 75L50 95" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M32.322 67.678L18.18 81.82" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M25 50L5 50" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M32.322 32.322L18.18 18.18" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 25L50 5" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M67.678 32.322L81.82 18.18" fill="none" stroke="#d8a4ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

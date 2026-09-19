@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- avatar-default-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M33 18.15a17 17 0 1 0 34 0a17 17 0 1 0 -34 0Z" fill="#ead7ff"/>
+  <path d="M38 52.15L62 52.15A12 12 0 0 1 74 64.15L74 66.15A12 12 0 0 1 62 78.15L38 78.15A12 12 0 0 1 26 66.15L26 64.15A12 12 0 0 1 38 52.15Z" fill="#ead7ff"/>
+</svg>

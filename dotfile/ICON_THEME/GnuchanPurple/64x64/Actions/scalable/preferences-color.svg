@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- preferences-color -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 100 100">
+  <path d="M50 14L78 26L86 52L74 78L50 86L26 78L14 52L22 26Z" fill="#d8a4ff" fill-rule="evenodd"/>
+  <path d="M26 40a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z" fill="#09030d"/>
+  <path d="M44 32a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z" fill="#09030d"/>
+  <path d="M60 44a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z" fill="#09030d"/>
+  <path d="M50 60a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z" fill="#09030d"/>
+</svg>

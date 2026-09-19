@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- emblem-encrypted -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
+  <path d="M18 38a20 20 0 1 0 40 0a20 20 0 1 0 -40 0Z" fill="#d8a4ff"/>
+  <path d="M30 38a8 8 0 1 0 16 0a8 8 0 1 0 -16 0Z" fill="#09030d" fill-opacity="0.6"/>
+  <path d="M52 52L84 84" fill="none" stroke="#d8a4ff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M68 76L78 66" fill="none" stroke="#d8a4ff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

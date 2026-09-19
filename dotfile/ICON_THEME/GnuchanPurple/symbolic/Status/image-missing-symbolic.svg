@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- image-missing-symbolic -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <path d="M18 20L82 20A6 6 0 0 1 88 26L88 74A6 6 0 0 1 82 80L18 80A6 6 0 0 1 12 74L12 26A6 6 0 0 1 18 20Z" fill="#ead7ff"/>
+  <path d="M21 26L79 26A3 3 0 0 1 82 29L82 71A3 3 0 0 1 79 74L21 74A3 3 0 0 1 18 71L18 29A3 3 0 0 1 21 26Z" fill="#09030d" fill-opacity="0.6"/>
+  <path d="M35.858 35.858L64.142 64.142" fill="none" stroke="#ead7ff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M64.142 35.858L35.858 64.142" fill="none" stroke="#ead7ff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
