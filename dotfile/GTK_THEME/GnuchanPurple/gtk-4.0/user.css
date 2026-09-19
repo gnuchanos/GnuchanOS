@@ -213,6 +213,24 @@
   background-image: none;
 }
 
+/* Plain layout containers have no surface of their own; a container that
+ * libadwaita paints with a literal grey would otherwise hide the window colour
+ * behind it. Widgets that really do carry a surface are not listed, so this
+ * rule cannot wash one of those out. */
+box,
+grid,
+stack,
+overlay,
+revealer,
+fixed,
+clamp,
+centerbox,
+windowhandle,
+box > box {
+  background-color: transparent;
+  background-image: none;
+}
+
 selection,
 label > selection,
 entry > text > selection,

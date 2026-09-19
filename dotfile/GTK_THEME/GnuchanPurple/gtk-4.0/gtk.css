@@ -145,6 +145,20 @@
 @define-color link_color                       @gnuchan_accent_light;
 @define-color link_visited_color               @gnuchan_accent_pale;
 @define-color placeholder_text_color           @gnuchan_fg_disabled;
+
+/* The classic state and tooltip names, kept in step with gtk-3.0/gtk.css.
+ * A colour picker asks for these by name, and a name that does not resolve is
+ * what makes a swatch fall back to the toolkit's own grey. */
+@define-color theme_tooltip_bg_color           @gnuchan_surface_alt;
+@define-color theme_tooltip_fg_color           @gnuchan_fg;
+@define-color theme_error_color                @gnuchan_error;
+@define-color theme_error_bg_color             #86198f;
+@define-color theme_warning_color              @gnuchan_warning;
+@define-color theme_warning_bg_color           @gnuchan_accent_active;
+@define-color theme_success_color              @gnuchan_success;
+@define-color theme_success_bg_color           @gnuchan_selected_bg_alt;
+@define-color theme_info_color                 @gnuchan_accent_light;
+@define-color theme_info_bg_color              @gnuchan_bg_alt;
 /* ----------------------------------------------------------------------------
  * 2b. Custom properties, the layer libadwaita 1.7+ widgets read
  * ----------------------------------------------------------------------------
@@ -247,6 +261,29 @@
  * drawn; the radio dot is the one rule below that paints a gradient of its own
  * and it wins on specificity. */
 * {
+  background-image: none;
+}
+
+/* Plain layout containers have no surface of their own. libadwaita leaves them
+ * transparent, but a container this file does not name - a box, a grid, a
+ * stack, a clamp, a center box - can still end up painting a literal grey of
+ * its own, and a grey container hides the purple of the window behind it.
+ * Making them transparent unconditionally is what guarantees they show the
+ * colour of the nearest ancestor that does have one: the window, the view, the
+ * popover. Widgets that really do carry a surface are deliberately not listed,
+ * so this rule can never wash one of those out. */
+box,
+grid,
+stack,
+overlay,
+revealer,
+fixed,
+clamp,
+centerbox,
+windowhandle,
+box > box,
+scrolledwindow > box {
+  background-color: transparent;
   background-image: none;
 }
 

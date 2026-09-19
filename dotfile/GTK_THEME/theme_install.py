@@ -1279,9 +1279,84 @@ def font_name_problems() -> list[str]:
     return problems
 
 
+# The files whose contents decide what the theme looks like on screen.
+APPEARANCE_FILES = (
+    "gtk-2.0/gtkrc",
+    "gtk-3.0/gtk.css",
+    "gtk-3.0/gtk-dark.css",
+    "gtk-4.0/gtk.css",
+    "gtk-4.0/user.css",
+    "xfce-notify-4.0/gtk.css",
+    "metacity-1/metacity-theme-3.xml",
+    "openbox-3/themerc",
+)
+
+
+def _file_crc(path: Path) -> int | None:
+    try:
+        return zlib.crc32(path.read_bytes()) & 0xFFFFFFFF
+    except OSError:
+        return None
+
+
+def stale_copy_problems() -> list[str]:
+    """Installed theme copies that no longer match the source tree.
+
+    The installer *copies* GnuchanPurple/ into the theme directories, which is
+    what makes the theme work without it, but it also means editing the
+    directory in this repository changes nothing on screen: GTK keeps loading
+    the installed copy until the installer runs again. A fix that "did not
+    work" is very often this - the installed stylesheet is still the old one.
+    Comparing the files is therefore the first check worth running.
+    """
+    problems: list[str] = []
+    for name in APPEARANCE_FILES:
+        source = SOURCE_THEME_DIR / name
+        if not source.is_file():
+            continue
+        want = _file_crc(source)
+        for directory in user_theme_dirs():
+            installed = directory / THEME_NAME / name
+            if not installed.is_file():
+                continue
+            if _file_crc(installed) != want:
+                problems.append(
+                    f"{installed} differs from {source}; run the installer again "
+                    f"to update the installed copy"
+                )
+    return problems
+
+
+def settings_theme_problems() -> list[str]:
+    """Settings files that do not select this theme, or do not exist.
+
+    lxappearance sets the theme through XSettings or through these files, and a
+    session without an XSettings daemon reads only the files, so a theme that is
+    installed but never named here stays unapplied and everything keeps
+    Adwaita's colours.
+    """
+    problems: list[str] = []
+    rc_file = gtk2_rc_file()
+    if rc_file.is_file() and THEME_NAME not in read_existing(rc_file):
+        problems.append(f"{rc_file} does not name {THEME_NAME}")
+    for path in (gtk3_settings_file(), gtk4_settings_file()):
+        if not path.is_file():
+            problems.append(f"{path} is missing; GTK 3/4 will use the default theme")
+            continue
+        text = read_existing(path)
+        if f"gtk-theme-name={THEME_NAME}" not in text.replace(" ", ""):
+            problems.append(f"{path} does not select {THEME_NAME}")
+    return problems
+
+
 def check_environment(log: Log) -> int:
     """Print the environment problems found, returning how many there are."""
-    problems = nameless_theme_problems() + font_name_problems()
+    problems = (
+        nameless_theme_problems()
+        + font_name_problems()
+        + stale_copy_problems()
+        + settings_theme_problems()
+    )
     if not problems:
         log.note("No problems found.")
         return 0

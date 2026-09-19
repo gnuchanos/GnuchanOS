@@ -12,23 +12,24 @@
 # License: GPL3
 # =============================================================================
 
-# No "gtk-color-scheme" key here, on purpose.
+# The palette table, and why it is here even though GTK 3 ignores it.
 #
-# Tools such as LXAppearance read that key out of a theme's gtkrc and
-# republish it as the GtkSettings "gtk-color-scheme" property, which makes GTK
-# parse a stylesheet held in memory instead of one read from a file. GTK has
-# ignored that property since 3.8:
+# gtk-color-scheme is the one place a theme states its colours as *names*
+# rather than as widget styles. GTK 3 dropped the property in 3.8:
 #
 #   "Color scheme support was dropped and is no longer supported. You can
 #    still set this property, but it will be ignored."
 #   -- gtk/gtksettings.c, GtkSettings:gtk-color-scheme
 #
-# So omitting the key costs GTK 3 nothing, and it keeps this theme out of that
-# code path entirely rather than relying on GTK ignoring it.
-#
-# GTK 2 does not lose anything either: every colour below is declared
-# explicitly in each style block, so the theme renders identically without a
-# palette table.
+# GTK 2 still applies it, and - more to the point - lxappearance *reads this
+# key out of the theme's gtkrc itself* (widget-theme.c, load_color_scheme) to
+# paint the "Normal window", "Text window", "Selected items" and "Tooltips"
+# swatches it shows under the theme list. With the key missing, those four
+# boxes are drawn with the fallback colours, which is why they stayed grey no
+# matter what the styles below said. Every value here is the same colour the
+# matching name carries in gtk-3.0/gtk.css, so the swatches describe the theme
+# the rest of the file renders.
+gtk-color-scheme = "bg_color:#0e0614\nfg_color:#ead7ff\nbase_color:#09030d\ntext_color:#ead7ff\nbg_color_alt:#0f0615\nselected_bg_color:#542080\nselected_fg_color:#ffffff\ntooltip_bg_color:#180a22\ntooltip_fg_color:#ead7ff\nlink_color:#c77dff\nlink_visited_color:#d8a4ff\ninsensitive_bg_color:#0f0615\ninsensitive_fg_color:#70458a\nborders:#32143f\naccent_color:#c77dff\naccent_bg_color:#a855f7"
 
 # -----------------------------------------------------------------------------
 # Global widget defaults

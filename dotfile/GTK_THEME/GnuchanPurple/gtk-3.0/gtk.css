@@ -135,6 +135,24 @@
 @define-color scrollbar_outline_color               rgba(9, 3, 13, 0.95);
 
 /* States */
+/* The classic state and tooltip names. lxappearance reads colours by name
+ * (gtk_style_context_lookup_color) to paint the "Normal window", "Text
+ * window", "Selected items" and "Tooltips" swatches under the theme list, and
+ * a name this file never defines makes that swatch fall back to the toolkit's
+ * own colour - the grey boxes. theme_tooltip_bg_color and
+ * theme_tooltip_fg_color are the two that were genuinely missing; the rest are
+ * listed together so the set is complete and readable in one place. */
+@define-color theme_tooltip_bg_color                @gnuchan_surface_alt;
+@define-color theme_tooltip_fg_color                @gnuchan_fg;
+@define-color theme_error_color                     @gnuchan_error;
+@define-color theme_error_bg_color                  #86198f;
+@define-color theme_warning_color                   @gnuchan_warning;
+@define-color theme_warning_bg_color                @gnuchan_accent_active;
+@define-color theme_success_color                   @gnuchan_success;
+@define-color theme_success_bg_color                @gnuchan_selected_bg_alt;
+@define-color theme_info_color                      @gnuchan_accent_light;
+@define-color theme_info_bg_color                   @gnuchan_bg_alt;
+
 @define-color destructive_color                     @gnuchan_error;
 @define-color destructive_bg_color                  #86198f;
 @define-color destructive_fg_color                  @gnuchan_white;
@@ -217,6 +235,30 @@
   -gtk-outline-radius: 6px;
   caret-color: @gnuchan_accent_pale;
   -gtk-secondary-caret-color: @gnuchan_accent;
+}
+
+/* Plain layout containers have no surface of their own. Adwaita leaves them
+ * transparent, but a container this file does not name - a box, a grid, a
+ * stack, a revealer - can still end up painting a literal grey of its own,
+ * and a grey container hides the purple of the window behind it. Making them
+ * transparent unconditionally is what guarantees they show the colour of the
+ * nearest ancestor that does have one: the window, the view, the popover.
+ *
+ * The widgets that really do carry a surface are deliberately not in this
+ * list - entry, textview, list/view/treeview, button, headerbar, popover,
+ * menu, notebook > header, frame > border, toolbar, .osd, sidebar, card - so
+ * this rule can never wash one of those out. */
+box,
+grid,
+stack,
+overlay,
+revealer,
+expand,
+box > box,
+list > row > box,
+scrolledwindow > box {
+  background-color: transparent;
+  background-image: none;
 }
 
 /* window.background is spelled out as well as .background on purpose:
@@ -2192,9 +2234,45 @@ notebook > header > tabs > tab:hover {
  * application marks as background. */
 box.background,
 .background.view,
-.background box {
+.background box,
+.background grid,
+window > box,
+window > grid,
+window > paned {
   background-color: @gnuchan_bg;
   color: @gnuchan_fg;
+}
+
+/* The remaining containers Adwaita gives a literal background of its own. A
+ * node this file does not name keeps that literal grey whatever the palette
+ * says, which is how an application stayed half grey: the flow box, the frame
+ * list and the icon flow are the three that lxappearance and the GNOME era
+ * file dialogs put their contents in. */
+flowbox,
+flowbox > flowboxchild,
+list.frame,
+list.boxed-list,
+grid,
+grid > child,
+scrolledwindow > viewport > box,
+notebook > stack > box > box {
+  background-color: @gnuchan_bg;
+  background-image: none;
+  color: @gnuchan_fg;
+}
+
+flowbox > flowboxchild:selected,
+list.frame > row:selected {
+  background-color: @gnuchan_selected_bg;
+  color: @gnuchan_white;
+}
+
+/* Reading surfaces stay one step darker than the window, matching the entries
+ * and the views above. */
+list.frame,
+list.boxed-list,
+grid > child {
+  background-color: @gnuchan_bg_darkest;
 }
 
 /* fontbutton, colorbutton and filechooserbutton each draw their own inner
