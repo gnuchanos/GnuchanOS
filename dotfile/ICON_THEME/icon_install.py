@@ -31,5 +31,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from icons.install import main  # noqa: E402  (the path has to be set first)
 
 
+def report(message: str) -> None:
+    """Print one line and flush it immediately.
+
+    The build spends minutes inside a single loop, and Python block-buffers its
+    output when it is not writing to a terminal. Without the flush, a run piped
+    to a file or watched from a logging pane would show nothing at all until it
+    had finished — which is the one thing the progress lines exist to prevent.
+    """
+    print(message, flush=True)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main(print))
+    raise SystemExit(main(report))

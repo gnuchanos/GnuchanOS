@@ -49,6 +49,7 @@ from . import (
 )
 from .glyphs_base import build, load_all
 from .glyphs_ui import SPINNER_FRAMES, spinner_frame
+from .progress import Progress
 
 # Every glyph module is imported for its side effect: the ``@glyph`` decorator
 # registers artwork on import, so a module that is never imported contributes
@@ -245,17 +246,34 @@ class Builder:
         self.files_written += 1
 
     def build(self) -> dict[str, int]:
-        """Write every icon, the animation, the index and the theme metadata."""
+        """Write every icon, the animation, the index and the theme metadata.
+
+        The work is split into numbered stages and each long one reports a
+        percentage, because the whole build runs for minutes and a silent script
+        during that time is indistinguishable from a stuck one.
+        """
+        report = Progress(self._log, stages=6)
+
+        report.stage("reading the catalogue")
         entries = catalogue.entries()
         symbolic = catalogue.symbolic_entries()
         contexts = {entry.context for entry in entries} | {
             entry.context for entry in symbolic
         }
+        report.finish(
+            f"{len(entries)} icons, {len(symbolic)} symbolic, {len(contexts)} contexts"
+        )
+
+        report.stage("clearing the target directory")
         if self.root.exists():
             shutil.rmtree(self.root)
         self.root.mkdir(parents=True, exist_ok=True)
+        report.finish(str(self.root))
+
         counted = {"png": 0, "svg": 0, "symbolic": 0, "animated": 0}
-        for entry in entries:
+
+        report.stage(f"drawing {len(entries)} icons")
+        for index, entry in enumerate(entries, start=1):
             tint = tint_for(entry.context)
             for size in PNG_SIZES:
                 self.write(
@@ -277,16 +295,30 @@ class Builder:
                 self.svg_text(entry.glyph, tint, ROOT_SCALABLE_SIZE, entry.name),
             )
             counted["svg"] += 1
-        for entry in symbolic:
+            report.tick(
+                index, len(entries), f"{counted['png']} png, {counted['svg']} svg"
+            )
+        report.finish(f"{counted['png']} PNG and {counted['svg']} SVG")
+
+        report.stage(f"drawing {len(symbolic)} symbolic icons")
+        for index, entry in enumerate(symbolic, start=1):
             self.write(
                 f"{symbolic_directory(entry.context)}/{entry.name}.svg",
                 self.svg_text(entry.glyph, palette.SYMBOLIC, SYMBOLIC_SIZE, entry.name),
             )
             counted["symbolic"] += 1
+            report.tick(index, len(symbolic))
+        report.finish(f"{counted['symbolic']} symbolic SVG")
+
+        report.stage("drawing the animated spinner")
         counted["animated"] = self.write_spinner()
+        report.finish(f"{counted['animated']} animations, {SPINNER_FRAMES} frames each")
+
+        report.stage("writing index.theme and README.md")
         self.write("index.theme", index_theme(contexts))
         self.write("README.md", _readme(entries, symbolic, counted["animated"]))
         counted["glyphs"] = len(self.png_cache)
+        report.finish(f"index.theme lists {len(contexts)} contexts")
         return counted
 
     def write_spinner(self) -> int:

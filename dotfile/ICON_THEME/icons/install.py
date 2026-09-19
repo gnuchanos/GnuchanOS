@@ -23,10 +23,12 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Callable
 
 from .catalogue import unknown_glyphs, unusable_names
+from .progress import clock
 from .tree import Builder, THEME_NAME
 
 #: The message sink a caller may replace; ``None`` silences the progress output.
@@ -108,21 +110,27 @@ def install(log: Logger | None = None) -> list[Path]:
     """
     emit = log or (lambda message: None)
     primary = theme_dir()
-    counted = build_into(primary, log)
-    emit(f"==> built {THEME_NAME}")
-    emit(f"    {counted['png']} PNG files")
-    emit(f"    {counted['svg']} SVG files")
-    emit(f"    {counted['symbolic']} symbolic SVG files")
-    emit(f"    {counted['glyphs']} distinct glyph renderings")
-    emit(f"    {counted['animated']} animated spinners")
 
+    # Phase 1: the artwork. Its own numbered stages — ``[1/6]`` up to ``[6/6]``
+    # — are printed from inside the builder, so the numbering a reader sees
+    # belongs to the work being done rather than to this wrapper.
+    emit(f"==> building into {primary}")
+    started = time.monotonic()
+    counted = build_into(primary, log)
+    emit(f"==> built {counted['png']} PNG and {counted['svg']} SVG files "
+         f"from {counted['glyphs']} renderings in {clock(time.monotonic() - started)}")
+
+    # Phase 2: the other search directories. This is a plain copy, which is why
+    # it is a second phase and not a second build.
+    emit("==> placing the theme")
     installed: list[Path] = []
     for directory in theme_search_dirs():
         target = directory / THEME_NAME
         if target == primary:
             installed.append(target)
-            emit(f"    written to {target}")
+            emit(f"    already at {target}")
             continue
+        copied_at = time.monotonic()
         if target.is_symlink() or target.is_file():
             target.unlink()
         elif target.exists():
@@ -130,7 +138,7 @@ def install(log: Logger | None = None) -> list[Path]:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(primary, target)
         installed.append(target)
-        emit(f"    copied to {target}")
+        emit(f"    copied to {target} in {clock(time.monotonic() - copied_at)}")
     return installed
 
 
@@ -259,10 +267,18 @@ def main(log: Logger | None = None) -> int:
     quiet passes ``None``.
     """
     emit = log or (lambda message: None)
-    emit(f"==> installing the {THEME_NAME} icon theme")
+    started = time.monotonic()
+    emit(f"==> {THEME_NAME}: build and install")
     installed = install(log)
+    emit("==> selecting the theme")
     apply_theme(log)
-    verify(installed, log)
+    emit("==> verifying the result")
+    problems = verify(installed, log)
     emit("")
-    emit(f"==> done. Open the appearance settings and pick {THEME_NAME}.")
+    if problems:
+        emit(f"==> finished in {clock(time.monotonic() - started)} with "
+             f"{problems} problem(s); see above")
+        return 1
+    emit(f"==> finished in {clock(time.monotonic() - started)}")
+    emit(f"    open the appearance settings and pick {THEME_NAME}")
     return 0

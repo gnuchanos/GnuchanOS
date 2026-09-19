@@ -40,7 +40,11 @@ The pipeline is five steps, each of which is one module:
 ``install``
     placing the generated tree in the directories a desktop reads, selecting it
     in the session, and reporting where it went. ``icon_install.py`` next to the
-    package is a three line caller of this module.
+    package is a short caller of this module.
+
+``progress``
+    the numbered stages and percentage lines a build of this size needs to be
+    legible while it runs, instead of silence for two and a half minutes.
 
 ``sheet``
     contact sheets, for reviewing the set as a whole rather than one icon at a
@@ -57,7 +61,6 @@ __all__ = [
     "catalogue_programs",
     "catalogue_xfce",
     "gif",
-    "install",
     "glyphs_actions",
     "glyphs_apps",
     "glyphs_base",
@@ -73,8 +76,10 @@ __all__ = [
     "glyphs_places",
     "glyphs_status",
     "glyphs_ui",
+    "install",
     "palette",
     "primitives",
+    "progress",
     "raster",
     "shape",
     "sheet",
