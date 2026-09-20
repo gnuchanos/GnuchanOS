@@ -113,23 +113,39 @@ PALETTE: dict[str, str] = {
     # Both only take effect when highlightColorMode is on.
     "highlightColor": "#542080",
     "highlightTextColor": "#ffffff",
+    # The sixteen slots, as a ramp through purple rather than sixteen tints of
+    # it. Two rules decide every value here, and both were learned the hard way:
+    #
+    #   - Nothing is the colour of the background. color0 was #170a20 against a
+    #     #09030d window, which is four levels of blue apart: `ls` colours a
+    #     directory with color0's slot in some themes and a file with color8's,
+    #     and both of those came out as text that was simply not there. Every
+    #     slot below is at least far enough from #09030d to read.
+    #   - The eight normal slots are separated by more than lightness. color2,
+    #     color5 and color6 were three violet hexes within a few levels of each
+    #     other, so a diff - which uses 1, 2 and 6 for removals, additions and
+    #     hunk headers - was three shades of one colour. They are now a violet,
+    #     a magenta and an indigo, which stay distinguishable when they sit in
+    #     the same column.
+    #
     # Normal black .. white
-    "color0": "#170a20",
-    "color1": "#c084fc",
-    "color2": "#b56cff",
-    "color3": "#d8a4ff",
-    "color4": "#9d4edd",
-    "color5": "#c77dff",
-    "color6": "#b76eff",
-    "color7": "#ead7ff",
-    # Bright black .. white
-    "color8": "#70458a",
-    "color9": "#d8a4ff",
-    "color10": "#c084fc",
-    "color11": "#e0aaff",
-    "color12": "#b76eff",
-    "color13": "#e0aaff",
-    "color14": "#d8a4ff",
+    "color0": "#3b2050",   # dark plum - clearly above the background
+    "color1": "#c084fc",   # violet
+    "color2": "#8f6bff",   # blue violet
+    "color3": "#e0b3ff",   # pale lilac
+    "color4": "#a34fd8",   # deep orchid
+    "color5": "#e879f9",   # magenta
+    "color6": "#7b5cff",   # indigo
+    "color7": "#ead7ff",   # near white lilac
+    # Bright black .. white. color8 is the comment and meta slot and is the one
+    # that has to stay readable, so it is a mid grey purple and not a dark one.
+    "color8": "#8a6ba8",   # grey purple
+    "color9": "#d8a4ff",   # bright violet
+    "color10": "#a78bfa",  # bright blue violet
+    "color11": "#f0d5ff",  # brightest lilac
+    "color12": "#c77dff",  # bright orchid
+    "color13": "#f5b8ff",  # bright magenta
+    "color14": "#9d7bff",  # bright indigo
     "color15": "#ffffff",
 }
 
@@ -628,6 +644,37 @@ def _resource_lines() -> list[str]:
         "! scrollback is being read, which is the difference between reading a",
         "! log and chasing a log.",
         "XTerm*scrollTtyOutput: false",
+        "! A visible scrollbar on the right. It is off by default, and its absence",
+        "! is why the text above the top of the window felt unreachable: there is",
+        "! a scrollback of ten thousand lines, but nothing on screen says so, and",
+        "! a wheel is the only way in. With the bar, the scrollback can be dragged",
+        "! to, and its length is visible.",
+        "XTerm*scrollBar: true",
+        "XTerm*rightScrollBar: true",
+        "! The wheel scrolls a quarter of a screen per notch, which is the step",
+        "! every other terminal uses. xterm defaults to a whole line per notch on",
+        "! some builds and to a screen on others.",
+        "XTerm*multiScroll: true",
+        "XTerm*jumpScroll: true",
+        "XTerm*fastScroll: true",
+        "",
+        "! --- the mouse ---------------------------------------------------------",
+        "! Holding the left button and moving above the top of the window scrolls",
+        "! the scrollback while the selection grows, which is how text that has",
+        "! already scrolled off the top gets selected and copied. xterm does this",
+        "! in select-extend(), and it is bound explicitly below rather than left",
+        "! to the default, because a translation that has been replaced by a",
+        "! desktop theme file is a translation that is not there - and the",
+        "! symptom is exactly the report this section answers.",
+        "!",
+        "! Shift and the wheel forces the scrollback to move even while a full",
+        "! screen program has the mouse. Without it, less and vim consume the",
+        "! wheel (that is what alternateScroll arranges) and there is no way to",
+        "! reach the shell output underneath them.",
+        "!",
+        "! The bindings themselves are in the translations block below, because",
+        "! xterm reads one translation table per widget and a second",
+        "! vt100.translations line would silently replace the first.",
     ]
 
     lines += [
@@ -679,7 +726,15 @@ def _resource_lines() -> list[str]:
         "        Ctrl <Key>plus: larger-vt-font() \\n\\",
         "        Ctrl <Key>minus: smaller-vt-font() \\n\\",
         "        Ctrl <Key>0: set-vt-font(d) \\n\\",
-        "        Ctrl Shift <Key>N: spawn-new-terminal()",
+        "        Ctrl Shift <Key>N: spawn-new-terminal() \\n\\",
+        "        <Btn1Down>: select-start() \\n\\",
+        "        <Btn1Motion>: select-extend() \\n\\",
+        "        <Btn1Up>: select-end(PRIMARY, CLIPBOARD, CUT_BUFFER0) \\n\\",
+        "        Ctrl <Btn1Down>: select-start() \\n\\",
+        "        Ctrl <Btn1Motion>: select-extend() \\n\\",
+        "        Ctrl <Btn1Up>: select-end(PRIMARY, CLIPBOARD, CUT_BUFFER0) \\n\\",
+        "        Shift <Btn4Down>: scroll-back(1,halfpage) \\n\\",
+        "        Shift <Btn5Down>: scroll-forward(1,halfpage)",
     ]
     return lines
 
