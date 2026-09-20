@@ -74,6 +74,14 @@ FONT_COVERAGE: tuple[str, ...] = ("Unifont", "Noto Sans Mono", "DejaVu Sans Mono
 FONT_STACK: tuple[str, ...] = FONT_PREFERRED + FONT_COVERAGE
 FONT_SIZE = 12
 
+#: How many families go into the faceName list. xterm takes a comma separated
+#: list but only a few entries: past its own limit it prints "too many fonts
+#: for fNorm, ignoring <name>" at every start and drops the rest, so a longer
+#: list buys a warning instead of glyphs. Two is inside the limit of every
+#: build and is all that is needed - one face for the cell size, one for the
+#: characters it has no glyph for.
+FACE_NAME_LIMIT = 2
+
 #: Installed in one transaction. Every name here exists on every installation
 #: of that distribution, so the terminal is never left without a scalable
 #: monospaced face.
@@ -452,13 +460,24 @@ def resolve_face_name() -> str:
     """The comma separated faceName to write, or an empty string for none.
 
     xterm takes the cell size from the first family and draws a character with
-    the ones after it when the first has no glyph for it, so the order of the
-    list is its whole value - the JETBRAINS face first, Unifont last for CJK
-    and the rarer symbols. An empty result means nothing resolved and the
-    caller writes no faceName, leaving xterm its own default.
+    the ones after it when the first has no glyph for it, so the order is the
+    whole value of the list: the best installed face first, then the widest
+    coverage font. Only faces that resolve are listed, because fontconfig
+    answers a request for a family it does not have with a substitute and xterm
+    cannot tell the substitute from the font it asked for. The list stops at
+    FACE_NAME_LIMIT, past which xterm keeps the first entries and warns about
+    the rest. An empty result means nothing resolved and the caller writes no
+    faceName at all.
     """
-    families = resolved_families(FONT_PREFERRED)
-    families += [name for name in resolved_families(FONT_COVERAGE) if name not in families]
+    preferred = resolved_families(FONT_PREFERRED)
+    if not preferred:
+        return ""
+    families = [preferred[0]]
+    for name in resolved_families(FONT_COVERAGE):
+        if len(families) >= FACE_NAME_LIMIT:
+            break
+        if name not in families:
+            families.append(name)
     return ", ".join(families)
 
 
@@ -658,8 +677,10 @@ def _resource_lines() -> list[str]:
 
     lines += [
         "",
-        "! bindings; #override adds them to the defaults rather than replacing",
-        "! them, so the wheel, the menus and the full screen key keep working",
+        "! bindings. #override adds these to the defaults instead of replacing",
+        "! them, and no scrolling is bound here on purpose: the defaults already",
+        "! carry the wheel, Shift+wheel and Shift+PageUp/PageDown, and naming an",
+        "! action this build does not have is a warning at every start for no gain.",
         "XTerm*vt100.translations: #override \\n\\",
         "        Ctrl Shift <Key>C: copy-selection(CLIPBOARD) \\n\\",
         "        Ctrl Shift <Key>V: insert-selection(CLIPBOARD) \\n\\",
@@ -668,13 +689,7 @@ def _resource_lines() -> list[str]:
         "        Ctrl <Key>plus: larger-vt-font() \\n\\",
         "        Ctrl <Key>minus: smaller-vt-font() \\n\\",
         "        Ctrl <Key>0: set-vt-font(d) \\n\\",
-        "        Ctrl Shift <Key>N: spawn-new-terminal() \\n\\",
-        "        Shift <Key>Prior: scroll-back(1,page) \\n\\",
-        "        Shift <Key>Next: scroll-forward(1,page) \\n\\",
-        "        Ctrl Shift <Key>Up: scroll-back(1,line) \\n\\",
-        "        Ctrl Shift <Key>Down: scroll-forward(1,line) \\n\\",
-        "        Shift <Btn4Down>: scroll-back(1,halfpage) \\n\\",
-        "        Shift <Btn5Down>: scroll-forward(1,halfpage)",
+        "        Ctrl Shift <Key>N: spawn-new-terminal()",
     ]
     return lines
 
