@@ -1,46 +1,32 @@
 #!/usr/bin/env python3
-# =============================================================================
-# GnuchanPurple - xterm installer
-# -----------------------------------------------------------------------------
-# Makes xterm behave like a modern terminal: 256 colours and true colour, a
-# scalable GNU font with a Unicode fallback, a long scrollback, wheel scrolling
-# that works inside less and vim, the usual clipboard shortcuts, bracketed
-# paste, sixel graphics and UTF-8 everywhere. Single file, standard library
-# only.
-#
-# What it does
-# ------------
-#   1. installs the GNU fonts xterm draws with - FreeMono from GNU FreeFont, and
-#      GNU Unifont as the fallback for the characters FreeMono does not have -
-#      through apt on Debian and Ubuntu, pacman on Arch, dnf or zypper
-#      elsewhere, and reports the exact command if it cannot run one;
-#   2. writes a marked block into ~/.Xresources that configures xterm, leaving
-#      every other line of that file alone: the block is what this script owns
-#      and removing it is what --uninstall does;
-#   3. makes the session load that file at login, which is the step people
-#      miss: editing ~/.Xresources changes nothing until something runs
-#      xrdb -merge, and after a reboot the X server starts with no resources
-#      at all;
-#   4. writes the environment a terminal cannot set for itself
-#      (COLORTERM=truecolor, and a UTF-8 locale when there is none) into
-#      ~/.config/gnuchan-purple/xterm-env.sh and sources it from ~/.profile;
-#   5. adds a launcher so xterm is in the application menu, which is the only
-#      way to reach it on a desktop with no terminal keybinding;
-#   6. loads the resources now with xrdb and checks the result: the font
-#      resolves, the terminfo entry exists, the locale is UTF-8, xterm answers.
-#
-#     python3 settings_xterm.py              # install and check
-#     python3 settings_xterm.py --check      # report problems only
-#     python3 settings_xterm.py --uninstall  # remove everything it wrote
-#
-# The palette is the one the GTK theme and VSCodium use, so the terminal, the
-# widgets and the editor agree. dotfile/vscodium_theme/settings.json holds the
-# sixteen ANSI slots and is the source of truth: change it there first, then
-# copy the values into PALETTE below - see dotfile/GTK_THEME/GnuchanPurple/
-# extras/Xresources for the same values in the X11 spelling.
-#
-# License: GPL3
-# =============================================================================
+"""GnuchanPurple - xterm installer.
+
+Makes xterm a modern terminal: a real programming font with a Unicode
+fallback, Xft antialiasing, 256 colour and true colour, a long scrollback with
+a visible scrollbar, wheel, drag and keyboard scrolling, clipboard shortcuts
+and UTF-8.
+
+    python3 settings_xterm.py              # install and check
+    python3 settings_xterm.py --check      # report problems only
+    python3 settings_xterm.py --uninstall  # remove everything it wrote
+
+What it writes lives between marker comments, so a second run replaces the
+block instead of appending to it, and --uninstall takes it back out:
+
+    ~/.Xresources                          XTerm resources and Xft rendering
+    ~/.config/gnuchan-purple/xterm-env.sh  COLORTERM and a UTF-8 locale
+    ~/.profile                             sources that fragment
+    ~/.xsessionrc, ~/.xprofile             load ~/.Xresources at login
+    ~/.local/share/applications/xterm-gnuchan.desktop   menu entry
+
+~/.Xresources changes nothing until something runs `xrdb -merge`, which is why
+the login hooks are written as well as the file itself.
+
+The palette is the one in dotfile/vscodium_theme/settings.json, copied here and
+into the GTK theme, kitty and Alacritty so the whole desktop agrees.
+
+License: GPL3
+"""
 
 from __future__ import annotations
 
@@ -52,114 +38,99 @@ import subprocess
 import sys
 from pathlib import Path
 
-# --- what this script is called and where it leaves its mark -----------------
+# --- markers and names -------------------------------------------------------
 
 SCRIPT_NAME = "settings_xterm.py"
 MARKER = f"written by {SCRIPT_NAME}"
 BACKUP_SUFFIX = ".gnuchan-backup"
 CONFIG_DIR_NAME = "gnuchan-purple"
 
-#: The two lines that delimit the part of a file this script owns. Everything
-#: between them is replaced on every run and nothing outside them is touched,
-#: which is what makes running the script twice harmless and --uninstall
-#: possible without knowing what the previous run wrote.
 BLOCK_BEGIN = f"! >>> GnuchanPurple xterm - {MARKER}"
 BLOCK_END = "! <<< GnuchanPurple xterm"
-
-#: The shell comment form of the same markers, for ~/.profile and ~/.xsessionrc.
 SH_BEGIN = f"# >>> GnuchanPurple xterm - {MARKER}"
 SH_END = "# <<< GnuchanPurple xterm"
 
 # --- fonts -------------------------------------------------------------------
-# GNU FreeFont is the family, FreeMono is the terminal face in it: a monospaced
-# TrueType face with a wide repertoire that is packaged everywhere and is what
-# "the GNU font" means on a GNU system. It is not, however, complete - FreeMono
-# has no CJK and no emoji - so GNU Unifont is named second. xterm takes a
-# comma-separated list for faceName and uses the second entry as the fallback
-# when the first has no glyph, which is exactly the relationship these two have.
+# Faces xterm may draw with, best first. Only the families fontconfig actually
+# resolves are written to the resource block: fontconfig silently substitutes a
+# family it does not have and xterm cannot tell the substitute from the font it
+# asked for, so naming an absent face is how a terminal ends up drawn in
+# something nobody chose.
 
-FONT_PRIMARY = "FreeMono"
-FONT_FALLBACK = "Unifont"
+FONT_PREFERRED: tuple[str, ...] = (
+    "JetBrains Mono",
+    "Hack",
+    "Cascadia Code",
+    "Fira Code",
+    "Source Code Pro",
+    "Noto Sans Mono",
+    "DejaVu Sans Mono",
+    "Liberation Mono",
+)
+
+#: Appended after the chosen face, for the characters it has no glyph for.
+FONT_COVERAGE: tuple[str, ...] = ("Unifont", "Noto Sans Mono", "DejaVu Sans Mono")
+
+FONT_STACK: tuple[str, ...] = FONT_PREFERRED + FONT_COVERAGE
 FONT_SIZE = 12
 
-#: Families to look for, in the order xterm will use them.
-FONT_FAMILIES: tuple[str, ...] = (FONT_PRIMARY, FONT_FALLBACK)
-
-#: Font packages by distribution family. The names differ between Debian and
-#: Arch, and both are needed: FreeFont for the face, Unifont for the coverage.
+#: Installed in one transaction. Every name here exists on every installation
+#: of that distribution, so the terminal is never left without a scalable
+#: monospaced face.
 FONT_PACKAGES: dict[str, tuple[str, ...]] = {
-    "debian": ("fonts-freefont-ttf", "fonts-unifont"),
-    "arch": ("gnu-free-fonts", "gnu-unifont"),
-    "fedora": ("gnu-free-mono-fonts", "unifont", "unifont-fonts"),
-    "suse": ("gnu-free-fonts", "unifont-fonts"),
+    "debian": ("fonts-dejavu-core",),
+    "arch": ("ttf-dejavu",),
+    "fedora": ("dejavu-sans-mono-fonts",),
+    "suse": ("dejavu-fonts",),
+}
+
+#: Tried one at a time: package managers abort a whole transaction over a single
+#: unknown name, and these are the names that differ most between distributions.
+FONT_PACKAGES_OPTIONAL: dict[str, tuple[str, ...]] = {
+    "debian": ("fonts-jetbrains-mono", "fonts-hack", "fonts-unifont"),
+    "arch": ("ttf-jetbrains-mono", "ttf-hack", "gnu-unifont"),
+    "fedora": ("jetbrains-mono-fonts", "unifont"),
+    "suse": ("jetbrains-mono-fonts", "unifont-fonts"),
 }
 
 # --- the palette -------------------------------------------------------------
-# fg, bg and the sixteen ANSI slots, matching dotfile/vscodium_theme/
-# settings.json and dotfile/GTK_THEME/GnuchanPurple/extras/Xresources. The file
-# in the GTK theme is the X11 spelling of these same values; if the two ever
-# disagree, that file and this table are both wrong and the VSCodium file is
-# right.
+# terminal.foreground, the two backgrounds, terminalCursor.foreground and the
+# sixteen slots terminal.ansiBlack .. ansiBrightWhite of settings.json.
 
 PALETTE: dict[str, str] = {
-    # The window itself
     "foreground": "#ead7ff",
     "background": "#09030d",
     "cursorColor": "#ddb3ff",
-    "pointerColorForeground": "#c77dff",
+    "pointerColor": "#c77dff",
     "pointerColorBackground": "#32143f",
-    # Selection: highlightColor is the background of selected text, which is the
-    # opposite of what the name suggests; highlightTextColor is its foreground.
-    # Both only take effect when highlightColorMode is on.
     "highlightColor": "#542080",
     "highlightTextColor": "#ffffff",
-    # The sixteen slots, as a ramp through purple rather than sixteen tints of
-    # it. Two rules decide every value here, and both were learned the hard way:
-    #
-    #   - Nothing is the colour of the background. color0 was #170a20 against a
-    #     #09030d window, which is four levels of blue apart: `ls` colours a
-    #     directory with color0's slot in some themes and a file with color8's,
-    #     and both of those came out as text that was simply not there. Every
-    #     slot below is at least far enough from #09030d to read.
-    #   - The eight normal slots are separated by more than lightness. color2,
-    #     color5 and color6 were three violet hexes within a few levels of each
-    #     other, so a diff - which uses 1, 2 and 6 for removals, additions and
-    #     hunk headers - was three shades of one colour. They are now a violet,
-    #     a magenta and an indigo, which stay distinguishable when they sit in
-    #     the same column.
-    #
-    # Normal black .. white
-    "color0": "#3b2050",   # dark plum - clearly above the background
-    "color1": "#c084fc",   # violet
-    "color2": "#8f6bff",   # blue violet
-    "color3": "#e0b3ff",   # pale lilac
-    "color4": "#a34fd8",   # deep orchid
-    "color5": "#e879f9",   # magenta
-    "color6": "#7b5cff",   # indigo
-    "color7": "#ead7ff",   # near white lilac
-    # Bright black .. white. color8 is the comment and meta slot and is the one
-    # that has to stay readable, so it is a mid grey purple and not a dark one.
-    "color8": "#8a6ba8",   # grey purple
-    "color9": "#d8a4ff",   # bright violet
-    "color10": "#a78bfa",  # bright blue violet
-    "color11": "#f0d5ff",  # brightest lilac
-    "color12": "#c77dff",  # bright orchid
-    "color13": "#f5b8ff",  # bright magenta
-    "color14": "#9d7bff",  # bright indigo
+    "color0": "#170a20",
+    "color1": "#c084fc",
+    "color2": "#b56cff",
+    "color3": "#d8a4ff",
+    "color4": "#9d4edd",
+    "color5": "#c77dff",
+    "color6": "#b76eff",
+    "color7": "#ead7ff",
+    "color8": "#70458a",
+    "color9": "#d8a4ff",
+    "color10": "#c084fc",
+    "color11": "#e0aaff",
+    "color12": "#b76eff",
+    "color13": "#e0aaff",
+    "color14": "#d8a4ff",
     "color15": "#ffffff",
 }
 
+#: The scrollbar trough and thumb, a shade apart from the window background.
+SCROLLBAR_TROUGH = "#140620"
+SCROLLBAR_THUMB = "#9d4edd"
+SCROLLBAR_WIDTH = 14
+
 # --- the environment ---------------------------------------------------------
 
-#: What an application is told about colour support. xterm renders direct
-#: colour without being asked, but it does not set COLORTERM, so a program that
-#: checks for it - and most modern ones do, because it is how they decide
-#: whether to use 24 bit colour - has to be told by the shell.
 COLORTERM_VALUE = "truecolor"
-
-#: The locale to fall back to when the session has none, or has one of the
-#: historic C or POSIX locales - the two cases where a UTF-8 terminal produces
-#: question marks instead of text.
 FALLBACK_LOCALE = "C.UTF-8"
 
 # --- locations ---------------------------------------------------------------
@@ -183,12 +154,10 @@ def xdg_data_home() -> Path:
 
 
 def xresources_file() -> Path:
-    """The X resource database file, which is what `xrdb -merge` reads."""
     return home_dir() / ".Xresources"
 
 
 def env_file() -> Path:
-    """The shell fragment that carries the environment a terminal cannot set."""
     return xdg_config_home() / CONFIG_DIR_NAME / "xterm-env.sh"
 
 
@@ -197,26 +166,24 @@ def profile_file() -> Path:
 
 
 def xsessionrc_file() -> Path:
-    """Debian's per-user X session hook, sourced before the session starts."""
+    """Debian's per-user X session hook."""
     return home_dir() / ".xsessionrc"
 
 
 def xprofile_file() -> Path:
-    """The hook display managers source, used by Arch and by most others."""
+    """The hook the display managers on Arch and most other systems source."""
     return home_dir() / ".xprofile"
 
 
 def launcher_file() -> Path:
     return xdg_data_home() / "applications" / "xterm-gnuchan.desktop"
-# --- which distribution this is ---------------------------------------------
-# Only the font install needs this: everything else this script writes is read
-# by xterm itself and looks the same on every distribution. The family is
-# derived from ID_LIKE as well as ID, because Debian derivatives - Ubuntu,
-# Mint, Pop, Kali - all report ID_LIKE=debian and all of them use apt.
+
+
+# --- the distribution --------------------------------------------------------
+# Only the font install needs this; everything else is read by xterm itself.
 
 
 def os_release() -> dict[str, str]:
-    """Parse ``/etc/os-release`` into a dictionary, empty if it is absent."""
     result: dict[str, str] = {}
     try:
         text = Path("/etc/os-release").read_text(encoding="utf-8")
@@ -224,14 +191,13 @@ def os_release() -> dict[str, str]:
         return result
     for line in text.splitlines():
         name, separator, value = line.partition("=")
-        if not separator:
-            continue
-        result[name.strip()] = value.strip().strip('"').strip("'")
+        if separator:
+            result[name.strip()] = value.strip().strip('"').strip("'")
     return result
 
 
 def distro_family() -> str:
-    """One of ``debian``, ``arch``, ``fedora``, ``suse``, or ``unknown``."""
+    """One of debian, arch, fedora, suse, or unknown."""
     release = os_release()
     tokens = " ".join(
         (release.get("ID", ""), release.get("ID_LIKE", ""), release.get("NAME", ""))
@@ -247,7 +213,11 @@ def distro_family() -> str:
     return "unknown"
 
 
-#: The install command per family, without the package names.
+def distro_description() -> str:
+    release = os_release()
+    return release.get("PRETTY_NAME") or release.get("NAME") or "unknown distribution"
+
+
 PACKAGE_MANAGERS: dict[str, tuple[str, ...]] = {
     "debian": ("apt-get", "install", "-y", "--no-install-recommends"),
     "arch": ("pacman", "-S", "--needed", "--noconfirm"),
@@ -256,13 +226,7 @@ PACKAGE_MANAGERS: dict[str, tuple[str, ...]] = {
 }
 
 
-def distro_description() -> str:
-    release = os_release()
-    return release.get("PRETTY_NAME") or release.get("NAME") or "unknown distribution"
-
-
 def package_manager() -> tuple[str, ...] | None:
-    """The install command for this distribution, or None if unsupported."""
     family = distro_family()
     command = PACKAGE_MANAGERS.get(family)
     if command is None or shutil.which(command[0]) is None:
@@ -270,13 +234,21 @@ def package_manager() -> tuple[str, ...] | None:
     return command
 
 
-def root_prefix() -> list[str]:
-    """How to run a package manager, given who is running this script.
+def _is_root() -> bool:
+    """True when this process can install packages itself.
 
-    ``sudo`` is asked for without a password prompt first: a script that
-    installs fonts should not stop in the middle of a run to ask for one, and
-    reporting the command that needs a password is more useful than a prompt
-    that arrives after part of the work is done.
+    geteuid does not exist on Windows, where this script has nothing to do;
+    reading it through getattr keeps the module importable and testable there.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    return bool(geteuid is not None and geteuid() == 0)
+
+
+def root_prefix() -> list[str]:
+    """How to run a package manager, without prompt or password.
+
+    A passwordless sudo or doas is used when it is there; when it is not, the
+    caller reports the command instead of stopping mid-install to ask.
     """
     if _is_root():
         return []
@@ -291,7 +263,7 @@ def root_prefix() -> list[str]:
     return []
 
 
-# --- logging -----------------------------------------------------------------
+# --- output ------------------------------------------------------------------
 
 
 class Log:
@@ -316,7 +288,7 @@ class Log:
         print(f"  ! {message}", file=sys.stderr, flush=True)
 
 
-# --- file helpers ------------------------------------------------------------
+# --- files -------------------------------------------------------------------
 
 
 def read_text(path: Path) -> str:
@@ -332,68 +304,19 @@ def write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def backup_once(path: Path) -> Path | None:
-    """Move an existing file aside, returning where it went.
-
-    The backup is taken once and kept: a second run must not overwrite it with
-    this script's own output, because the file worth keeping is the one the user
-    had before this script ever touched it.
-    """
-    if not path.exists():
-        return None
-    backup = path.with_name(path.name + BACKUP_SUFFIX)
-    if backup.exists():
-        return backup
-    shutil.move(str(path), str(backup))
-    return backup
-
-
 def backup_before_touching(log: Log, path: Path) -> None:
-    """Keep a copy of a file, unless the file is already ours.
+    """Keep one copy of a file, taken before the first run that touches it.
 
-    The backup is what --uninstall puts back, so it has to be the file the user
-    had and not this script's own previous output: a second run that backed up
-    its own first run would leave the backup holding the very block uninstall is
-    trying to remove, and restoring it would reinstall what was just removed.
-    The marker is what tells the two apart, because every file this script
-    writes carries it.
+    A second run must not back up this script's own output, or --uninstall
+    would restore the very block it is removing.
     """
     if not path.exists() or MARKER in read_text(path):
         return
-    backup = backup_once(path)
-    if backup is not None:
-        log.detail(f"backed up {path.name} to {backup.name}")
-
-
-def write_managed_file(log: Log, path: Path, text: str) -> None:
-    """Write a file this script owns, backing up what was there and logging it."""
-    backup_before_touching(log, path)
-    if text.strip():
-        write_text(path, text)
-        log.detail(f"wrote {path}")
+    backup = path.with_name(path.name + BACKUP_SUFFIX)
+    if backup.exists():
         return
-    if path.exists():
-        path.unlink()
-        log.detail(f"removed {path}")
-
-
-def write_merged_file(log: Log, path: Path, begin: str, end: str, block: str) -> None:
-    """Put ``block`` between the markers in a file the user also has settings in.
-
-    This is the case the backup rule exists for: ``~/.profile`` and
-    ``~/.Xresources`` are the user's files that this script only adds a region
-    to, so the copy kept is taken before the first run that touches them and
-    never again.
-    """
-    backup_before_touching(log, path)
-    merged = merge_block(read_text(path), begin, end, block)
-    if merged.strip():
-        write_text(path, merged)
-        log.detail(f"wrote {path}")
-        return
-    if path.exists():
-        path.unlink()
-        log.detail(f"removed {path}")
+    shutil.move(str(path), str(backup))
+    log.detail(f"backed up {path.name} to {backup.name}")
 
 
 def _find_marker(lines: list[str], marker: str, start: int = 0) -> int | None:
@@ -406,12 +329,10 @@ def _find_marker(lines: list[str], marker: str, start: int = 0) -> int | None:
 def merge_block(existing: str, begin: str, end: str, block: str) -> str:
     """Replace the region between two marker lines with ``block``.
 
-    Everything outside the markers is kept, byte for byte: a first run appends
-    the block to whatever the user already had, a later run replaces the block
-    in place so it does not creep down the file, and an uninstall - an empty
-    ``block`` - takes the region back out. A begin marker with no end after it
-    is treated as reaching the end of the file, which is the state an
-    interrupted previous run leaves behind.
+    Lines outside the markers are kept byte for byte: a first run appends the
+    block, a later run replaces it where it is, and an empty block takes the
+    region out again. A begin marker with no end after it reaches the end of
+    the file, which is what an interrupted run leaves behind.
     """
     lines = existing.splitlines()
     start = _find_marker(lines, begin)
@@ -429,6 +350,37 @@ def merge_block(existing: str, begin: str, end: str, block: str) -> str:
         kept += addition
     text = "\n".join(kept).strip("\n")
     return text + "\n" if text else ""
+
+
+def write_managed_file(log: Log, path: Path, text: str) -> None:
+    """Write a file this script owns, backing up what was there."""
+    backup_before_touching(log, path)
+    if text.strip():
+        write_text(path, text)
+        log.detail(f"wrote {path}")
+    elif path.exists():
+        path.unlink()
+        log.detail(f"removed {path}")
+
+
+def write_merged_file(log: Log, path: Path, begin: str, end: str, block: str) -> None:
+    """Put ``block`` between the markers in a file the user also has settings in.
+
+    The file is read before the backup is taken: backing up is a move, and
+    merging afterwards would read a file that is no longer there and replace
+    the user's settings with nothing but our block.
+    """
+    existing = read_text(path)
+    backup_before_touching(log, path)
+    merged = merge_block(existing, begin, end, block)
+    if merged.strip():
+        write_text(path, merged)
+        log.detail(f"wrote {path}")
+    elif path.exists():
+        path.unlink()
+        log.detail(f"removed {path}")
+
+
 # --- fonts -------------------------------------------------------------------
 
 
@@ -438,13 +390,13 @@ def _font_key(name: str) -> str:
 
 
 def font_available(family: str) -> bool:
-    """Whether fontconfig resolves ``family`` to itself.
+    """Whether fontconfig resolves ``family`` to itself and not to a substitute.
 
-    ``fc-match`` never fails: asked for a family it does not have it answers
-    with the substitute it would use instead, so the answer has to be compared
-    with the question. The comparison is by containment because the same family
-    is spelled differently by different people - fontconfig calls GNU Unifont
-    "Unifont", the package calls it "GNU Unifont", and both mean the one font.
+    fc-match never fails: asked for a family it does not have it answers with
+    the substitute it would use instead, so the answer is compared with the
+    question. The comparison is by containment because the same font is spelled
+    differently by different people - fontconfig says Unifont, the package says
+    GNU Unifont.
     """
     fc_match = shutil.which("fc-match")
     if fc_match is None:
@@ -465,241 +417,234 @@ def font_available(family: str) -> bool:
     return False
 
 
-def missing_fonts() -> list[str]:
-    """The families in ``FONT_FAMILIES`` that are not installed."""
-    return [family for family in FONT_FAMILIES if not font_available(family)]
+def resolved_families(families: tuple[str, ...]) -> list[str]:
+    """The families fontconfig resolves here, in the order given, without repeats."""
+    found: list[str] = []
+    for family in families:
+        if family not in found and font_available(family):
+            found.append(family)
+    return found
 
 
-def font_install_command() -> list[str] | None:
-    """The command that installs both GNU fonts here, or None if unknown."""
-    packages = FONT_PACKAGES.get(distro_family())
-    manager = package_manager()
-    if not packages or manager is None:
-        return None
-    return [*root_prefix(), *manager, *packages]
+def unresolved_families() -> list[str]:
+    """Every family in the stack that fontconfig does not resolve here.
+
+    Without repeats: a face can be listed as both a preferred and a coverage
+    font, and the same name twice in the output reads like a bug.
+    """
+    missing: list[str] = []
+    for family in FONT_STACK:
+        if family not in missing and not font_available(family):
+            missing.append(family)
+    return missing
+
+
+def has_usable_font() -> bool:
+    """Whether any scalable monospaced face resolved at all.
+
+    Without one xterm falls back to the XLFD bitmap font it was built with,
+    which is exactly the flat, hard-edged text this script exists to replace.
+    """
+    return bool(resolved_families(FONT_PREFERRED))
+
+
+def resolve_face_name() -> str:
+    """The comma separated faceName to write, or an empty string for none.
+
+    xterm takes the cell size from the first family and draws a character with
+    the ones after it when the first has no glyph for it, so the order of the
+    list is its whole value - the JETBRAINS face first, Unifont last for CJK
+    and the rarer symbols. An empty result means nothing resolved and the
+    caller writes no faceName, leaving xterm its own default.
+    """
+    families = resolved_families(FONT_PREFERRED)
+    families += [name for name in resolved_families(FONT_COVERAGE) if name not in families]
+    return ", ".join(families)
+
+
+def package_sets() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The packages to install in one transaction, and the optional ones."""
+    family = distro_family()
+    return FONT_PACKAGES.get(family, ()), FONT_PACKAGES_OPTIONAL.get(family, ())
+
+
+def can_install_packages() -> bool:
+    """Whether a package manager here could run without asking for a password."""
+    return package_manager() is not None and (_is_root() or bool(root_prefix()))
 
 
 def manual_font_hint() -> str:
-    """What to tell the user when the script cannot install the fonts itself."""
-    family = distro_family()
-    packages = FONT_PACKAGES.get(family)
-    if not packages:
+    """What to tell the user when this script cannot install the fonts itself."""
+    base, extras = package_sets()
+    if not base:
         return (
-            "install the GNU FreeFont and GNU Unifont packages for your "
-            f"distribution ({distro_description()}), then run this script again"
+            "install a scalable monospaced font - JetBrains Mono, Hack or DejaVu "
+            f"Sans Mono - for your distribution ({distro_description()}), then "
+            "run this script again"
         )
-    if family == "debian":
-        return f"run: sudo apt-get install {' '.join(packages)}"
-    if family == "arch":
-        return f"run: sudo pacman -S {' '.join(packages)}"
-    if family == "fedora":
-        return f"run: sudo dnf install {' '.join(packages)}"
-    return f"run: sudo zypper install {' '.join(packages)}"
+    prefix = {
+        "debian": "sudo apt-get install",
+        "arch": "sudo pacman -S",
+        "fedora": "sudo dnf install",
+        "suse": "sudo zypper install",
+    }[distro_family()]
+    return f"run: {prefix} {' '.join((*base, *extras))}"
 
 
-def install_fonts(log: Log, allow_packages: bool = True) -> bool:
-    """Make sure the GNU fonts are present, returning whether they are.
-
-    A font that is missing does not stop the install: xterm falls back to the
-    XLFD fonts it was built with, so the terminal still runs and only looks
-    wrong. That is why a failure here is reported rather than raised.
-    """
-    missing = missing_fonts()
-    if not missing:
-        log.detail(
-            "the GNU fonts are installed: "
-            + ", ".join(FONT_FAMILIES)
-        )
-        return True
-
-    log.detail("missing: " + ", ".join(missing))
-    command = font_install_command()
-    if command is None or not allow_packages:
-        log.detail(manual_font_hint())
+def _install_packages(log: Log, packages: tuple[str, ...]) -> bool:
+    manager = package_manager()
+    if manager is None or not packages:
         return False
-
-    if not _is_root() and not root_prefix():
-        # Neither root nor a passwordless sudo or doas: running the package
-        # manager would fail on the spot, so say what to run instead of
-        # printing a permission error the user cannot act on.
-        log.detail(manual_font_hint())
-        return False
-
+    command = [*root_prefix(), *manager, *packages]
     log.detail("running: " + " ".join(command))
     result = subprocess.run(command, check=False)
-    cache = shutil.which("fc-cache")
-    if cache is not None:
-        # Both package managers run the fontconfig hook, but a font installed
-        # with --no-install-recommends on a minimal system can land before the
-        # hook exists, and rebuilding the cache is cheap and idempotent.
-        subprocess.run([cache, "-f"], check=False, capture_output=True)
     if result.returncode != 0:
-        log.detail(manual_font_hint())
+        log.detail(f"{packages[0]}: the package manager returned {result.returncode}")
         return False
-    still_missing = missing_fonts()
-    if still_missing:
-        log.detail("still missing after installing: " + ", ".join(still_missing))
-        return False
-    log.detail("installed: " + ", ".join(FONT_FAMILIES))
     return True
 
 
-# --- the xterm resource block ------------------------------------------------
-# Every resource below was checked against the xterm manual for the version
-# Debian and Arch ship, and the comment above each group says what it is for.
-# Nothing here is set to a value xterm already defaults to unless being explicit
-# is the point - a configuration file that repeats defaults is a file whose real
-# settings are hard to find.
+def _rebuild_font_cache() -> None:
+    """Rebuild the fontconfig cache after installing fonts.
+
+    Both package managers run the hook, but a font can land before the hook
+    exists on a minimal system, and rebuilding is cheap and idempotent.
+    """
+    cache = shutil.which("fc-cache")
+    if cache is not None:
+        subprocess.run([cache, "-f"], check=False, capture_output=True)
+
+
+def install_fonts(log: Log, allow_packages: bool = True) -> bool:
+    """Make sure a usable font stack is present, returning whether it is.
+
+    A missing font does not stop the install: xterm falls back to its built-in
+    bitmap font, so the terminal still runs and only looks wrong, which is why
+    a failure here is reported rather than raised.
+    """
+    if not unresolved_families():
+        log.detail("fonts installed: " + ", ".join(FONT_STACK))
+        return True
+
+    log.detail("not installed: " + ", ".join(unresolved_families()))
+    if not allow_packages or not can_install_packages():
+        log.detail(manual_font_hint())
+        return has_usable_font()
+
+    base, extras = package_sets()
+    if not base:
+        log.detail(manual_font_hint())
+        return has_usable_font()
+
+    _install_packages(log, base)
+    _rebuild_font_cache()
+
+    # The extra faces one at a time: a single unknown name aborts a whole
+    # transaction, and losing the rest of them to it is worse than the wait.
+    for package in extras:
+        if not unresolved_families():
+            break
+        if _install_packages(log, (package,)):
+            _rebuild_font_cache()
+
+    if unresolved_families():
+        log.detail("still not installed: " + ", ".join(unresolved_families()))
+        log.detail(manual_font_hint())
+    if not has_usable_font():
+        return False
+    log.detail("font in use: " + resolved_families(FONT_PREFERRED)[0])
+    return True
+
+
+# --- the resource block ------------------------------------------------------
+# One comment per group, on the line above the settings it explains.
 
 
 def _resource_lines() -> list[str]:
-    """The ``XTerm*`` resources, in the order they are read."""
+    """The XTerm resources, in the order xterm reads them."""
     lines: list[str] = []
 
+    face_name = resolve_face_name()
+    if face_name:
+        # The cell size comes from the first family, the rest draw the
+        # characters it has no glyph for.
+        lines += [
+            f"XTerm*faceName: {face_name}",
+            f"XTerm*faceSize: {FONT_SIZE}",
+            f"XTerm*faceNameDoublesize: {face_name}",
+            "XTerm*renderFont: true",
+        ]
+    else:
+        lines += [
+            "! No scalable font resolved, so no font is named above and xterm",
+            "! falls back to its built-in bitmap font. Run the script again once",
+            "! a font is installed.",
+        ]
+
     lines += [
-        "! The terminal name programs read. xterm-256color is a terminfo entry",
-        "! that advertises 256 colours; without it every program assumes 8.",
+        "",
+        "! terminal type, shell and encoding",
         "XTerm*termName: xterm-256color",
-        "",
-        "! A login shell, so ~/.profile is read and the environment file this",
-        "! script installs is picked up.",
         "XTerm*loginShell: true",
-    ]
-
-    lines += [
-        "",
-        "! --- the font ---------------------------------------------------------",
-        "! FreeMono is the monospaced face of GNU FreeFont. The second family is",
-        "! the fallback xterm uses for characters the first does not have, which",
-        "! is how CJK and the rarer symbols get drawn at all.",
-        f"XTerm*faceName: {FONT_PRIMARY}, {FONT_FALLBACK}",
-        f"XTerm*faceSize: {FONT_SIZE}",
-        "! Double width characters (CJK) are drawn at twice the width, from the",
-        "! same family, instead of being stretched to fit.",
-        f"XTerm*faceNameDoublesize: {FONT_PRIMARY}",
-        "! Use the scalable font rather than the XLFD bitmap one.",
-        "XTerm*renderFont: true",
-    ]
-
-    lines += [
-        "",
-        "! --- text and locale --------------------------------------------------",
-        "! always: UTF-8 is on and cannot be turned off by an escape sequence.",
-        "! locale: follow the locale of the user, converting through luit when",
-        "! it is not UTF-8. Together they are what makes accented and non-Latin",
-        "! text come out as text rather than as question marks.",
         "XTerm*utf8: always",
         "XTerm*locale: true",
-    ]
-
-    lines += [
         "",
-        "! --- the window -------------------------------------------------------",
-        "! internalBorder is the padding between the text and the window edge.",
-        "! A terminal with none looks like a wall of text pressed against glass.",
+        "! antialiased text: xterm draws through Xft, which reads these from the",
+        "! same resource database, so they need xrdb just as the rest does",
+        "Xft.antialias: true",
+        "Xft.hinting: true",
+        "Xft.hintstyle: hintslight",
+        "Xft.rgba: rgb",
+        "Xft.lcdfilter: lcddefault",
+        "",
+        "! window, cursor and pointer",
         "XTerm*internalBorder: 8",
-        "! 10000 lines of scrollback, which is the point at which nobody scrolls",
-        "! further by hand and the memory is still measured in megabytes.",
         "XTerm*saveLines: 10000",
-        "XTerm*cursorBlink: true",
-        "XTerm*pointerColorForeground: " + PALETTE["pointerColorForeground"],
-        "XTerm*pointerColorBackground: " + PALETTE["pointerColorBackground"],
-    ]
-
-    lines += [
+        "XTerm*cursorBlink: false",
+        f"XTerm*pointerColor: {PALETTE['pointerColor']}",
+        f"XTerm*pointerColorBackground: {PALETTE['pointerColorBackground']}",
         "",
-        "! --- selection and clipboard ------------------------------------------",
-        "! Selecting text puts it on the clipboard as well as on the primary",
-        "! selection, so a select and a paste into a browser both work.",
+        "! selection and clipboard; the charClass makes a double click take a",
+        "! whole path or URL instead of one punctuation character of it",
         "XTerm*selectToClipboard: true",
-        "! Do not copy the trailing spaces that a full line of text carries.",
         "XTerm*trimSelection: true",
-        "! Use highlightColor and highlightTextColor below instead of reverse",
-        "! video, which is what makes a selection readable on a dark theme.",
+        "XTerm*charClass: 33:48,37:48,45-47:48,58:48,64:48,126:48",
         "XTerm*highlightColorMode: true",
-    ]
-
-    lines += [
+        "XTerm*allowWindowOps: true",
         "",
-        "! --- keys -------------------------------------------------------------",
-        "! Alt sends ESC before the character, which is what readline, Emacs and",
-        "! every modern shell expect from Alt.",
-        "XTerm*metaSendsEscape: true",
-        "! Do not fold Alt and the eighth bit together: that is what puts a",
-        "! stray escape character in the middle of a word.",
+        "! keys: Alt is ESC, Backspace is DEL, modified keys are reported",
+        "XTerm*altSendsEscape: true",
         "XTerm*eightBitInput: false",
-        "! Backspace sends DEL (127), the character modern terminals and every",
-        "! default shell configuration expect.",
         "XTerm*backarrowKey: false",
-    ]
-
-    lines += [
+        "XTerm*backarrowKeyIsErase: false",
+        "XTerm*ptyInitialErase: false",
+        "XTerm*modifyOtherKeys: 2",
         "",
-        "! --- scrolling --------------------------------------------------------",
-        "! The wheel sends cursor up and down when a full screen program is",
-        "! running, so it scrolls inside less, vim and htop instead of doing",
-        "! nothing; the program is what decides whether that scrolls.",
+        "! scrolling. The wheel works in full screen programs and in the shell,",
+        "! Shift+wheel forces the scrollback while a program has the mouse, and",
+        "! the scrollbar is drawn on the right so the buffer can be dragged. The",
+        "! thumb fills the trough while the scrollback is empty, which is what a",
+        "! drag that moves nothing usually means.",
         "XTerm*alternateScroll: true",
-        "! New output does not pull the view back to the bottom while the",
-        "! scrollback is being read, which is the difference between reading a",
-        "! log and chasing a log.",
         "XTerm*scrollTtyOutput: false",
-        "! A visible scrollbar on the right. It is off by default, and its absence",
-        "! is why the text above the top of the window felt unreachable: there is",
-        "! a scrollback of ten thousand lines, but nothing on screen says so, and",
-        "! a wheel is the only way in. With the bar, the scrollback can be dragged",
-        "! to, and its length is visible.",
+        "XTerm*scrollKey: true",
+        "XTerm*fastScroll: true",
+        "XTerm*jumpScroll: true",
+        "XTerm*multiScroll: true",
         "XTerm*scrollBar: true",
         "XTerm*rightScrollBar: true",
-        "! The wheel scrolls a quarter of a screen per notch, which is the step",
-        "! every other terminal uses. xterm defaults to a whole line per notch on",
-        "! some builds and to a screen on others.",
-        "XTerm*multiScroll: true",
-        "XTerm*jumpScroll: true",
-        "XTerm*fastScroll: true",
+        f"XTerm*Scrollbar*width: {SCROLLBAR_WIDTH}",
+        f"XTerm*Scrollbar*Background: {SCROLLBAR_TROUGH}",
+        f"XTerm*Scrollbar*Foreground: {SCROLLBAR_THUMB}",
+        "XTerm*Scrollbar*BorderWidth: 0",
+        "XTerm*Scrollbar*Cursor: arrow",
         "",
-        "! --- the mouse ---------------------------------------------------------",
-        "! Holding the left button and moving above the top of the window scrolls",
-        "! the scrollback while the selection grows, which is how text that has",
-        "! already scrolled off the top gets selected and copied. xterm does this",
-        "! in select-extend(), and it is bound explicitly below rather than left",
-        "! to the default, because a translation that has been replaced by a",
-        "! desktop theme file is a translation that is not there - and the",
-        "! symptom is exactly the report this section answers.",
-        "!",
-        "! Shift and the wheel forces the scrollback to move even while a full",
-        "! screen program has the mouse. Without it, less and vim consume the",
-        "! wheel (that is what alternateScroll arranges) and there is no way to",
-        "! reach the shell output underneath them.",
-        "!",
-        "! The bindings themselves are in the translations block below, because",
-        "! xterm reads one translation table per widget and a second",
-        "! vt100.translations line would silently replace the first.",
-    ]
-
-    lines += [
-        "",
-        "! --- what programs are allowed to ask for -----------------------------",
-        "! allowWindowOps covers the escapes a terminal uses to put text on the",
-        "! clipboard (OSC 52) and to report where it is. It is off by default",
-        "! in xterm because a script can use it; it is on here because that is",
-        "! what makes copying from a remote shell and from tmux work at all.",
-        "! Set it to false if the terminal only ever runs trusted programs -",
-        "! the clipboard escapes stop working, and everything else stays.",
-        "XTerm*allowWindowOps: true",
-        "! Let programs recolour the terminal, which is what a light and dark",
-        "! theme switcher, bat and delta all use.",
-        "XTerm*dynamicColors: true",
-        "! Sixel images scroll with the text instead of being pinned.",
+        "! sixel images scroll with the text instead of sticking to the window",
         "XTerm*sixelScrolling: true",
+        "",
+        "! colours, from dotfile/vscodium_theme/settings.json",
     ]
 
-    lines += [
-        "",
-        "! --- colours -----------------------------------------------------------",
-        "! The GnuchanPurple palette, the same one the GTK theme and VSCodium",
-        "! use. See dotfile/vscodium_theme/settings.json for the source values.",
-    ]
     for name in (
         "foreground",
         "background",
@@ -713,11 +658,8 @@ def _resource_lines() -> list[str]:
 
     lines += [
         "",
-        "! --- key bindings ------------------------------------------------------",
-        "! #override adds these to the default bindings rather than replacing",
-        "! them, so the wheel, the menus and the fullscreen key keep working.",
-        "! Ctrl+Shift+C and Ctrl+Shift+V are the pair every other terminal uses;",
-        "! Ctrl+plus, Ctrl+minus and Ctrl+0 are the font size, as elsewhere.",
+        "! bindings; #override adds them to the defaults rather than replacing",
+        "! them, so the wheel, the menus and the full screen key keep working",
         "XTerm*vt100.translations: #override \\n\\",
         "        Ctrl Shift <Key>C: copy-selection(CLIPBOARD) \\n\\",
         "        Ctrl Shift <Key>V: insert-selection(CLIPBOARD) \\n\\",
@@ -727,12 +669,10 @@ def _resource_lines() -> list[str]:
         "        Ctrl <Key>minus: smaller-vt-font() \\n\\",
         "        Ctrl <Key>0: set-vt-font(d) \\n\\",
         "        Ctrl Shift <Key>N: spawn-new-terminal() \\n\\",
-        "        <Btn1Down>: select-start() \\n\\",
-        "        <Btn1Motion>: select-extend() \\n\\",
-        "        <Btn1Up>: select-end(PRIMARY, CLIPBOARD, CUT_BUFFER0) \\n\\",
-        "        Ctrl <Btn1Down>: select-start() \\n\\",
-        "        Ctrl <Btn1Motion>: select-extend() \\n\\",
-        "        Ctrl <Btn1Up>: select-end(PRIMARY, CLIPBOARD, CUT_BUFFER0) \\n\\",
+        "        Shift <Key>Prior: scroll-back(1,page) \\n\\",
+        "        Shift <Key>Next: scroll-forward(1,page) \\n\\",
+        "        Ctrl Shift <Key>Up: scroll-back(1,line) \\n\\",
+        "        Ctrl Shift <Key>Down: scroll-forward(1,line) \\n\\",
         "        Shift <Btn4Down>: scroll-back(1,halfpage) \\n\\",
         "        Shift <Btn5Down>: scroll-forward(1,halfpage)",
     ]
@@ -744,39 +684,32 @@ def xterm_block() -> str:
     header = [
         BLOCK_BEGIN,
         "!",
-        "! The xterm half of the GnuchanPurple desktop. Everything between this",
-        "! line and the closing one is written by the script and replaced on",
-        "! every run; edit the script, not this block.",
+        "! Written by the installer and replaced on every run: edit the script,",
+        "! not this block. Load it with:  xrdb -merge ~/.Xresources",
         "!",
-        "! Load it with:  xrdb -merge ~/.Xresources",
-        "!",
-        "! xrdb runs this file through the C preprocessor, which reads an",
-        "! apostrophe as the start of a character constant and warns about the",
-        "! line. There are none in the comments below for that reason, and there",
-        "! should be none in anything added to them.",
+        "! xrdb runs this file through the C preprocessor, so no apostrophes.",
     ]
     return "\n".join(header + _resource_lines() + [BLOCK_END])
 
 
+# --- the environment ---------------------------------------------------------
+
+
 def environment_snippet() -> str:
-    """The shell fragment that sets what a terminal cannot set for itself."""
+    """The environment a terminal cannot set for itself."""
     return "\n".join(
         [
             SH_BEGIN,
-            "# Environment for the GnuchanPurple terminal.",
             "# Sourced from ~/.profile; remove that line to stop using it.",
             "",
             "# xterm renders direct colour but does not announce it, and COLORTERM",
-            "# is how a program learns it may use 24 bit colour. It is exported",
-            "# only when TERM says xterm, so a session running several terminals",
-            "# never claims direct colour in one that cannot do it.",
+            "# is how a program learns it may use 24 bit colour. Only set for xterm,",
+            "# so no other terminal in the session inherits the claim.",
             'case "${TERM:-}" in',
             f"  xterm*) export COLORTERM={COLORTERM_VALUE} ;;",
             "esac",
             "",
-            "# A UTF-8 terminal in a non-UTF-8 locale prints question marks where",
-            "# the text should be. The locale is replaced only when there is none",
-            "# or when it is a C locale, never when the user has chosen one.",
+            "# A UTF-8 terminal in a C locale prints question marks instead of text.",
             'case "${LANG:-}" in',
             f'  ""|C|POSIX) export LANG={FALLBACK_LOCALE} ;;',
             "esac",
@@ -790,21 +723,21 @@ def profile_snippet() -> str:
     return "\n".join(
         [
             SH_BEGIN,
-            f'if [ -f "{env_file()}" ]; then',
-            f'    . "{env_file()}"',
-            "fi",
+            f'[ -f "{env_file()}" ] && . "{env_file()}"',
             SH_END,
         ]
     )
 
 
 def session_snippet() -> str:
-    """The lines that load the resource database when the session starts."""
+    """The lines that load the resource database when the session starts.
+
+    Without them ~/.Xresources takes effect only once something runs xrdb by
+    hand, and after a reboot the X server starts with no resources at all.
+    """
     return "\n".join(
         [
             SH_BEGIN,
-            "# Load the X resource database at login. Without this the settings in",
-            "# ~/.Xresources only apply after something runs xrdb by hand.",
             'if [ -f "$HOME/.Xresources" ] && command -v xrdb >/dev/null 2>&1; then',
             '    xrdb -merge "$HOME/.Xresources"',
             "fi",
@@ -834,18 +767,9 @@ def launcher_text() -> str:
             "",
         ]
     )
+
+
 # --- installing --------------------------------------------------------------
-
-
-def _is_root() -> bool:
-    """Whether this process can install packages without help.
-
-    ``os.geteuid`` does not exist on Windows, where this script has nothing to
-    do; reading it through ``getattr`` keeps the module importable there so the
-    helpers above can be exercised and the file can be linted anywhere.
-    """
-    geteuid = getattr(os, "geteuid", None)
-    return bool(geteuid is not None and geteuid() == 0)
 
 
 def install_resources(log: Log) -> None:
@@ -862,11 +786,9 @@ def install_environment(log: Log) -> None:
 def install_session_hooks(log: Log) -> None:
     """Make the session load the resource database when it starts.
 
-    Both hooks are written because they belong to different setups and neither
-    is read by the other: Debian's X session sources ``~/.xsessionrc``, while
-    the display managers people use on Arch - and most other distributions -
-    source ``~/.xprofile``. Writing one and not the other is a configuration
-    that works on the machine it was written on.
+    Both hooks are written because neither is read by the other: Debian's X
+    session sources ~/.xsessionrc, and the display managers elsewhere source
+    ~/.xprofile.
     """
     for path in (xsessionrc_file(), xprofile_file()):
         write_merged_file(log, path, SH_BEGIN, SH_END, session_snippet())
@@ -880,10 +802,9 @@ def install_launcher(log: Log) -> None:
 def load_resources(log: Log) -> bool:
     """Merge ``~/.Xresources`` into the running X server, returning success.
 
-    This is what makes the settings take effect now rather than at the next
-    login, and it is also the step that fails quietly when there is no X server
-    to talk to - a run over ssh, or from a console - which is why it reports
-    what it did rather than assuming.
+    This is what makes the settings apply now rather than at the next login,
+    and it is also the step that fails quietly when there is no X server to
+    talk to, which is why it reports what it did.
     """
     xrdb = shutil.which("xrdb")
     if xrdb is None:
@@ -892,13 +813,10 @@ def load_resources(log: Log) -> bool:
     if not os.environ.get("DISPLAY"):
         log.detail("DISPLAY is not set; the settings apply to the next X session")
         return False
-    result = subprocess.run(
-        [xrdb, "-merge", str(xresources_file())], check=False
-    )
-    if result.returncode != 0:
+    if subprocess.run([xrdb, "-merge", str(xresources_file())], check=False).returncode:
         log.detail("xrdb could not load the resources")
         return False
-    log.detail("loaded into the running X server with xrdb -merge")
+    log.detail("loaded into the running X server")
     return True
 
 
@@ -909,11 +827,8 @@ def terminfo_available(name: str = "xterm-256color") -> bool:
     """Whether the terminfo entry the termName resource names exists."""
     infocmp = shutil.which("infocmp")
     if infocmp is None:
-        # Without infocmp there is no way to ask, and no reason to complain.
         return True
-    return subprocess.run(
-        [infocmp, name], check=False, capture_output=True
-    ).returncode == 0
+    return subprocess.run([infocmp, name], check=False, capture_output=True).returncode == 0
 
 
 def locale_is_utf8() -> bool:
@@ -932,40 +847,89 @@ def resources_loaded() -> bool:
     return "xterm*termname" in result.stdout.lower()
 
 
+def scrollbar_supported() -> bool:
+    """Whether this xterm was built with a scrollbar.
+
+    The scrollbar is a build time option and the resources that ask for one are
+    ignored without it, which is the one failure of the scrolling setup that no
+    amount of configuration can fix. The help text lists the options that were
+    compiled in, so -sb or +sb being absent from it is the answer.
+    """
+    xterm = shutil.which("xterm")
+    if xterm is None:
+        return True
+    result = subprocess.run([xterm, "-help"], check=False, capture_output=True, text=True)
+    text = result.stdout or ""
+    return True if not text.strip() else bool(re.search(r"(^|\s)[-+]sb(\s|$)", text))
+
+
+#: Settings the installed block must contain for the terminal to be the one
+#: this script promises. The scrollbar is here because it is the setting that
+#: an xterm build, a later resource file or an older run of this script can
+#: take away without saying so.
+REQUIRED_SETTINGS: tuple[str, ...] = (
+    "xterm*scrollbar: true",
+    "xterm*rightscrollbar: true",
+    "xterm*savelines:",
+)
+
+
+def missing_settings() -> list[str]:
+    """Which of the required settings are absent from the installed block."""
+    text = read_text(xresources_file()).lower()
+    return [setting for setting in REQUIRED_SETTINGS if setting not in text]
+
+
 def check_environment(log: Log) -> int:
     """Report what would stop xterm looking the way this script intends.
 
     Each check covers a failure that is invisible from the outside: a font that
-    does not resolve makes xterm draw with its built-in bitmap font, a missing
-    terminfo entry makes every program fall back to eight colours, a non-UTF-8
-    locale prints question marks, resources that were never loaded leave the
-    file on disk doing nothing, and an xterm that is not installed at all is
-    the one case where none of the rest matters.
+    does not resolve leaves xterm on its built-in bitmap font, a missing
+    terminfo entry limits every program to eight colours, a non-UTF-8 locale
+    prints question marks, resources that were never loaded leave the file on
+    disk doing nothing, and an xterm is the one case where none of the rest
+    matters.
     """
     problems: list[str] = []
 
     if shutil.which("xterm") is None:
         problems.append("xterm is not installed")
+    elif not scrollbar_supported():
+        problems.append(
+            "this xterm was built without a scrollbar, so the scrollBar "
+            "resources do nothing in it; install the distribution's xterm"
+        )
 
-    for family in FONT_FAMILIES:
-        if not font_available(family):
-            problems.append(f"the font {family} does not resolve ({manual_font_hint()})")
+    if not has_usable_font():
+        problems.append(
+            "no scalable monospaced font resolves, so xterm draws with its "
+            f"built-in bitmap font ({manual_font_hint()})"
+        )
+    else:
+        log.note(f"font in use: {resolved_families(FONT_PREFERRED)[0]}")
+        absent_fonts = unresolved_families()
+        if absent_fonts:
+            log.note("optional, not installed: " + ", ".join(absent_fonts))
 
     if not terminfo_available():
         problems.append(
-            "the terminfo entry xterm-256color is missing; install ncurses-term "
-            "or ncurses, or the terminal will be limited to 8 colours"
+            "the terminfo entry xterm-256color is missing; install ncurses-term, "
+            "or the terminal is limited to 8 colours"
         )
 
     if not locale_is_utf8():
         problems.append(
-            "the locale is not UTF-8; non-ASCII text will not be displayed "
+            "the locale is not UTF-8, so non-ASCII text is not displayed "
             "correctly (see the xterm-env.sh this script installs)"
         )
 
-    text = read_text(xresources_file())
-    if BLOCK_BEGIN not in text:
+    if BLOCK_BEGIN not in read_text(xresources_file()):
         problems.append(f"{xresources_file()} has no xterm block; run the script")
+    else:
+        missing = missing_settings()
+        if missing:
+            problems.append("the block is missing " + ", ".join(missing) + "; run the script")
+
     if not resources_loaded():
         problems.append(
             "the X server has no XTerm resources loaded; run "
@@ -987,11 +951,10 @@ def check_environment(log: Log) -> int:
 def uninstall(log: Log) -> None:
     """Remove everything this script wrote, and nothing else.
 
-    Files it owns are deleted, files it shares are edited back - the block is
-    taken out of ``~/.Xresources``, ``~/.profile`` and the session hooks, which
-    leaves whatever the user had in them. A ``.gnuchan-backup`` copy is put
-    back where there is one, because that is the file the user had before this
-    script ever ran.
+    Shared files keep whatever the user had in them: the block is taken out
+    between its markers. A .gnuchan-backup copy is put back only when taking
+    the block out would leave the file empty, because otherwise that copy is a
+    duplicate of what is already there and the live file is the newer one.
     """
     for path, begin, end in (
         (xresources_file(), BLOCK_BEGIN, BLOCK_END),
@@ -1004,14 +967,10 @@ def uninstall(log: Log) -> None:
         merged = merge_block(read_text(path), begin, end, "")
         backup = path.with_name(path.name + BACKUP_SUFFIX)
         if backup.exists() and not merged.strip():
-            # The whole file was this script's, and there is an untouched copy
-            # of what was there before it: put that back rather than leaving an
-            # empty file behind.
             path.unlink()
             shutil.move(str(backup), str(path))
             log.detail(f"restored {path} from its backup")
-            continue
-        if merged.strip():
+        elif merged.strip():
             write_text(path, merged)
             log.detail(f"removed our block from {path}")
         else:
@@ -1019,16 +978,19 @@ def uninstall(log: Log) -> None:
             log.detail(f"removed {path}")
 
     for path in (env_file(), launcher_file()):
+        backup = path.with_name(path.name + BACKUP_SUFFIX)
         if path.exists():
             path.unlink()
             log.detail(f"removed {path}")
-        backup = path.with_name(path.name + BACKUP_SUFFIX)
-        if backup.exists() and MARKER in read_text(backup):
-            # Only a backup that holds our own file can be here: it means an
-            # earlier run saved its output before this script learned to
-            # recognise it. Removing it is what makes the uninstall complete.
+        if not backup.exists():
+            continue
+        if MARKER in read_text(backup):
+            # A backup holding our own output has nothing of the user's in it.
             backup.unlink()
             log.detail(f"removed {backup}")
+            continue
+        shutil.move(str(backup), str(path))
+        log.detail(f"restored {path} from its backup")
 
     config_dir = env_file().parent
     if config_dir.is_dir() and not any(config_dir.iterdir()):
@@ -1044,20 +1006,13 @@ def uninstall(log: Log) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=SCRIPT_NAME,
-        description=(
-            "Configure xterm as a modern terminal: 256 colours and true colour, "
-            "the GNU fonts, a long scrollback, clipboard shortcuts and UTF-8."
-        ),
+        description="Configure xterm as a modern terminal.",
     )
     parser.add_argument(
-        "--check",
-        action="store_true",
-        help="report what would stop xterm looking right, then stop",
+        "--check", action="store_true", help="report problems, then stop"
     )
     parser.add_argument(
-        "--uninstall",
-        action="store_true",
-        help="remove everything this script wrote, then stop",
+        "--uninstall", action="store_true", help="remove everything this script wrote"
     )
     parser.add_argument(
         "--no-packages",
@@ -1081,7 +1036,7 @@ def main(argv: list[str] | None = None) -> int:
         log.step("Removing the xterm configuration")
         uninstall(log)
         log.note("")
-        log.note("Removed. Open a new xterm, or reload the resources with:")
+        log.note("Removed. Reload the resources of a running session with:")
         log.note(f"  xrdb -merge {xresources_file()}")
         return 0
 
@@ -1104,16 +1059,17 @@ def main(argv: list[str] | None = None) -> int:
     problems = check_environment(log)
 
     log.note("")
-    log.note("xterm now uses the GNU fonts, 256 colours and the palette the")
-    log.note("rest of the desktop uses. Open a new xterm to see it.")
+    log.note("Done. Open a new xterm: a window that is already running keeps")
+    log.note("the settings it started with.")
     log.note("")
-    log.note("  Ctrl+Shift+C / Ctrl+Shift+V   copy and paste")
+    log.note("  Ctrl+Shift+C / Ctrl+Shift+V       copy and paste")
     log.note("  Ctrl+plus / Ctrl+minus / Ctrl+0   font size")
-    log.note("  Ctrl+Shift+N                  new window")
-    log.note("  Ctrl+click                    the menu")
+    log.note("  Shift+PageUp / Shift+PageDown     one page of scrollback")
+    log.note("  wheel, Shift+wheel                scroll, and force it in less/vim")
+    log.note("  drag the scrollbar on the right   the scrollback, by hand")
     log.note("")
-    log.note(f"Settings live in {xresources_file()}; remove the block this")
-    log.note(f"script wrote there, or run {SCRIPT_NAME} --uninstall.")
+    log.note(f"Settings: {xresources_file()}")
+    log.note(f"Remove them with: {SCRIPT_NAME} --uninstall")
     return 1 if problems else 0
 
 
