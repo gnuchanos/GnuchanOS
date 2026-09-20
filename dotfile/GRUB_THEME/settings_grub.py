@@ -62,9 +62,11 @@
 # loader is already where it is, and this only changes what it draws. The theme
 # is visible from the next boot, which the script says in its last line.
 #
-# The wallpaper is 1920x1080 and the theme asks GRUB for that resolution with
-# 1920x1080,auto - so a machine that cannot do 1920x1080 falls back to whatever
-# it can do, and the wallpaper is cropped to fit rather than stretched.
+# The wallpaper is 1920x1080 and GRUB crops it to whatever mode the screen is,
+# so it fills any resolution rather than being stretched. The mode itself is
+# asked for with the panel's own first, then 1920x1080, then "auto": a mode the
+# panel cannot show whole is a mode drawn past the edges of the screen, and the
+# bottom of the layout and the edges of the wallpaper are what goes missing.
 #
 # Undo
 # ----
@@ -1565,10 +1567,59 @@ GRUB_DEFAULT_FILE = Path("/etc/default/grub")
 #: which lines are its own and where they start.
 MANAGED_MARKER = "# GnuchanOS theme settings, written by settings_grub.py"
 
-#: The graphics mode the theme asks GRUB for. The wallpaper is 1920x1080; the
-#: ",auto" is what lets a machine that cannot do that fall back to the best mode
-#: it has instead of failing to start the video at all.
-GFX_MODE = "1920x1080,auto"
+#: The modes GRUB is asked for after the panel's own, in the order it tries
+#: them. 1920x1080 is the wallpaper's own size, for a machine whose panel is
+#: that size and whose kernel reported nothing; "auto" is what lets GRUB pick
+#: the best mode it has instead of failing to start the video at all.
+FALLBACK_GFX_MODES = ("1920x1080", "auto")
+
+#: Where the kernel lists the modes an output supports, most preferred first.
+#: The first line is the panel's own mode on every driver that fills the file
+#: in, and the status file beside it says whether anything is plugged in.
+DRM_MODES_GLOB = "card*-*/modes"
+
+
+def preferred_mode() -> str | None:
+    """The mode the kernel reports first for a connected output, or None.
+
+    This is the panel's own resolution, and it is the mode GRUB should be asked
+    for. Asking for a fixed 1920x1080 instead - which is what this used to do -
+    is how a theme ends up drawn on a framebuffer wider and taller than the
+    screen: GRUB sets the mode it was asked for, the panel has no scaler for it,
+    and everything past the edge is never seen. The bottom line of the theme and
+    the edges of the wallpaper are the parts that go first, which is exactly how
+    the machine this was fixed on looked.
+    """
+    root = Path("/sys/class/drm")
+    if not root.is_dir():
+        return None
+    for modes in sorted(root.glob(DRM_MODES_GLOB)):
+        try:
+            if (modes.parent / "status").read_text(encoding="utf-8").strip() != "connected":
+                continue
+            reported = modes.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        if reported and reported[0].strip():
+            return reported[0].strip()
+    return None
+
+
+def gfx_mode() -> str:
+    """The value written to GRUB_GFXMODE.
+
+    GRUB takes the first mode in the list it can set, so the order is the whole
+    of it: the panel's own mode, then the wallpaper's size, then "auto". Nothing
+    here is invented when the panel cannot be asked - the two fallbacks are
+    always there, and "auto" is why a machine that can do none of the named
+    modes still starts its video rather than coming up in text.
+    """
+    modes = [mode for mode in (preferred_mode(), *FALLBACK_GFX_MODES) if mode]
+    ordered: list[str] = []
+    for mode in modes:
+        if mode not in ordered:
+            ordered.append(mode)
+    return ",".join(ordered)
 
 #: The keys that defeat the theme, with the test for whether a value of that key
 #: is one of them and the reason written above the line that is commented out. A
@@ -1595,7 +1646,7 @@ def managed_grub_keys(boot_dir: Path) -> dict[str, str]:
     """
     return {
         "GRUB_THEME": f'"{boot_theme_file(boot_dir).as_posix()}"',
-        "GRUB_GFXMODE": f'"{GFX_MODE}"',
+        "GRUB_GFXMODE": f'"{gfx_mode()}"',
     }
 
 
@@ -2043,10 +2094,19 @@ def check_grub_default(boot_dir: Path) -> list[str]:
     elif not Path(theme).is_file():
         problems.append(f"{GRUB_DEFAULT_FILE} names {theme}, which is not there")
 
-    if read_grub_key(text, "GRUB_GFXMODE") is None:
+    mode = read_grub_key(text, "GRUB_GFXMODE")
+    panel = preferred_mode()
+    if mode is None:
         problems.append(
             f"{GRUB_DEFAULT_FILE} does not set GRUB_GFXMODE, so GRUB asks for the "
             "mode its own default names and the wallpaper is cropped to that"
+        )
+    elif panel is not None and mode.split(",")[0].strip() not in ("auto", panel):
+        problems.append(
+            f"{GRUB_DEFAULT_FILE} asks GRUB for {mode.split(',')[0].strip()}, and "
+            f"this machine's panel reports {panel}: a mode the panel cannot show "
+            "whole is drawn past the edges of the screen, and the bottom of the "
+            "theme and the edges of the wallpaper are what is lost"
         )
 
     terminal = read_grub_key(text, "GRUB_TERMINAL")
