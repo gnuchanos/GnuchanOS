@@ -69,12 +69,20 @@
                   <object class="GtkEventBox" id="login_box">
                     <property name="visible">True</property>
                     <property name="visible_window">True</property>
+                    <!-- The panel has a size of its own, not only the size of
+                         what is in it. The greeter hides the account list to
+                         ask for a password, and without these two the login box
+                         would collapse to a frame around the logo at the moment
+                         someone starts typing. The height is the box as it is
+                         drawn with the account list showing. -->
+                    <property name="width_request">440</property>
+                    <property name="height_request">250</property>
                     <child>
                       <object class="GtkVBox" id="login_inner">
                         <property name="visible">True</property>
                         <property name="orientation">vertical</property>
-                        <property name="border_width">22</property>
-                        <property name="spacing">14</property>
+                        <property name="border_width">18</property>
+                        <property name="spacing">12</property>
                         <child>
                           <object class="GtkImage" id="image1">
                             <property name="visible">True</property>

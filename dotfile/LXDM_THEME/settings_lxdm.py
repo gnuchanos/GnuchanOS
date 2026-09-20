@@ -45,11 +45,13 @@
 #      it is, and the greeter's own home is pointed at it: its default cursor
 #      theme, its ~/.gtkrc-2.0 for the GTK+ 2 greeter, and its GTK 3
 #      settings.ini, which is the only place the GTK+ 3 greeter reads a cursor
-#      from. When the session has chosen nothing, the theme built here from
-#      dotfile/ICON_MOUSE_THEME is used instead, so the login screen is never
-#      left with the black X cursor while the session it starts has the purple
-#      one - the one thing about a cursor theme that cannot be fixed from
-#      inside the session;
+#      from. The cursors themselves are copied into the theme named "default"
+#      as well, so that the pointer does not depend on the name being resolved
+#      through a search path at all. When the session has chosen nothing, the
+#      theme built here from dotfile/ICON_MOUSE_THEME is used instead, so the
+#      login screen is never left with the black X cursor while the session it
+#      starts has the purple one - the one thing about a cursor theme that
+#      cannot be fixed from inside the session;
 #   5. makes lxdm the display manager: writes the Debian default display
 #      manager file, which lxdm's own systemd unit checks before it will start,
 #      disables any other display manager that was enabled so that two of them
@@ -92,12 +94,18 @@
 #
 #     rm -rf /usr/share/lxdm/themes/GnuchanPurple
 #     rm -rf /usr/share/icons/GnuChanMouseIcons
+#     rm -rf /usr/share/icons/default
+#     rm -rf /var/lib/lxdm/.icons
 #     cp /etc/lxdm/lxdm.conf.gnuchan-backup /etc/lxdm/lxdm.conf
 #     cp /etc/X11/default-display-manager.gnuchan-backup /etc/X11/default-display-manager
 #     mv /etc/systemd/system/default.target.gnuchan-backup /etc/systemd/system/default.target
 #
 # The last one is a symlink and is put back by naming it again rather than by
-# copying over it.
+# copying over it. Of the four directories, two are only written where they are
+# not already the machine's: /usr/share/icons/default is skipped when a default
+# cursor theme is already there, and /var/lib/lxdm is the home of the account
+# the greeter is run as, so on a machine whose greeter runs as root it is
+# /root/.icons that holds the second one.
 #
 # and then enable the display manager that was enabled before, whose name the
 # script prints while it runs. The last file is the one worth remembering: the
@@ -200,6 +208,21 @@ CURSOR_THEME_SOURCE = SCRIPT_DIR.parent / "ICON_MOUSE_THEME"
 #: anything else having to be set.
 CURSOR_ICON_DIRS = (Path("/usr/share/icons"), Path("/usr/local/share/icons"))
 
+#: The theme named "default", which is what libXcursor resolves for a program
+#: that has been told nothing at all - and the greeter is exactly that, because
+#: it starts before anyone has logged in. It is also the last thing worth having
+#: for a purple pointer: the cursors are copied into this directory itself
+#: rather than only named in it, so the pointer is purple whether or not the
+#: machine's search path, XDG_DATA_DIRS, or the home directory the greeter was
+#: started with is what the installer expected. It is written only when it does
+#: not already exist, so a machine that has a default of its own keeps it.
+SYSTEM_DEFAULT_CURSOR_DIR = CURSOR_ICON_DIRS[0] / "default"
+
+#: The file that marks a cursor directory as this script's. A directory without
+#: it is somebody else's - a theme installed by hand, a distribution's own
+#: default - and is never replaced.
+CURSOR_MARKER = ".gnuchan-cursor"
+
 #: The icon directories of a user, which come before the system ones in every
 #: search libXcursor makes: a theme chosen in lxappearance is installed here.
 USER_ICON_SUBDIRS = (".icons", ".local/share/icons")
@@ -278,11 +301,13 @@ AVATAR_FILE = "nobody.png"
 BACKGROUND_ASSET = "bg_my_games.png"
 LOGO_ASSET = "logo.png"
 
-#: Sizes the two copies of the logo are scaled to. The login box image is the
-#: larger of the two because it sits alone above the prompt; the avatar is drawn
-#: by the greeter at 48x48 and this only keeps it sharp on a high density
-#: screen.
-LOGIN_IMAGE_SIZE = 168
+#: Sizes the two copies of the logo are scaled to. The avatar is drawn by the
+#: greeter at 48x48 and this only keeps it sharp on a high density screen. The
+#: login image is drawn at the size it is written at and the login box is
+#: stacked around it, so this number is also what keeps the panel from being
+#: taller than it is wide: at 168 the logo alone was taller than the prompt, the
+#: account list and the password field put together.
+LOGIN_IMAGE_SIZE = 112
 AVATAR_SIZE = 96
 
 #: Where a pixbuf path in the interfaces is made absolute at install time.
@@ -1801,7 +1826,70 @@ def greeter_gtk3_settings() -> Path:
     return Path(".config/gtk-3.0/settings.ini")
 
 
-def point_greeter_cursor(log: Log, name: str, size: int) -> None:
+def copy_cursor_theme(log: Log, theme: Path, target: Path) -> bool:
+    """Put the built cursor theme at ``target``, returning whether it landed.
+
+    Copying and not naming, and both: the name is written into the index as
+    well, so a program that has been told the name and a program that has been
+    told nothing are both served, but the cursors themselves are what make this
+    work. A theme that is only named is a theme that has to be found through a
+    search path - the system icon directories, or the home directory the
+    program was started with - and the greeter is a program started by a display
+    manager, before any session exists to set either. The cursors being there
+    under the name "default" is what removes that dependency, and it is the
+    difference between a purple pointer and the black X cursor.
+
+    A directory this script did not write is left alone: the marker below is
+    what says a directory is this script's, and anything else could be the
+    machine's own cursor theme.
+    """
+    if target.exists() and not (target / CURSOR_MARKER).is_file():
+        log.detail(f"{target} is not this script's; it was left as it is")
+        return False
+    try:
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(theme, target, symlinks=True)
+        (target / CURSOR_MARKER).write_text(
+            "the GnuchanPurple cursor, written by settings_lxdm.py\n",
+            encoding="utf-8",
+        )
+    except OSError as error:
+        log.warn(f"could not put the cursor theme in {target}: {error}")
+        return False
+    for path in sorted(target.rglob("*")):
+        try:
+            path.chmod(0o755 if path.is_dir() else 0o644)
+        except OSError:
+            continue
+    return True
+
+
+def write_cursor_index(root: Path, name: str) -> None:
+    """Name the theme a copy of the cursors inherits from - and only that one.
+
+    "default" is deliberately not in the list. A copy in ``.icons/default``
+    that inherits from the theme, next to a theme whose own index inherits from
+    "default", is a pair of themes that refer to each other; both files are
+    written from here so that no library is asked to break that cycle on the
+    machine's behalf.
+    """
+    body = "\n".join(
+        [
+            "[Icon Theme]",
+            "Name=GnuchanPurple",
+            "Comment=the GnuchanPurple cursor, written by settings_lxdm.py",
+            f"Inherits={name}",
+            "",
+        ]
+    )
+    for filename in ("index.theme", "cursor.theme"):
+        (root / filename).write_text(body, encoding="utf-8")
+
+
+def point_greeter_cursor(
+    log: Log, name: str, size: int, theme: Path | None = None
+) -> None:
     """Name the cursor theme in every file the greeter reads a cursor from.
 
     Three files per greeter home, because the greeter may be built against
@@ -1815,10 +1903,16 @@ def point_greeter_cursor(log: Log, name: str, size: int) -> None:
                                       GTK+ 2 greeter
       .config/gtk-3.0/settings.ini    the same two keys for a GTK+ 3 one
 
-    The greeter's own home directories are written and not
-    ``/usr/share/icons/default``, which is the machine's default and would
-    change the cursor for every user on it. Each file is copied aside once
-    before it is touched, and only these two keys are ever set in them.
+    The greeter's own home directories come first, because those are the files
+    that reach a greeter whichever toolkit it was built against. The cursors
+    themselves are then copied into ``.icons/default`` in the same directory,
+    which is what makes the theme named "default" the purple one instead of a
+    name that has to resolve at all; see copy_cursor_theme for why that is the
+    difference between a purple pointer and the black X cursor. The machine's
+    own default theme directory is filled in as well, but only where it does
+    not exist, because that is the only copy that reaches a greeter started
+    with a home directory this script cannot name. Each file is copied aside
+    once before it is touched, and only these two keys are ever set in them.
     """
     for home in greeter_homes(log):
         index = home / ".icons" / "default" / "index.theme"
@@ -1872,7 +1966,18 @@ def point_greeter_cursor(log: Log, name: str, size: int) -> None:
         except OSError as error:
             log.warn(f"could not write {gtk3}: {error}")
 
+        if theme is not None:
+            for target in (home / ".icons" / name, home / ".icons" / "default"):
+                if copy_cursor_theme(log, theme, target):
+                    write_cursor_index(target, name)
+                    log.detail(f"the cursors themselves are in {target}")
+
         log.detail(f"the greeter's cursor is {name} at size {size} in {home}")
+
+    if theme is not None and not SYSTEM_DEFAULT_CURSOR_DIR.exists():
+        if copy_cursor_theme(log, theme, SYSTEM_DEFAULT_CURSOR_DIR):
+            write_cursor_index(SYSTEM_DEFAULT_CURSOR_DIR, name)
+            log.detail(f"{SYSTEM_DEFAULT_CURSOR_DIR} is the default cursor theme now")
 
 
 def choose_greeter_cursor(log: Log) -> tuple[str, int] | None:
@@ -1974,6 +2079,20 @@ def check_cursor(log: Log) -> list[str]:
             + f" names {name}, so a greeter that has been told nothing resolves "
             "the machine's default instead"
         )
+
+    if name == CURSOR_THEME_NAME:
+        # The cursors are copied into the default theme directory itself, so
+        # that the pointer is purple whether or not the name resolves. This is
+        # the check that says so, and left_ptr is the name the arrow is drawn
+        # from: a directory without it is one libXcursor walks past.
+        for greeter_home in homes:
+            cursors = greeter_home / ".icons" / "default" / "cursors"
+            if not (cursors / "left_ptr").exists():
+                problems.append(
+                    f"{cursors} does not hold the cursor the pointer is drawn "
+                    "from, so the greeter would fall back to the machine's "
+                    "default - the black X cursor - instead of the purple one"
+                )
 
     for greeter_home in homes:
         gtk2 = greeter_home / greeter_gtk2_rc()
@@ -2645,7 +2764,7 @@ def main() -> int:
     # rendering it once with a promise in it that the rest of the run might not
     # be able to keep.
     log.step("Choosing the greeter's cursor")
-    build_cursor_theme(log)
+    cursor_theme = build_cursor_theme(log)
     cursor = choose_greeter_cursor(log)
     if cursor is None:
         log.detail("the login screen will keep the cursor it had")
@@ -2658,7 +2777,12 @@ def main() -> int:
     if cursor is None:
         log.detail("no cursor to name, so nothing was written for the greeter")
     else:
-        point_greeter_cursor(log, *cursor)
+        # The cursors themselves are copied in only when the theme is this
+        # one. A machine that chose a theme in lxappearance already has that
+        # theme's cursors where libXcursor finds them, and writing ours over
+        # the default would quietly overrule the choice instead of using it.
+        chosen = cursor_theme if cursor[0] == CURSOR_THEME_NAME else None
+        point_greeter_cursor(log, *cursor, chosen)
 
     log.step("Configuring the greeter")
     install_configuration(log, gtk_theme_installed)

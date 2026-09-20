@@ -39,14 +39,24 @@
 
 /* --- the login box ------------------------------------------------------- */
 /* The dark purple panel the logo, the prompt, the account list and the
- * password field sit on. The translucent colour lets the wallpaper's own
- * shapes show through it without making the text hard to read. */
+ * password field sit on, and a panel is a filled shape with an edge, not an
+ * outline with the wallpaper showing through it: the colour is opaque and the
+ * border is drawn in the palette's violet rather than in a faded one. Both are
+ * the same two colours the GTK+ 2 stylesheet gives the same box, so a greeter
+ * built either way is greeted with the same screen.
+ *
+ * The panel is as wide as the widest thing on it and no wider, which is why it
+ * is narrow: its width comes from the entry, not from this rule. What this
+ * rule must not do is let it move, and it cannot - the size of the box is
+ * requested in the interfaces, so hiding the account list to ask for a
+ * password leaves the panel exactly where it was. */
 
 #login_box {
-	background-color: rgba(42, 18, 56, 0.94);
-	border: 1px solid rgba(168, 85, 247, 0.55);
-	border-radius: 16px;
-	box-shadow: 0 8px 40px rgba(0, 0, 0, 0.55);
+	background-color: #2a1238;
+	background-image: none;
+	border: 1px solid #6d28d9;
+	border-radius: 14px;
+	box-shadow: 0 10px 44px rgba(0, 0, 0, 0.6);
 }
 
 /* --- the clock ----------------------------------------------------------- */

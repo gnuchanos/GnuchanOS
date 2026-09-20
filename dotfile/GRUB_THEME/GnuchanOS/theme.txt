@@ -74,7 +74,11 @@ terminal-border: "0"
     selected_item_color = "#ffffff"
     item_height = 34
     item_padding = 8
-    item_spacing = 4
+    # Wide enough for the selection box. GRUB insets that box by the size of the
+    # select_*.png slices, which are 5 pixels, so it is 44 pixels tall around an
+    # entry and the entries have to sit that far apart or the highlight covers
+    # the entry below it.
+    item_spacing = 12
     item_icon_space = 12
     icon_width = 28
     icon_height = 28

@@ -164,6 +164,16 @@ SLICE_SIZE = 12
 SLICE_RADIUS = 9
 SLICE_BORDER = 1
 
+#: The same two numbers for the box drawn around one menu entry and around a
+#: scrollbar thumb. A box style is not only its corners: GRUB insets the box by
+#: the size of the slices it is built from, so the twelve pixel slices of a
+#: panel make the box around a 34 pixel entry 58 pixels tall while the entries
+#: sit 44 pixels apart, and the highlight climbs over the entry above and the
+#: one below it. These are small enough to stay inside the entry they are drawn
+#: around.
+ITEM_SLICE_SIZE = 5
+ITEM_SLICE_RADIUS = 3
+
 #: How much of the wallpaper a panel lets through, as the alpha of the fill.
 BOX_ALPHA = 190
 SELECT_ALPHA = 205
@@ -1128,7 +1138,9 @@ def render_panel(
     return panel
 
 
-def box_slices(fill: RGBA, border: RGBA, radius: float) -> dict[str, Raster]:
+def box_slices(
+    fill: RGBA, border: RGBA, radius: float, size: int = SLICE_SIZE
+) -> dict[str, Raster]:
     """The nine images of a GRUB box style, sliced from one drawn panel.
 
     A GRUB box is drawn by stretching the four sides and the centre and leaving
@@ -1143,8 +1155,8 @@ def box_slices(fill: RGBA, border: RGBA, radius: float) -> dict[str, Raster]:
     do - leaves no straight part at all, because the corners meet in the middle,
     and every edge then smears a piece of the curve along its length.
     """
-    panel = render_panel(SLICE_SIZE * 3, SLICE_SIZE * 3, fill, border, radius)
-    step = SLICE_SIZE
+    panel = render_panel(size * 3, size * 3, fill, border, radius)
+    step = size
     return {
         "nw": crop(panel, 0, 0, step, step),
         "n": crop(panel, step, 0, step, step),
@@ -1211,10 +1223,16 @@ def render_icon(name: str) -> Raster:
 
 
 def write_box_style(
-    log: Log, directory: Path, prefix: str, fill: RGBA, border: RGBA, radius: float
+    log: Log,
+    directory: Path,
+    prefix: str,
+    fill: RGBA,
+    border: RGBA,
+    radius: float,
+    size: int = SLICE_SIZE,
 ) -> None:
     """Write the nine images of one box style into the theme directory."""
-    for name, image in box_slices(fill, border, radius).items():
+    for name, image in box_slices(fill, border, radius, size).items():
         image.write_readable(directory / f"{prefix}_{name}.png")
     log.detail(f"wrote the {prefix}_*.png box style ({len(BOX_NAMES)} images)")
 
@@ -1263,12 +1281,26 @@ def write_theme_images(
 
     write_box_style(log, directory, "menu", panel_fill, panel_border, float(SLICE_RADIUS))
     write_box_style(
-        log, directory, "select", select_fill, select_border, float(SLICE_RADIUS)
+        log,
+        directory,
+        "select",
+        select_fill,
+        select_border,
+        float(ITEM_SLICE_RADIUS),
+        ITEM_SLICE_SIZE,
     )
     write_box_style(
         log, directory, "terminal_box", terminal_fill, terminal_border, float(SLICE_RADIUS)
     )
-    write_box_style(log, directory, "scrollbar_thumb", thumb_fill, thumb_border, 3.0)
+    write_box_style(
+        log,
+        directory,
+        "scrollbar_thumb",
+        thumb_fill,
+        thumb_border,
+        float(ITEM_SLICE_RADIUS),
+        ITEM_SLICE_SIZE,
+    )
     write_icons(log, directory)
 # --- the font -------------------------------------------------------------------
 # GRUB looks a font up by the name written *inside* the .pf2 file and not by the
