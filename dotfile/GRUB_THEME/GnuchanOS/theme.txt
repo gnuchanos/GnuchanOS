@@ -22,9 +22,15 @@
 # it, a comment starts with #, and a value that is not a word must be quoted.
 # =============================================================================
 
-title-text: "GnuchanOS"
-title-font: "@FONT@"
-title-color: "#d8a4ff"
+# The title - the line of text drawn across the top of the screen - is empty
+# on purpose, and it is why title-text is here at all: GRUB's view starts with
+# the wording "GRUB Boot Menu" in it and draws whatever is there unless the
+# theme says otherwise, so the property has to be set to "" to take the line
+# away. Leaving it out entirely would put GRUB's own wording back, and a
+# non-empty value here would draw the distribution name again. An empty title
+# draws nothing at all, not even a blank strip, which is why the title-font and
+# title-color that went with it are gone too.
+title-text: ""
 
 message-font: "@FONT@"
 message-color: "#f3e8ff"
@@ -46,17 +52,6 @@ terminal-top: "8%"
 terminal-width: "84%"
 terminal-height: "84%"
 terminal-border: "0"
-
-# The logo, in the top left corner. The image is rendered on a transparent
-# square at the size it is drawn here, so the aspect cannot be changed by a
-# screen of another shape.
-+ image {
-    left = 3%
-    top = 4%
-    width = 132
-    height = 132
-    file = "logo.png"
-}
 
 # The entries. The menu box is the translucent panel, the selected item box is
 # the brighter one drawn behind the highlighted entry, and the icons are read

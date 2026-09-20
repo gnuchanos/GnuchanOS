@@ -11,13 +11,12 @@
 #
 # What it does
 # ------------
-#   1. resolves the images the theme is built from - the wallpaper from
-#      assets/bg.png, which is the purple one, and the logo from
-#      assets/logo.png - before anything is written, because a theme whose
-#      wallpaper is missing is not the theme that was asked for;
-#   2. renders the theme: the wallpaper, the logo on a transparent square, the
-#      nine slice images of the menu box, the selection box, the scrollbar thumb
-#      and the terminal box, and one icon per entry class (debian, gnu-linux,
+#   1. resolves the image the theme is built from - the wallpaper, assets/bg.png,
+#      which is the purple one - before anything is written, because a theme
+#      whose wallpaper is missing is not the theme that was asked for;
+#   2. renders the theme: the wallpaper, the nine slice images of the menu box,
+#      the selection box, the scrollbar thumb and the terminal box, and one icon
+#      per entry class (debian, gnu-linux,
 #      gnu, os, windows, efi, memtest86, recovery). Every one of them is written
 #      by the PNG encoder and the few drawing primitives in this file: Pillow is
 #      not installed on a fresh system and is not a dependency worth taking for
@@ -137,7 +136,6 @@ GRUB_BOOT_DIRS = (Path("/boot/grub"), Path("/boot/grub2"))
 
 #: The theme images this script generates, by the names the theme refers to.
 BACKGROUND_FILE = "background.png"
-LOGO_FILE = "logo.png"
 TERMINAL_BOX_STYLE = "terminal_box_*.png"
 MENU_BOX_STYLE = "menu_*.png"
 SELECT_BOX_STYLE = "select_*.png"
@@ -151,16 +149,14 @@ BOX_NAMES = ("nw", "n", "ne", "w", "c", "e", "sw", "s", "se")
 #: Everything copied from the theme source directory into the installed theme.
 THEME_TEXT_FILES = (THEME_FILE,)
 
-#: The names those assets have in the repository. The wallpaper is the purple
-#: one; the logo is only drawn when it is there.
+#: The name the wallpaper has in the repository. It is the purple one, and it is
+#: the only image the theme is built from that this file does not draw.
 BACKGROUND_ASSET = "bg.png"
-LOGO_ASSET = "logo.png"
 
 #: The sizes the generated images are drawn at. The wallpaper is used at its own
-#: size, the logo is fitted into the square the theme draws it in, the icons are
-#: drawn larger than the 28 pixels the menu asks for so they stay sharp on a
-#: scaled screen, and the box slices are the corner size of the boxes.
-LOGO_SIZE = 132
+#: size, the icons are drawn larger than the 28 pixels the menu asks for so they
+#: stay sharp on a scaled screen, and the box slices are the corner size of the
+#: boxes.
 ICON_SIZE = 64
 SLICE_SIZE = 12
 SLICE_RADIUS = 9
@@ -451,16 +447,6 @@ def require_background() -> Path:
     raise SystemExit(
         "error: the wallpaper this theme is built from was not found:\n" + looked
     )
-
-
-def optional_logo() -> Path | None:
-    """The logo, when the repository has one.
-
-    It is optional on purpose. The theme draws it in a corner, and a theme
-    without it is still a complete theme - so a checkout that carries only the
-    wallpaper is installed rather than refused.
-    """
-    return find_asset(LOGO_ASSET)
 
 
 # --- file helpers --------------------------------------------------------------
@@ -940,65 +926,7 @@ class Raster:
                 thickness,
             )
 
-    # --- scaling and files ------------------------------------------------
-
-    def scaled_to(self, width: int, height: int) -> "Raster":
-        """The image at another size, averaging the pixels it shrinks away.
-
-        Averaging is done on colours premultiplied by their alpha and divided
-        back out afterwards: mixing the colours of transparent and opaque pixels
-        first is what puts a dark fringe around a logo drawn on nothing.
-        """
-        target = Raster.solid(width, height)
-        source = self.pixels
-        for target_y in range(height):
-            first_y = target_y * self.height // height
-            last_y = min(max(first_y + 1, (target_y + 1) * self.height // height), self.height)
-            for target_x in range(width):
-                first_x = target_x * self.width // width
-                last_x = min(max(first_x + 1, (target_x + 1) * self.width // width), self.width)
-                red = green = blue = alpha_sum = 0
-                count = (last_x - first_x) * (last_y - first_y)
-                for source_y in range(first_y, last_y):
-                    row = (source_y * self.width + first_x) * 4
-                    for column in range(last_x - first_x):
-                        offset = row + column * 4
-                        alpha = source[offset + 3]
-                        red += source[offset] * alpha
-                        green += source[offset + 1] * alpha
-                        blue += source[offset + 2] * alpha
-                        alpha_sum += alpha
-                if alpha_sum == 0:
-                    continue  # every pixel behind this one was transparent
-                offset = (target_y * width + target_x) * 4
-                target.pixels[offset] = min(255, red // alpha_sum)
-                target.pixels[offset + 1] = min(255, green // alpha_sum)
-                target.pixels[offset + 2] = min(255, blue // alpha_sum)
-                target.pixels[offset + 3] = min(255, alpha_sum // count)
-        return target
-
-    def fitted(self, size: int) -> "Raster":
-        """The image scaled to fit a transparent square of ``size``.
-
-        The proportions are kept, so a logo taller than it is wide is not
-        squashed into a square, and the square is what the theme draws: the
-        component that shows it has a width and a height and no way to keep an
-        aspect ratio, so the shape has to be right in the file.
-        """
-        scale = min(size / self.width, size / self.height)
-        target_width = max(1, min(size, round(self.width * scale)))
-        target_height = max(1, min(size, round(self.height * scale)))
-        scaled = self.scaled_to(target_width, target_height)
-        canvas = Raster.solid(size, size)
-        left = (size - target_width) // 2
-        top = (size - target_height) // 2
-        for y in range(target_height):
-            source = y * target_width * 4
-            target = ((y + top) * size + left) * 4
-            canvas.pixels[target:target + target_width * 4] = scaled.pixels[
-                source:source + target_width * 4
-            ]
-        return canvas
+    # --- files ------------------------------------------------------------
 
     def write(self, path: Path) -> None:
         """Write the image as an 8 bit RGBA PNG.
@@ -1248,29 +1176,18 @@ def write_icons(log: Log, directory: Path) -> None:
     log.detail(f"wrote {len(ICON_NAMES)} entry icons into {icons}")
 
 
-def write_theme_images(
-    log: Log, directory: Path, background: Path, logo: Path | None
-) -> None:
+def write_theme_images(log: Log, directory: Path, background: Path) -> None:
     """Write every image the theme is made of into ``directory``.
 
-    The wallpaper is copied byte for byte: it is already 1920x1080 and GRUB
-    scales and crops it to whatever mode it ended up in, so decoding and
-    re-encoding four megabytes of photograph would cost time and lose nothing.
-    Everything else is drawn, and the panel colours are the wallpaper's own
-    background colour with the accent violet on the edges, so the boxes read as
-    part of the wallpaper rather than as rectangles laid on it.
+    The wallpaper is the one image the theme is built from rather than drawn,
+    and it is copied byte for byte: it is already 1920x1080 and GRUB scales and
+    crops it to whatever mode it ended up in, so decoding and re-encoding four
+    megabytes of photograph would cost time and lose nothing. Everything else is
+    drawn, and the panel colours are the wallpaper's own background colour with
+    the accent violet on the edges, so the boxes read as part of the wallpaper
+    rather than as rectangles laid on it.
     """
     copy_file(log, background, directory / BACKGROUND_FILE)
-
-    if logo is not None:
-        image = read_png(logo)
-        if image is None:
-            log.warn(f"{logo} is not a PNG this script can read; the logo is left out")
-        else:
-            image.fitted(LOGO_SIZE).write_readable(directory / LOGO_FILE)
-            log.detail(f"wrote {directory / LOGO_FILE} ({LOGO_SIZE}x{LOGO_SIZE})")
-    else:
-        log.detail("no logo in this checkout; the theme is installed without one")
 
     panel_fill = PALETTE["wallpaper"] + (BOX_ALPHA,)
     panel_border = PALETTE["border_strong"] + (150,)
@@ -1307,7 +1224,8 @@ def write_theme_images(
 # --- the font -------------------------------------------------------------------
 # GRUB looks a font up by the name written *inside* the .pf2 file and not by the
 # file name, and the theme loader only ever *selects* a font that grub.cfg has
-# already loaded: title-font and message-font name a font, they do not read one.
+# already loaded: message-font and terminal-font name a font, they do not read
+# one.
 # So the name cannot be guessed here. The font is found, its name is read out of
 # it, that name replaces @FONT@ in theme.txt, and the file is copied into the
 # theme directory - which is exactly where util/grub.d/00_header looks for one,
@@ -1467,7 +1385,7 @@ def theme_image_names() -> list[str]:
     theme that is not drawn at all - so the list is also the checklist the
     verification walks.
     """
-    names = [BACKGROUND_FILE, LOGO_FILE]
+    names = [BACKGROUND_FILE]
     for prefix in ("menu", "select", "terminal_box", "scrollbar_thumb"):
         names.extend(f"{prefix}_{box}.png" for box in BOX_NAMES)
     names.extend(f"icons/{icon}.png" for icon in ICON_NAMES)
@@ -1475,7 +1393,7 @@ def theme_image_names() -> list[str]:
 
 
 def build_theme(
-    log: Log, background: Path, logo: Path | None, font_file: Path | None, font_name: str
+    log: Log, background: Path, font_file: Path | None, font_name: str
 ) -> Path:
     """Render the whole theme into a fresh temporary directory.
 
@@ -1483,11 +1401,6 @@ def build_theme(
     copies cannot differ: rendering into each would write the same pixels twice
     and would let a run that failed half way leave two themes that are not the
     same theme.
-
-    A checkout with no logo still gets a logo.png - a fully transparent square.
-    That is not decoration: theme.txt draws an image from that file, and GRUB
-    abandons the whole theme when an image it names cannot be loaded, so an
-    absent file would cost the wallpaper, the menu and the icons as well.
     """
     theme = read_text(SOURCE_THEME_DIR / THEME_FILE)
     if not theme:
@@ -1503,10 +1416,7 @@ def build_theme(
 
     build = Path(tempfile.mkdtemp(prefix="gnuchan-grub-theme-"))
     write_text(build / THEME_FILE, theme.replace(FONT_PLACEHOLDER, font_name))
-    write_theme_images(log, build, background, logo)
-    if logo is None:
-        Raster.solid(LOGO_SIZE, LOGO_SIZE).write_readable(build / LOGO_FILE)
-        log.detail(f"wrote {build / LOGO_FILE} (empty, so the theme still loads)")
+    write_theme_images(log, build, background)
     if font_file is not None:
         copy_file(log, font_file, build / FONT_FILE)
     return build
@@ -2000,13 +1910,20 @@ def check_theme_properties(text: str) -> list[str]:
     return problems
 
 
-def theme_font_name(text: str) -> str | None:
-    """The font theme.txt names in title-font, or None."""
-    for line in text.splitlines():
-        name, separator, value = line.partition(":")
-        if separator and name.strip() == "title-font":
-            return value.strip().strip('"')
-    return None
+def theme_font_names(text: str) -> list[str]:
+    """Every font theme.txt names, in the order it names them.
+
+    The font properties are found rather than assumed, because a theme names a
+    font in several places - message-font and terminal-font above, item_font in
+    the menu and font in the countdown and the key hints - and they all have to
+    be the font that was shipped. A property is a font property when its name
+    ends in "font", which is every one of them and nothing else.
+    """
+    names: list[str] = []
+    for _, name, value, _ in theme_properties(text):
+        if name.endswith("font") and value and value not in names:
+            names.append(value)
+    return names
 
 
 def check_theme_dir(directory: Path, font_name: str) -> list[str]:
@@ -2017,7 +1934,7 @@ def check_theme_dir(directory: Path, font_name: str) -> list[str]:
     menu as well as the slice - and a half written file is exactly what a run
     interrupted in the middle leaves behind.
 
-    The font is checked the way GRUB looks one up: the name in theme.txt is
+    The font is checked the way GRUB looks one up: every font theme.txt names is
     compared with the name inside the .pf2 that was shipped, because those are
     two different strings and only the second one is what GRUB matches on. When
     no font was shipped the fallback name is written and grub.cfg's own loadfont
@@ -2035,14 +1952,15 @@ def check_theme_dir(directory: Path, font_name: str) -> list[str]:
 
     if FONT_PLACEHOLDER in text:
         problems.append(f"{theme_file} still names {FONT_PLACEHOLDER}")
-    named = theme_font_name(text)
+    named = theme_font_names(text)
     if not named:
-        problems.append(f"{theme_file} names no title-font")
-    elif named != font_name:
-        problems.append(
-            f"{theme_file} asks for the font {named!r}, but {font_name!r} is the "
-            "name of the font that was found"
-        )
+        problems.append(f"{theme_file} names no font at all")
+    for asked in named:
+        if asked != font_name:
+            problems.append(
+                f"{theme_file} asks for the font {asked!r}, but {font_name!r} is "
+                "the name of the font that was found"
+            )
 
     font_path = directory / FONT_FILE
     if font_path.is_file():
@@ -2227,9 +2145,7 @@ def main() -> int:
     # The images are resolved before anything is written, so a machine that
     # does not have them is left exactly as it was found.
     background = require_background()
-    logo = optional_logo()
     log.detail(f"wallpaper: {background}")
-    log.detail(f"logo: {logo}" if logo is not None else "logo: none in this checkout")
 
     if not grub_present():
         raise SystemExit(
@@ -2247,7 +2163,7 @@ def main() -> int:
     font_file, font_name = choose_font(log)
 
     log.step("Building the theme")
-    build = build_theme(log, background, logo, font_file, font_name)
+    build = build_theme(log, background, font_file, font_name)
 
     try:
         log.step("Installing the theme")
