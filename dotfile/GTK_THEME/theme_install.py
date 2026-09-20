@@ -54,8 +54,19 @@ RGBA = tuple[int, int, int, int]
 
 # --- locations ---------------------------------------------------------------
 
-THEME_NAME = "GnuchanPurple"
-CONFIG_DIR_NAME = "gnuchan-purple"
+#: The name GTK looks the theme up by, and the directory it is installed as.
+#: It is deliberately not the icon theme's name or the cursor theme's: all
+#: three are picked in the same dialog, and two of them are installed into the
+#: same `icons` directories - an icon theme and a cursor theme that shared a
+#: name would be one directory, and whichever was installed second would
+#: overwrite the first.
+THEME_NAME = "GnuChanTheme"
+#: The directory the extras land in under ``~/.config``. Deliberately the same
+#: string as the theme name rather than a second spelling of it: one component
+#: with two names means the theme directory, the config directory and the name
+#: in the settings files can disagree, and a search for either name finds only
+#: half of what an install wrote.
+CONFIG_DIR_NAME = THEME_NAME
 BACKUP_SUFFIX = ".gnuchan-backup"
 GENERATED_MARKER = "written by theme_install.py"
 IGNORED_COPY_NAMES = {"__pycache__", ".DS_Store", "Thumbs.db"}

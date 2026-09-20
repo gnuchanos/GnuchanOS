@@ -58,7 +58,14 @@ from .progress import Progress
 # validated against it, which happens before a single file is written.
 load_all()
 
-THEME_NAME = "GnuchanPurple"
+#: The name the icon theme is installed under, and the directory it is read
+#: from. It is deliberately not the GTK theme's name or the cursor theme's:
+#: an icon theme and a cursor theme are installed into the *same* directories -
+#: `~/.local/share/icons/<name>` and `~/.icons/<name>` - so two of them sharing
+#: a name are one directory, and installing either one replaces the other.
+#: That is exactly what happened when the cursor theme was installed over this
+#: one: its `rm -rf` took the icons with it.
+THEME_NAME = "GnuChanIcon"
 INHERITS = "Adwaita,hicolor"
 COMMENT = "Purple icon theme"
 
@@ -94,6 +101,24 @@ CONTEXT_TINT_KEY: dict[str, str] = {
     catalogue.STATUS: "status",
     catalogue.UI: "ui",
 }
+
+
+def is_our_theme(root: Path) -> bool:
+    """Whether ``root`` holds this icon theme, and is safe to replace.
+
+    The build empties its target before writing, which is what keeps a renamed
+    icon from lingering. That makes the target a directory this script deletes,
+    so it checks first that the directory is this theme: an icon theme and a
+    cursor theme are installed into the same ``icons`` directories, and with one
+    name between them the second install deletes the first.
+    """
+    index = root / "index.theme"
+    if not index.is_file():
+        return False
+    try:
+        return f"Name={THEME_NAME}" in index.read_text(encoding="utf-8")
+    except OSError:
+        return False
 
 
 def tint_for(context: str) -> str:
@@ -266,6 +291,11 @@ class Builder:
 
         report.stage("clearing the target directory")
         if self.root.exists():
+            if not is_our_theme(self.root):
+                raise SystemExit(
+                    f"error: {self.root} exists and is not the {THEME_NAME} icon "
+                    "theme; refusing to replace it"
+                )
             shutil.rmtree(self.root)
         self.root.mkdir(parents=True, exist_ok=True)
         report.finish(str(self.root))

@@ -31,11 +31,12 @@ from .dialogs import DIALOG_STATES
 from .states import STATES, State
 from .xcursor import write_cursor
 
-#: The name the theme is installed under, and what the appearance dialog will
-#: list. Cursor themes and icon themes share one namespace in most desktops, so
-#: the name is the same one the icon theme uses - which means choosing this
-#: cursor theme also selects the matching icons.
-THEME_NAME = "GnuchanPurple"
+#: The name the cursor theme is installed under. It has to differ from the icon
+#: theme's: both are read from `~/.local/share/icons/<name>` and `~/.icons/<name>`,
+#: so two themes with one name are one directory - and this installer replaces
+#: that directory outright, which is how installing the cursor theme deleted the
+#: icon theme's files.
+THEME_NAME = "GnuChanMouseIcons"
 
 #: What the theme inherits from when a program asks for a name it does not have.
 #: Adwaita is on every GNOME and GTK system and is the one theme that is always
@@ -113,16 +114,45 @@ def _write_index(root: Path) -> None:
         (root / filename).write_text(body, encoding="utf-8")
 
 
+def is_our_theme(root: Path) -> bool:
+    """Whether ``root`` holds this cursor theme, and is safe to replace.
+
+    Two cursor themes cannot share a name, but a name is not the only way to
+    end up pointing at a directory that belongs to something else: a theme
+    installed by hand under the same name, a link, or a mistake in the names
+    above. The check is what stands between a wrong path and an unrecoverable
+    ``rm -rf``, and it is not hypothetical - installing this theme with the name
+    the icon theme used deleted the icon theme's files, because the replacement
+    below was unconditional.
+    """
+    if (root / "cursors").is_dir():
+        return True
+    index = root / "index.theme"
+    if index.is_file():
+        try:
+            return f"Name={THEME_NAME}" in index.read_text(encoding="utf-8")
+        except OSError:
+            return False
+    return False
+
+
 def write_theme(root: Path, report=None) -> dict[str, int]:
     """Write the whole theme under ``root``, returning what was written.
 
     The directory is emptied first: a name removed from :mod:`names` would
     otherwise stay behind from an earlier run, and a stale cursor is one that is
-    still served to whichever program asks for it.
+    still served to whichever program asks for it. It is emptied only when it is
+    this theme's - see :func:`is_our_theme` - because the alternative is a
+    script that deletes whatever directory it was pointed at.
     """
     states = all_states()
     cursors = root / "cursors"
     if root.exists():
+        if not is_our_theme(root):
+            raise SystemExit(
+                f"error: {root} exists and is not the {THEME_NAME} cursor theme; "
+                "refusing to replace it"
+            )
         shutil.rmtree(root)
     cursors.mkdir(parents=True)
 

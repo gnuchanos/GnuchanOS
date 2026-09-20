@@ -115,6 +115,13 @@ SCRIPT_DIR = SCRIPT_PATH.parent
 #: The theme name is the directory name, as every LXDM theme's is.
 THEME_NAME = "GnuchanPurple"
 
+#: The GTK theme the greeter's own widgets are drawn with, which is the GTK
+#: theme's name and not this one's. The two were the same string once, which is
+#: why this constant exists: renaming the GTK theme would otherwise have
+#: silently pointed the greeter's gtk_theme key at a theme that is not
+#: installed, and GTK answers that with a warning and its own default style.
+GTK_THEME_NAME = "GnuChanTheme"
+
 #: The theme as it is committed, next to this script.
 SOURCE_THEME_DIR = SCRIPT_DIR / THEME_NAME
 
@@ -140,7 +147,7 @@ BACKUP_SUFFIX = ".gnuchan-backup"
 
 #: The GTK theme, which lives in a sibling directory of this one in the
 #: repository and is installed system wide for the greeter's own widgets.
-GTK_THEME_SOURCE = SCRIPT_DIR.parent / "GTK_THEME" / THEME_NAME
+GTK_THEME_SOURCE = SCRIPT_DIR.parent / "GTK_THEME" / GTK_THEME_NAME
 GTK_THEME_DIRS = (Path("/usr/share/themes"), Path("/usr/local/share/themes"))
 
 #: The images this script generates into the theme from the repository assets.
@@ -1133,7 +1140,7 @@ def install_gtk_theme(log: Log) -> bool:
     for directory in GTK_THEME_DIRS:
         if not directory.is_dir():
             continue
-        target = directory / THEME_NAME
+        target = directory / GTK_THEME_NAME
         shutil.copytree(
             GTK_THEME_SOURCE,
             target,
@@ -1312,7 +1319,7 @@ def managed_settings(existing: str, gtk_theme_installed: bool) -> dict[str, dict
         # greeter's own stylesheet already carries the palette. The icon theme
         # is deliberately not set here - the greeter's icon lookups go to
         # whatever GTK has selected, because lxdm has no key of its own for it.
-        managed["display"]["gtk_theme"] = THEME_NAME
+        managed["display"]["gtk_theme"] = GTK_THEME_NAME
     # Always written, never dropped: a configuration that arrives without a
     # greeter key, or with one no longer on the machine, is one lxdm reads and
     # then shows nothing for.
@@ -1730,8 +1737,8 @@ def check_configuration() -> list[str]:
             "start one and the screen stays black"
         )
     if (
-        read_ini_value(text, "display", "gtk_theme") == THEME_NAME
-        and not gtk_theme_available(THEME_NAME)
+        read_ini_value(text, "display", "gtk_theme") == GTK_THEME_NAME
+        and not gtk_theme_available(GTK_THEME_NAME)
     ):
         # Only when the key names this theme: any other name is the
         # distribution's own choice, and the greeter falling back to it is not

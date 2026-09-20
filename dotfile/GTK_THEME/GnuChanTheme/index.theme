@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=X-GNOME-Metatheme
-Name=GnuchanPurple
+Name=GnuChanTheme
 Comment=Dark purple theme for GnuchanOS - GTK2, GTK3, GTK4 and window managers
 Encoding=UTF-8
 
 [X-GNOME-Metatheme]
-Name=GnuchanPurple
-GtkTheme=GnuchanPurple
-MetacityTheme=GnuchanPurple
+Name=GnuChanTheme
+GtkTheme=GnuChanTheme
+MetacityTheme=GnuChanTheme
 ButtonLayout=:minimize,maximize,close
