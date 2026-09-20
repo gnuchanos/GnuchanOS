@@ -43,7 +43,7 @@ THEME_NAME = "GnuChanMouseIcons"
 #: installed, so inheriting from it is inheriting from something.
 INHERITS = "Adwaita"
 
-COMMENT = "A round glowing purple cursor in every state"
+COMMENT = "Alien violet hardware: lit armour, hex rings and cold energy lines"
 
 
 def all_states() -> dict[str, State]:
