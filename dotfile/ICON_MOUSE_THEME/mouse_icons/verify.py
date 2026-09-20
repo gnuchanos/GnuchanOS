@@ -137,8 +137,24 @@ def check_cursor(path: Path) -> list[str]:
     problems = []
     if info["alpha"] == 0:
         problems.append(f"{path.name}: every pixel is transparent")
-    if info["frames"] < 2:
-        problems.append(f"{path.name}: only one frame, so it cannot animate")
+
+    # A cursor is allowed to be still: most of this set is, and a still shape
+    # written twelve times is twelve times the disk for nothing. What is not
+    # allowed is a cursor whose sizes disagree about it - a pointer that pulses
+    # at 24 pixels and sits still at 48 is one that changes behaviour when a
+    # laptop is plugged into a monitor.
+    frames_per_size: dict[int, int] = {}
+    for image in info["images"]:
+        frames_per_size[image["size"]] = frames_per_size.get(image["size"], 0) + 1
+    if len(set(frames_per_size.values())) > 1:
+        counts = ", ".join(
+            f"{size}px has {count}"
+            for size, count in sorted(frames_per_size.items())
+        )
+        problems.append(
+            f"{path.name}: {counts} frame(s), so the animation changes with the "
+            "size it is drawn at"
+        )
     return problems
 
 

@@ -36,7 +36,12 @@
 #      /usr/share/themes, where the greeter can find it, because the greeter
 #      runs as the lxdm account, or as root when there is none, before anyone
 #      logs in and a theme installed in a user's home directory is not visible
-#      to it;
+#      to it - and does the same for the cursor, which lxdm has no key for at
+#      all: the cursor theme is built from dotfile/ICON_MOUSE_THEME into
+#      /usr/share/icons, and the greeter's own default theme is pointed at it.
+#      Without both, the login screen keeps the black X cursor while the session
+#      it starts has the purple one, which is the one thing about a cursor theme
+#      that cannot be fixed from inside the session;
 #   5. makes lxdm the display manager: writes the Debian default display
 #      manager file, which lxdm's own systemd unit checks before it will start,
 #      disables any other display manager that was enabled so that two of them
@@ -78,6 +83,7 @@
 # script rewrote is kept, and every one has to be put back:
 #
 #     rm -rf /usr/share/lxdm/themes/GnuchanPurple
+#     rm -rf /usr/share/icons/GnuChanMouseIcons
 #     cp /etc/lxdm/lxdm.conf.gnuchan-backup /etc/lxdm/lxdm.conf
 #     cp /etc/X11/default-display-manager.gnuchan-backup /etc/X11/default-display-manager
 #     mv /etc/systemd/system/default.target.gnuchan-backup /etc/systemd/system/default.target
@@ -100,6 +106,7 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import shutil
 import struct
@@ -149,6 +156,46 @@ BACKUP_SUFFIX = ".gnuchan-backup"
 #: repository and is installed system wide for the greeter's own widgets.
 GTK_THEME_SOURCE = SCRIPT_DIR.parent / "GTK_THEME" / GTK_THEME_NAME
 GTK_THEME_DIRS = (Path("/usr/share/themes"), Path("/usr/local/share/themes"))
+
+# --- the cursor -----------------------------------------------------------------
+# lxdm has no key of its own for the cursor, which is why the greeter came up
+# with the black X cursor while the session had the purple one. There are only
+# two things that decide it, and neither of them is in lxdm.conf:
+#
+#   the theme on disk      libXcursor looks in every icon directory on its
+#                         search path - $HOME/.icons first, then the XDG data
+#                         directories - so a theme installed only in a user's
+#                         home is a theme the greeter, which has no home of its
+#                         own, cannot see.
+#   the default theme      a program that has been told nothing resolves the
+#                         theme name "default", and reads whichever
+#                         default/index.theme it finds to learn what that
+#                         inherits from. That is what the greeter is: it is
+#                         started before anyone has logged in, so it has no
+#                         session settings and nothing that names a theme.
+#
+# So both are done here. The theme is built into a system icon directory with
+# the cursor package next to this one in the repository, and a default index is
+# written into the home directory of the account the greeter runs as - which is
+# the lxdm account on the distributions that create one, and root on those that
+# do not - so that the change reaches the greeter without changing the cursor
+# for every other user on the machine.
+
+#: The cursor theme built by dotfile/ICON_MOUSE_THEME, and where that package
+#: is relative to this script.
+CURSOR_THEME_NAME = "GnuChanMouseIcons"
+CURSOR_THEME_SOURCE = SCRIPT_DIR.parent / "ICON_MOUSE_THEME"
+
+#: Where a cursor theme is looked for, most preferred first. Both are on the
+#: default XDG_DATA_DIRS path, so a program finds the theme in either without
+#: anything else having to be set.
+CURSOR_ICON_DIRS = (Path("/usr/share/icons"), Path("/usr/local/share/icons"))
+
+#: The home directories the greeter may be started with, in the order worth
+#: writing. Debian, Ubuntu and the RPM distributions create an lxdm account and
+#: run the greeter as it; a machine that built lxdm from source has no such
+#: account and the greeter runs as root.
+GREETER_HOMES = (Path("/var/lib/lxdm"), Path("/root"))
 
 #: The images this script generates into the theme from the repository assets.
 BACKGROUND_FILE = "bg.png"
@@ -1190,6 +1237,138 @@ def gtk_theme_available(name: str) -> bool:
     return False
 
 
+# --- the cursor the greeter starts with ----------------------------------------
+
+
+def cursor_theme_dir() -> Path | None:
+    """The cursor theme in a system icon directory, or None."""
+    for directory in CURSOR_ICON_DIRS:
+        candidate = directory / CURSOR_THEME_NAME
+        if (candidate / "cursors").is_dir():
+            return candidate
+    return None
+
+
+def build_cursor_theme(log: Log) -> Path | None:
+    """Build the cursor theme into a system icon directory, or return None.
+
+    The cursors are drawn rather than committed, so there is no directory of
+    files next to this script to copy: what is copied is the program that draws
+    them. The package next to this one in the repository is imported and asked
+    for the theme, which is why nothing here knows what a cursor looks like.
+
+    A checkout that does not have that package is a checkout of this theme
+    alone, so the cursor step is skipped and said so rather than failing the
+    install - the greeter theme is worth having on its own.
+    """
+    installed = cursor_theme_dir()
+    if installed is not None:
+        log.detail(f"the {CURSOR_THEME_NAME} cursor theme is already in {installed}")
+        return installed
+
+    if not (CURSOR_THEME_SOURCE / "mouse_icons" / "theme.py").is_file():
+        log.detail(f"no cursor theme in this checkout ({CURSOR_THEME_SOURCE})")
+        return None
+    if str(CURSOR_THEME_SOURCE) not in sys.path:
+        sys.path.insert(0, str(CURSOR_THEME_SOURCE))
+    try:
+        package = importlib.import_module("mouse_icons.theme")
+    except ImportError as error:
+        log.warn(f"could not import the cursor theme package: {error}")
+        return None
+
+    target = CURSOR_ICON_DIRS[0] / CURSOR_THEME_NAME
+    # An OSError here is a machine where the icon directory cannot be written,
+    # which is reported and stepped over rather than raised: the greeter theme
+    # is worth installing on its own, and a run that stops at the cursor leaves
+    # a machine half configured for the sake of its pointer.
+    try:
+        package.write_theme(target)
+    except OSError as error:
+        log.warn(f"could not build the cursor theme into {target}: {error}")
+        return None
+    for path in sorted(target.rglob("*")):
+        try:
+            path.chmod(0o755 if path.is_dir() else 0o644)
+        except OSError:
+            continue
+    log.detail(f"built the {CURSOR_THEME_NAME} cursor theme into {target}")
+    return target
+
+
+def point_greeter_cursor(log: Log, installed: Path | None) -> None:
+    """Point the greeter's own default cursor theme at the built one.
+
+    The greeter is started before anyone has logged in, so it has no session
+    settings and nothing anywhere that names a cursor theme. libXcursor answers
+    a program in that position with the theme name ``default``, which is a theme
+    of its own whose only job is to name what it inherits from, and the file it
+    reads is ``$HOME/.icons/default/index.theme``.
+
+    It is written into the greeter's home directories and not into
+    ``/usr/share/icons/default``, which is where the cursor installer puts the
+    machine's default. The difference matters: that one changes the cursor for
+    every user on the machine, and this one changes it for the account that
+    draws the login screen.
+    """
+    if installed is None:
+        log.detail("no cursor theme was built, so the greeter keeps the default")
+        return
+    index_text = "\n".join(
+        [
+            "# GnuchanPurple cursor, written by settings_lxdm.py",
+            "[Icon Theme]",
+            f"Inherits={CURSOR_THEME_NAME}",
+            "",
+        ]
+    )
+    for home in GREETER_HOMES:
+        if not home.is_dir():
+            continue
+        index = home / ".icons" / "default" / "index.theme"
+        backup = index.with_name(index.name + BACKUP_SUFFIX)
+        if index.exists() and not backup.exists():
+            try:
+                shutil.copy2(index, backup)
+            except OSError as error:
+                log.warn(f"could not back up {index}: {error}")
+        try:
+            write_text(index, index_text)
+            index.chmod(0o644)
+        except OSError as error:
+            log.warn(f"could not write {index}: {error}")
+            continue
+        log.detail(f"the greeter's cursor is {CURSOR_THEME_NAME} in {home}")
+
+
+def check_cursor() -> list[str]:
+    """What is wrong with the cursor the login screen will start with."""
+    problems: list[str] = []
+    installed = cursor_theme_dir()
+    if installed is None:
+        problems.append(
+            f"there is no {CURSOR_THEME_NAME} cursor theme in "
+            + " or ".join(str(directory) for directory in CURSOR_ICON_DIRS)
+            + ", so the greeter draws the black X cursor"
+        )
+        return problems
+
+    pointed = [
+        home
+        for home in GREETER_HOMES
+        if f"Inherits={CURSOR_THEME_NAME}"
+        in read_text(home / ".icons" / "default" / "index.theme")
+    ]
+    if not pointed:
+        problems.append(
+            "no default cursor theme in "
+            + " or ".join(str(home) for home in GREETER_HOMES)
+            + f" names {CURSOR_THEME_NAME}, and the greeter - which has no "
+            "cursor setting of its own - resolves the machine's default instead"
+        )
+    return problems
+
+
 # --- the greeter configuration -------------------------------------------------
 # /etc/lxdm/lxdm.conf is a key file with comments in it, and it is what decides
 # what the greeter shows. Only the keys below are this script's; every other
@@ -1804,7 +1983,12 @@ def check_display_manager() -> list[str]:
 
 def check_result(log: Log) -> int:
     """Report what is wrong with the install, returning how many things are."""
-    problems = check_theme() + check_configuration() + check_display_manager()
+    problems = (
+        check_theme()
+        + check_configuration()
+        + check_display_manager()
+        + check_cursor()
+    )
     if not problems:
         log.note(f"No problems found in {INSTALLED_THEME_DIR}.")
         return 0
@@ -1833,6 +2017,10 @@ def main() -> int:
     log.step("Installing the theme")
     render_theme(log, background, logo)
     gtk_theme_installed = install_gtk_theme(log)
+
+    log.step("Installing the cursor")
+    cursor_theme = build_cursor_theme(log)
+    point_greeter_cursor(log, cursor_theme)
 
     log.step("Configuring the greeter")
     install_configuration(log, gtk_theme_installed)

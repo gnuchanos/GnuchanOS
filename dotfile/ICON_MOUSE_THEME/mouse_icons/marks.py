@@ -1,160 +1,102 @@
-"""The strokes a cursor's state adds on top of the dot: lines and arrows.
+"""Painting a shape: the rim, the body, the darker inset, and the bright core.
 
-A line is drawn from the distance to a segment rather than by stepping along it,
-for the same reason a disc comes from a distance to a point: the coverage falls
-out of the geometry, so a one pixel arrow shaft and a four pixel one have the
-same soft edge and neither needs a second pass to look right.
+Every cursor in the theme is drawn by these three functions, and every cursor is
+drawn the same four passes. It is what makes the set look like one set rather
+than twenty drawings: a shape is a rim, a body of accent purple, a second purple
+inset far enough inside the body to be seen at twenty four pixels, and - where
+the shape is big enough to hold one - a single bright core. That is the whole
+vocabulary. A caret and a resize bar are painted by the same lines of code, so
+they cannot come out with different edges or different weights.
 
-Every mark is drawn twice - once in the shadow colour, wider, then in the mark
-colour - which is what keeps a light chevron legible where it crosses the bright
-core of the dot. Drawing it once would leave the part over the core invisible,
-and that part is the middle of the arrow.
+The inset is where the detail comes from, and it is the safest kind of detail
+there is: it is the same path as the body, drawn with a negative ``grow``, so it
+cannot stick out of the shape it is inside, cannot add a corner, and cannot turn
+a cursor into two shapes. The set this replaces got that wrong in the other
+direction - every state was a dot with marks on top of it, which at twenty four
+pixels is two cursors sitting on each other.
+
+The core is the one mark in the set that is not a shade of purple. It is placed
+inside a body that is already there rather than on top of a shape, so a reticle
+is still one object: the middle of a crosshair, the head of a spinner.
 """
 
 from __future__ import annotations
 
-import math
-
+from . import palette, paths
 from .canvas import Canvas, RGB
+from .cursor import CORE, FILL, OUTLINE, RIM, SYMBOL, Geometry
+from .draw import disc, polygon
 
-#: How much wider the shadow stroke is than the mark it backs.
-SHADOW_EXCESS = 1.6
 
+def paint(canvas: Canvas, geometry: Geometry, points: paths.Path,
+          fill: RGB = FILL, outline: RGB | None = OUTLINE,
+          inset: RGB | None = RIM, alpha: float = 1.0,
+          grow: float = 0.0) -> None:
+    """Draw one closed shape: its outline, its body, and the tone inside it.
 
-def _segment_distance(px: float, py: float, x0: float, y0: float, x1: float,
-                      y1: float) -> float:
-    """Distance from a point to the segment, not to the infinite line.
-
-    The difference is the whole of a chevron: with the infinite line, the two
-    arms would each extend past the point where they meet and draw a cross.
+    ``grow`` moves every edge of the shape outward without changing its points,
+    which is how a shape is asked to be a little bigger than the square it was
+    written in. ``inset`` may be None for a shape too thin to hold a second tone,
+    and ``outline`` may be None for a mark that is already drawn on something.
     """
-    dx = x1 - x0
-    dy = y1 - y0
-    length_squared = dx * dx + dy * dy
-    if length_squared <= 0.0:
-        return math.hypot(px - x0, py - y0)
-    t = ((px - x0) * dx + (py - y0) * dy) / length_squared
-    t = 0.0 if t < 0.0 else 1.0 if t > 1.0 else t
-    return math.hypot(px - (x0 + t * dx), py - (y0 + t * dy))
+    pixels = [geometry.pixel(x, y) for x, y in points]
+    if outline is not None:
+        polygon(canvas, pixels, outline, alpha, grow=grow + geometry.outline)
+    polygon(canvas, pixels, fill, alpha, grow=grow)
+    if inset is not None:
+        polygon(canvas, pixels, inset, alpha,
+                grow=grow - max(1.0, palette.INSET * geometry.size))
 
 
-def stroke(canvas: Canvas, points: list[tuple[float, float]], width: float,
-           color: RGB, alpha: float = 1.0) -> None:
-    """A polyline through ``points``, rounded at every joint.
+def paint_core(canvas: Canvas, geometry: Geometry, ux: float = 0.5,
+               uy: float = 0.5, radius: float = 0.075,
+               color: RGB = CORE, ring: bool = True) -> None:
+    """The bright core: the one detail that is not a shade of purple.
 
-    Rounded joints come for free from the distance test: a pixel within half a
-    width of the corner where two segments meet is inside one of them, so no
-    separate join is needed and no join can have a notch.
+    It is drawn last, inside a body that is already on the canvas, and it is
+    deliberately small. A core the size of the shape it sits in is the stacked
+    look this set is written to avoid; a core a third of it is a highlight, and
+    a highlight is what makes a flat purple reticle look like an instrument.
     """
-    if width <= 0.0 or alpha <= 0.0 or len(points) < 2:
-        return
-    half = width / 2.0
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
-    left = int(min(xs) - half - 1)
-    right = int(max(xs) + half + 1)
-    top = int(min(ys) - half - 1)
-    bottom = int(max(ys) + half + 1)
-    for y in range(top, bottom + 1):
-        for x in range(left, right + 1):
-            px = x + 0.5
-            py = y + 0.5
-            nearest = min(
-                _segment_distance(px, py, points[index][0], points[index][1],
-                                  points[index + 1][0], points[index + 1][1])
-                for index in range(len(points) - 1)
-            )
-            coverage = half + 0.5 - nearest
-            if coverage <= 0.0:
-                continue
-            canvas.blend(x, y, color, min(coverage, 1.0) * alpha)
+    cx, cy = geometry.pixel(ux, uy)
+    size = radius * geometry.size
+    if ring:
+        # A dark edge of its own, so a white dot on a purple body still has an
+        # edge where the two meet - without it the core dissolves into the body
+        # at the larger sizes and the cursor looks blurred rather than lit.
+        disc(canvas, cx, cy, size + max(0.6, geometry.outline * 0.6), OUTLINE)
+    disc(canvas, cx, cy, size, color)
 
 
-def line(canvas: Canvas, x0: float, y0: float, x1: float, y1: float,
-         width: float, color: RGB, shadow: RGB | None = None,
-         alpha: float = 1.0) -> None:
-    """One line, with an optional dark backing under it."""
-    if shadow is not None:
-        stroke(canvas, [(x0, y0), (x1, y1)], width + SHADOW_EXCESS, shadow, alpha)
-    stroke(canvas, [(x0, y0), (x1, y1)], width, color, alpha)
+def paint_badge(canvas: Canvas, geometry: Geometry) -> None:
+    """The disc a badge symbol sits on.
 
+    A badge is the one place a cursor in this set is two shapes rather than one,
+    and it is deliberate: a drag and drop cursor has to say what releasing the
+    thing will do, and at twenty pixels there is no room to say it inside the
+    pointer. The disc is drawn at the lower right of the arrow, over the shaft
+    rather than over the tip, so the point of the cursor is never covered.
 
-def chevron(canvas: Canvas, cx: float, cy: float, size: float, angle: float,
-            width: float, color: RGB, shadow: RGB | None = None,
-            alpha: float = 1.0) -> None:
-    """A V pointing along ``angle``, its tip ``size`` from the centre.
-
-    A chevron and not a filled triangle: at twenty pixels the open V is the
-    shape that still reads as a direction when it is two pixels of line, which a
-    triangle that small does not.
+    It carries the same two tones as everything else, so it reads as part of the
+    cursor rather than as a sticker on it, and its glyph is drawn in the bright
+    core colour, which is the one colour that reads on top of either purple.
     """
-    tip_x = cx + math.cos(angle) * size
-    tip_y = cy + math.sin(angle) * size
-    spread = size * 0.72
-    points = [
-        (tip_x - math.cos(angle + math.pi / 2) * spread,
-         tip_y - math.sin(angle + math.pi / 2) * spread),
-        (tip_x, tip_y),
-        (tip_x + math.cos(angle + math.pi / 2) * spread,
-         tip_y + math.sin(angle + math.pi / 2) * spread),
-    ]
-    if shadow is not None:
-        stroke(canvas, points, width + SHADOW_EXCESS, shadow, alpha)
-    stroke(canvas, points, width, color, alpha)
+    cx, cy = geometry.pixel(*palette.BADGE_CENTRE)
+    radius = palette.BADGE_RADIUS * geometry.size
+    disc(canvas, cx, cy, radius + geometry.outline, OUTLINE)
+    disc(canvas, cx, cy, radius, FILL)
+    disc(canvas, cx, cy, radius * 0.68, RIM)
 
 
-def tick(canvas: Canvas, cx: float, cy: float, angle: float, inner: float,
-         outer: float, width: float, color: RGB, shadow: RGB | None = None,
-         alpha: float = 1.0) -> None:
-    """A straight mark along ``angle``, from ``inner`` out to ``outer``.
+def paint_symbol(canvas: Canvas, geometry: Geometry, points: paths.Path) -> None:
+    """One of the small glyphs, centred on the badge.
 
-    One primitive covers three things: the four ticks around a crosshair, the
-    arrows of the resize states, and the leaves of the move cursor. They differ
-    only in where they start and how far out they reach.
+    Written in its own unit square and placed at the badge's centre at
+    :data:`palette.BADGE_SYMBOL_SCALE` of the badge's radius, so a plus and a
+    minus are the same weight and neither reaches the badge's own outline. No
+    outline is drawn around a symbol: it is already on a badge, and a dark ring
+    around a glyph six pixels across is a smudge.
     """
-    line(
-        canvas,
-        cx + math.cos(angle) * inner,
-        cy + math.sin(angle) * inner,
-        cx + math.cos(angle) * outer,
-        cy + math.sin(angle) * outer,
-        width,
-        color,
-        shadow,
-        alpha,
-    )
-
-
-def arrow(canvas: Canvas, cx: float, cy: float, angle: float, inner: float,
-          outer: float, width: float, color: RGB, shadow: RGB | None = None,
-          alpha: float = 1.0) -> None:
-    """A shaft with a chevron on its end, pointing along ``angle``."""
-    tick(canvas, cx, cy, angle, inner, outer, width, color, shadow, alpha)
-    chevron(canvas, cx, cy, outer, angle, width, color, shadow, alpha)
-
-
-def slash(canvas: Canvas, cx: float, cy: float, size: float, angle: float,
-          width: float, color: RGB, shadow: RGB | None = None,
-          alpha: float = 1.0) -> None:
-    """The bar of the forbidden cursor: a line through the centre.
-
-    Longer than the dot's radius, so its ends stick out past the rim and the
-    cursor reads as a prohibition rather than as a decorated dot.
-    """
-    dx = math.cos(angle) * size
-    dy = math.sin(angle) * size
-    line(canvas, cx - dx, cy - dy, cx + dx, cy + dy, width, color, shadow, alpha)
-
-
-def plus(canvas: Canvas, cx: float, cy: float, size: float, width: float,
-         color: RGB, vertical: bool = True, shadow: RGB | None = None,
-         alpha: float = 1.0) -> None:
-    """A plus or a minus, for the zoom states.
-
-    ``vertical`` decides which: a plus is two strokes and a minus is one, and
-    the two states have to differ by something that is visible at sixteen
-    pixels.
-    """
-    line(canvas, cx - size, cy, cx + size, cy, width, color, shadow, alpha)
-    if vertical:
-        line(canvas, cx, cy - size, cx, cy + size, width, color, shadow, alpha)
+    half = palette.BADGE_RADIUS * palette.BADGE_SYMBOL_SCALE
+    paint(canvas, geometry, paths.placed(points, palette.BADGE_CENTRE, half),
+          fill=SYMBOL, outline=None, inset=None)

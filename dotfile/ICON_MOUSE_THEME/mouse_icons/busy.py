@@ -1,154 +1,151 @@
-"""The states that spin: wait, progress and busy.
+"""The states that turn: wait, progress, busy, watch and their two relatives.
 
-These are the three states where the cursor has to say something has not
-finished, and they are the only ones that are timed rather than merely animated.
-A pulse says "here I am"; a rotation says "still working", and it is the
-rotation, not the colour, that carries that - which is why the ring turns through
-a full circle in one cycle while the dot underneath keeps the same slow pulse as
-every other state in the set.
+These are the only states in the set that carry more than one frame, and they
+are the only ones where a gap matters. A ring with a gap in it reads as
+something turning even in a still frame; a closed ring reads as a target. So
+what tells the waiting states apart is the gap - how much of the circle is
+missing - and never a second shape drawn over the first.
 
-The ring fades behind its head. A ring of one brightness turning looks like a
-ring that is being rotated by hand; a ring that is bright at the head and fades
-to nothing behind it reads as movement even in a still frame, and reads as a
-direction as soon as it moves.
+``watch`` is the exception and is an hourglass, which is the shape the X11 core
+name has meant since before XRender existed. It carries the pulsing animation
+for the same reason: an hourglass does not turn, it runs.
 """
 
 from __future__ import annotations
 
 import math
+from typing import Callable
 
-from . import palette
+from . import palette, paths
 from .canvas import Canvas
-from .cursor import (
-    Geometry,
-    MARK_COLOR,
-    RING_COLOR,
-    clear_hole,
-    draw_dot,
-    spin_of,
-)
-from .draw import ring, tapered_arc
-from .marks import line
-from .states import State, draw_pointer
+from .cursor import CORE, FILL, Geometry, LIGHT, OUTLINE, fade, pulse_of, spin_of
+from .draw import arc
+from .marks import paint, paint_core
+from .states import State
 
-#: How far out the ring sits, as a multiple of the dot radius. Just outside the
-#: rim, so the two do not overlap and the ring reads as separate from the dot.
-RING_REACH = 1.42
+Draw = Callable[[Canvas, Geometry, int, int], None]
 
-#: How much of the circle the head covers, in radians. A little over a third:
-#: short enough that the gap reads as a gap, long enough to look deliberate.
-RING_SWEEP = math.tau * 0.72
+#: How much of the circle a full spinner covers, in radians.
+FULL = palette.SPINNER_SWEEP * math.tau
 
 
-def _spin_ring(canvas: Canvas, geometry: Geometry, frame: int, frames: int,
-               clockwise: bool = True) -> None:
-    """The rotating arc, drawn outside the dot."""
+def _ring(canvas: Canvas, geometry: Geometry, color, start: float,
+          sweep: float) -> None:
+    """One arc of a spinner, outline first, at the size the palette asks for.
+
+    The outline is the same arc drawn wider rather than a second arc: widening
+    an annulus by ``outline`` on both radii is exactly what a grown edge is, and
+    it cannot leave a dark line inside the light one.
+    """
+    radius, width = geometry.spinner
+    centre = geometry.centre
+    arc(canvas, centre, centre, radius, width + 2.0 * geometry.outline,
+        OUTLINE, start, sweep)
+    arc(canvas, centre, centre, radius, width, color, start, sweep)
+
+
+def _spin(canvas: Canvas, geometry: Geometry, frame: int, frames: int,
+          sweep: float, clockwise: bool = True) -> None:
+    """The ring, turned to where this frame puts it, with its head lit.
+
+    The head is the leading end of the arc, and it carries the bright core the
+    rest of the set uses for its details. It is what makes the ring read as a
+    gyro rather than as a broken circle: a light travelling around the rim is
+    movement, and a ring of one colour with a gap in it is a ring of one colour.
+    """
     angle = spin_of(frame, frames)
     if not clockwise:
-        # The counter-clockwise pair is what tells a program waiting for input
-        # apart from one that is working; the two are drawn as mirrors.
         angle = -angle
-    tapered_arc(
+    _ring(canvas, geometry, LIGHT, angle - sweep, sweep)
+    paint_core(
         canvas,
-        geometry.centre,
-        geometry.centre,
-        geometry.radius * RING_REACH,
-        max(1.0, geometry.mark * 0.85),
-        RING_COLOR,
-        angle - RING_SWEEP,
-        RING_SWEEP,
-        0.95,
+        geometry,
+        0.5 + palette.SPINNER_REACH * math.cos(angle),
+        0.5 + palette.SPINNER_REACH * math.sin(angle),
+        palette.SPINNER_WIDTH * 0.44,
+        CORE,
     )
+
+
+# --- the states ---------------------------------------------------------------
 
 
 def draw_wait(canvas: Canvas, geometry: Geometry, frame: int,
               frames: int) -> None:
-    """The busy ring around a dot: the cursor for a program that is working."""
-    draw_dot(canvas, geometry, frame, frames)
-    _spin_ring(canvas, geometry, frame, frames)
+    """The spinner: one gap, turning clockwise. A program is working."""
+    _spin(canvas, geometry, frame, frames, FULL)
 
 
 def draw_progress(canvas: Canvas, geometry: Geometry, frame: int,
                   frames: int) -> None:
-    """The ring, counter-clockwise, over a dot with its middle opened out.
+    """The same ring with a much larger gap, turning the other way.
 
-    A program that is waiting for input rather than working gets the mirror of
-    the ring, and that contrast is the whole difference between the two states.
+    A program waiting for the user and a program working are the two things a
+    spinner exists to tell apart, and the direction and the length of the arc
+    are what say which is which.
     """
-    draw_dot(canvas, geometry, frame, frames)
-    clear_hole(canvas, geometry, geometry.radius * 0.62, 0.35)
-    _spin_ring(canvas, geometry, frame, frames, clockwise=False)
+    _spin(canvas, geometry, frame, frames, FULL * 0.42, clockwise=False)
 
 
 def draw_busy(canvas: Canvas, geometry: Geometry, frame: int,
               frames: int) -> None:
-    """The ring plus a steady bar: "not now", for a window that cannot answer.
+    """Four short arcs: the ring broken into a dashed circle.
 
-    The bar is what distinguishes it from the wait state at a glance, and it is
-    drawn instead of the bright core rather than over it, so the two states do
-    not look like the same cursor on two frames of one animation.
+    A window that has stopped answering gets the ring with the most gaps in it,
+    because at twenty pixels a dashes are the thing that reads as "still going"
+    even when the frame the user is looking at happens to be a still one.
     """
-    draw_dot(canvas, geometry, frame, frames)
-    clear_hole(canvas, geometry, geometry.radius * 0.86)
-    centre = geometry.centre
-    bar = geometry.radius * 0.76
-    line(canvas, centre - bar, centre, centre + bar, centre,
-         max(1.0, geometry.mark), MARK_COLOR, None)
-    _spin_ring(canvas, geometry, frame, frames)
-
-
-def draw_watch(canvas: Canvas, geometry: Geometry, frame: int,
-               frames: int) -> None:
-    """The same rotation drawn as a full ring with a travelling highlight.
-
-    Some desktops ask for ``watch`` and mean the plain hourglass shape; drawing
-    the dot with a complete ring around it is that shape in this set's language,
-    and the highlight is what keeps it animated.
-    """
-    draw_dot(canvas, geometry, frame, frames)
-    ring(canvas, geometry.centre, geometry.centre, geometry.radius * RING_REACH,
-         max(1.0, geometry.mark * 0.7), RING_COLOR, 0.22)
-    _spin_ring(canvas, geometry, frame, frames)
-
-
-def draw_left_pointer_watch(canvas: Canvas, geometry: Geometry, frame: int,
-                            frames: int) -> None:
-    """The pointer with the ring: what a desktop shows beside a busy window.
-
-    Drawn as the pointer and not as a bare ring because this one is asked for by
-    name next to a window that is working, and the pointer is what says where the
-    click went.
-    """
-    draw_pointer(canvas, geometry, frame, palette.FRAMES)
-    _spin_ring(canvas, geometry, frame, frames)
+    step = math.tau / 4.0
+    angle = spin_of(frame, frames)
+    for index in range(4):
+        _ring(canvas, geometry, LIGHT, angle + index * step, step * 0.55)
 
 
 def draw_half_busy(canvas: Canvas, geometry: Geometry, frame: int,
                    frames: int) -> None:
-    """A ring of two halves: the state some toolkits use for a partial wait."""
-    draw_dot(canvas, geometry, frame, frames)
+    """Two arcs facing each other: the half way point between the two."""
+    step = math.pi
     angle = spin_of(frame, frames)
-    for half in range(2):
-        start = angle + half * math.pi
-        tapered_arc(
-            canvas,
-            geometry.centre,
-            geometry.centre,
-            geometry.radius * RING_REACH,
-            max(1.0, geometry.mark * 0.8),
-            RING_COLOR,
-            start,
-            math.pi * 0.72,
-            0.9,
-        )
+    for index in range(2):
+        _ring(canvas, geometry, LIGHT, angle + index * step, step * 0.66)
 
+
+def draw_watch(canvas: Canvas, geometry: Geometry, frame: int,
+               frames: int) -> None:
+    """An hourglass, breathing between two thirds and its full colour."""
+    paint(canvas, geometry, paths.HOURGLASS,
+          fill=fade(FILL, 0.62 + 0.38 * pulse_of(frame, frames)))
+
+
+def draw_left_pointer_watch(canvas: Canvas, geometry: Geometry, frame: int,
+                            frames: int) -> None:
+    """The pointer with a small spinner at its lower right.
+
+    This is the one waiting state that is two shapes, and it is two on purpose:
+    it is asked for by name beside a window that is working, and the pointer is
+    what says where the click went. The spinner sits where a badge sits, which
+    is off the arrow's point.
+    """
+    paint(canvas, geometry, paths.POINTER)
+    cx, cy = geometry.pixel(*palette.BADGE_CENTRE)
+    outer = palette.BADGE_RADIUS * geometry.size
+    radius = outer * 0.60
+    width = outer * 0.34
+    start = spin_of(frame, frames) - FULL * 0.66
+    arc(canvas, cx, cy, radius, width + 2.0 * geometry.outline, OUTLINE,
+        start, FULL * 0.66)
+    arc(canvas, cx, cy, radius, width, LIGHT, start, FULL * 0.66)
+
+
+# --- the registry -------------------------------------------------------------
 
 BUSY_STATES: dict[str, State] = {
     "wait": State("wait", draw_wait, palette.FRAMES_SPIN),
     "progress": State("progress", draw_progress, palette.FRAMES_SPIN),
     "busy": State("busy", draw_busy, palette.FRAMES_SPIN),
-    "watch": State("watch", draw_watch, palette.FRAMES_SPIN),
-    "left-pointer-watch": State("left-pointer-watch", draw_left_pointer_watch,
-                                palette.FRAMES_SPIN),
     "half-busy": State("half-busy", draw_half_busy, palette.FRAMES_SPIN),
+    "watch": State("watch", draw_watch, palette.FRAMES),
+    "left-pointer-watch": State("left-pointer-watch", draw_left_pointer_watch,
+                                palette.FRAMES_SPIN,
+                                paths.POINTER_HOTSPOT),
 }

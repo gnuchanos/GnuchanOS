@@ -1,268 +1,131 @@
-"""The navigation states: the pointer, the caret, the crosshair, resizing.
+"""The navigation states: the pointer, the caret, the crosses, the resizing.
 
-Each state is the same dot with a different arrangement of marks around it, and
-each is written once for every size the theme ships: the marks are placed as
-fractions of the dot's own radius, which is itself a fraction of the nominal
-size, so a state is neither 24 nor 48 pixels wide when it is drawn.
+Each state is one shape from :mod:`paths` and one call to :func:`marks.paint`,
+plus a bright core where the shape is big enough to hold one. Nothing is drawn
+twice and nothing is drawn on top of anything else, which is the whole
+difference between this set and the one it replaces - and it is why a state here
+is three lines of code instead of a paragraph.
 
-The registry at the end of this module is what :mod:`theme` reads. A state
-carries the number of frames it needs, so the ones that spin can ask for more
-than the ones that only breathe.
+A state also carries its own hotspot. The arrow's is its tip; everything else is
+the middle of its own shape. That matters more than it looks: a hotspot in the
+middle of the image puts the click half a cursor away from the point of an
+arrow, which at twenty four pixels is six pixels of error in every corner of
+every window on the screen.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Callable
 
-from . import palette
+from . import paths
 from .canvas import Canvas
-from .cursor import (
-    Geometry,
-    MARK_COLOR,
-    MARK_SHADOW_COLOR,
-    clear_hole,
-    draw_dot,
-    draw_light,
-    pulse_of,
-)
-from .draw import disc
-from .marks import arrow, chevron, line, tick
+from .cursor import RIM, Geometry
+from .marks import paint, paint_core
 
 Draw = Callable[[Canvas, Geometry, int, int], None]
+
+#: The middle of the image, which is the hotspot of every state whose shape is
+#: centred on it.
+MIDDLE = (0.5, 0.5)
+
+#: The radius of a core, in fractions of the nominal size, for the three kinds of
+#: shape that hold one: a reticle's middle, a junction, and a small arrow's head.
+CORE_RETICLE = 0.072
+CORE_JUNCTION = 0.066
+CORE_HEAD = 0.046
 
 
 @dataclass(frozen=True)
 class State:
-    """One cursor: how many frames it has and how to draw one of them."""
+    """One cursor: what to draw, how many frames, and where the click lands."""
 
     name: str
     draw: Draw
     frames: int
+    hotspot: tuple[float, float] = MIDDLE
 
     def render(self, geometry: Geometry, frame: int) -> Canvas:
         canvas = Canvas(geometry.size)
         self.draw(canvas, geometry, frame, self.frames)
         return canvas
 
-
-# --- the plain states --------------------------------------------------------
-
-
-def draw_pointer(canvas: Canvas, geometry: Geometry, frame: int,
-                 frames: int) -> None:
-    """The arrow, as a dot. The one everything else is a variation of."""
-    draw_dot(canvas, geometry, frame, frames)
+    def hotspot_pixels(self, size: int) -> tuple[int, int]:
+        """The hotspot of this state at a given image size, in pixels."""
+        return Geometry(size).hotspot(*self.hotspot)
 
 
-def draw_precise(canvas: Canvas, geometry: Geometry, frame: int,
-                 frames: int) -> None:
-    """The precision pointer: a dot with a hairline cross through it."""
-    draw_dot(canvas, geometry, frame, frames)
-    centre = geometry.centre
-    span = geometry.radius * 1.9
-    for angle in (0.0, math.pi / 2.0):
-        line(
-            canvas,
-            centre - math.cos(angle) * span,
-            centre - math.sin(angle) * span,
-            centre + math.cos(angle) * span,
-            centre + math.sin(angle) * span,
-            max(1.0, geometry.mark * 0.65),
-            MARK_COLOR,
-            MARK_SHADOW_COLOR,
-        )
+# --- a shape and nothing else -------------------------------------------------
 
 
-def draw_text(canvas: Canvas, geometry: Geometry, frame: int,
-              frames: int) -> None:
-    """The caret: a bar with a serif at each end, over a dimmed dot.
+def _shape(points: paths.Path, core: tuple[float, float, float] | None = None,
+           thin: bool = False) -> Draw:
+    """A state that is one shape from :mod:`paths`.
 
-    The dot is still drawn, so the caret belongs to the same family, but its
-    middle is darkened first - a light bar over the bright core would be a bar
-    nobody could see.
+    Every plain state is this. ``core`` is where a bright dot of light goes, and
+    the radius that comes with it; ``thin`` says the shape is too narrow to hold
+    the darker inset, which is true of the arrows' shafts - a four pixel bar with
+    a two pixel inset in it is a dark bar, not a detailed one.
     """
-    draw_dot(canvas, geometry, frame, frames)
-    clear_hole(canvas, geometry, geometry.radius * 0.92)
-    centre = geometry.centre
-    height = geometry.radius * 1.55
-    serif = geometry.radius * 0.42
-    width = geometry.mark
-    line(canvas, centre, centre - height, centre, centre + height, width,
-         MARK_COLOR, MARK_SHADOW_COLOR)
-    line(canvas, centre - serif, centre - height, centre + serif, centre - height,
-         width, MARK_COLOR, MARK_SHADOW_COLOR)
-    line(canvas, centre - serif, centre + height, centre + serif, centre + height,
-         width, MARK_COLOR, MARK_SHADOW_COLOR)
+
+    def draw(canvas: Canvas, geometry: Geometry, frame: int, frames: int) -> None:
+        paint(canvas, geometry, points, inset=None if thin else RIM)
+        if core is not None:
+            paint_core(canvas, geometry, core[0], core[1], core[2])
+
+    return draw
 
 
-def draw_crosshair(canvas: Canvas, geometry: Geometry, frame: int,
-                   frames: int) -> None:
-    """Four ticks, no dot marks: what a drawing program wants for a corner."""
-    draw_light(canvas, geometry, pulse_of(frame, frames), 0.62)
-    centre = geometry.centre
-    inner = geometry.radius * 1.15
-    outer = geometry.radius * 2.05
-    for index in range(4):
-        tick(canvas, centre, centre, index * math.pi / 2.0, inner, outer,
-             geometry.mark, MARK_COLOR, MARK_SHADOW_COLOR)
+def _turned(points: paths.Path, turns: float) -> Draw:
+    """A single shape, rotated: the four resize bars are one path turned."""
+    return _shape(paths.turned(points, turns), thin=True)
 
 
-def draw_cell(canvas: Canvas, geometry: Geometry, frame: int,
-              frames: int) -> None:
-    """A crosshair with the dot left whole: for picking a cell in a grid."""
-    draw_dot(canvas, geometry, frame, frames)
-    centre = geometry.centre
-    for index in range(4):
-        tick(canvas, centre, centre, index * math.pi / 2.0,
-             geometry.radius * 0.72, geometry.radius * 1.25, geometry.mark,
-             MARK_COLOR, MARK_SHADOW_COLOR)
-
-
-# --- the directional states --------------------------------------------------
-
-
-def _arrows(canvas: Canvas, geometry: Geometry, angles: list[float],
-            inner_scale: float = 1.0, outer_scale: float = 1.95) -> None:
-    """Arrows out of the dot, one per angle. Shared by every resizing state."""
-    centre = geometry.centre
-    for angle in angles:
-        arrow(canvas, centre, centre, angle, geometry.radius * inner_scale,
-              geometry.radius * outer_scale, geometry.mark, MARK_COLOR,
-              MARK_SHADOW_COLOR)
-
-
-def draw_move(canvas: Canvas, geometry: Geometry, frame: int,
-              frames: int) -> None:
-    draw_dot(canvas, geometry, frame, frames)
-    _arrows(canvas, geometry, [0.0, math.pi / 2.0, math.pi, 3 * math.pi / 2.0])
-
-
-def draw_resize_horizontal(canvas: Canvas, geometry: Geometry, frame: int,
-                           frames: int) -> None:
-    draw_dot(canvas, geometry, frame, frames)
-    _arrows(canvas, geometry, [0.0, math.pi])
-
-
-def draw_resize_vertical(canvas: Canvas, geometry: Geometry, frame: int,
-                         frames: int) -> None:
-    draw_dot(canvas, geometry, frame, frames)
-    _arrows(canvas, geometry, [math.pi / 2.0, 3 * math.pi / 2.0])
-
-
-def draw_resize_diagonal_down(canvas: Canvas, geometry: Geometry, frame: int,
-                              frames: int) -> None:
-    """The north west to south east diagonal, which is the one that is drawn."""
-    draw_dot(canvas, geometry, frame, frames)
-    _arrows(canvas, geometry, [math.pi * 0.25, math.pi * 1.25])
-
-
-def draw_resize_diagonal_up(canvas: Canvas, geometry: Geometry, frame: int,
-                            frames: int) -> None:
-    draw_dot(canvas, geometry, frame, frames)
-    _arrows(canvas, geometry, [math.pi * 0.75, math.pi * 1.75])
-
-
-def _single_chevron(canvas: Canvas, geometry: Geometry, angle: float) -> None:
-    centre = geometry.centre
-    chevron(canvas, centre, centre, geometry.radius * 1.6, angle,
-            geometry.mark, MARK_COLOR, MARK_SHADOW_COLOR)
-
-
-def draw_arrow_up(canvas: Canvas, geometry: Geometry, frame: int,
-                  frames: int) -> None:
-    draw_dot(canvas, geometry, frame, frames)
-    _single_chevron(canvas, geometry, -math.pi / 2.0)
-
-
-def draw_arrow_down(canvas: Canvas, geometry: Geometry, frame: int,
-                    frames: int) -> None:
-    draw_dot(canvas, geometry, frame, frames)
-    _single_chevron(canvas, geometry, math.pi / 2.0)
-
-
-def draw_arrow_left(canvas: Canvas, geometry: Geometry, frame: int,
-                    frames: int) -> None:
-    draw_dot(canvas, geometry, frame, frames)
-    _single_chevron(canvas, geometry, math.pi)
-
-
-def draw_arrow_right(canvas: Canvas, geometry: Geometry, frame: int,
-                     frames: int) -> None:
-    draw_dot(canvas, geometry, frame, frames)
-    _single_chevron(canvas, geometry, 0.0)
-
-
-def draw_all_scroll(canvas: Canvas, geometry: Geometry, frame: int,
-                    frames: int) -> None:
-    """Four chevrons at the diagonals: scroll in any direction."""
-    draw_dot(canvas, geometry, frame, frames)
-    centre = geometry.centre
-    for index in range(4):
-        angle = math.pi * 0.25 + index * math.pi / 2.0
-        chevron(canvas, centre, centre, geometry.radius * 1.55, angle,
-                geometry.mark * 0.9, MARK_COLOR, MARK_SHADOW_COLOR)
-
-
-# --- the hand states ---------------------------------------------------------
-# The hand is three small dots and a thumb rather than a drawn hand: at twenty
-# pixels a drawn hand is a smudge, while four dots read as fingers immediately,
-# and they keep the cursor in the family the rest of the set belongs to.
-
-
-def _fingers(canvas: Canvas, geometry: Geometry, spread: float,
-             reach: float) -> None:
-    centre = geometry.centre
-    finger = max(1.0, geometry.radius * 0.30)
-    for index in range(3):
-        angle = -math.pi / 2.0 + (index - 1) * spread
-        disc(
-            canvas,
-            centre + math.cos(angle) * reach,
-            centre + math.sin(angle) * reach,
-            finger,
-            MARK_COLOR,
-        )
-
-
-def draw_open_hand(canvas: Canvas, geometry: Geometry, frame: int,
-                   frames: int) -> None:
-    draw_dot(canvas, geometry, frame, frames)
-    _fingers(canvas, geometry, 0.55, geometry.radius * 1.38)
-
-
-def draw_closed_hand(canvas: Canvas, geometry: Geometry, frame: int,
-                     frames: int) -> None:
-    draw_dot(canvas, geometry, frame, frames)
-    _fingers(canvas, geometry, 0.34, geometry.radius * 1.08)
-    centre = geometry.centre
-    disc(canvas, centre + geometry.radius * 1.15, centre + geometry.radius * 0.35,
-         max(1.0, geometry.radius * 0.34), MARK_COLOR)
-
-
-# --- the registry ------------------------------------------------------------
-# The states this module knows, by the name the drawing uses. The mapping from
-# the names a desktop asks for to these is in :mod:`theme`, because which
-# desktop name means "a hand" is a fact about the desktops and not about the
-# drawing.
+# --- the registry -------------------------------------------------------------
+# The states this module knows, by the name the rest of the package uses. The
+# names a desktop asks for, and which of these answers them, is a fact about the
+# desktops and lives in :mod:`names`.
 
 STATES: dict[str, State] = {
-    "pointer": State("pointer", draw_pointer, palette.FRAMES),
-    "precise": State("precise", draw_precise, palette.FRAMES),
-    "text": State("text", draw_text, palette.FRAMES),
-    "crosshair": State("crosshair", draw_crosshair, palette.FRAMES),
-    "cell": State("cell", draw_cell, palette.FRAMES),
-    "move": State("move", draw_move, palette.FRAMES),
-    "resize-horizontal": State("resize-horizontal", draw_resize_horizontal, palette.FRAMES),
-    "resize-vertical": State("resize-vertical", draw_resize_vertical, palette.FRAMES),
-    "resize-diagonal-down": State("resize-diagonal-down", draw_resize_diagonal_down, palette.FRAMES),
-    "resize-diagonal-up": State("resize-diagonal-up", draw_resize_diagonal_up, palette.FRAMES),
-    "arrow-up": State("arrow-up", draw_arrow_up, palette.FRAMES),
-    "arrow-down": State("arrow-down", draw_arrow_down, palette.FRAMES),
-    "arrow-left": State("arrow-left", draw_arrow_left, palette.FRAMES),
-    "arrow-right": State("arrow-right", draw_arrow_right, palette.FRAMES),
-    "all-scroll": State("all-scroll", draw_all_scroll, palette.FRAMES),
-    "open-hand": State("open-hand", draw_open_hand, palette.FRAMES),
-    "closed-hand": State("closed-hand", draw_closed_hand, palette.FRAMES),
+    # The pointer and the caret, the two every program on the desktop asks for
+    # whether or not it asks for anything else.
+    "pointer": State("pointer", _shape(paths.POINTER,
+                                       (0.185, 0.245, CORE_HEAD)), 1,
+                     paths.POINTER_HOTSPOT),
+    "text": State("text", _shape(paths.CARET, thin=True), 1),
+
+    # The precision pointer, the crosshair and the cell, which are three
+    # different answers to "pick something out of what is on the screen": a
+    # fine cross, a coarse one, and a box around the thing itself.
+    "precise": State("precise", _shape(paths.HAIRLINE, thin=True), 1),
+    "crosshair": State("crosshair", _shape(paths.CROSS,
+                                           (0.5, 0.5, CORE_RETICLE)), 1),
+    "cell": State("cell", _shape(paths.FRAME, thin=True), 1),
+
+    # Moving and resizing. One bar and one arrow, turned into every direction
+    # the desktop asks for; the four headed move is its own shape because four
+    # overlapping arrows are four outlines crossing in the middle, and it is the
+    # one resize cursor with a core in it - the middle of it is solid, where the
+    # middle of a bar is a shaft.
+    "move": State("move", _shape(paths.QUAD, (0.5, 0.5, CORE_JUNCTION)), 1),
+    "all-scroll": State("all-scroll", _turned(paths.QUAD, 0.125), 1),
+    "resize-horizontal": State("resize-horizontal",
+                               _shape(paths.BAR, thin=True), 1),
+    "resize-vertical": State("resize-vertical",
+                             _turned(paths.BAR, 0.25), 1),
+    "resize-diagonal-down": State("resize-diagonal-down",
+                                  _turned(paths.BAR, 0.125), 1),
+    "resize-diagonal-up": State("resize-diagonal-up",
+                                _turned(paths.BAR, -0.125), 1),
+
+    # The single direction arrows, which scroll bars and a few old programs ask
+    # for by name.
+    "arrow-right": State("arrow-right", _shape(paths.SHAFT, thin=True), 1),
+    "arrow-down": State("arrow-down", _turned(paths.SHAFT, 0.25), 1),
+    "arrow-left": State("arrow-left", _turned(paths.SHAFT, 0.5), 1),
+    "arrow-up": State("arrow-up", _turned(paths.SHAFT, -0.25), 1),
+
+    # The hands, for links and for dragging.
+    "open-hand": State("open-hand", _shape(paths.MITTEN), 1),
+    "closed-hand": State("closed-hand", _shape(paths.FIST), 1),
 }

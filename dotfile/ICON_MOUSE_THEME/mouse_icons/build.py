@@ -1,16 +1,18 @@
 """Turning a state into the frames the X server reads.
 
-One function, because there is one decision in it: how many frames a cursor
-gets. The state already knows - the spinning ones ask for twice as many as the
-rest - so this only has to draw them and wrap each one in the header the format
-needs.
+Two functions, because there are two decisions in it: how many frames a cursor
+gets, and where its hotspot is.
 
-The hotspot is the middle of the dot for every state. It has to be: the hotspot
-is where the click lands, and a cursor whose badge hangs below and to the right
-of the hotspot without the hotspot moving is a cursor that clicks where it
-points. Moving it to the centre of the bounding box instead would put the click
-half a badge away from the dot, which at twenty four pixels is several pixels of
-error in every window on the screen.
+The frames are the state's own count. A still cursor carries one frame and an
+animation carries as many as it needs, so the theme is only as large as it has
+to be - where the set this replaces wrote twelve identical frames of every arrow
+and every bar.
+
+The hotspot is the state's, not the image's. It has to be: the hotspot is where
+the click lands, and the arrow is not centred on its own tip. A theme that puts
+the hotspot in the middle of the image for every state clicks six pixels away
+from the point of a twenty four pixel arrow, in every corner of every window on
+the screen.
 """
 
 from __future__ import annotations
@@ -24,13 +26,13 @@ from .xcursor import CursorImage
 def render_state(state: State, size: int) -> list[CursorImage]:
     """Every frame of ``state`` at ``size``, ready to be written."""
     geometry = Geometry(size)
-    hotspot = geometry.hotspot
+    xhot, yhot = state.hotspot_pixels(size)
     return [
         CursorImage(
             size,
             size,
-            hotspot,
-            hotspot,
+            xhot,
+            yhot,
             palette.FRAME_DELAY_MS,
             state.render(geometry, frame).pixels(),
         )
@@ -43,18 +45,18 @@ def render_state_still(state: State, size: int) -> list[CursorImage]:
 
     A cursor shown inside another window - the pointer used as a drag image, or
     the one a screenshot tool draws - is shown as a still, and a still taken from
-    a pulse is whichever brightness the pulse happened to be at. This takes the
-    first frame, which is the dimmest, so a screenshot of a cursor is at least
-    the same every time.
+    a rotation is whichever angle the rotation happened to be at. This takes the
+    first frame, and carries no delay, which is what tells the X server the
+    cursor does not move.
     """
     geometry = Geometry(size)
-    hotspot = geometry.hotspot
+    xhot, yhot = state.hotspot_pixels(size)
     return [
         CursorImage(
             size,
             size,
-            hotspot,
-            hotspot,
+            xhot,
+            yhot,
             0,
             state.render(geometry, 0).pixels(),
         )

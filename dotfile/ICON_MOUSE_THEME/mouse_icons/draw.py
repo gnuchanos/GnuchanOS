@@ -1,16 +1,15 @@
-"""The four shapes every cursor is made of: a glow, a disc, a ring, an arc.
+"""The shapes a cursor is made of: a polygon, a disc, a ring, an arc.
 
-Each one is a loop over the pixels of its own bounding box asking how much of
-the shape lands on that pixel, and painting that fraction. Nothing here fills a
-polygon or walks a scanline: a cursor is twenty to fifty pixels across, and the
-cost of touching every pixel of a tiny box is smaller than the code a faster
-fill would need.
+Every one of them is drawn the same way - by asking, for each pixel of its own
+bounding box, how much of the shape lands on that pixel, and painting that
+fraction. The coverage comes out of a signed distance, so a disc's edge and a
+polygon's edge are feathered identically and a cursor built from both looks like
+one object instead of two drawings with different edges.
 
-Coverage comes out of the geometry, which is the point. A disc's coverage is how
-far inside its radius the pixel centre is, feathered over one pixel, so the edge
-is smooth at every size without a separate blur pass - and the same number falls
-out of a ring's two radii and an arc's angle, so all three have identically soft
-edges and a cursor drawn from them looks like one object.
+There is no scanline fill and no scan conversion anywhere, which is the whole
+reason this is short. A cursor is twenty to fifty pixels across; the cost of
+touching every pixel of a tiny box is smaller than the code a faster fill would
+need, and a distance-based fill antialiases itself for free.
 """
 
 from __future__ import annotations
@@ -19,9 +18,9 @@ import math
 
 from .canvas import Canvas, RGB
 
-#: How much of a pixel the edge of a shape is spread over. One pixel: the
-#: smallest value that removes the staircase without making a 24 pixel cursor
-#: look out of focus.
+#: How much of a pixel a shape's edge is spread over. One pixel: the smallest
+#: value that removes the staircase without making a 24 pixel cursor look out of
+#: focus.
 FEATHER = 1.0
 
 
@@ -32,11 +31,83 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 def cover(inside: float, feather: float = FEATHER) -> float:
     """How much of a pixel is inside a shape, from a signed distance.
 
-    ``inside`` is positive when the pixel is inside. A value of one pixel or
-    more outside gives 0, one pixel or more inside gives 1, and the range
-    between is the antialiased edge.
+    ``inside`` is positive when the pixel is inside. A value of half a feather
+    or more outside gives 0, the same inside gives 1, and the range between is
+    the antialiased edge.
     """
+    if feather <= 0.0:
+        return 1.0 if inside >= 0.0 else 0.0
     return _clamp(inside / feather + 0.5)
+
+
+def segment_distance(px: float, py: float, x0: float, y0: float, x1: float,
+                     y1: float) -> float:
+    """Distance from a point to the segment, not to the infinite line.
+
+    The difference is the whole of an arrow head: with the infinite line, the
+    two edges of a head would each extend past the point where they meet.
+    """
+    dx = x1 - x0
+    dy = y1 - y0
+    length_squared = dx * dx + dy * dy
+    if length_squared <= 0.0:
+        return math.hypot(px - x0, py - y0)
+    t = ((px - x0) * dx + (py - y0) * dy) / length_squared
+    t = 0.0 if t < 0.0 else 1.0 if t > 1.0 else t
+    return math.hypot(px - (x0 + t * dx), py - (y0 + t * dy))
+
+
+def polygon_distance(px: float, py: float,
+                     points: list[tuple[float, float]]) -> float:
+    """Signed distance from a point to a closed polygon: positive inside.
+
+    The sign is decided by the ray crossing rule and the magnitude by the
+    nearest edge, which is what lets one function fill a shape as awkward as the
+    hole in the middle of a hollow square - a shape whose inside is not
+    connected.
+    """
+    nearest = float("inf")
+    inside = False
+    count = len(points)
+    for index in range(count):
+        x0, y0 = points[index]
+        x1, y1 = points[(index + 1) % count]
+        distance = segment_distance(px, py, x0, y0, x1, y1)
+        if distance < nearest:
+            nearest = distance
+        if (y0 > py) != (y1 > py):
+            crossing = x0 + (py - y0) * (x1 - x0) / (y1 - y0)
+            if px < crossing:
+                inside = not inside
+    if nearest == float("inf"):
+        return -1.0
+    return nearest if inside else -nearest
+
+
+def polygon(canvas: Canvas, points: list[tuple[float, float]], color: RGB,
+            alpha: float = 1.0, grow: float = 0.0,
+            feather: float = FEATHER) -> None:
+    """A closed polygon of ``points``, grown outward by ``grow`` pixels.
+
+    Growing is how an outline is drawn: the same polygon is painted once in the
+    outline colour with a positive ``grow`` and then in the fill colour with
+    none, so the two shapes are the same shape and the outline cannot have a
+    corner the fill does not have. Offsetting the edges of a polygon properly
+    would need a miter join per corner; moving the edge outward along its own
+    normal is exactly what a distance test does for free.
+    """
+    if len(points) < 3 or alpha <= 0.0:
+        return
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    left = int(math.floor(min(xs) - grow - feather))
+    right = int(math.ceil(max(xs) + grow + feather))
+    top = int(math.floor(min(ys) - grow - feather))
+    bottom = int(math.ceil(max(ys) + grow + feather))
+    for y in range(top, bottom + 1):
+        for x in range(left, right + 1):
+            inside = polygon_distance(x + 0.5, y + 0.5, points) - grow
+            canvas.blend(x, y, color, cover(inside, feather) * alpha)
 
 
 def disc(canvas: Canvas, cx: float, cy: float, radius: float, color: RGB,
@@ -71,33 +142,13 @@ def ring(canvas: Canvas, cx: float, cy: float, radius: float, width: float,
             canvas.blend(x, y, color, min(outside, inside) * alpha)
 
 
-def halo(canvas: Canvas, cx: float, cy: float, reach: float, color: RGB,
-         alpha_max: float, power: float = 1.8) -> None:
-    """The light around the dot, from full brightness at the centre to nothing.
-
-    The falloff is a power curve rather than a linear ramp, because a linear one
-    reads as a flat disc with a grey rim - the visible edge the whole glow
-    exists to avoid. Inside the dot the halo is at its brightest; the dot is
-    drawn over it, so what is left is the part that reaches past it.
-    """
-    if reach <= 0.0 or alpha_max <= 0.0:
-        return
-    for y in range(int(cy - reach - FEATHER), int(cy + reach + FEATHER) + 1):
-        for x in range(int(cx - reach - FEATHER), int(cx + reach + FEATHER) + 1):
-            distance = math.hypot(x + 0.5 - cx, y + 0.5 - cy)
-            if distance >= reach:
-                continue
-            falloff = (1.0 - distance / reach) ** power
-            canvas.blend(x, y, color, alpha_max * falloff)
-
-
 def arc(canvas: Canvas, cx: float, cy: float, radius: float, width: float,
         color: RGB, start: float, sweep: float, alpha: float = 1.0) -> None:
     """Part of a ring, from ``start`` radians through ``sweep`` radians.
 
-    Both ends are cut square rather than rounded, which is what makes the busy
-    ring read as a comet: the head is where the arc is thickest against the eye
-    because it has an edge, and the fade behind it is the pulse.
+    Both ends are cut square rather than rounded, which is what makes a spinning
+    ring read as a ring with a gap in it - and a gap is the whole difference
+    between something turning and a target.
     """
     if width <= 0.0 or sweep <= 0.0 or alpha <= 0.0:
         return
@@ -126,29 +177,3 @@ def arc(canvas: Canvas, cx: float, cy: float, radius: float, width: float,
                 # arc does not end on a hard radial line.
                 coverage *= cover(min(offset, sweep - offset) * radius)
             canvas.blend(x, y, color, coverage * alpha)
-
-
-def tapered_arc(canvas: Canvas, cx: float, cy: float, radius: float,
-                width: float, color: RGB, start: float, sweep: float,
-                alpha: float = 1.0) -> None:
-    """An arc that fades from full strength at its head to nothing at its tail.
-
-    The spinning states are what this is for: a ring of constant brightness
-    rotating looks like a ring, while one that fades behind its head reads as
-    movement even in a still frame, and reads as a direction once it moves.
-    """
-    steps = max(3, int(sweep * radius))
-    step = sweep / steps
-    for index in range(steps):
-        progress = index / (steps - 1) if steps > 1 else 0.0
-        arc(
-            canvas,
-            cx,
-            cy,
-            radius,
-            width,
-            color,
-            start + index * step,
-            step * 1.35,
-            alpha * progress,
-        )

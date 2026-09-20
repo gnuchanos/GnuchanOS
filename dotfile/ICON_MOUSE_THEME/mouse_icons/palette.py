@@ -1,118 +1,112 @@
-"""Colours and sizes for the GnuchanPurple cursor theme.
+"""Colours, sizes and proportions for the GnuchanPurple cursor theme.
 
-Every cursor in the theme is the same object seen in a different state: a round
-dot of light with a halo around it. That is why the colours live here rather
-than in the shape that draws them - the whole point of the set is that the dot,
-the halo and the rim are the same three colours everywhere, and a shape that
-picked its own would be a shape that looks like a different cursor.
+Every cursor in the theme is one flat shape with an outline around it. That is a
+deliberate change from the set this one replaces, which drew every state as a
+round dot of light with marks stacked on top of it: at twenty four pixels that
+reads as two cursors sitting on each other, and the caret, the resize arrows and
+the hand all turned into the same purple blob with something crossing it.
 
-The values are the accents of the rest of the desktop, taken from
-``dotfile/ICON_THEME/icons/palette.py``: a cursor drawn from the same palette as
-the icons it points at is a cursor that belongs to the theme.
+So there are two colours and no gradient. The fill is the theme's accent purple,
+taken from ``dotfile/ICON_THEME/icons/palette.py`` like the rest of the desktop's
+artwork, and the outline is a very dark purple that separates the shape from a
+white page without reading as a second colour. A shape drawn in one flat colour
+with one outline is a shape that is still legible when it is eleven pixels of
+arrow, which is the only test a cursor has to pass.
 
-Nothing is drawn in a colour that only reads on one background. A light purple
-cursor disappears on a white page and a dark one disappears on a dark editor, so
-every cursor is drawn in four layers, innermost first:
-
-    the shadow   a dark ring, so the cursor is visible on a light background
-    the halo     the soft light around the dot, which is the glow
-    the rim      the saturated purple edge
-    the core     near white, what the eye actually follows
-
-The shadow is what makes the set usable on a light background; without it the
-halo would dissolve into the page.
+Nothing here is a pixel value. Everything is a fraction of the nominal size, so
+the same description draws correctly at 24, 32 and 48 pixels - and a cursor that
+is drawn at the size it is asked for is one the X server never has to scale.
 """
 
 from __future__ import annotations
 
-# --- the four layers ---------------------------------------------------------
+# --- the colours -------------------------------------------------------------
 
-#: Dark ring drawn first, under everything. Not black: a black ring on a light
-#: page looks like a printing artefact, while a very dark purple looks like the
-#: same cursor with a shadow.
-SHADOW = "#1b0729"
+#: The fill of every cursor: the theme's accent purple.
+FILL = "#a855f7"
 
-#: The outer glow. It is drawn as a radial falloff, so only its colour matters;
-#: its alpha is computed per pixel from the distance to the centre.
-HALO = "#c77dff"
+#: The second purple, painted inside the fill and inset from it. Every cursor in
+#: the set is two flat tones of the same hue plus a rim, which is what makes a
+#: shape read as a panel rather than as a sticker: one flat colour at twenty four
+#: pixels is a silhouette, and a silhouette with a darker core is an object.
+RIM = "#6b21c8"
 
-#: The saturated edge of the dot itself.
-RIM = "#a855f7"
+#: How far the darker tone is inset from the edge, as a fraction of the nominal
+#: size. Small enough that a resize bar four pixels wide still has its lighter
+#: edge, large enough to be seen at all at 24 pixels.
+INSET = 0.045
 
-#: The bright centre. Light enough that the dot reads as a light source, which
-#: is what makes the pulse visible at twenty pixels across.
+#: The bright core: the one near-white mark in the set, and the only detail that
+#: is not a shade of purple. It sits inside a shape rather than on top of it - in
+#: the middle of a reticle, at the head of a gyro - so a cursor is still one
+#: object with one silhouette, which is the thing the stacked shapes it replaces
+#: got wrong.
 CORE = "#f3e0ff"
 
-#: The thin ring between rim and core, which is what stops the core looking
-#: like a blown-out highlight at the larger sizes.
-INNER = "#ddb3ff"
+#: The outline drawn around the fill. A cursor is seen over whatever the user
+#: was looking at, so the shape carries its own edge rather than relying on
+#: contrast with a background it cannot know.
+OUTLINE = "#1b0729"
 
-# --- the parts a state adds on top -------------------------------------------
+#: The fill of the donut a waiting state is drawn as, and of the marks that
+#: stand for something inside a badge. Lighter than :data:`FILL` so a spinner
+#: reads as a ring of light and a symbol reads against the badge it sits on.
+LIGHT = "#ddb3ff"
 
-#: Arrows, ticks, chevrons and the slash are drawn in this colour: light enough
-#: to read on the dark part of the cursor, which is where they always are.
-MARK = "#f3e0ff"
+#: The near-white the symbols inside badges are drawn in - the plus of a zoom,
+#: the question mark of a help cursor. Only ever used on top of :data:`FILL`.
+SYMBOL = "#f3e0ff"
 
-#: The dark backing under a mark, so a chevron drawn over the bright core is
-#: still legible. Same reasoning as SHADOW.
-MARK_SHADOW = "#2a0d3d"
+# --- proportions --------------------------------------------------------------
+# Written as fractions of the nominal size. A value near 0.5 is the edge of the
+# image, so nothing wants to be much above 0.45.
 
-#: The busy ring and the forbidden slash: the two things that have to read as a
-#: warning rather than as part of the dot.
-RING = "#ddb3ff"
+#: How thick the outline around every shape is, at each side.
+OUTLINE_WIDTH = 0.052
 
-# --- geometry ----------------------------------------------------------------
-# All of it in fractions of the nominal size or of the dot radius, so one
-# description draws correctly at every size the theme ships.
+#: How far the donut of a waiting state reaches from the centre, and how thick
+#: the ring itself is.
+SPINNER_REACH = 0.395
+SPINNER_WIDTH = 0.135
 
-#: Dot radius as a fraction of the nominal size. A quarter of the size leaves a
-#: quarter on each side for the halo, which is the room it needs to fade out
-#: before the edge of the image.
-DOT_RADIUS = 0.235
+#: How much of the circle a waiting state's ring covers when it has a gap: a gap
+#: is what makes a ring read as something turning rather than as a target.
+SPINNER_SWEEP = 0.74
 
-#: How far the halo reaches, as a multiple of the dot radius. The falloff is
-#: computed over this distance and reaches zero at it, so the image never shows
-#: a square edge.
-HALO_REACH = 2.05
+#: Where a badge sits, and how big it is. The lower right of the cursor, because
+#: the hotspot is the arrow's tip at the upper left and a badge has to stay off
+#: the part of the screen the click is about to land on.
+#:
+#: Two numbers decide both: the badge has to clear the arrow's tail, or the two
+#: shapes touch and the cursor reads as a disc with a wedge cut out of it, and it
+#: has to stay inside the image once its outline is grown outward, or one side
+#: comes out cut flat. 0.735 - 0.18 - 0.052 is inside, and the arrow's tail ends
+#: 0.26 from the badge's centre, which is outside 0.18 + 0.052.
+BADGE_CENTRE: tuple[float, float] = (0.735, 0.735)
+BADGE_RADIUS = 0.18
 
-#: The rim thickness, as a fraction of the dot radius.
-RIM_WIDTH = 0.20
-
-#: The dark ring under the dot, as a fraction of the dot radius. Thin: it is
-#: there to separate the cursor from a white page, not to be an outline.
-SHADOW_WIDTH = 0.16
-
-#: The width of a mark line (arrow shafts, ticks, the slash), as a fraction of
-#: the nominal size.
-MARK_WIDTH = 0.075
-
-#: How bright the halo is at its strongest, before the falloff. The pulse moves
-#: between these two.
-HALO_ALPHA_MIN = 0.30
-HALO_ALPHA_MAX = 0.62
-
-#: How much the dot's own brightness moves during the pulse. Small on purpose: a
-#: cursor that blinks like a warning light is hard to look at while typing.
-CORE_PULSE = 0.16
+#: How much of the badge a symbol fills. A symbol at the badge's own radius
+#: would have its outline sitting on the badge's outline.
+BADGE_SYMBOL_SCALE = 0.72
 
 # --- sizes -------------------------------------------------------------------
-# The nominal sizes written into the theme. A cursor is read at the size the
-# desktop asks for, and a theme with only one size gets scaled by the X server,
-# which resamples a 24 pixel cursor up to 48 and draws a blurred dot. Three
-# sizes cover a normal screen, a HiDPI one and a large-cursor setting.
-
+# A cursor is read at the size the desktop asks for. A theme that ships one size
+# gets scaled by the X server, which resamples a 24 pixel cursor up to 48 and
+# draws it blurred; three sizes cover a normal screen, a HiDPI one and the large
+# cursor setting.
 SIZES: tuple[int, ...] = (24, 32, 48)
 
-# --- animation ---------------------------------------------------------------
-
-#: Frames per cursor. Twelve at one frame every FRAME_DELAY_MS is a little over
-#: two seconds of pulse: slow enough to read as breathing rather than blinking,
-#: which is what makes the halo look like light instead of an outline.
+# --- animation ----------------------------------------------------------------
+# Only the states that really move carry more than one frame. Every other state
+# in the set is a still shape, and a still shape written twelve times is twelve
+# times the disk for nothing.
+#
+#: Frames in a state that pulses - the hourglass of a window that cannot answer.
 FRAMES = 12
 
-#: How long each frame is shown, in milliseconds. Xcursor stores this per image.
-FRAME_DELAY_MS = 210
+#: How long each frame is shown, in milliseconds.
+FRAME_DELAY_MS = 150
 
-#: Frames in the states that spin. A rotation that comes back to where it began
-#: after FRAMES_SPIN frames reads as continuous; one tied to the pulse does not.
+#: Frames in the states that spin: a rotation that returns to where it started
+#: after this many frames reads as continuous.
 FRAMES_SPIN = 24
