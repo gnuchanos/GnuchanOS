@@ -1,0 +1,27 @@
+# =============================================================================
+# GnuchanOS - Plymouth boot splash
+# -----------------------------------------------------------------------------
+# Read by plymouthd to find out what draws the boot splash. The script module
+# is used rather than one of the built in ones - two-step, spinner, text - so
+# that the splash can be the GnuchanOS wallpaper, logo and progress bar rather
+# than a distribution's own.
+#
+# @THEME_DIR@ is replaced with the directory this file is installed into by
+# settings_plymouth.py, which is /usr/share/plymouth/themes/GnuchanOS unless
+# something has been told otherwise. It is written as an absolute path in both
+# places because plymouth does not resolve either of them relative to this
+# file: ImageDir is the directory every Image() name in the script is resolved
+# against, and ScriptFile is the script itself.
+#
+# The theme's own colours, the animation and the layout are all in the script
+# next to this file; this file only says which script to run.
+# =============================================================================
+
+[Plymouth Theme]
+Name=GnuchanOS
+Description=GnuchanOS purple boot splash: the GnuchanOS wallpaper, logo and a progress bar
+ModuleName=script
+
+[script]
+ImageDir=@THEME_DIR@
+ScriptFile=@THEME_DIR@/GnuchanOS.script

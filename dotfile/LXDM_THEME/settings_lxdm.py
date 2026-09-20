@@ -37,11 +37,19 @@
 #      runs as the lxdm account, or as root when there is none, before anyone
 #      logs in and a theme installed in a user's home directory is not visible
 #      to it - and does the same for the cursor, which lxdm has no key for at
-#      all: the cursor theme is built from dotfile/ICON_MOUSE_THEME into
-#      /usr/share/icons, and the greeter's own default theme is pointed at it.
-#      Without both, the login screen keeps the black X cursor while the session
-#      it starts has the purple one, which is the one thing about a cursor theme
-#      that cannot be fixed from inside the session;
+#      all. The cursor the session selected in lxappearance is the one the
+#      greeter is given: its name is read from the files lxappearance writes -
+#      ~/.config/lxsession/<profile>/desktop.conf, the GTK 3 settings.ini,
+#      ~/.gtkrc-2.0 and the default cursor theme - the theme is copied from the
+#      user's icons directory into /usr/share/icons when that is the only place
+#      it is, and the greeter's own home is pointed at it: its default cursor
+#      theme, its ~/.gtkrc-2.0 for the GTK+ 2 greeter, and its GTK 3
+#      settings.ini, which is the only place the GTK+ 3 greeter reads a cursor
+#      from. When the session has chosen nothing, the theme built here from
+#      dotfile/ICON_MOUSE_THEME is used instead, so the login screen is never
+#      left with the black X cursor while the session it starts has the purple
+#      one - the one thing about a cursor theme that cannot be fixed from
+#      inside the session;
 #   5. makes lxdm the display manager: writes the Debian default display
 #      manager file, which lxdm's own systemd unit checks before it will start,
 #      disables any other display manager that was enabled so that two of them
@@ -182,7 +190,8 @@ GTK_THEME_DIRS = (Path("/usr/share/themes"), Path("/usr/local/share/themes"))
 # for every other user on the machine.
 
 #: The cursor theme built by dotfile/ICON_MOUSE_THEME, and where that package
-#: is relative to this script.
+#: is relative to this script. It is what the greeter is given when the session
+#: has chosen no theme of its own.
 CURSOR_THEME_NAME = "GnuChanMouseIcons"
 CURSOR_THEME_SOURCE = SCRIPT_DIR.parent / "ICON_MOUSE_THEME"
 
@@ -191,11 +200,74 @@ CURSOR_THEME_SOURCE = SCRIPT_DIR.parent / "ICON_MOUSE_THEME"
 #: anything else having to be set.
 CURSOR_ICON_DIRS = (Path("/usr/share/icons"), Path("/usr/local/share/icons"))
 
-#: The home directories the greeter may be started with, in the order worth
-#: writing. Debian, Ubuntu and the RPM distributions create an lxdm account and
-#: run the greeter as it; a machine that built lxdm from source has no such
-#: account and the greeter runs as root.
-GREETER_HOMES = (Path("/var/lib/lxdm"), Path("/root"))
+#: The icon directories of a user, which come before the system ones in every
+#: search libXcursor makes: a theme chosen in lxappearance is installed here.
+USER_ICON_SUBDIRS = (".icons", ".local/share/icons")
+
+#: The cursor size written alongside the name when the session recorded none.
+#: GTK's own default, and one of the sizes the cursor package ships, so it is
+#: drawn rather than scaled.
+DEFAULT_CURSOR_SIZE = 24
+
+#: The theme name a program that has been told nothing resolves. libXcursor
+#: reads its index.theme to learn what it inherits from, which is the whole
+#: reason that file is written into the greeter's home rather than the theme
+#: being named somewhere lxdm has a key for - lxdm has none.
+DEFAULT_CURSOR_THEME = "default"
+
+#: Where a session records the cursor it chose, as
+#: (path under the home directory, section, name key, size key). The LXSession
+#: file is the one lxappearance writes when a cursor theme is picked in it; the
+#: GTK 3 and GTK 2 files are what the rest of the desktop reads, and are what a
+#: theme chosen elsewhere (gsettings, a hand edit) ends up in; the default
+#: cursor theme is where an older lxappearance left its choice. The
+#: {profile} in the first path stands for every LXSession profile, because
+#: lxappearance writes the one the session was started with and a machine that
+#: has several has one file per profile.
+SESSION_CURSOR_SOURCES: tuple[tuple[str, str | None, str, str | None], ...] = (
+    (
+        ".config/lxsession/{profile}/desktop.conf",
+        "GTK",
+        "sGtk/CursorThemeName",
+        "iGtk/CursorThemeSize",
+    ),
+    (
+        ".config/gtk-3.0/settings.ini",
+        "Settings",
+        "gtk-cursor-theme-name",
+        "gtk-cursor-theme-size",
+    ),
+    (".gtkrc-2.0", None, "gtk-cursor-theme-name", "gtk-cursor-theme-size"),
+    (".icons/default/index.theme", "Icon Theme", "Inherits", None),
+)
+
+#: The environment variable that carries the home directory of whoever started
+#: the script across the sudo re-run below.
+INVOKING_HOME_VARIABLE = "GNUGHAN_LXDM_USER_HOME"
+
+#: The environment variable that stops a sudo which fails to change the user
+#: from re-running the script for ever.
+ELEVATED_VARIABLE = "GNUGHAN_LXDM_ELEVATED"
+
+#: The accounts a greeter may be run as, in the order worth trying, and the
+#: homes written when the password database cannot be asked. Debian, Ubuntu and
+#: the RPM distributions create an lxdm account and run the greeter as it; a
+#: machine that built lxdm from source has no such account and the greeter runs
+#: as root. Which home each account was given is the distribution's decision, so
+#: it is looked up rather than assumed: a cursor written into /var/lib/lxdm on a
+#: machine whose lxdm account lives elsewhere is a cursor the greeter never
+#: reads, and nothing in the run would have said so.
+GREETER_ACCOUNTS = ("lxdm", "nobody", "root")
+FALLBACK_GREETER_HOMES = (Path("/var/lib/lxdm"), Path("/root"))
+
+#: The markers around the cursor settings in the committed greeter stylesheet,
+#: and the placeholders the values are substituted for. The markers are what
+#: lets a run take the settings out again - a greeter that asks for a cursor
+#: theme that is not installed is worse off than one that asks for nothing.
+CURSOR_BLOCK_BEGIN = "# >>> GnuchanPurple cursor"
+CURSOR_BLOCK_END = "# <<< GnuchanPurple cursor"
+CURSOR_NAME_PLACEHOLDER = "@CURSOR_THEME@"
+CURSOR_SIZE_PLACEHOLDER = "@CURSOR_SIZE@"
 
 #: The images this script generates into the theme from the repository assets.
 BACKGROUND_FILE = "bg.png"
@@ -250,13 +322,24 @@ REQUIRED_WIDGETS: dict[str, tuple[str, ...]] = {
     "exit": ("GtkButton",),
 }
 
-#: The interface files, in the order they are installed.
+#: The interface files, in the order they are installed, and the two stylesheets
+#: named on their own. The GTK+ 2 stylesheet is named twice - once in the install
+#: list and once by the step that writes the cursor into it - and a bare string
+#: in two places is a name that can be changed in one of them.
 GTK2_INTERFACE = "greeter.ui"
 GTK3_INTERFACE = "greeter-gtk3.ui"
+GTK2_RC_FILE = "gtkrc"
+GTK3_CSS_FILE = "gtk.css"
 
 #: Everything copied from SOURCE_THEME_DIR into the installed theme. The three
 #: image files are generated and are not in this list.
-THEME_TEXT_FILES = (GTK2_INTERFACE, GTK3_INTERFACE, "gtkrc", "gtk.css", "index.theme")
+THEME_TEXT_FILES = (
+    GTK2_INTERFACE,
+    GTK3_INTERFACE,
+    GTK2_RC_FILE,
+    GTK3_CSS_FILE,
+    "index.theme",
+)
 
 #: The greeter binaries a distribution may have installed, in the order worth
 #: trying. Debian and Ubuntu put it in /usr/lib/lxdm, a source build puts it in
@@ -312,8 +395,8 @@ OTHER_DISPLAY_MANAGERS = (
 # --- what an lxdm theme is ----------------------------------------------------
 # The greeter reads the file pair that matches the toolkit it was built
 # against. Both are installed, so either build is greeted with this theme.
-GTK2_FILES = (GTK2_INTERFACE, "gtkrc")
-GTK3_FILES = (GTK3_INTERFACE, "gtk.css")
+GTK2_FILES = (GTK2_INTERFACE, GTK2_RC_FILE)
+GTK3_FILES = (GTK3_INTERFACE, GTK3_CSS_FILE)
 
 
 # --- logging ------------------------------------------------------------------
@@ -384,7 +467,7 @@ def ensure_root(log: Log) -> None:
     """
     if is_root():
         return
-    if os.environ.get("GNUGHAN_LXDM_ELEVATED") == "1":
+    if os.environ.get(ELEVATED_VARIABLE) == "1":
         raise SystemExit(
             "error: still not root after sudo; run the script as root "
             "(su -c 'python3 settings_lxdm.py')"
@@ -396,8 +479,44 @@ def ensure_root(log: Log) -> None:
             "run this script as root"
         )
     log.step("This install is system wide; re-running it through sudo")
-    environment = dict(os.environ, GNUGHAN_LXDM_ELEVATED="1")
+    # The home directory of whoever started this is carried across the re-run.
+    # sudo resets HOME to root's home, and the cursor theme the session chose in
+    # lxappearance is recorded in the user's own files: without this the script
+    # would look in the wrong place, find nothing, and quietly install its own
+    # cursor instead of the one that was asked for.
+    environment = dict(os.environ)
+    environment[ELEVATED_VARIABLE] = "1"
+    environment.setdefault(
+        INVOKING_HOME_VARIABLE, str(Path(os.path.expanduser("~")).resolve())
+    )
     os.execvpe(sudo, [sudo, sys.executable, str(SCRIPT_PATH), *sys.argv[1:]], environment)
+
+
+def invoking_home() -> Path:
+    """The home directory of whoever started this script, not of root.
+
+    sudo resets HOME - env_reset is on by default and HOME is not in the keep
+    list - so everything the session recorded about its cursor lives in a
+    directory this process would otherwise never look at. The directory is
+    carried across the re-run in the environment, and the account sudo names is
+    the fallback for a run where it was lost. A machine whose users live
+    somewhere other than /home is handled by asking the password database rather
+    than by guessing the path.
+    """
+    carried = os.environ.get(INVOKING_HOME_VARIABLE, "").strip()
+    if carried:
+        return Path(carried)
+    user = os.environ.get("SUDO_USER", "").strip()
+    if user and user != "root":
+        try:
+            import pwd
+
+            return Path(pwd.getpwnam(user).pw_dir)
+        except (ImportError, KeyError):
+            candidate = Path("/home") / user
+            if candidate.is_dir():
+                return candidate
+    return Path(os.path.expanduser("~"))
 
 
 # --- which distribution this is ----------------------------------------------
@@ -1098,7 +1217,9 @@ def read_png(path: Path) -> Raster | None:
 # --- installing the theme ------------------------------------------------------
 
 
-def render_theme(log: Log, background: Path, logo: Path) -> None:
+def render_theme(
+    log: Log, background: Path, logo: Path, cursor: tuple[str, int] | None
+) -> None:
     """Write the installed theme: the committed files, and the three images.
 
     The interfaces name their images through @THEME_DIR@, and the placeholder is
@@ -1108,6 +1229,13 @@ def render_theme(log: Log, background: Path, logo: Path) -> None:
     absolute path of the .ui file, and a relative pixbuf path is then resolved
     against whatever directory GtkBuilder decided the file came from. Written
     out absolute, there is nothing left to resolve.
+
+    The GTK+ 2 stylesheet additionally carries the cursor the greeter is to draw
+    with, written into the marked region it is committed with; see
+    apply_cursor_block for why that region, and not the greeter's own home
+    directory, is the hook that cannot be lost. A GTK+ 3 greeter reads no rc file
+    and so cannot be told there at all: it is pointed at the same theme through
+    settings.ini and through the default index instead.
 
     The logo is scaled twice from the same source: once for the image on the
     login box, once as the avatar the greeter falls back to for an account with
@@ -1125,7 +1253,11 @@ def render_theme(log: Log, background: Path, logo: Path) -> None:
         text = source.read_text(encoding="utf-8")
         text = text.replace(THEME_DIR_PLACEHOLDER, theme_dir.as_posix())
         if THEME_DIR_PLACEHOLDER in text:
-            raise SystemExit(f"error: {source} still names {THEME_DIR_PLACEHOLDER} after substitution")
+            raise SystemExit(
+                f"error: {source} still names {THEME_DIR_PLACEHOLDER} after substitution"
+            )
+        if name == GTK2_RC_FILE:
+            text = apply_cursor_block(text, cursor)
         (theme_dir / name).write_text(text, encoding="utf-8")
         log.detail(f"wrote {theme_dir / name}")
 
@@ -1240,13 +1372,230 @@ def gtk_theme_available(name: str) -> bool:
 # --- the cursor the greeter starts with ----------------------------------------
 
 
-def cursor_theme_dir() -> Path | None:
-    """The cursor theme in a system icon directory, or None."""
+def system_cursor_theme(name: str) -> Path | None:
+    """A cursor theme in a system icon directory, or None.
+
+    System wide is what the greeter needs: it runs as the lxdm account, or as
+    root, before anyone has logged in, so it reads the system icon directories
+    and has no home directory of its own to read a theme from.
+    """
+    if not name:
+        return None
     for directory in CURSOR_ICON_DIRS:
-        candidate = directory / CURSOR_THEME_NAME
+        candidate = directory / name
         if (candidate / "cursors").is_dir():
             return candidate
     return None
+
+
+def cursor_theme_dirs(home: Path) -> tuple[Path, ...]:
+    """Every icon directory a cursor theme may be in, the user's first.
+
+    That is the order libXcursor and lxappearance both search: the user's own
+    directories under $HOME, then the system ones. A theme chosen in
+    lxappearance normally ends up in the first of them, which is exactly why
+    the greeter cannot see it - and why the theme has to be copied.
+    """
+    return (*(home / subpath for subpath in USER_ICON_SUBDIRS), *CURSOR_ICON_DIRS)
+
+
+def find_cursor_theme(name: str, home: Path) -> Path | None:
+    """Where a cursor theme is installed for this user, or None.
+
+    A directory is a cursor theme when it has a cursors subdirectory, which is
+    the test libXcursor and lxappearance both apply: a directory holding only an
+    index.theme lists nothing and would show as an empty entry in either.
+    """
+    if not name or name in (".", "..") or "/" in name:
+        return None
+    for directory in cursor_theme_dirs(home):
+        candidate = directory / name
+        if (candidate / "cursors").is_dir():
+            return candidate
+    return None
+
+
+def session_cursor_files(home: Path) -> list[tuple[Path, str | None, str, str | None]]:
+    """Every file that may hold the cursor theme the session selected.
+
+    The {profile} in the LXSession entry is expanded here into one file per
+    profile, because lxappearance writes the profile the session was started
+    with and a machine may have more than one.
+    """
+    found: list[tuple[Path, str | None, str, str | None]] = []
+    for path, section, name_key, size_key in SESSION_CURSOR_SOURCES:
+        if "{profile}" not in path:
+            found.append((home / path, section, name_key, size_key))
+            continue
+        root = home / ".config" / "lxsession"
+        try:
+            profiles = sorted(entry.name for entry in root.iterdir() if entry.is_dir())
+        except OSError:
+            profiles = []
+        for profile in profiles:
+            found.append((home / path.format(profile=profile), section, name_key, size_key))
+    return found
+
+
+def read_setting(text: str, section: str | None, key: str) -> str | None:
+    """Value of a key in a key file, with or without a section.
+
+    The LXSession, GTK 3 and default cursor files are key files with sections;
+    ~/.gtkrc-2.0 is a list of assignments with no sections at all, which is why
+    the section may be None here. Written out rather than done with
+    configparser for the reason the lxdm.conf reader below is: these are files
+    people edit by hand, and a parser that raises on a duplicate key is a parser
+    that stops the install.
+    """
+    if section is not None:
+        return read_ini_value(text, section, key)
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", ";", "!")) or "=" not in stripped:
+            continue
+        name, _, value = stripped.partition("=")
+        if name.strip().lower() == key.lower():
+            return value.strip()
+    return None
+
+
+def unquoted(value: str | None) -> str:
+    """A value with the quotes a GTK rc file wraps its strings in taken off."""
+    if not value:
+        return ""
+    return value.strip().strip('"').strip("'").strip()
+
+
+def session_cursor_choice(home: Path) -> tuple[str, Path] | None:
+    """The cursor theme the session selected, and where it is installed.
+
+    Read from the files lxappearance writes - the LXSession setting first, then
+    the GTK 3 and GTK 2 ones, then the default cursor theme - and the first name
+    that is really installed wins. A name that is only in a file, because the
+    theme was removed or the file came from another machine, is not a choice
+    this script can honour: pointing the greeter at a theme that is not there
+    leaves it with the black default, which is what the file was meant to avoid.
+    """
+    for path, section, name_key, _ in session_cursor_files(home):
+        text = read_text(path)
+        if not text:
+            continue
+        name = unquoted(read_setting(text, section, name_key))
+        if not name:
+            continue
+        installed = find_cursor_theme(name, home)
+        if installed is not None:
+            return name, installed
+    return None
+
+
+def session_cursor_size(home: Path, name: str) -> int:
+    """The cursor size the session selected with ``name``, or the default.
+
+    Read from whichever file named the theme and only from that one: a size left
+    beside a different name is a leftover, and writing it would give the greeter
+    a cursor the user never chose. A size that is not a number, or is outside
+    what any theme ships, is replaced by the default rather than passed on.
+    """
+    for path, section, name_key, size_key in session_cursor_files(home):
+        if size_key is None:
+            continue
+        text = read_text(path)
+        if not text or unquoted(read_setting(text, section, name_key)) != name:
+            continue
+        raw = unquoted(read_setting(text, section, size_key))
+        if raw.isdigit():
+            return max(8, min(96, int(raw)))
+    return DEFAULT_CURSOR_SIZE
+
+
+def install_cursor_theme(log: Log, name: str, source: Path) -> Path | None:
+    """Copy a cursor theme into a system icon directory, or return None.
+
+    This is the whole of the bug the theme was reported with: a cursor theme
+    chosen in lxappearance is installed in the user's own icons directory, and
+    the greeter - which runs before anyone has logged in and has no home
+    directory of its own - cannot see it. So the theme is copied, byte for byte,
+    into the first system icon directory, which is the one libXcursor reads
+    after the user's own. It is copied rather than linked on purpose: the
+    greeter may start before the home directory that holds the theme is mounted,
+    and a link into a directory that is not there is a theme that is not there.
+    """
+    already = system_cursor_theme(name)
+    if already is not None:
+        log.detail(f"{name} is already installed in {already}")
+        return already
+
+    target = CURSOR_ICON_DIRS[0] / name
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, target, symlinks=True, dirs_exist_ok=True)
+    except OSError as error:
+        log.warn(f"could not install the {name} cursor theme into {target}: {error}")
+        return None
+    for path in sorted(target.rglob("*")):
+        try:
+            path.chmod(0o755 if path.is_dir() else 0o644)
+        except OSError:
+            continue
+    target.chmod(0o755)
+    log.detail(f"installed the {name} cursor theme into {target} (from {source})")
+    return target
+
+
+def set_keys(
+    existing: str, keys: tuple[tuple[str, str], ...], section: str | None = None
+) -> str:
+    """Set ``keys`` in a key file, keeping every other line of it.
+
+    ``section`` is None for a file with no sections, which ~/.gtkrc-2.0 is; a
+    section that is not in the file is added at the end with its keys under it,
+    and a key that is already there is replaced where it stands. The greeter's
+    own home is a directory a distribution may already have written to, so
+    nothing but these two keys is ever taken away.
+    """
+    wanted = dict(keys)
+    written: set[str] = set()
+    body: list[str] = []
+    current: str | None = None
+    seen = section is None
+
+    for line in existing.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if section is not None and current == section:
+                for key, value in keys:
+                    if key not in written:
+                        body.append(f"{key}={value}")
+                        written.add(key)
+            current = stripped[1:-1].strip()
+            if current == section:
+                seen = True
+            body.append(line)
+            continue
+        if stripped and not stripped.startswith(("#", ";", "!")) and "=" in stripped:
+            name = stripped.split("=", 1)[0].strip()
+            if (section is None or current == section) and name in wanted:
+                if name in written:
+                    continue  # a duplicate of a key already set
+                body.append(f"{name}={wanted[name]}")
+                written.add(name)
+                continue
+        body.append(line)
+
+    if section is None or (seen and current == section):
+        for key, value in keys:
+            if key not in written:
+                body.append(f"{key}={value}")
+                written.add(key)
+    if section is not None and not seen:
+        if body and body[-1].strip():
+            body.append("")
+        body.append(f"[{section}]")
+        body.extend(f"{key}={value}" for key, value in keys)
+
+    text = "\n".join(body).strip("\n")
+    return text + "\n" if text else ""
 
 
 def build_cursor_theme(log: Log) -> Path | None:
@@ -1261,7 +1610,7 @@ def build_cursor_theme(log: Log) -> Path | None:
     alone, so the cursor step is skipped and said so rather than failing the
     install - the greeter theme is worth having on its own.
     """
-    installed = cursor_theme_dir()
+    installed = system_cursor_theme(CURSOR_THEME_NAME)
     if installed is not None:
         log.detail(f"the {CURSOR_THEME_NAME} cursor theme is already in {installed}")
         return installed
@@ -1296,76 +1645,352 @@ def build_cursor_theme(log: Log) -> Path | None:
     return target
 
 
-def point_greeter_cursor(log: Log, installed: Path | None) -> None:
-    """Point the greeter's own default cursor theme at the built one.
+def account_home(name: str) -> Path | None:
+    """The home directory of an account, or None when there is no such account.
 
-    The greeter is started before anyone has logged in, so it has no session
-    settings and nothing anywhere that names a cursor theme. libXcursor answers
-    a program in that position with the theme name ``default``, which is a theme
-    of its own whose only job is to name what it inherits from, and the file it
-    reads is ``$HOME/.icons/default/index.theme``.
-
-    It is written into the greeter's home directories and not into
-    ``/usr/share/icons/default``, which is where the cursor installer puts the
-    machine's default. The difference matters: that one changes the cursor for
-    every user on the machine, and this one changes it for the account that
-    draws the login screen.
+    ``pwd`` does not exist on Windows, where this script has nothing to install;
+    importing it inside the function keeps the module importable there so the
+    rest of the file can be exercised anywhere.
     """
-    if installed is None:
-        log.detail("no cursor theme was built, so the greeter keeps the default")
-        return
-    index_text = "\n".join(
-        [
-            "# GnuchanPurple cursor, written by settings_lxdm.py",
-            "[Icon Theme]",
-            f"Inherits={CURSOR_THEME_NAME}",
-            "",
-        ]
-    )
-    for home in GREETER_HOMES:
-        if not home.is_dir():
+    try:
+        import pwd
+    except ImportError:
+        return None
+    try:
+        return Path(pwd.getpwnam(name).pw_dir)
+    except KeyError:
+        return None
+
+
+def greeter_homes(log: Log, create: bool = True) -> tuple[Path, ...]:
+    """Every home directory the greeter may be started with, in order.
+
+    The account each home belongs to is asked of the password database rather
+    than assumed, because which home the lxdm account was given is the
+    distribution's decision and a cursor written anywhere else is a cursor the
+    greeter never reads. A home that its account names but that does not exist
+    yet is created, because a distribution that never logged the account in has
+    not needed the directory until now.
+
+    A machine where none of those accounts exists - the greeter there runs as a
+    user this script cannot name - falls back to the two directories the
+    distributions use, and only to the ones that are already there: inventing a
+    home directory is not something a cursor installer should do.
+
+    ``create`` is False for the check, which is not allowed to change the
+    machine it is checking and still has to be able to say that a greeter home is
+    missing.
+    """
+    found: list[Path] = []
+    for name in GREETER_ACCOUNTS:
+        home = account_home(name)
+        if home is None:
             continue
-        index = home / ".icons" / "default" / "index.theme"
-        backup = index.with_name(index.name + BACKUP_SUFFIX)
-        if index.exists() and not backup.exists():
+        if not home.is_dir() and create:
             try:
-                shutil.copy2(index, backup)
+                home.mkdir(parents=True, exist_ok=True)
             except OSError as error:
-                log.warn(f"could not back up {index}: {error}")
+                log.detail(f"could not create the home of the {name} account: {error}")
+                continue
+        if home not in found:
+            found.append(home)
+    if not found:
+        found = [home for home in FALLBACK_GREETER_HOMES if home.is_dir()]
+        if found:
+            log.detail(
+                "no greeter account could be named; using "
+                + ", ".join(str(home) for home in found)
+            )
+    if not found:
+        log.warn(
+            "there is no home directory to give the greeter a cursor in, so it "
+            "will draw the black X cursor"
+        )
+    return tuple(found)
+
+
+def apply_cursor_block(text: str, cursor: tuple[str, int] | None) -> str:
+    """A greeter stylesheet with its cursor settings filled in, or taken out.
+
+    The region between the two markers is rewritten whole rather than two values
+    being substituted into placeholders, because the two values are not
+    independent: a stylesheet that names a cursor theme and not a size, or that
+    names a theme which is not installed, is one that leaves the greeter on the
+    black X cursor - which is the thing the region exists to prevent. Removing
+    the region entirely is therefore the honest thing to do when there is no
+    theme to name.
+
+    A stylesheet with no such region is returned untouched. The theme is
+    committed beside this script and someone editing it by hand is entitled to
+    have their edit kept.
+    """
+    lines = text.splitlines()
+    start: int | None = None
+    finish: int | None = None
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if start is None and stripped == CURSOR_BLOCK_BEGIN:
+            start = index
+        elif start is not None and stripped == CURSOR_BLOCK_END:
+            finish = index
+            break
+    if start is None or finish is None or finish <= start:
+        return text
+
+    if cursor is None:
+        replacement: list[str] = []
+    else:
+        name, size = cursor
+        replacement = [
+            CURSOR_BLOCK_BEGIN,
+            "# Written by settings_lxdm.py: the cursor the session selected in",
+            "# lxappearance, or the one built from dotfile/ICON_MOUSE_THEME.",
+            f'gtk-cursor-theme-name = "{name}"',
+            f"gtk-cursor-theme-size = {size}",
+            CURSOR_BLOCK_END,
+        ]
+    lines[start:finish + 1] = replacement
+    body = "\n".join(lines).strip("\n")
+    return body + "\n" if body else ""
+
+
+def stylesheet_cursor(text: str) -> tuple[str, int] | None:
+    """The cursor an installed greeter stylesheet names, if it names one.
+
+    Read by walking the same markers the writer uses, so the verification can
+    only see what the writer would have produced.
+    """
+    name: str | None = None
+    size: int | None = None
+    inside = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == CURSOR_BLOCK_BEGIN:
+            inside = True
+            continue
+        if not inside:
+            continue
+        if stripped == CURSOR_BLOCK_END:
+            break
+        key, separator, value = stripped.partition("=")
+        if not separator:
+            continue
+        value = value.strip().strip('"').strip("'")
+        if key.strip() == "gtk-cursor-theme-name":
+            name = value
+        elif key.strip() == "gtk-cursor-theme-size" and value.isdigit():
+            size = int(value)
+    if name is None:
+        return None
+    return name, size if size is not None else DEFAULT_CURSOR_SIZE
+
+
+def greeter_gtk2_rc() -> Path:
+    """The GTK 2 rc file of a greeter home, which is read by a GTK+ 2 greeter."""
+    return Path(GTK2_RC_FILE)
+
+
+def greeter_gtk3_settings() -> Path:
+    """The GTK 3 settings file of a greeter home.
+
+    GTK+ 3 reads no rc file at all: its settings come from XSettings, which a
+    greeter started before anyone has logged in does not have, and then from
+    this file. It is therefore the only place a GTK+ 3 greeter can be told which
+    cursor to use.
+    """
+    return Path(".config/gtk-3.0/settings.ini")
+
+
+def point_greeter_cursor(log: Log, name: str, size: int) -> None:
+    """Name the cursor theme in every file the greeter reads a cursor from.
+
+    Three files per greeter home, because the greeter may be built against
+    either toolkit and because the name and the size are read from different
+    places:
+
+      .icons/default/index.theme      what libXcursor resolves for a program
+                                      that has been told nothing, which is what
+                                      both greeters are
+      .gtkrc-2.0                      gtk-cursor-theme-name and its size for a
+                                      GTK+ 2 greeter
+      .config/gtk-3.0/settings.ini    the same two keys for a GTK+ 3 one
+
+    The greeter's own home directories are written and not
+    ``/usr/share/icons/default``, which is the machine's default and would
+    change the cursor for every user on it. Each file is copied aside once
+    before it is touched, and only these two keys are ever set in them.
+    """
+    for home in greeter_homes(log):
+        index = home / ".icons" / "default" / "index.theme"
+        backup_once(index)
         try:
-            write_text(index, index_text)
+            write_text(
+                index,
+                "\n".join(
+                    [
+                        "# GnuchanPurple cursor, written by settings_lxdm.py",
+                        "[Icon Theme]",
+                        f"Inherits={name}",
+                        "",
+                    ]
+                ),
+            )
             index.chmod(0o644)
         except OSError as error:
             log.warn(f"could not write {index}: {error}")
-            continue
-        log.detail(f"the greeter's cursor is {CURSOR_THEME_NAME} in {home}")
+
+        gtk2 = home / greeter_gtk2_rc()
+        backup_once(gtk2)
+        try:
+            write_text(
+                gtk2,
+                set_keys(
+                    read_text(gtk2),
+                    (
+                        ("gtk-cursor-theme-name", f'"{name}"'),
+                        ("gtk-cursor-theme-size", str(size)),
+                    ),
+                ),
+            )
+        except OSError as error:
+            log.warn(f"could not write {gtk2}: {error}")
+
+        gtk3 = home / greeter_gtk3_settings()
+        backup_once(gtk3)
+        try:
+            write_text(
+                gtk3,
+                set_keys(
+                    read_text(gtk3),
+                    (
+                        ("gtk-cursor-theme-name", name),
+                        ("gtk-cursor-theme-size", str(size)),
+                    ),
+                    section="Settings",
+                ),
+            )
+        except OSError as error:
+            log.warn(f"could not write {gtk3}: {error}")
+
+        log.detail(f"the greeter's cursor is {name} at size {size} in {home}")
 
 
-def check_cursor() -> list[str]:
-    """What is wrong with the cursor the login screen will start with."""
+def choose_greeter_cursor(log: Log) -> tuple[str, int] | None:
+    """The cursor the greeter is to be given: its name, and the size to draw it.
+
+    The session's own choice is what is honoured, because that is the cursor the
+    user asked for and the one the desktop it starts will draw with; the theme
+    built from dotfile/ICON_MOUSE_THEME is the fallback, so a machine that has
+    never chosen one still gets a purple cursor at the login screen instead of
+    the black X.
+
+    The theme is copied into a system icon directory before its name is returned,
+    because naming a theme the greeter cannot read is worse than naming none: the
+    greeter falls back to the black X cursor either way, and only one of the two
+    says so in the log. Returns None when there is no theme to name at all - the
+    caller writes that into the stylesheet as "no cursor", which is honest, where
+    a name would be a promise the install cannot keep.
+    """
+    home = invoking_home()
+    choice = session_cursor_choice(home)
+    if choice is None:
+        if system_cursor_theme(CURSOR_THEME_NAME) is None:
+            log.detail("there is no cursor theme to give the greeter")
+            return None
+        log.detail(f"the session has selected no cursor theme; using {CURSOR_THEME_NAME}")
+        return CURSOR_THEME_NAME, DEFAULT_CURSOR_SIZE
+
+    name, source = choice
+    log.detail(f"the session selected the {name} cursor theme ({source})")
+    if install_cursor_theme(log, name, source) is None:
+        if system_cursor_theme(CURSOR_THEME_NAME) is None:
+            log.detail("the greeter keeps the default cursor")
+            return None
+        log.detail(f"falling back to {CURSOR_THEME_NAME}")
+        return CURSOR_THEME_NAME, DEFAULT_CURSOR_SIZE
+    return name, session_cursor_size(home, name)
+
+
+def check_cursor(log: Log) -> list[str]:
+    """What is wrong with the cursor the login screen will start with.
+
+    The stylesheet is checked first and is the check that matters most: it is
+    the file lxdm itself hands to gtk_rc_parse, so it reaches the GTK+ 2
+    greeter - which is what Debian and Ubuntu ship - whatever home directory
+    the greeter was started with, and whatever libXcursor decides the name
+    "default" means.
+
+    The greeter's own home is checked after it, because a GTK+ 3 greeter reads
+    no rc file at all and takes its cursor from settings.ini and from the
+    default index or from nothing. A machine with neither - which is a machine
+    where the greeter is run as an account this script cannot name - has
+    neither set of files to check, and that is said rather than passed over.
+    """
     problems: list[str] = []
-    installed = cursor_theme_dir()
-    if installed is None:
+    home = invoking_home()
+    choice = session_cursor_choice(home)
+    name = choice[0] if choice is not None else CURSOR_THEME_NAME
+
+    if system_cursor_theme(name) is None:
         problems.append(
-            f"there is no {CURSOR_THEME_NAME} cursor theme in "
+            f"the {name} cursor theme is not in "
             + " or ".join(str(directory) for directory in CURSOR_ICON_DIRS)
-            + ", so the greeter draws the black X cursor"
+            + ", and the greeter can only read the system icon directories, so "
+            "it draws the black X cursor"
+        )
+        return problems
+
+    stylesheet = INSTALLED_THEME_DIR / GTK2_RC_FILE
+    named = stylesheet_cursor(read_text(stylesheet))
+    if named is None:
+        problems.append(
+            f"{stylesheet} names no cursor theme, so a GTK+ 2 greeter - which is "
+            "what Debian and Ubuntu ship - draws whatever cursor GTK was given"
+        )
+    elif named[0] != name:
+        problems.append(
+            f"{stylesheet} names the cursor {named[0]!r} but the session selected "
+            f"{name!r}"
+        )
+
+    homes = greeter_homes(log, create=False)
+    if not homes:
+        problems.append(
+            "there is no home directory this greeter could be run with, so "
+            "nothing could be written for it to read"
         )
         return problems
 
     pointed = [
-        home
-        for home in GREETER_HOMES
-        if f"Inherits={CURSOR_THEME_NAME}"
-        in read_text(home / ".icons" / "default" / "index.theme")
+        greeter_home
+        for greeter_home in homes
+        if f"Inherits={name}"
+        in read_text(greeter_home / ".icons" / "default" / "index.theme")
     ]
     if not pointed:
         problems.append(
             "no default cursor theme in "
-            + " or ".join(str(home) for home in GREETER_HOMES)
-            + f" names {CURSOR_THEME_NAME}, and the greeter - which has no "
-            "cursor setting of its own - resolves the machine's default instead"
+            + " or ".join(str(greeter_home) for greeter_home in homes)
+            + f" names {name}, so a greeter that has been told nothing resolves "
+            "the machine's default instead"
         )
+
+    for greeter_home in homes:
+        gtk2 = greeter_home / greeter_gtk2_rc()
+        if unquoted(read_setting(read_text(gtk2), None, "gtk-cursor-theme-name")) != name:
+            problems.append(
+                f"{gtk2} does not name {name}, so a GTK+ 2 greeter started with "
+                "that home falls back to the cursor the GTK theme names"
+            )
+        gtk3 = greeter_home / greeter_gtk3_settings()
+        if (
+            unquoted(read_setting(read_text(gtk3), "Settings", "gtk-cursor-theme-name"))
+            != name
+        ):
+            problems.append(
+                f"{gtk3} does not name {name}, so a GTK+ 3 greeter - which reads "
+                "no rc file at all - falls back to the default cursor"
+            )
     return problems
 
 
@@ -1987,7 +2612,7 @@ def check_result(log: Log) -> int:
         check_theme()
         + check_configuration()
         + check_display_manager()
-        + check_cursor()
+        + check_cursor(log)
     )
     if not problems:
         log.note(f"No problems found in {INSTALLED_THEME_DIR}.")
@@ -2014,13 +2639,26 @@ def main() -> int:
     log.detail(f"logo: {logo}")
     installed = install_packages(log)
 
+    # The cursor is decided before the theme is rendered, because the GTK+ 2
+    # greeter stylesheet is part of what is rendered and the cursor is written
+    # into it. Deciding it afterwards would mean rendering the theme twice, or
+    # rendering it once with a promise in it that the rest of the run might not
+    # be able to keep.
+    log.step("Choosing the greeter's cursor")
+    build_cursor_theme(log)
+    cursor = choose_greeter_cursor(log)
+    if cursor is None:
+        log.detail("the login screen will keep the cursor it had")
+
     log.step("Installing the theme")
-    render_theme(log, background, logo)
+    render_theme(log, background, logo, cursor)
     gtk_theme_installed = install_gtk_theme(log)
 
-    log.step("Installing the cursor")
-    cursor_theme = build_cursor_theme(log)
-    point_greeter_cursor(log, cursor_theme)
+    log.step("Pointing the greeter at the cursor")
+    if cursor is None:
+        log.detail("no cursor to name, so nothing was written for the greeter")
+    else:
+        point_greeter_cursor(log, *cursor)
 
     log.step("Configuring the greeter")
     install_configuration(log, gtk_theme_installed)

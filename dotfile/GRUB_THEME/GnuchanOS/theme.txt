@@ -1,0 +1,112 @@
+# =============================================================================
+# GnuchanOS - GRUB 2 theme
+# -----------------------------------------------------------------------------
+# Installed by settings_grub.py into /usr/share/grub/themes/GnuchanOS and into
+# /boot/grub/themes/GnuchanOS, which is the copy GRUB itself reads: the boot
+# loader can only open files on the filesystem it was started from, so a theme
+# in /usr/share is unreachable on a machine whose /boot is a separate partition.
+# The script writes both, generates every image this file names, and replaces
+# @FONT@ with the name of the font it found on this machine.
+#
+# The font name is not a file name. GRUB looks a font up by the name written
+# inside the font file - "Unifont Regular 16" for the unicode.pf2 that Debian's
+# grub-common installs - so the script reads that name out of the .pf2 rather
+# than guessing it here.
+#
+# The colours are the GnuchanPurple palette: the same values as the GTK theme,
+# the icon theme, the cursor theme and dotfile/vscodium_theme/settings.json,
+# which is the source of truth for them.
+#
+# GRUB's theme format, for anyone editing this: a global property is
+# `name: "value"`, a component is `+ type { ... }` with `name = value` inside
+# it, a comment starts with #, and a value that is not a word must be quoted.
+# =============================================================================
+
+title-text: "GnuchanOS"
+title-font: "@FONT@"
+title-color: "#d8a4ff"
+
+message-font: "@FONT@"
+message-color: "#f3e8ff"
+message-bg-color: "#1c0532"
+
+desktop-image: "background.png"
+desktop-image-scale-method: "crop"
+desktop-image-h-align: "center"
+desktop-image-v-align: "middle"
+desktop-color: "#1c0532"
+
+terminal-font: "@FONT@"
+terminal-box: "terminal_box_*.png"
+terminal-left: "8%"
+terminal-top: "8%"
+terminal-width: "84%"
+terminal-height: "84%"
+terminal-border: "0"
+
+# The logo, in the top left corner. The image is rendered on a transparent
+# square at the size it is drawn here, so the aspect cannot be changed by a
+# screen of another shape.
++ image {
+    left = 3%
+    top = 4%
+    width = 132
+    height = 132
+    file = "logo.png"
+}
+
+# The entries. The menu box is the translucent panel, the selected item box is
+# the brighter one drawn behind the highlighted entry, and the icons are read
+# from icons/<class>.png - GRUB tries the classes of an entry in the order
+# grub.cfg lists them and uses the first file it finds, so a Debian entry
+# (--class debian --class gnu-linux --class gnu --class os) gets the Debian
+# icon and anything unrecognised falls back to os.png.
++ boot_menu {
+    left = 18%
+    top = 20%
+    width = 64%
+    height = 58%
+    item_font = "@FONT@"
+    item_color = "#ead7ff"
+    selected_item_color = "#ffffff"
+    item_height = 34
+    item_padding = 8
+    item_spacing = 4
+    item_icon_space = 12
+    icon_width = 28
+    icon_height = 28
+    menu_pixmap_style = "menu_*.png"
+    selected_item_pixmap_style = "select_*.png"
+    scrollbar = true
+    scrollbar_width = 10
+    scrollbar_thumb = "scrollbar_thumb_*.png"
+}
+
+# The countdown: the bar across the bottom of the menu, with the number of
+# seconds left written on it. The id is what ties it to GRUB's own timeout.
++ progress_bar {
+    id = "__timeout__"
+    left = 18%
+    top = 84%
+    width = 64%
+    height = 18
+    show_text = true
+    font = "@FONT@"
+    text_color = "#d8a4ff"
+    fg_color = "#a855f7"
+    bg_color = "#180a22"
+    border_color = "#6d28d9"
+    text = "@TIMEOUT_NOTIFICATION_LONG@"
+}
+
+# The key hints along the bottom edge.
++ label {
+    left = 0
+    top = 100%-24
+    width = 100%
+    height = 20
+    align = "center"
+    text = "@KEYMAP_MIDDLE@"
+    font = "@FONT@"
+    color = "#b78ed6"
+}

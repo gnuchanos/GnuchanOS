@@ -33,6 +33,30 @@
 # License: GPL3
 # =============================================================================
 
+# --- the cursor --------------------------------------------------------------
+# The one place a GTK+ 2 greeter can be told which cursor to draw that does not
+# depend on the home directory it was given, on where GTK looks for an rc file,
+# or on libXcursor resolving the name "default": lxdm hands this file to
+# gtk_rc_parse() itself, so whatever is written here is read, and the greeter has
+# no cursor key in /etc/lxdm/lxdm.conf to put it anywhere else.
+#
+# The two settings between the markers are written by settings_lxdm.py at
+# install time: the name and size of the cursor the session selected in
+# lxappearance, or of the one built from dotfile/ICON_MOUSE_THEME when the
+# session selected none. They are taken out again when there is no cursor theme
+# to name, because a greeter that asks for a theme that is not installed falls
+# back to the black X cursor - and the black X cursor is the whole reason this
+# block exists. gtk-cursor-theme-size is a number and is written as one; the
+# name is a string and is quoted.
+#
+# A GTK+ 3 greeter reads no rc file at all and takes its cursor from
+# settings.ini or from the default index instead; see settings_lxdm.py.
+
+# >>> GnuchanPurple cursor
+gtk-cursor-theme-name = "@CURSOR_THEME@"
+gtk-cursor-theme-size = @CURSOR_SIZE@
+# <<< GnuchanPurple cursor
+
 # --- the window --------------------------------------------------------------
 # A last resort background for the moment before the wallpaper is set, and the
 # colour the theme falls back to if the bg key is ever removed.
