@@ -631,22 +631,40 @@ def _resource_lines() -> list[str]:
         "XTerm*highlightColorMode: true",
         "XTerm*allowWindowOps: true",
         "",
-        "! keys: Alt is ESC, Backspace is DEL, modified keys are reported",
+        "! keys: Alt is ESC, Backspace is DEL, and control keys stay control",
+        "!",
+        "! modifyOtherKeys is deliberately 0, and this is the setting that",
+        "! matters most in this file. At 1 or 2 xterm sends every modified key",
+        "! as an escape sequence: Shift+a becomes a sequence instead of the A",
+        "! that was typed, and Ctrl+c becomes a sequence instead of the",
+        "! interrupt the shell is waiting for. A program that does not read",
+        "! those sequences prints them, so the window fills with symbols, the",
+        "! prompt is pushed off the screen and Ctrl+c stops interrupting",
+        "! anything - which looks exactly like a terminal that has locked up.",
+        "XTerm*modifyOtherKeys: 0",
         "XTerm*altSendsEscape: true",
         "XTerm*eightBitInput: false",
         "XTerm*backarrowKey: false",
         "XTerm*backarrowKeyIsErase: false",
         "XTerm*ptyInitialErase: false",
-        "XTerm*modifyOtherKeys: 2",
         "",
-        "! scrolling. The wheel works in full screen programs and in the shell,",
-        "! Shift+wheel forces the scrollback while a program has the mouse, and",
-        "! the scrollbar is drawn on the right so the buffer can be dragged. The",
+        "! scrolling. The wheel scrolls the scrollback, Shift+wheel forces it",
+        "! while a full screen program has taken the mouse for itself, and the",
+        "! scrollbar is drawn on the right so the buffer can be dragged. The",
         "! thumb fills the trough while the scrollback is empty, which is what a",
         "! drag that moves nothing usually means.",
-        "XTerm*alternateScroll: true",
+        "!",
+        "! alternateScroll is off on purpose. At true, xterm turns the wheel",
+        "! into cursor up and down keys whenever a full screen program is",
+        "! running: the program receives a stream of arrow presses it never",
+        "! asked for, and the view jumps a whole line at a time instead of",
+        "! scrolling smoothly, which reads as a terminal that is stuck rather",
+        "! than one that is scrolling.",
+        "XTerm*alternateScroll: false",
         "XTerm*scrollTtyOutput: false",
-        "XTerm*scrollKey: true",
+        "! scrollKey is off so a key press does not pull the view back to the",
+        "! bottom. The scrollback stays where it was put until it is scrolled.",
+        "XTerm*scrollKey: false",
         "XTerm*fastScroll: true",
         "XTerm*jumpScroll: true",
         "XTerm*multiScroll: true",
@@ -888,11 +906,28 @@ REQUIRED_SETTINGS: tuple[str, ...] = (
     "xterm*savelines:",
 )
 
+#: Settings that must not be in the block. modifyOtherKeys at 1 or 2 turns every
+#: modified key into an escape sequence, so Ctrl+c stops interrupting and
+#: Shift+a stops typing an A - the terminal fills with the sequences as text and
+#: looks locked up. A block written by an older run of this script has it at 2,
+#: and nothing else in xterm fails in that particular way, so it is checked for
+#: by name rather than trusted to have been replaced.
+FORBIDDEN_SETTINGS: tuple[str, ...] = (
+    "xterm*modifyotherkeys: 1",
+    "xterm*modifyotherkeys: 2",
+)
+
 
 def missing_settings() -> list[str]:
     """Which of the required settings are absent from the installed block."""
     text = read_text(xresources_file()).lower()
     return [setting for setting in REQUIRED_SETTINGS if setting not in text]
+
+
+def unwanted_settings() -> list[str]:
+    """Which of the settings that break the keyboard are in the block."""
+    text = read_text(xresources_file()).lower()
+    return [setting for setting in FORBIDDEN_SETTINGS if setting in text]
 
 
 def check_environment(log: Log) -> int:
@@ -944,6 +979,15 @@ def check_environment(log: Log) -> int:
         missing = missing_settings()
         if missing:
             problems.append("the block is missing " + ", ".join(missing) + "; run the script")
+        unwanted = unwanted_settings()
+        if unwanted:
+            problems.append(
+                "the block contains "
+                + ", ".join(unwanted)
+                + ": xterm is sending modified keys as escape sequences, so "
+                "Ctrl+C does not interrupt and Shift+letter does not type a "
+                "letter; run the script to replace the block"
+            )
 
     if not resources_loaded():
         problems.append(
@@ -1080,7 +1124,7 @@ def main(argv: list[str] | None = None) -> int:
     log.note("  Ctrl+Shift+C / Ctrl+Shift+V       copy and paste")
     log.note("  Ctrl+plus / Ctrl+minus / Ctrl+0   font size")
     log.note("  Shift+PageUp / Shift+PageDown     one page of scrollback")
-    log.note("  wheel, Shift+wheel                scroll, and force it in less/vim")
+    log.note("  wheel, Shift+wheel                scroll the scrollback")
     log.note("  drag the scrollbar on the right   the scrollback, by hand")
     log.note("")
     log.note(f"Settings: {xresources_file()}")
