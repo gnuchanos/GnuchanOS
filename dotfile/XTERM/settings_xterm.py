@@ -631,16 +631,9 @@ def _resource_lines() -> list[str]:
         "XTerm*highlightColorMode: true",
         "XTerm*allowWindowOps: true",
         "",
-        "! keys: Alt is ESC, Backspace is DEL, and control keys stay control",
-        "!",
-        "! modifyOtherKeys is deliberately 0, and this is the setting that",
-        "! matters most in this file. At 1 or 2 xterm sends every modified key",
-        "! as an escape sequence: Shift+a becomes a sequence instead of the A",
-        "! that was typed, and Ctrl+c becomes a sequence instead of the",
-        "! interrupt the shell is waiting for. A program that does not read",
-        "! those sequences prints them, so the window fills with symbols, the",
-        "! prompt is pushed off the screen and Ctrl+c stops interrupting",
-        "! anything - which looks exactly like a terminal that has locked up.",
+        "! keys: Alt is ESC, Backspace is DEL, control keys stay control",
+        "! modifyOtherKeys must be 0: at 1 or 2, Shift+a and Ctrl+c are sent as",
+        "! escape sequences instead of a letter and an interrupt.",
         "XTerm*modifyOtherKeys: 0",
         "XTerm*altSendsEscape: true",
         "XTerm*eightBitInput: false",
@@ -648,22 +641,10 @@ def _resource_lines() -> list[str]:
         "XTerm*backarrowKeyIsErase: false",
         "XTerm*ptyInitialErase: false",
         "",
-        "! scrolling. The wheel scrolls the scrollback, Shift+wheel forces it",
-        "! while a full screen program has taken the mouse for itself, and the",
-        "! scrollbar is drawn on the right so the buffer can be dragged. The",
-        "! thumb fills the trough while the scrollback is empty, which is what a",
-        "! drag that moves nothing usually means.",
-        "!",
-        "! alternateScroll is off on purpose. At true, xterm turns the wheel",
-        "! into cursor up and down keys whenever a full screen program is",
-        "! running: the program receives a stream of arrow presses it never",
-        "! asked for, and the view jumps a whole line at a time instead of",
-        "! scrolling smoothly, which reads as a terminal that is stuck rather",
-        "! than one that is scrolling.",
+        "! scrolling: the wheel scrolls the scrollback, Shift+wheel forces it",
+        "! while a program has the mouse, and the bar on the right can be dragged",
         "XTerm*alternateScroll: false",
         "XTerm*scrollTtyOutput: false",
-        "! scrollKey is off so a key press does not pull the view back to the",
-        "! bottom. The scrollback stays where it was put until it is scrolled.",
         "XTerm*scrollKey: false",
         "XTerm*fastScroll: true",
         "XTerm*jumpScroll: true",
@@ -745,6 +726,12 @@ def environment_snippet() -> str:
             "# A UTF-8 terminal in a C locale prints question marks instead of text.",
             'case "${LANG:-}" in',
             f'  ""|C|POSIX) export LANG={FALLBACK_LOCALE} ;;',
+            "esac",
+            "",
+            "# modifyOtherKeys off here too: a resource only applies to a window",
+            "# opened after it was set.",
+            'case "${TERM:-}" in',
+            "  xterm*) printf '\\033[>4;0m' ;;",
             "esac",
             SH_END,
         ]
@@ -906,27 +893,52 @@ REQUIRED_SETTINGS: tuple[str, ...] = (
     "xterm*savelines:",
 )
 
-#: Settings that must not be in the block. modifyOtherKeys at 1 or 2 turns every
-#: modified key into an escape sequence, so Ctrl+c stops interrupting and
-#: Shift+a stops typing an A - the terminal fills with the sequences as text and
-#: looks locked up. A block written by an older run of this script has it at 2,
-#: and nothing else in xterm fails in that particular way, so it is checked for
-#: by name rather than trusted to have been replaced.
+#: Settings that must not be in the block: modifyOtherKeys at 1 or 2 makes every
+#: modified key an escape sequence, so Ctrl+C stops interrupting and Shift+a
+#: stops typing A. An older run of this script wrote 2.
 FORBIDDEN_SETTINGS: tuple[str, ...] = (
     "xterm*modifyotherkeys: 1",
     "xterm*modifyotherkeys: 2",
 )
 
 
+def _flatten(text: str) -> str:
+    """Resource text with runs of whitespace collapsed.
+
+    xrdb writes a tab between a setting and its value and a hand written file
+    may write spaces, so every comparison below reads one flattened copy.
+    """
+    return re.sub(r"\s+", " ", text.lower())
+
+
 def missing_settings() -> list[str]:
     """Which of the required settings are absent from the installed block."""
-    text = read_text(xresources_file()).lower()
+    text = _flatten(read_text(xresources_file()))
     return [setting for setting in REQUIRED_SETTINGS if setting not in text]
 
 
 def unwanted_settings() -> list[str]:
     """Which of the settings that break the keyboard are in the block."""
-    text = read_text(xresources_file()).lower()
+    text = _flatten(read_text(xresources_file()))
+    return [setting for setting in FORBIDDEN_SETTINGS if setting in text]
+
+
+def stale_server_settings() -> list[str]:
+    """The same settings as the running X server still holds them.
+
+    xterm reads the server's resource database, not the file, and that only
+    changes when something runs xrdb - so a session that has not reloaded
+    keeps sending escape sequences however right the file is.
+    """
+    xrdb = shutil.which("xrdb")
+    if xrdb is None or not os.environ.get("DISPLAY"):
+        return []
+    result = subprocess.run(
+        [xrdb, "-query"], check=False, capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        return []
+    text = _flatten(result.stdout)
     return [setting for setting in FORBIDDEN_SETTINGS if setting in text]
 
 
@@ -988,6 +1000,17 @@ def check_environment(log: Log) -> int:
                 "Ctrl+C does not interrupt and Shift+letter does not type a "
                 "letter; run the script to replace the block"
             )
+
+    stale = stale_server_settings()
+    if stale:
+        problems.append(
+            "the running X server still has "
+            + ", ".join(stale)
+            + " loaded, so every xterm opened since is sending modified keys "
+            "as escape sequences whatever the file on disk says: run "
+            + f"xrdb -merge {xresources_file()}"
+            + " and open a new xterm"
+        )
 
     if not resources_loaded():
         problems.append(
