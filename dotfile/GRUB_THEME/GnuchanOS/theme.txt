@@ -30,10 +30,13 @@ message-font: "@FONT@"
 message-color: "#f3e8ff"
 message-bg-color: "#1c0532"
 
+# GRUB accepts three words for each of these and refuses the whole theme over
+# any other: left/center/right across, top/center/bottom down. "middle" is not
+# one of them, and neither is anything else that reads like it.
 desktop-image: "background.png"
 desktop-image-scale-method: "crop"
 desktop-image-h-align: "center"
-desktop-image-v-align: "middle"
+desktop-image-v-align: "center"
 desktop-color: "#1c0532"
 
 terminal-font: "@FONT@"

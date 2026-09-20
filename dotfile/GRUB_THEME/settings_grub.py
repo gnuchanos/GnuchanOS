@@ -1711,6 +1711,212 @@ def regenerate_grub_config(log: Log, boot_dir: Path) -> bool:
 # exists to tell those apart before a reboot tells the user instead.
 
 
+# GRUB does not ignore a property it does not know, or a value it cannot use: it
+# fails to load the theme and draws the plain text menu instead. "middle" where
+# "center" belongs costs the whole theme - the wallpaper, the menu and the icons
+# with it - which is why the properties are checked against the ones GRUB really
+# has rather than trusted. The names and the sets of words are the ones in
+# grub-core/gfxmenu/view.c for the global properties and in gui_list.c,
+# gui_label.c, gui_image.c and gui_progress_bar.c for the components.
+
+#: The properties a theme file may set, by the block they are in: the empty
+#: string is the global block. A block that is not named here - one of the
+#: component types this theme does not use - has its properties left unchecked.
+THEME_PROPERTIES: dict[str, frozenset[str]] = {
+    "": frozenset(
+        {
+            "title-text",
+            "title-font",
+            "title-color",
+            "message-font",
+            "message-color",
+            "message-bg-color",
+            "desktop-image",
+            "desktop-image-scale-method",
+            "desktop-image-h-align",
+            "desktop-image-v-align",
+            "desktop-color",
+            "terminal-font",
+            "terminal-box",
+            "terminal-border",
+            "terminal-left",
+            "terminal-top",
+            "terminal-width",
+            "terminal-height",
+        }
+    ),
+    "boot_menu": frozenset(
+        {
+            "item_font",
+            "item_color",
+            "selected_item_color",
+            "item_height",
+            "item_padding",
+            "item_spacing",
+            "item_icon_space",
+            "icon_width",
+            "icon_height",
+            "menu_pixmap_style",
+            "selected_item_font",
+            "selected_item_pixmap_style",
+            "scrollbar",
+            "scrollbar_frame",
+            "scrollbar_thumb",
+            "scrollbar_width",
+        }
+    ),
+    "label": frozenset({"text", "font", "color", "align"}),
+    "image": frozenset({"file"}),
+    "progress_bar": frozenset(
+        {
+            "id",
+            "font",
+            "text",
+            "text_color",
+            "fg_color",
+            "bg_color",
+            "border_color",
+            "bar_style",
+            "highlight_style",
+            "show_text",
+            "align",
+        }
+    ),
+}
+
+#: The properties every component has, whatever its type.
+COMPONENT_GEOMETRY = frozenset({"left", "top", "width", "height"})
+
+#: The component types GRUB has. A block that is not one of them is a theme GRUB
+#: cannot load, whatever is written inside it.
+COMPONENT_TYPES = frozenset(
+    {
+        "boot_menu",
+        "label",
+        "image",
+        "progress_bar",
+        "circular_progress",
+        "vbox",
+        "hbox",
+        "canvas",
+    }
+)
+
+#: The properties whose value is one of a fixed set of words, and those words.
+#: A value that is not among them is a theme GRUB refuses to load. Everything
+#: else a theme sets - a colour, a size, a file name - is free, and is checked
+#: by the file and image checks instead.
+THEME_VALUES: dict[tuple[str, str], frozenset[str]] = {
+    ("", "desktop-image-scale-method"): frozenset({"stretch", "crop", "padding"}),
+    ("", "desktop-image-h-align"): frozenset({"left", "center", "right"}),
+    ("", "desktop-image-v-align"): frozenset({"top", "center", "bottom"}),
+    ("label", "align"): frozenset({"left", "center", "right"}),
+}
+
+
+def theme_properties(text: str) -> list[tuple[str, str, str, int]]:
+    """Every property of a theme file, as (block, name, value, line number).
+
+    The format is GRUB's own and looser than it looks: a global property is
+    ``name: "value"``, a component is ``+ type { ... }`` with ``name = value``
+    inside it, a component may be written on one line and may hold another
+    component, a comment starts with # and may follow a value on the same line,
+    and a closing brace is a line of its own or the tail of one. The two rules
+    that make all of that readable are the ones GRUB reads by: a quoted value
+    runs to its closing quote and may hold spaces, and an unquoted one stops at
+    the first space or brace - which is what lets several properties share a
+    line. The block a property belongs to is the innermost component around it,
+    which is what the tables above are keyed by, and is empty outside every
+    component.
+    """
+    found: list[tuple[str, str, str, int]] = []
+    stack: list[str] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        rest = line
+        while True:
+            trimmed = rest.lstrip()
+            if not trimmed or trimmed.startswith("#"):
+                break
+            if trimmed.startswith("}"):
+                if stack:
+                    stack.pop()
+                rest = trimmed[1:]
+                continue
+            if trimmed.startswith("+"):
+                name, brace, after = trimmed[1:].partition("{")
+                if not brace:
+                    break
+                stack.append(name.strip())
+                rest = after
+                continue
+            # The name runs to whichever separator comes first: a global
+            # property is written `name: value`, a component property
+            # `name = value`, and a value may hold either character.
+            stop = len(trimmed)
+            for candidate in ("=", ":"):
+                position = trimmed.find(candidate)
+                if 0 <= position < stop:
+                    stop = position
+            if stop == len(trimmed):
+                break
+            name = trimmed[:stop]
+            value = trimmed[stop + 1:].lstrip()
+            if value.startswith('"'):
+                end = value.find('"', 1)
+                if end < 0:
+                    break
+                rest = value[end + 1:]
+                value = value[:end + 1]
+            else:
+                end = 0
+                while end < len(value) and not value[end].isspace() and value[end] != "}":
+                    end += 1
+                rest = value[end:]
+                value = value[:end]
+            found.append(
+                (
+                    stack[-1] if stack else "",
+                    name.strip(),
+                    value.strip().strip('"'),
+                    number,
+                )
+            )
+            if not rest.strip():
+                break
+    return found
+
+
+def check_theme_properties(text: str) -> list[str]:
+    """Problems GRUB would refuse the theme over, in the properties it sets.
+
+    A property that is not one GRUB has and a value outside the set a property
+    accepts are the same failure seen twice: the theme is not drawn at all, and
+    the machine boots the plain text menu with every file in place.
+    """
+    problems: list[str] = []
+    for block, name, value, line in theme_properties(text):
+        if block and block not in COMPONENT_TYPES:
+            problems.append(
+                f"line {line}: + {block} is not a component GRUB has, so the "
+                "theme fails to load and the plain text menu is drawn"
+            )
+            continue
+        allowed = THEME_PROPERTIES.get(block)
+        if allowed is not None and name not in allowed and name not in COMPONENT_GEOMETRY:
+            problems.append(
+                f"line {line}: {block or 'the theme'} has no property {name!r}, "
+                "and GRUB refuses the whole theme over a property it does not know"
+            )
+            continue
+        words = THEME_VALUES.get((block, name))
+        if words is not None and value not in words:
+            problems.append(
+                f"line {line}: {name} is {value!r}, and GRUB accepts only "
+                + ", ".join(sorted(words))
+            )
+    return problems
+
+
 def theme_font_name(text: str) -> str | None:
     """The font theme.txt names in title-font, or None."""
     for line in text.splitlines():
@@ -1733,6 +1939,10 @@ def check_theme_dir(directory: Path, font_name: str) -> list[str]:
     two different strings and only the second one is what GRUB matches on. When
     no font was shipped the fallback name is written and grub.cfg's own loadfont
     is what answers it, which is not a problem and is not reported as one.
+
+    The properties are read as GRUB reads them, because a name GRUB does not
+    know or a value it cannot use is not something it ignores: the theme fails
+    to load and the plain text menu is drawn instead.
     """
     problems: list[str] = []
     theme_file = directory / THEME_FILE
@@ -1770,6 +1980,8 @@ def check_theme_dir(directory: Path, font_name: str) -> list[str]:
             problems.append(f"{path} is empty")
         elif read_png(path) is None:
             problems.append(f"{path} is not a PNG GRUB can read")
+
+    problems.extend(check_theme_properties(text))
     return problems
 
 
