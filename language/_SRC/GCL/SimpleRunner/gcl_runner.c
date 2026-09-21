@@ -1069,6 +1069,27 @@ static void gcl_modules_tick(void) {
 
 /* eval_expr forward declaration */
 static double eval_expr(GclExpr *e, Runner *r);
+/* PLAYER.Camera gibi bir uyeden kopyalanan native struct degiskenleri canli
+   kalir: her native modul cagrisindan once bu yardimci onlari tazeler. */
+static void refresh_native_aliases(GclEnv *env);
+
+/* Modul sahipli struct tipleri (FPS/Terrain): alanlar modulun LastSlot
+   kanalindan gelir. Tanim asagida; call_native_member kullanir. */
+typedef struct {
+    const char *type;
+    const char *module;
+    int         count;
+} GclNativeSlotMap;
+static const GclNativeStruct *lookup_native_struct(const char *type);
+static int collect_var_leaves(GclEnv *env, const char *var_name,
+                              GclStructValue **leaves, int cap);
+static const GclNativeSlotMap *native_slot_map_for_type(const char *type);
+static int store_slots_into_var(GclEnv *env, const char *var_name,
+                                const char *module, int count);
+static void write_back_struct_args(Runner *r, const char *module,
+                                   GclExpr **args, int arg_count);
+static double call_native_struct_method(GclSpan span, const char *var_name,
+                                        const char *member, Runner *r, int *handled);
 /* Forward declaration for nested struct init — fill_members_from_init_list is recursive */
 static void fill_members_from_init_list(Runner *r, GclStructValue *members, GclExpr *init);
 
@@ -1451,6 +1472,10 @@ static double call_native_member(GclSpan call_span, const char *module_name,
        Modül çağrıları bir oyun döngüsünde her karede olduğu için bu, ses
        tamponunun düzenli beslenmesi için doğal ve yeterli kancadır. */
     gcl_modules_tick();
+    /* PLAYER.Camera gibi uyelerden kopyalanan degiskenler, cagri aninda
+       kaynagiyla ayni degeri tasimalidir: kopya bir kez alinip donmus olsa da
+       her native cagridan once tazelenir. */
+    refresh_native_aliases(r->env);
     NativeModule *mod = native_find(r->env, module_name);
     if (!mod) {
         /* If it is a built-in module (Math/Stdio/Embed), load lazily — for bare printf/scanf */
@@ -1479,6 +1504,13 @@ static double call_native_member(GclSpan call_span, const char *module_name,
             for (int j = 0; j < arg_count && ac < 255; j++) {
                 GclExpr *a = args[j];
                 if (!a) { argv[ac++] = ""; continue; }
+                /* `f(void)`: C'nin BOS parametre listesi. `void` bir degisken
+                   degil, yer tutucudur; argüman olarak gecirilmez. Dokumante
+                   edilen yazim tam olarak budur:
+                       Raylib.EndMode3D(void);
+                   Bu satir olmadan yer tutucu "undefined variable 'void'"
+                   hatasi uretiyordu. */
+                if (a->kind == AST_EXPR_VAR && strcmp(a->name, "void") == 0) continue;
                 /* TEK KURAL (bkz. expr_is_char_value): char tipli argüman
                    modüle KARAKTER olarak geçer. `'A'`, `(char)65`, `char c`
                    ve `p.letter` ayni sekilde davranir. */
@@ -2832,10 +2864,23 @@ static double eval_expr(GclExpr *e, Runner *r) {
             if (callee && callee->kind == AST_EXPR_MEMBER) {
                 GclExpr *base = callee->left;
                 if (base && base->kind == AST_EXPR_VAR) {
+                    /* Modul sahipli struct uzerinde metot cagrisi (PLAYER.Move(),
+                       Terrain.Draw()): once LastSlot tasiyici modul denenir.
+                       Oyle bir tip degilse normal modul yolu isler. */
+                    int handled = 0;
+                    double method_result = call_native_struct_method(span_of_expr(e), base->name,
+                                                                     callee->member_name, r,
+                                                                     &handled);
+                    if (handled) return method_result;
                     /* #lib/.gclib feature removed — always dispatch to native modules */
-                    return call_native_member(span_of_expr(e), base->name,
-                                              callee->member_name, e->args,
-                                              e->arg_count, r);
+                    double call_result = call_native_member(span_of_expr(e), base->name,
+                                                            callee->member_name, e->args,
+                                                            e->arg_count, r);
+                    /* Struct-var argümanlar yerinde güncellenir:
+                       RaylibSimpleCollision.TerrainCollision(PLAYER, Terrain)
+                       PLAYER'in konumunu yazar. */
+                    write_back_struct_args(r, base->name, e->args, e->arg_count);
+                    return call_result;
                 }
             }
             return 0.0;
@@ -3027,6 +3072,193 @@ static int fill_native_from_last_slot(Runner *r, const char *var_name,
         leaves[i]->is_string = 0;
     }
     return 1;
+}
+
+/* ---------- Modul sahipli struct tipleri ----------
+
+   RaylibFPS.FPS ve RaylibSimpleMesh.Terrain tiplerinin alanlari raylib'in
+   g_last_* yuvalarinda DEGIL, modulun kendi LastSlot kanalindadir: alan
+   sirasi i icin `LastSlot(i)` cagrilir. Eslesme (tip, modul) ciftiyle
+   yapilir, cunku ayni PLAYER degiskenini iki ayri modul guncelleyebilir
+   (RaylibFPS.Move/Look ve RaylibSimpleCollision.TerrainCollision). */
+static const GclNativeSlotMap g_native_slot_maps[] = {
+    { "FPS",     "RaylibFPS",             27 },
+    { "FPS",     "RaylibSimpleCollision", 27 },
+    { "Terrain", "RaylibSimpleMesh",       3 },
+};
+
+#define GCL_NATIVE_SLOT_MAP_COUNT \
+    ((int)(sizeof(g_native_slot_maps) / sizeof(g_native_slot_maps[0])))
+
+static const GclNativeSlotMap *native_slot_map_exact(const char *type, const char *module) {
+    if (!type || !module) return NULL;
+    for (int i = 0; i < GCL_NATIVE_SLOT_MAP_COUNT; i++)
+        if (strcmp(g_native_slot_maps[i].type, type) == 0 &&
+            strcmp(g_native_slot_maps[i].module, module) == 0)
+            return &g_native_slot_maps[i];
+    return NULL;
+}
+
+/* Tipin sahibi olan modul: PLAYER.Move() hangi modulu cagiracak? */
+static const GclNativeSlotMap *native_slot_map_for_type(const char *type) {
+    if (!type) return NULL;
+    for (int i = 0; i < GCL_NATIVE_SLOT_MAP_COUNT; i++)
+        if (strcmp(g_native_slot_maps[i].type, type) == 0) return &g_native_slot_maps[i];
+    return NULL;
+}
+
+/* Modul uyesini tek bir metin argümaniyla cagir (LastSlot(i) gibi). */
+static double native_call_one(GclEnv *env, const char *module, const char *member,
+                              const char *arg) {
+    NativeModule *mod = native_find(env, module);
+    const char *argv[1];
+    if (!mod) mod = native_load(env, module);
+    if (!mod || !member) return 0.0;
+    argv[0] = arg ? arg : "";
+    for (int i = 0; i < mod->entry_count; i++)
+        if (strcmp(mod->entries[i].name, member) == 0)
+            return mod->entries[i].fn(arg ? 1 : 0, argv);
+    return 0.0;
+}
+
+/* Bir native struct degiskeninin skaler yapraklarina (bildirim sirasinda)
+   toplanmis degerleri dondurur. Bos ise 0. */
+static int collect_var_leaves(GclEnv *env, const char *var_name,
+                              GclStructValue **leaves, int cap) {
+    Var *v = env_find(env, var_name);
+    int n = 0;
+    if (!v || !v->members) return 0;
+    collect_scalar_leaves(v->members, leaves, &n, cap);
+    return n;
+}
+
+/* Modulun LastSlot kanalini degiskene geri yaz. */
+static int store_slots_into_var(GclEnv *env, const char *var_name,
+                                const char *module, int count) {
+    GclStructValue *leaves[128];
+    int n = collect_var_leaves(env, var_name, leaves, 128);
+    if (n <= 0 || n != count) return 0;
+    for (int i = 0; i < n; i++) {
+        char index[16];
+        snprintf(index, sizeof(index), "%d", i);
+        leaves[i]->num = truncate_to_declared_type(
+            native_call_one(env, module, "LastSlot", index), leaves[i]->decl_type);
+        leaves[i]->is_string = 0;
+    }
+    return 1;
+}
+
+/* Native struct degiskeni uzerinde metot cagrisi (PLAYER.Move()).
+
+   Degiskenin skaler yapraklari bildirim sirasinda argüman olarak verilir;
+   cagri dondugunde ayni sira modulun LastSlot kanalindan geri yazilir.
+   Tasiyici bir modul/tip degilse `handled` 0 kalir ve cagiran normal modul
+   yolunu dener. */
+static double call_native_struct_method(GclSpan span, const char *var_name,
+                                        const char *member, Runner *r, int *handled) {
+    GclExpr        nodes[128];
+    GclExpr       *ptrs[128];
+    GclStructValue *leaves[128];
+    const GclNativeStruct *ns;
+    const GclNativeSlotMap *map;
+    Var *v = env_find(r->env, var_name);
+    int n;
+
+    if (handled) *handled = 0;
+    if (!v || !v->decl_type) return 0.0;
+    ns = lookup_native_struct(v->decl_type);
+    if (!ns) return 0.0;
+    map = native_slot_map_for_type(ns->type);
+    if (!map) return 0.0;
+
+    n = collect_var_leaves(r->env, var_name, leaves, 128);
+    if (n <= 0 || n != map->count) return 0.0;
+
+    for (int i = 0; i < n; i++) {
+        memset(&nodes[i], 0, sizeof(nodes[i]));
+        if (leaves[i]->is_string && leaves[i]->str) {
+            nodes[i].kind = AST_EXPR_STRING;
+            nodes[i].str  = leaves[i]->str;
+        } else {
+            nodes[i].kind = AST_EXPR_FLOAT;
+            nodes[i].num  = leaves[i]->num;
+        }
+        ptrs[i] = &nodes[i];
+    }
+
+    double result = call_native_member(span, map->module, member, ptrs, n, r);
+    store_slots_into_var(r->env, var_name, map->module, map->count);
+    if (handled) *handled = 1;
+    return result;
+}
+
+/* Bir modul cagrisinin struct-var argümanlarini geri yaz:
+   RaylibSimpleCollision.TerrainCollision(PLAYER, Terrain) PLAYER'i gunceller. */
+static void write_back_struct_args(Runner *r, const char *module,
+                                   GclExpr **args, int arg_count) {
+    if (!r || !module || !args) return;
+    for (int i = 0; i < arg_count; i++) {
+        GclExpr *a = args[i];
+        Var *v;
+        const GclNativeStruct *ns;
+        const GclNativeSlotMap *map;
+        if (!a || a->kind != AST_EXPR_VAR) continue;
+        v = env_find(r->env, a->name);
+        if (!v || !v->decl_type) continue;
+        ns = lookup_native_struct(v->decl_type);
+        if (!ns) continue;
+        map = native_slot_map_exact(ns->type, module);
+        if (!map) continue;
+        store_slots_into_var(r->env, a->name, module, map->count);
+    }
+}
+
+/* ---------- Canli kopyalar (PLAYER.Camera gibi) ----------
+
+   `Raylib.Camera3D CurrentCamera = PLAYER.Camera;` bir KOPYADIR, ama oyun
+   dongusunde kameranin her karede tazelenmesi gerekir: PLAYER.Move() konumu
+   degistirir, cizim ise CurrentCamera'yi okur. Bu yuzden kaynak+yol kaydedilir
+   ve her native cagridan once kopya kaynagindan yeniden doldurulur. */
+#define GCL_ALIAS_MAX 16
+typedef struct {
+    char target[96];
+    char source[96];
+    char member[64];
+} GclNativeAlias;
+
+static GclNativeAlias g_alias[GCL_ALIAS_MAX];
+static int g_alias_count = 0;
+
+static void register_native_alias(const char *target, const char *source, const char *member) {
+    if (!target || !source || !member) return;
+    for (int i = 0; i < g_alias_count; i++) {
+        if (strcmp(g_alias[i].target, target) == 0) {
+            snprintf(g_alias[i].source, sizeof(g_alias[i].source), "%s", source);
+            snprintf(g_alias[i].member, sizeof(g_alias[i].member), "%s", member);
+            return;
+        }
+    }
+    if (g_alias_count >= GCL_ALIAS_MAX) return;
+    snprintf(g_alias[g_alias_count].target, sizeof(g_alias[0].target), "%s", target);
+    snprintf(g_alias[g_alias_count].source, sizeof(g_alias[0].source), "%s", source);
+    snprintf(g_alias[g_alias_count].member, sizeof(g_alias[0].member), "%s", member);
+    g_alias_count++;
+}
+
+static void refresh_native_aliases(GclEnv *env) {
+    if (!env) return;
+    for (int i = 0; i < g_alias_count; i++) {
+        Var *target = env_find(env, g_alias[i].target);
+        Var *source = env_find(env, g_alias[i].source);
+        GclStructValue *member = NULL;
+        if (!target || !source || !source->members) continue;
+        for (GclStructValue *m = source->members; m; m = m->next) {
+            if (m->name && strcmp(m->name, g_alias[i].member) == 0) { member = m; break; }
+        }
+        if (!member || !member->members) continue;
+        if (target->members) free_struct_members(target->members);
+        target->members = clone_struct_members(member->members);
+    }
 }
 
 /* ---------- defer ---------- */
@@ -3424,6 +3656,16 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                                 if (init_mod) {
                                     eval_expr(init, r);   /* modul cagrisi -> slot dolar */
                                     fill_native_from_last_slot(r, name, init_mod, ns);
+                                } else if (init->kind == AST_EXPR_MEMBER && init->left &&
+                                           init->left->kind == AST_EXPR_VAR &&
+                                           env_find(r->env, init->left->name)) {
+                                    /* Baska bir native struct'in uyesinden kopya:
+                                       canli bag kurulur, her native cagridan once
+                                       kaynagindan tazelenir
+                                       (Raylib.Camera3D cam = PLAYER.Camera;). */
+                                    register_native_alias(name, init->left->name,
+                                                          init->member_name);
+                                    refresh_native_aliases(r->env);
                                 } else {
                                     fill_struct_init(r, name, init);
                                 }

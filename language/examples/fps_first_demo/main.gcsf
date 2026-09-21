@@ -1,0 +1,53 @@
+#native <Stdio>
+#native <Embed>
+#native <Raylib>
+
+#native <RaylibFPS>
+#native <RaylibSimpleCollision>
+#native <RaylibSimpleMesh>
+
+
+int main() {
+    Raylib.InitWindow(1600, 900, "GCL Project");
+
+    RaylibFPS.FPS PLAYER;
+    Raylib.Camera3D CurrentCamera = PLAYER.Camera;
+    
+    PLAYER.Position.x = 0;
+    PLAYER.Position.z = 0;
+    PLAYER.Position.y = 0;
+    PLAYER.Height = 1.8f; #// note player heith mean camera height default ise 1.8
+
+    RaylibSimpleMesh.Terrain Terrain = RaylibSimpleMesh.TerrainLoad("terrain.obj");
+    Terrain.Material.Texture = Raylib.LoadTexture("terrain.png");
+    Terrain.Material.Color   = Raylib.WHITE;
+
+
+    Raylib.SetTargetFPS(60);
+    while (!Raylib.WindowShouldClose()) {
+        Raylib.BeginDrawing();
+        Raylib.ClearBackground(Raylib.BLUE);
+
+        #// Player Move And Look
+        PLAYER.Move();
+        PLAYER.Look();
+
+        #// Terrain Collision
+        RaylibSimpleCollision.TerrainCollision(PLAYER, Terrain);
+
+            Raylib.BeginMode3D(CurrentCamera);
+                Terrain.Draw();
+
+            Raylib.EndMode3D(void);
+
+
+        Raylib.EndDrawing();
+    }
+
+    Raylib.UnloadTexture(Terrain.Material.Texture);
+    RaylibSimpleMesh.TerrainUnload("terrain.obj");
+
+
+    Raylib.CloseWindow();
+    return 0;
+}

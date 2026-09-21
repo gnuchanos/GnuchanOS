@@ -23,6 +23,9 @@ Build output (simple_doc.md):
           Embed.dll|.so
           Raylib.dll|.so
           Raygui.dll|.so
+          RaylibFPS.dll|.so
+          RaylibSimpleCollision.dll|.so
+          RaylibSimpleMesh.dll|.so
           Embeded/
               Lua_Runtime/
                   lua.dll|.so
@@ -153,10 +156,33 @@ IDE_SRCS = [
 ]
 
 # simple_doc.md: Library/Math.dll|.so, Stdio.dll|.so, Embed.dll|.so
+#
+# These do NOT link raylib: they are plain utility modules, so build_modules()
+# can build them before Raylib.dll exists at all.
 MODULES = [
     ("Math", "_SRC/Modules/gcl_math.c"),
     ("Stdio", "_SRC/Modules/gcl_stdio.c"),
     ("Embed", "_SRC/Modules/gcl_embed.c"),
+]
+
+# SimpleCollision: collision tests (raylib CheckCollision*/GetRayCollision*).
+# SimpleMesh:      mesh generators + DrawModel (raylib GenMesh*/LoadModelFromMesh).
+#
+# These two LINK RAYLIB, exactly like Raygui. They are therefore built by
+# build_simple_modules(), which runs AFTER build_raylib_module() has produced
+# Raylib.dll and the import library generated from it (Library/libraylib.a).
+# Going through that import library keeps both modules inside the SAME raylib
+# state as Raylib.dll; embedding the static archive a second time would create
+# a second, uninitialized state and crash on the first draw.
+SIMPLE_MODULES = [
+    # RaylibFPS links raylib for exactly two members: `Player.Look()` reads the
+    # mouse itself (GetMouseDelta) and `Player.Camera()` writes the player
+    # camera into the Camera3D slot that Raylib.BeginMode3D() draws with
+    # (gcl_raylib_camera_set, exported by Raylib.dll). Everything else in it is
+    # still pure maths.
+    ("RaylibFPS", "_SRC/Modules/gcl_raylib_fps.c"),
+    ("RaylibSimpleCollision", "_SRC/Modules/gcl_SimpleCollision.c"),
+    ("RaylibSimpleMesh", "_SRC/Modules/gcl_SimpleMesh.c"),
 ]
 
 # ---------- Başlıksız (headless) regresyon testleri ----------
@@ -949,7 +975,13 @@ def build_raylib_module(build_dir: Path) -> None:
     # Otherwise Raygui.dll embeds its own libraylib.a → second, uninitialized raylib state → crash.
     if os_name() == "windows":
         imp_lib = lib_dir / "libraylib.a"
-        if out.exists() and not imp_lib.exists():
+        # ALWAYS regenerate the import library: Raylib.dll was just rebuilt, so
+        # any older .a is stale and a module that links a NEW export (RaylibFPS
+        # is linked against gcl_raylib_camera_set) would fail with
+        # "undefined reference to gcl_raylib_camera_set".
+        if out.exists():
+            if imp_lib.exists():
+                imp_lib.unlink()
             import subprocess
             # gendef - <dll> → outputs a .def dump to stdout. Write it to lib_dir/raylib.def.
             r1 = subprocess.run(["gendef", "-", str(out)], capture_output=True, text=True)
@@ -999,6 +1031,54 @@ def build_raygui_module(build_dir: Path) -> None:
     cmd += ["-lm"]
     run(cmd, cwd=ROOT)
     print(f"[gcl] modül: {out}", flush=True)
+
+
+def build_simple_modules(build_dir: Path) -> None:
+    """Library/RaylibSimpleCollision.dll|.so and Library/RaylibSimpleMesh.dll|.so
+
+    Both modules are thin wrappers over raylib itself, so they are linked the
+    same way Raygui is: on Windows against the import library generated from
+    Raylib.dll (Library/libraylib.a), elsewhere against the static
+    libraylib.a. That is what keeps a SINGLE raylib state in the process — the
+    collision helpers simply answer questions and the mesh layer calls
+    LoadModelFromMesh/DrawModel on the very same instance the script already
+    opened with Raylib.InitWindow.
+
+    This function must run AFTER build_raylib_module(), because that is the step
+    which produces Raylib.dll and the import library derived from it.
+    """
+    lib_dir = build_dir / "Library"
+    lib_dir.mkdir(parents=True, exist_ok=True)
+    ext = dll_ext()
+
+    raylib_stack_libs = list(RAYLIB_SRC.glob("libraylib*.a"))
+    import_lib = lib_dir / "libraylib.a"
+    raylib_link = (import_lib if (os_name() == "windows" and import_lib.exists())
+                   else (raylib_stack_libs[0] if raylib_stack_libs else None))
+    if raylib_link is None:
+        print("[gcl] warning: no raylib library found — SimpleCollision/SimpleMesh "
+              "are skipped (Raylib.dll must be built first).", flush=True)
+        return
+
+    for name, src in SIMPLE_MODULES:
+        out = lib_dir / f"{name}.{ext}"
+        cmd = ["gcc", "-std=c99", "-Wall", "-Wextra",
+               "-Wno-unused-parameter", "-Wno-unused-function",
+               "-shared", "-fPIC", "-D_POSIX_C_SOURCE=200809L",
+               "-I", "_SRC/include",
+               "-I", str(RAYLIB_SRC),
+               "-I", str(RAYLIB_SRC / "external" / "glfw" / "include"),
+               src,
+               "-o", str(out),
+               str(raylib_link)]
+        if os_name() == "windows":
+            cmd += ["-Wl,--export-all-symbols", "-lwinmm", "-lgdi32", "-lopengl32",
+                    "-luser32", "-lshell32", "-lole32"]
+        else:
+            cmd += ["-lGL", "-lpthread", "-ldl", "-lrt", "-lX11"]
+        cmd += ["-lm"]
+        run(cmd, cwd=ROOT)
+        print(f"[gcl] module: {out}", flush=True)
 
 
 def build_lua_runtime(build_dir: Path) -> None:
@@ -1267,6 +1347,9 @@ def build_gcl() -> Path:
     build_modules(build_dir)
     build_raylib_module(build_dir)
     build_raygui_module(build_dir)
+    # SimpleCollision/SimpleMesh link through the import library that
+    # build_raylib_module() has just produced, so they must come after it.
+    build_simple_modules(build_dir)
     build_lua_runtime(build_dir)
     build_python_runtime(build_dir)
     # If the IDE sources are missing, fail the build for CI purposes but emit a warning.

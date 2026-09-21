@@ -112,7 +112,50 @@ static Color uint_to_color(unsigned int v){
 static Color ci(const char **a,int i){ return (a&&a[i])? uint_to_color((unsigned int)strtoul(a[i],NULL,10)) : (Color){0,0,0,255}; }
 static int ii(const char *s){ return s? (int)atof(s) : 0; }
 static float ff(const char *s){ return s? (float)atof(s) : 0.0f; }
-static const char *ss(const char *s){ return s? s : ""; }
+/* ---------- Varlık (asset) yolu çözümü ----------
+
+   Bir proje resim/model/font dosyalarını TEK bir varlık dizininde tutar
+   (project.gcdata: "raylib_asset_directory_path", varsayılan "assets") ve
+   script yüklemeyi KISA yazar:
+
+       Raylib.LoadTexture("terrain.png");     // "assets/terrain.png" DEĞİL
+
+   Sürecin çalışma dizini exe/bundle'ın bulunduğu klasördür — varlık dizini
+   DEĞİL. Bu yüzden kısa yazım "[terrain.png] Failed to open file" ile
+   başarısız oluyor ve her yükleme BOŞ doku/model döndürüyordu: hata görünür
+   ama SAHNE BOŞ kalırdı (FPS demosunda arazi hiç çizilmiyordu).
+
+   Kural: ad zaten bir yol ise (ayraç içeriyorsa) dokunulmaz; olduğu yerde
+   varsa o kullanılır; yoksa `<GCL_PROJECT_DIR>/assets/<ad>` denenir; o da
+   yoksa `assets/<ad>`; hiçbiri yoksa çağıranın yazdığı ad AYNEN döner ki
+   raylib'in kendi hata yolu işlesin.
+
+   Dosya adı gibi GÖRÜNMEYEN (nokta içermeyen) metinler hiç yoklanmaz: her
+   karede çizilen `Raylib.DrawText("FPS", ...)` bir dosya sistemine bakmaz. */
+static const char *asset_path(const char *name) {
+    static char resolved[4096];
+    const char *dir;
+    if (!name || !name[0]) return name ? name : "";
+    if (!strchr(name, '.')) return name;                        /* metin, dosya değil */
+    if (strchr(name, '/') || strchr(name, '\\')) return name;   /* zaten yol */
+    if (FileExists(name)) return name;                          /* olduğu yerde */
+    dir = getenv("GCL_PROJECT_DIR");
+    if (dir && dir[0]) {
+        snprintf(resolved, sizeof(resolved), "%s/assets/%s", dir, name);
+        if (FileExists(resolved)) return resolved;
+    }
+    snprintf(resolved, sizeof(resolved), "assets/%s", name);
+    if (FileExists(resolved)) return resolved;
+    return name;
+}
+
+/* Aynı kural diğer modüller için (RaylibSimpleMesh.LoadModel): dosya adı →
+   çözülmüş ad. Modül bu sembolü yoklarsa kendi dizesini kullanır. */
+GCL_EXPORT const char *gcl_raylib_asset_path(const char *name) {
+    return asset_path(name);
+}
+
+static const char *ss(const char *s){ return asset_path(s? s : ""); }
 static Rectangle rect_arg(const char **a,int i){
     return (Rectangle){ ff(a[i]), ff(a[i+1]), ff(a[i+2]), ff(a[i+3]) };
 }
@@ -364,6 +407,41 @@ static double fn_Vector4(int argc,const char**argv){(void)argc;(void)argv;g_last
 static double fn_Matrix(int argc,const char**argv){(void)argc;(void)argv;g_last_mat=(Matrix){ff(argv[0]),ff(argv[1]),ff(argv[2]),ff(argv[3]),ff(argv[4]),ff(argv[5]),ff(argv[6]),ff(argv[7]),ff(argv[8]),ff(argv[9]),ff(argv[10]),ff(argv[11]),ff(argv[12]),ff(argv[13]),ff(argv[14]),ff(argv[15])};return 0.0;}
 static double fn_Camera(int argc,const char**argv){(void)argc;(void)argv;g_last_cam=(Camera3D){v3_arg(argv,0),v3_arg(argv,3),v3_arg(argv,6),ff(argv[9]),ii(argv[10])};return 0.0;}
 static double fn_Camera2D(int argc,const char**argv){(void)argc;(void)argv;g_last_cam2d=(Camera2D){v2_arg(argv,0),v2_arg(argv,2),ff(argv[4]),ff(argv[5])};return 0.0;}
+
+/* --------------------------------------------------------------------------
+   Cross-module helper (EXPORTED, called from RaylibFPS.dll)
+
+   `Raylib.BeginMode3D()` draws with g_last_cam, and g_last_cam is normally
+   filled by `Raylib.Camera3D(...)`. RaylibFPS runs in the SAME process and
+   shares the same raylib state, so `Player.Camera()` can write the player
+   camera here directly. The script is then two lines:
+
+       RaylibFPS.Camera(player);   // Player.Camera
+       Raylib.BeginMode3D();
+
+   instead of eleven numbers spelled out by hand. Nothing else in the module
+   changes: Camera3D()/BeginMode3D() keep working exactly as before.
+   -------------------------------------------------------------------------- */
+GCL_EXPORT void gcl_raylib_camera_set(double px, double py, double pz,
+                                      double tx, double ty, double tz,
+                                      double ux, double uy, double uz,
+                                      double fovy, double projection) {
+    g_last_cam.position   = (Vector3){(float)px, (float)py, (float)pz};
+    g_last_cam.target     = (Vector3){(float)tx, (float)ty, (float)tz};
+    g_last_cam.up         = (Vector3){(float)ux, (float)uy, (float)uz};
+    g_last_cam.fovy       = (float)fovy;
+    g_last_cam.projection = (int)projection;
+}
+
+/* Cross-module helper (EXPORTED, called from RaylibSimpleMesh.dll).
+
+   Textures live in this module's registry, so a terrain material asks here
+   for the real Texture2D behind a `Raylib.LoadTexture(...)` handle instead of
+   keeping a second registry in the other module. An unknown handle answers a
+   zero texture, which raylib draws untinted. */
+GCL_EXPORT Texture2D gcl_raylib_texture_get(int handle) {
+    return get_tex(handle);
+}
 static double fn_Ray(int argc,const char**argv){(void)argc;(void)argv;g_last_ray=(Ray){v3_arg(argv,0),v3_arg(argv,3)};return 0.0;}
 static double fn_BoundingBox(int argc,const char**argv){(void)argc;(void)argv;g_last_bb=(BoundingBox){v3_arg(argv,0),v3_arg(argv,3)};return 0.0;}
 static double fn_NPatchInfo(int argc,const char**argv){(void)argc;(void)argv;g_last_npatch=(NPatchInfo){rect_arg(argv,0),ii(argv[4]),ii(argv[5]),ii(argv[6]),ii(argv[7]),ii(argv[8])};return 0.0;}

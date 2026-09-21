@@ -155,6 +155,23 @@ static const GclNativeField f_filepathlist[] = {
 static const GclNativeField f_aeventlist[] = {
     {"capacity","int"}, {"count","int"}, {"events","AutomationEvent"}
 };
+/* --- Oyun modulu tipleri (RaylibFPS / RaylibSimpleMesh / RaylibSimpleCollision) ---
+   Bu iki tip modullere AITTIR: alan listeleri modulun LastSlot kanalindaki
+   sirayla birebir ayni olmak zorundadir (bkz. Modules/gcl_raylib_fps.c ve
+   Modules/gcl_SimpleMesh.c). Bir alan eklenirse modul de guncellenmelidir. */
+static const GclNativeField f_fps[] = {
+    {"Position","Vector3"}, {"Rotate","Vector3"}, {"LookAt","Vector3"},
+    {"Height","float"}, {"Gravity","float"}, {"IsGravityOn","int"},
+    {"Forward","float"}, {"Backward","float"}, {"Left","float"}, {"Right","float"},
+    {"Camera","Camera3D"}
+};
+static const GclNativeField f_terrainmaterial[] = {
+    {"Texture","int"}, {"Color","int"}
+};
+static const GclNativeField f_terrain[] = {
+    {"Material","TerrainMaterial"}, {"Handle","int"}
+};
+
 /* ------------------------------------------------------------------ */
 /* Tip tablosu                                                          */
 /* ------------------------------------------------------------------ */
@@ -202,6 +219,10 @@ static const GclNativeStruct gcl_native_structs[] = {
     { "ModelSkeleton",      f_modelskeleton,(int)(sizeof(f_modelskeleton)/ sizeof(f_modelskeleton[0]))},
     { "ModelAnimation",     f_modelanim,    (int)(sizeof(f_modelanim)    / sizeof(f_modelanim[0]))    },
     { "VrDeviceInfo",       f_vrdevice,     (int)(sizeof(f_vrdevice)     / sizeof(f_vrdevice[0]))     },
+    /* Oyun modulu tipleri (bkz. yukaridaki alan listesi notu). */
+    { "FPS",                f_fps,          (int)(sizeof(f_fps)          / sizeof(f_fps[0]))          },
+    { "TerrainMaterial",    f_terrainmaterial,(int)(sizeof(f_terrainmaterial)/sizeof(f_terrainmaterial[0]))},
+    { "Terrain",            f_terrain,      (int)(sizeof(f_terrain)      / sizeof(f_terrain[0]))      },
 };
 
 #define GCL_NATIVE_STRUCT_COUNT \

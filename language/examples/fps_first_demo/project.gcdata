@@ -1,0 +1,19 @@
+{
+  "project_name": "fps_first_demo",
+  "developer_name": "developer",
+  "version": 0.100,
+  "icon": "assets/icon.png",
+  "open_lua": false,
+  "open_lua_raylib": false,
+  "open_python": false,
+  "open_python_raylib": false,
+  "single_bundle": false,
+  "lua_main_file": "main.lua",
+  "python_main_file": "main.py",
+  "gcl_include_path": "include",
+  "gcl_lib_path": "lib",
+  "gcl_external_path": "external",
+  "python_import_path": "scripts",
+  "lua_import_path": "scripts",
+  "raylib_asset_directory_path": "assets"
+}
