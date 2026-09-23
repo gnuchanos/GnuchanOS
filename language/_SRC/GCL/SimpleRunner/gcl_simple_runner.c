@@ -201,6 +201,45 @@ static Macro *pp_find_macro(Preproc *pp, const char *name) {
     return NULL;
 }
 
+/* Noktali ad: A.B.C. Direktiflerde (define/undef/ifdef/ifndef/if/defined)
+   ad HER ZAMAN noktalari ile birlikte okunur. */
+static const char *pp_scan_greedy_name(const char *p, char *out, size_t out_sz) {
+    size_t n = 0;
+    const char *q = p;
+    if (!out_sz) return p;
+    while ((isalnum((unsigned char)*q) || *q == '_') && n + 1 < out_sz) out[n++] = *q++;
+    if (n == 0) { out[0] = '\0'; return p; }
+    while (*q == '.') {
+        const char *r = q + 1;
+        char ext[512];
+        size_t e = 0;
+        while ((isalnum((unsigned char)*r) || *r == '_') && e + 1 < sizeof(ext)) ext[e++] = *r++;
+        if (e == 0) break;
+        if (n + 1 + e >= out_sz) break;
+        out[n++] = '.';
+        memcpy(out + n, ext, e);
+        n += e;
+        q = r;
+    }
+    out[n] = '\0';
+    return q;
+}
+
+/* KOD icindeki ad. Noktali bicim YALNIZCA o adla tanimli bir makro varsa
+   kabul edilir; yoksa okuma sade adin sonunda durur ve `PLAYER.Position.x`
+   gibi uye zincirleri eskisi gibi tek tek gecirilir. */
+static const char *pp_scan_macro_ref(Preproc *pp, const char *p, char *out, size_t out_sz) {
+    const char *after = pp_scan_greedy_name(p, out, out_sz);
+    if (after != p && pp_macro_value(pp, out)) return after;
+    {
+        size_t n = 0;
+        const char *q = p;
+        while ((isalnum((unsigned char)*q) || *q == '_') && n + 1 < out_sz) out[n++] = *q++;
+        out[n] = '\0';
+        return q;
+    }
+}
+
 static void pp_define(Preproc *pp, const char *name, const char *value) {
     for (int i = 0; i < pp->macro_count; i++) {
         if (strcmp(pp->macros[i].name, name) == 0) {
@@ -345,21 +384,13 @@ static int pp_expand_pass(Preproc *pp, char *line, size_t line_sz, const char *s
         }
         if (isalpha((unsigned char)*p) || *p == '_') {
             const char *start = p;
-            while (isalnum((unsigned char)*p) || *p == '_') p++;
-            size_t n = (size_t)(p - start);
-            char word[256];
-            if (n < sizeof(word)) {
-                memcpy(word, start, n);
-                word[n] = '\0';
-            } else {
-                /* B23: 256+ karakterlik ad `word`'u TAŞIRIRSA eskiden word
-                   ilklendirilmemiş kalıyor ve strcmp UB okuyordu. */
-                word[0] = '\0';
-            }
+            char word[512];
+            const char *after = pp_scan_macro_ref(pp, p, word, sizeof(word));
+            size_t n = (size_t)(after - start);
             Macro *m = pp_find_macro(pp, word);
             if (m && m->is_function) {
                 /* Fonksiyon benzeri macro: adın hemen ardından ( argümanları oku */
-                const char *q2 = p;
+                const char *q2 = after;
                 while (*q2 == ' ' || *q2 == '\t') q2++;
                 if (*q2 == '(') {
                     q2++;
@@ -400,6 +431,7 @@ static int pp_expand_pass(Preproc *pp, char *line, size_t line_sz, const char *s
                     memcpy(out + o, m->value, vl);
                     o += vl;
                     expanded_any = 1;
+                    p = after;
                     continue;
                 }
             }
@@ -407,6 +439,7 @@ static int pp_expand_pass(Preproc *pp, char *line, size_t line_sz, const char *s
                 memcpy(out + o, start, n);
                 o += n;
             }
+            p = after;
         } else {
             if (o < sizeof(out) - 1) out[o++] = *p;
             p++;
@@ -525,21 +558,17 @@ static double cond_parse_primary(CondParse *c) {
     if (*c->p == '~') { c->p++; return ~(long)cond_parse_expr(c, 12); }
     if (isalpha((unsigned char)*c->p) || *c->p == '_') {
         const char *st = c->p;
-        while (isalnum((unsigned char)*c->p) || *c->p == '_') c->p++;
-        size_t n = (size_t)(c->p - st);
-        char word[256];
-        if (n < sizeof(word)) { memcpy(word, st, n); word[n] = '\0'; }
-        else word[0] = '\0';   /* B23 */
+        char word[512];
+        c->p = pp_scan_greedy_name(c->p, word, sizeof(word));
+        if (c->p == st) { c->err = 1; return 0; }
         if (strcmp(word, "defined") == 0) {
             cond_skip_ws(c);
             int paren = 0;
             if (*c->p == '(') { paren = 1; c->p++; cond_skip_ws(c); }
             const char *nst = c->p;
-            while (isalnum((unsigned char)*c->p) || *c->p == '_') c->p++;
-            size_t nn = (size_t)(c->p - nst);
-            char nword[256];
-            if (nn < sizeof(nword)) { memcpy(nword, nst, nn); nword[nn] = '\0'; }
-            else nword[0] = '\0';   /* B23 */
+            char nword[512];
+            c->p = pp_scan_greedy_name(c->p, nword, sizeof(nword));
+            if (c->p == nst) c->err = 1;
             if (paren) { cond_skip_ws(c); if (*c->p == ')') c->p++; else c->err = 1; }
             return pp_macro_value(c->pp, nword) ? 1 : 0;
         }
@@ -881,10 +910,8 @@ static char *pp_process(Preproc *pp, const char *src, int *include_errors,
             if (strncmp(q, "define", 6) == 0) {
                 q += 6;
                 while (*q == ' ' || *q == '\t') q++;
-                char name[256];
-                size_t ni = 0;
-                while (isalnum((unsigned char)*q) || *q == '_') name[ni++] = *q++;
-                name[ni] = '\0';
+                char name[512];
+                q = (char *)pp_scan_greedy_name(q, name, sizeof(name));
                 /* Function-like macro: adın hemen ardından ( varsa parametreler */
                 char *save = q;
                 while (*q == ' ' || *q == '\t') q++;
@@ -922,20 +949,16 @@ static char *pp_process(Preproc *pp, const char *src, int *include_errors,
             if (strncmp(q, "undef", 5) == 0) {
                 q += 5;
                 while (*q == ' ' || *q == '\t') q++;
-                char name[256];
-                size_t ni = 0;
-                while (isalnum((unsigned char)*q) || *q == '_') name[ni++] = *q++;
-                name[ni] = '\0';
+                char name[512];
+                q = (char *)pp_scan_greedy_name(q, name, sizeof(name));
                 pp_undef(pp, name);
                 continue;
             }
             if (strncmp(q, "ifdef", 5) == 0) {
                 q += 5;
                 while (*q == ' ' || *q == '\t') q++;
-                char name[256];
-                size_t ni = 0;
-                while (isalnum((unsigned char)*q) || *q == '_') name[ni++] = *q++;
-                name[ni] = '\0';
+                char name[512];
+                q = (char *)pp_scan_greedy_name(q, name, sizeof(name));
                 int cond = pp_macro_value(pp, name) ? 1 : 0;
                 int parent = (inc_depth > 0) ? cond_stack[inc_depth - 1].active : 1;
                 if (inc_depth < MAX_INCLUDES) {
@@ -948,10 +971,8 @@ static char *pp_process(Preproc *pp, const char *src, int *include_errors,
             if (strncmp(q, "ifndef", 6) == 0) {
                 q += 6;
                 while (*q == ' ' || *q == '\t') q++;
-                char name[256];
-                size_t ni = 0;
-                while (isalnum((unsigned char)*q) || *q == '_') name[ni++] = *q++;
-                name[ni] = '\0';
+                char name[512];
+                q = (char *)pp_scan_greedy_name(q, name, sizeof(name));
                 int cond = pp_macro_value(pp, name) ? 0 : 1;
                 int parent = (inc_depth > 0) ? cond_stack[inc_depth - 1].active : 1;
                 if (inc_depth < MAX_INCLUDES) {

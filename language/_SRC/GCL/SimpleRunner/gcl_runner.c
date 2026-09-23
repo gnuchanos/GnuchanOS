@@ -1482,8 +1482,24 @@ static double call_native_member(GclSpan call_span, const char *module_name,
         mod = native_load(r->env, module_name);
     }
     if (!mod) {
-        runtime_errorcf(GCL_E_SEM_UNKNOWN_MODULE, call_span,
-                        "unknown module '%s'", module_name);
+        /* `X.method()` where X is a VARIABLE, not a module.
+           Saying "unknown module 'CUBE'" here blamed a module that was never
+           involved: CUBE is a variable whose type has no slot map, so
+           call_native_struct_method() declined and the call fell through to
+           this branch (the real fix for that case is the slot-map entry in
+           g_native_slot_maps[]). Name the actual mistake so the next such
+           failure is diagnosed from the message alone. */
+        Var *bv = env_find(r->env, module_name);
+        if (bv) {
+            runtime_errorcf(GCL_E_SEM_UNKNOWN_MEMBER, call_span,
+                            "'%s.%s' is not a module call: '%s' is a variable of type '%s'",
+                            module_name, member ? member : "?",
+                            module_name,
+                            (bv->decl_type && bv->decl_type[0]) ? bv->decl_type : "unknown");
+        } else {
+            runtime_errorcf(GCL_E_SEM_UNKNOWN_MODULE, call_span,
+                            "unknown module '%s'", module_name);
+        }
         return 0.0;
     }
     /* Stdio.scanf — real input read, writes to env (same as bare scanf) */
@@ -3006,6 +3022,51 @@ static const char *const last_glyph[] = {
 static const char *const last_aevent[] = {
     "LastAEventFrame","LastAEventType","LastAEventP0","LastAEventP1","LastAEventP2","LastAEventP3"
 };
+/* Modul sahipli tipler (RaylibShader/RaylibSimpleLight). Bunlarin degerleri
+   raylib'in g_last_* yuvalarinda degil, modulun kendi durumundadir; bu yuzden
+   erisimciler raylib'in Last* adlari yerine modulun KENDI uye adlaridir
+   (RaylibShader: Handle; RaylibSimpleLight: Handle + RotX/RotY/RotZ).
+   Sira, gcl_native_types.c'deki alan listesinin SKALER YAPRAK sirasidir. */
+static const char *const last_simpleshader[] = { "Handle" };
+static const char *const last_sunlight[] = { "Handle", "RotX", "RotY", "RotZ" };
+/* RaylibFOG.FOG: mesafe sisi. Raylib'in Last* adlari DEGIL, modulun KENDI
+   erisimci adlari kullanilir — degerler g_last_* yuvalarinda degil modulun
+   kendi durumundadir (bkz. Modules/gcl_fog.c). Sira,
+   gcl_native_types.c'deki `f_fog` alan listesinin SKALER YAPRAK sirasidir ve
+   sayi 12'dir; ucu de (tip tablosu, bu tablo, slot map) AYNI olmak zorundadir. */
+static const char *const last_fog[] = {
+    "Handle", "Color", "Density", "Start", "End", "Mode",
+    "Enabled", "Height", "Falloff", "Alpha", "Noise", "HeightFog"
+};
+/* RaylibSKYBOX.Skybox: ayni sekilde MODUL SAHIPLI bir tip. Erisimci adlari
+   modulun KENDI uye adlaridir (bkz. Modules/gcl_skybox.c) ve sira, tipin
+   gcl_native_types.c'deki skaler yaprak sirasidir. */
+static const char *const last_skybox[] = {
+    "Handle", "DailyCycle", "Time", "DayLength",
+    "CloudAmount", "CloudSpeed", "StarAmount", "SunSize", "SunBrightness",
+    "CloudON"
+};
+/* RaylibSimpleWater.Water: modul sahipli tip. Alanlarin SKALER YAPRAK sirasi
+   gcl_native_types.c'deki `f_water` ile AYNI olmak zorundadir: Color, Handle,
+   sonra Position/Rotate/Scale'in her biri AYRI x/y/z yapragi olarak acilir
+   (3x3 = 9 yaprak), ardindan su parametreleri. Ic ice alanlarin adlari
+   NOKTASIZDIR ("PosX", "Rotate.x" degil) â€” bkz. last_sunlight[] yukarida.
+   Toplam 19 yaprak; sayac g_native_slot_maps[] ile de ayni olmalidir.
+
+   Bu tip YALNIZCA SUYU TANIMLAR: yuzme esigi, kapsul olcusu ya da "yuzuyor
+   sayilma" karari BURADA YASAMAZ. Boyle bir esik tutmak, ekranin "yuzuyorum"
+   dedigi an ile fizigin yuzdugu ani birbirinden ayirirdi; karar tek bir
+   yerde, oyuncunun kendi modulunde verilir (bkz. Modules/gcl_raylib_fps.c).
+   Modulun WATER_SLOT_COUNT'u ve gcl_native_types.c'deki f_water[] ile
+   BIREBIR ayni olmak zorundadir. */
+static const char *const last_water[] = {
+    "Color", "Handle",
+    "PosX", "PosY", "PosZ",
+    "RotX", "RotY", "RotZ",
+    "ScaleX", "ScaleY", "ScaleZ",
+    "Alpha", "Reflection", "Refraction", "Fresnel",
+    "WaveStrength", "WaveSpeed", "WaveScale", "Foam"
+};
 
 static const NativeLastMap g_native_last_maps[] = {
     { "Vector2",         last_vec2,   (int)(sizeof(last_vec2)   / sizeof(last_vec2[0]))   },
@@ -3023,6 +3084,11 @@ static const NativeLastMap g_native_last_maps[] = {
     { "NPatchInfo",      last_npatch, (int)(sizeof(last_npatch) / sizeof(last_npatch[0])) },
     { "GlyphInfo",       last_glyph,  (int)(sizeof(last_glyph)  / sizeof(last_glyph[0]))  },
     { "AutomationEvent", last_aevent, (int)(sizeof(last_aevent) / sizeof(last_aevent[0])) },
+    { "SimpleShader",    last_simpleshader, (int)(sizeof(last_simpleshader) / sizeof(last_simpleshader[0])) },
+    { "SunLight",        last_sunlight,     (int)(sizeof(last_sunlight)     / sizeof(last_sunlight[0]))     },
+    { "Skybox",          last_skybox,       (int)(sizeof(last_skybox)       / sizeof(last_skybox[0]))       },
+    { "Water",           last_water,        (int)(sizeof(last_water)        / sizeof(last_water[0]))        },
+    { "FOG",             last_fog,          (int)(sizeof(last_fog)          / sizeof(last_fog[0]))          },
 };
 
 #define GCL_NATIVE_LAST_MAP_COUNT \
@@ -3085,6 +3151,38 @@ static const GclNativeSlotMap g_native_slot_maps[] = {
     { "FPS",     "RaylibFPS",             27 },
     { "FPS",     "RaylibSimpleCollision", 27 },
     { "Terrain", "RaylibSimpleMesh",       3 },
+    /* RaylibSimpleMesh.Mesh, registered under its QUALIFIED name in
+       SharedPipeline/gcl_native_types.c because the bare "Mesh" there already
+       means raylib's raw mesh struct. The key must be spelled EXACTLY as
+       gcl_native_structs[] spells it, because lookup_native_struct() returns
+       that struct and native_slot_map_for_type() is asked with its `type`:
+       while this entry was missing, `CUBE.Draw()` found no slot map, fell
+       through to module dispatch and reported the misleading
+       "unknown module 'CUBE'". The count is 12 and NOT Terrain's 3: a Mesh
+       also carries Position/Rotate/Scale (slots 3..11) so it can be placed in
+       the world, and the number must equal the scalar leaves the type declares
+       in SharedPipeline/gcl_native_types.c -- call_native_struct_method()
+       refuses the call outright when the two disagree, which is the other half
+       of this same failure mode. Both types are LoadObj() registry handles
+       drawn by the same fn_draw() in Modules/gcl_SimpleMesh.c. */
+    { "RaylibSimpleMesh.Mesh", "RaylibSimpleMesh", 12 },
+    { "SunLight",    "RaylibSimpleLight",  4 },
+    { "SimpleShader", "RaylibShader",      1 },
+    /* RaylibSKYBOX.Skybox: 9 skaler yaprak (Handle, DailyCycle, Time, DayLength,
+       CloudAmount, CloudSpeed, StarAmount, SunSize, SunBrightness) — sayi
+       gcl_native_types.c'deki f_skybox[] ile AYNI olmak zorundadir, yoksa
+       call_native_struct_method() cagriyi tumden reddeder ve `sky.Draw()`
+       "unknown module 'sky'" diye raporlanir. */
+    { "Skybox",      "RaylibSKYBOX",       10 },
+    /* RaylibFOG.FOG: mesafe sisi, 12 skaler yaprak (yukaridaki last_fog ile
+       ve gcl_native_types.c'deki f_fog ile AYNI sirada). */
+    { "FOG",         "RaylibFOG",          12 },
+    /* RaylibSimpleWater.Water: 19 skaler yaprak. Sayi gcl_native_types.c'deki
+       f_water[] ve yukaridaki last_water[] ile AYNI olmak zorundadir; yoksa
+       call_native_struct_method() cagriyi tumden reddeder ve `water.Draw()`
+       "unknown module 'water'" diye raporlanir. Su cizimi ONCE bu modul
+       uzerinden yapilir, ardindan KENDI shader'i materyale konur. */
+    { "Water",       "RaylibSimpleWater",  19 },
 };
 
 #define GCL_NATIVE_SLOT_MAP_COUNT \
@@ -3099,11 +3197,24 @@ static const GclNativeSlotMap *native_slot_map_exact(const char *type, const cha
     return NULL;
 }
 
-/* Tipin sahibi olan modul: PLAYER.Move() hangi modulu cagiracak? */
+/* Tipin sahibi olan modul: PLAYER.Move() hangi modulu cagiracak?
+
+   Arama, lookup_native_struct() ile AYNI kurali izler: once tam ad, sonra
+   noktadan sonraki yaprak. Iki arama ayni tip adi icin farkli cevap verdiginde
+   tam olarak bu hata doguyordu: gcl_native_types.c tipi NITELIKLI adiyla
+   ("RaylibSimpleMesh.Mesh") kaydeder, tablo ise yalnizca "Terrain" tasiyordu;
+   `CUBE.Draw()` slot haritasini bulamayinca modul yoluna dusup
+   "unknown module 'CUBE'" diyordu. Simdi iki arama ayrismaaz. */
 static const GclNativeSlotMap *native_slot_map_for_type(const char *type) {
+    const char *leaf;
     if (!type) return NULL;
     for (int i = 0; i < GCL_NATIVE_SLOT_MAP_COUNT; i++)
         if (strcmp(g_native_slot_maps[i].type, type) == 0) return &g_native_slot_maps[i];
+    leaf = strrchr(type, '.');
+    if (!leaf) return NULL;
+    leaf++;
+    for (int i = 0; i < GCL_NATIVE_SLOT_MAP_COUNT; i++)
+        if (strcmp(g_native_slot_maps[i].type, leaf) == 0) return &g_native_slot_maps[i];
     return NULL;
 }
 
@@ -3655,7 +3766,39 @@ static int exec_stmt(GclStmt *s, Runner *r) {
                                     init_mod = init->left->left->name;
                                 if (init_mod) {
                                     eval_expr(init, r);   /* modul cagrisi -> slot dolar */
-                                    fill_native_from_last_slot(r, name, init_mod, ns);
+
+                                    /* IKI ayri read-back kanali vardir:
+
+                                       1. raylib'in KENDI struct'lari (Vector2,
+                                          Camera3D, Shader...) icin raylib'in
+                                          Last* erisimcileri -- bunlari
+                                          fill_native_from_last_slot surer.
+                                       2. MODUL SAHIPLI tipler (RaylibSimpleMesh.Mesh,
+                                          Terrain, RaylibFPS.FPS) icin modulun kendi
+                                          LastSlot kanali -- bu tiplerin Last*
+                                          haritasi YOKTUR ve fill_native_... sessizce
+                                          0 doner.
+
+                                       Ikinci kanal yok sayilinca `RaylibSimpleMesh.Mesh
+                                       CUBE = RaylibSimpleMesh.LoadObj("cube.obj");`
+                                       bildiriminde CUBE.Handle 0'da (varsayilan)
+                                       kaliyordu. 0, kayit tablosunun ILK yuvasidir --
+                                       yani ARAZI. Sonuc: CUBE.Draw() araziyi
+                                       ciziyor, kure hic gorunmuyordu. Ikinci
+                                       yukleme (arazi zaten yuva 0) yalnizca bu
+                                       yuzden "calisiyor" gibi gorunuyordu: kendi
+                                       yuvasi ile varsayilan 0 ayni cikti.
+
+                                       Bu yuzden once raylib kanali denenir; o
+                                       tipi tanimiyorsa (0 donerse) slot kanalina
+                                       dusulur. */
+                                    if (!fill_native_from_last_slot(r, name, init_mod, ns)) {
+                                        const GclNativeSlotMap *decl_slot_map =
+                                            native_slot_map_exact(ns->type, init_mod);
+                                        if (decl_slot_map)
+                                            store_slots_into_var(r->env, name, init_mod,
+                                                                 decl_slot_map->count);
+                                    }
                                 } else if (init->kind == AST_EXPR_MEMBER && init->left &&
                                            init->left->kind == AST_EXPR_VAR &&
                                            env_find(r->env, init->left->name)) {

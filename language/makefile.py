@@ -26,6 +26,8 @@ Build output (simple_doc.md):
           RaylibFPS.dll|.so
           RaylibSimpleCollision.dll|.so
           RaylibSimpleMesh.dll|.so
+          RaylibShader.dll|.so
+          RaylibSimpleLight.dll|.so
           Embeded/
               Lua_Runtime/
                   lua.dll|.so
@@ -183,6 +185,31 @@ SIMPLE_MODULES = [
     ("RaylibFPS", "_SRC/Modules/gcl_raylib_fps.c"),
     ("RaylibSimpleCollision", "_SRC/Modules/gcl_SimpleCollision.c"),
     ("RaylibSimpleMesh", "_SRC/Modules/gcl_SimpleMesh.c"),
+    # Shader + light: both READ the shader/uniforms that Raylib.dll owns (the
+    # GL program, the camera slot) and never call raylib themselves — they
+    # resolve the exported cross-module helpers at run time. Linking the import
+    # library here is therefore enough (and nothing in it is referenced).
+    ("RaylibShader", "_SRC/Modules/gcl_Shader.c"),
+    ("RaylibSimpleLight", "_SRC/Modules/gcl_SimpleLight.c"),
+    # Skybox: gokyuzunu TAMAMEN bir fragment shader ile uretir (gradyan + gunes/
+    # ay diski + bantli bulutlar + yildizlar) ve kendi GLSL programini calisma
+    # aninda derler; disaridan yalnizca raylib'in cizim cagrilarini kullanir
+    # (DrawMesh, LoadShaderFromMemory) ve kamerayi Raylib.dll'e sorar
+    # (gcl_raylib_camera_pos). Import library bu yuzden yeterlidir.
+    ("RaylibSkybox", "_SRC/Modules/gcl_skybox.c"),
+    # Fog: mesafe sisi. Modul HICBIR SEY CIZMEZ; arazinin kendi fragment
+    # shader'indaki (assets/lighting.fs) mesafe karisimini besleyen uniform'lari
+    # yazar. Gokyuzu ayri bir program oldugu icin etkilenmez. Raylib.dll'den
+    # yalnizca `gcl_raylib_shader_set_fog` / `gcl_raylib_light_shader` sembolleri
+    # cozulur; import library yeterlidir.
+    ("RaylibFOG", "_SRC/Modules/gcl_fog.c"),
+    # Water: su yuzeyi. Modeli yukler (OBJ) ve KENDI shader'iyla cizer; dalga
+    # yuksekligi ile normalleri vertex asamasinda uretir (bkz.
+    # gcl_water_shader.h). Yansima ve gunes icin degerleri RaylibSKYBOX'dan
+    # okur — iki modul tek bir gokyuzu tanimi paylasir. Raylib.dll'den
+    # yalnizca cizim, varlik yolu ve kamera sembolleri cozulur; import
+    # library yeterlidir.
+    ("RaylibSimpleWater", "_SRC/Modules/gcl_SimpleWater.c"),
 ]
 
 # ---------- Başlıksız (headless) regresyon testleri ----------

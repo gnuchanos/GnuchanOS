@@ -46,9 +46,29 @@ INFO: VAO: [ID 2] Mesh uploaded successfully to VRAM (GPU)
 INFO: FILEIO: [D:\GnuchanOS\language\examples\fps_first_demo/assets/terrain.png] File loaded successfully
 INFO: IMAGE: Data loaded successfully (1024x1024 | R8G8B8A8 | 1 mipmaps)
 INFO: TEXTURE: [ID 4] Texture loaded successfully (1024x1024 | R8G8B8A8 | 1 mipmaps)
-INFO: TIMER: Target time per frame: 16.667 milliseconds
+Runtime error: undefined variable 'GLSL_VERSION'
+INFO: FILEIO: [D:\GnuchanOS\language\examples\fps_first_demo/assets/lighting.vs] Text file loaded successfully
+INFO: FILEIO: [D:\GnuchanOS\language\examples\fps_first_demo/assets/lighting.fs] Text file loaded successfully
+INFO: SHADER: [ID 4] Vertex shader compiled successfully
+INFO: SHADER: [ID 5] Fragment shader compiled successfully
+INFO: SHADER: [ID 6] Program shader loaded successfully
+INFO: FILEIO: [D:\GnuchanOS\language\examples\fps_first_demo/assets/cube.obj] Text file loaded successfully
+INFO: FILEIO: [box.png] File loaded successfully
+INFO: IMAGE: Data loaded successfully (256x256 | R8G8B8 | 1 mipmaps)
+INFO: TEXTURE: [ID 5] Texture loaded successfully (256x256 | R8G8B8 | 1 mipmaps)
+INFO: VAO: [ID 3] Mesh uploaded successfully to VRAM (GPU)
+INFO: FILEIO: [D:\GnuchanOS\language\examples\fps_first_demo/assets/box.png] File loaded successfully
+INFO: IMAGE: Data loaded successfully (256x256 | R8G8B8 | 1 mipmaps)
+INFO: TEXTURE: [ID 6] Texture loaded successfully (256x256 | R8G8B8 | 1 mipmaps)
+INFO: VAO: [ID 4] Mesh uploaded successfully to VRAM (GPU)
+INFO: SHADER: [ID 4] Vertex shader compiled successfully
+INFO: SHADER: [ID 5] Fragment shader compiled successfully
+INFO: SHADER: [ID 7] Program shader loaded successfully
 INFO: TEXTURE: [ID 4] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 6] Unloaded texture data from VRAM (GPU)
 INFO: VAO: [ID 2] Unloaded vertex array data from VRAM (GPU)
+INFO: MODEL: Unloaded model (and meshes) from RAM and VRAM
+INFO: VAO: [ID 3] Unloaded vertex array data from VRAM (GPU)
 INFO: MODEL: Unloaded model (and meshes) from RAM and VRAM
 INFO: TEXTURE: [ID 2] Unloaded texture data from VRAM (GPU)
 INFO: SHADER: [ID 3] Default shader unloaded successfully

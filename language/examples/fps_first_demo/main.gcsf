@@ -5,25 +5,98 @@
 #native <RaylibFPS>
 #native <RaylibSimpleCollision>
 #native <RaylibSimpleMesh>
+#native <RaylibSimpleLight>
+#native <RaylibShader>
+#native <RaylibSkybox>
+#native <RaylibFOG>
+#native <RaylibSimpleWater>
+
+
+#if defined(Raylib.PLATFORM_DESKTOP)
+    #define Raylib.GLSL_VERSION            330
+#else   // PLATFORM_ANDROID, PLATFORM_WEB
+    #define Raylib.GLSL_VERSION            100
+#endif
+
+
+
 
 
 int main() {
     Raylib.InitWindow(1600, 900, "GCL Project");
 
+    #// skybox
+    RaylibSKYBOX.Skybox sky = RaylibSKYBOX.CreateSimpleSkybox();
+    sky.DailyCycle = RaylibSKYBOX.night;
+    sky.cloudON = true;
+    sky.CloudSpeed = 0.05;
+
+    #// Daylight is white. A saturated sun colour multiplies the terrain texture
+    #// channel by channel, so Raylib.YELLOW (255,255,0) zeroes the blue channel
+    #// and turns every white texel yellow.
+    RaylibSimpleLight.SunLight SUN = RaylibSimpleLight.CreateSun(Raylib.WHITE);
+    SUN.Rotate.x = 0;
+    SUN.Rotate.z = 90;
+    SUN.Rotate.y = 0;
+
+    RaylibFOG.FOG fogy = RaylibFOG.CreateFog(Raylib.SKYBLUE, 1.0f, 8.0f, 45.0f, true, true);
+        #// Color, Density, Start, End, Enabled, HeightFog
+    fogy.Mode = RaylibFOG.ExponentialSquared;
+    #// Yukseklik sisi: arazi -11..+10 arasinda, kamera y=1.8. Tepeler daha az
+    #// sisli kalir, cokukler daha yogun dolar.
+    fogy.HeightFog = true;
+    fogy.Height = 30.0f;
+    fogy.Falloff = 0.5f;
+
+    #// fps player
     RaylibFPS.FPS PLAYER;
     Raylib.Camera3D CurrentCamera = PLAYER.Camera;
     
     PLAYER.Position.x = 0;
     PLAYER.Position.z = 0;
-    PLAYER.Position.y = 0;
+    PLAYER.Position.y = 5;
     PLAYER.Height = 1.8f; #// note player heith mean camera height default ise 1.8
 
     RaylibSimpleMesh.Terrain Terrain = RaylibSimpleMesh.TerrainLoad("terrain.obj");
     Terrain.Material.Texture = Raylib.LoadTexture("terrain.png");
     Terrain.Material.Color   = Raylib.WHITE;
 
+    RaylibSimpleWater.Water water = RaylibSimpleWater.CreateSimpleWaterFromOBJ("water.obj");
+    water.WaveStrength = 0.5f;
+    water.WaveSpeed = 0.5f;
+    water.WaveScale = 0.5f;
+    water.Reflection = 5f;
 
-    Raylib.SetTargetFPS(60);
+    #// Su modulu YALNIZCA GEOMETRIDIR (yuzey + taban). "Yuzuyor muyum",
+    #// esikler ve fizik oyuncunun kendi modulunde (RaylibFPS) yasar; boylece
+    #// ekranin "yuzuyorum" dedigi an ile fizigin yuzdugu an ayrisamaz.
+
+    RaylibShader.SimpleShader shader = RaylibShader.CreateSimpleShader("lighting.vs", "lighting.fs", Raylib.GLSL_VERSION);
+
+    RaylibSimpleMesh.Mesh CUBE = RaylibSimpleMesh.LoadObj("cube.obj");
+    CUBE.Position.x = 0;  # default 0
+    CUBE.Position.y = 0;  # default 0
+    CUBE.Position.z = 0;  # spawn noktasinin onunde (arazi y ~ -0.16)
+
+    CUBE.Rotate.x   = 0;  # default 0 (derece)
+    CUBE.Rotate.y   = 45; # default 0; kutunun yuzlerini gosterir
+    CUBE.Rotate.z   = 0;  # default 0
+
+    SUN.Rotate.x = 0;  # default 0
+    SUN.Rotate.z = 30; # default 0
+    SUN.Rotate.y = 0;  # default 0
+
+    CUBE.Material.Texture = Raylib.LoadTexture("box.png");
+
+
+
+
+
+
+
+
+
+    #// Raylib.SetTargetFPS(60);
     while (!Raylib.WindowShouldClose()) {
         Raylib.BeginDrawing();
         Raylib.ClearBackground(Raylib.BLUE);
@@ -32,20 +105,60 @@ int main() {
         PLAYER.Move();
         PLAYER.Look();
 
-        #// Terrain Collision
+        #// Terrain Collision (arazi + zemin tabani)
         RaylibSimpleCollision.TerrainCollision(PLAYER, Terrain);
 
-            Raylib.BeginMode3D(CurrentCamera);
-                Terrain.Draw();
+        #// KAPSUL move_and_slide: Godot'un CharacterBody3D.move_and_slide() gibi.
+        #// Oyuncu, Height uzunlugunda ve 0.3 yaricapinda DIMDIK bir kapsuldur.
+        #// Dikey/hareket hizi FPS + TerrainCollision'dan gelir; burada kutuya
+        #// karsi ust uste binme cozulur ve temas boyunca KAYILIR. Ilk arguman
+        #// hareket vektorudur (dx, dy, dz); FPS zaten ilerlettigi icin 0,0,0
+        #// verilir ve yalnizca cozulme (slide) uygulanir.
+        RaylibSimpleCollision.MoveAndSlide(PLAYER, 0, 0, 0, 4, CUBE);
 
+        #// skybox update
+        SUN.Update();
+        sky.Update();
+        water.Update(); # update shader
+        fogy.Update();
+
+            Raylib.BeginMode3D(CurrentCamera);
+                sky.Draw(); #// no need for extra shader
+
+
+
+                Raylib.BeginShaderMode(shader);
+                    #// SIS: uniform'lari ARazi ile AYNI shader'a yazar. Bu yuzden
+                    #// BeginShaderMode'un ICINDE olmak ZORUNDA - disinda cagrilirsa
+                    #// hangi programin hedeflendigi belli olmaz ve sis uygulanmaz.
+                    Terrain.Draw();
+                    CUBE.Draw();
+                    water.Draw();
+                    fogy.Update();
+
+
+                Raylib.EndShaderMode();
             Raylib.EndMode3D(void);
+
+        #// SU ALTI EKRAN EFEKTI: 2B katmanda, BeginMode3D KAPANDIKTAN sonra
+        #// cizilir. 3B blogun icinde cizilseydi kamerayla perspektife girer ve
+        #// kamerayi cevirince kayardi. Yalnizca GOZLER su yuzeyinin altindayken
+        #// devreye girer; derinlikle koyulasir.
+        water.DrawUnderwaterEffect();
+
+        #// UI
+        Raylib.DrawFPS(10, 10);
 
 
         Raylib.EndDrawing();
     }
 
+
+    #// unload all things
     Raylib.UnloadTexture(Terrain.Material.Texture);
+    Raylib.UnloadTexture(CUBE.Material.Texture);
     RaylibSimpleMesh.TerrainUnload("terrain.obj");
+    RaylibSimpleMesh.UnloadObj(CUBE);
 
 
     Raylib.CloseWindow();

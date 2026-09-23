@@ -171,6 +171,89 @@ static const GclNativeField f_terrainmaterial[] = {
 static const GclNativeField f_terrain[] = {
     {"Material","TerrainMaterial"}, {"Handle","int"}
 };
+/* RaylibSimpleMesh.Mesh — modulun KENDI mesh tutamacI, raylib'in ham Mesh
+   struct'i DEGIL. Tabloya NITELIKLI adiyla kaydedilir: lookup_native_struct()
+   once tam adi dener, ancak bulamazsa noktadan sonrasina duser
+   (bkz. GCL/SimpleRunner/gcl_runner.c). Bu sayede
+
+       RaylibSimpleMesh.Mesh CUBE;   // bu tip
+       Mesh m;                       // raylib'in ham mesh struct'i
+
+   ikisi de dogru cozulur. Duz "Mesh" adiyla eklenirse raylib'in kendi girdisi
+   once geldigi icin golgelenir ve `CUBE.Material.Texture` sessizce 0 donerdi.
+   Alan sirasi modulun LastSlot kanaliyla birebir ayni olmali
+   (bkz. Modules/gcl_SimpleMesh.c): Texture, Color, Handle — ve ARDINDAN
+   Position, Rotate, Scale. Ilk uc alan Terrain ile PAYLASILIR; dokuz ek alan
+   yalnizca Mesh'tedir, cunku dunyada duran tek tek nesnelerin nerede
+   durdugunu soylemesi gerekir (Terrain dosyanin koydugu yerde durur).
+   Toplam 3 + 9 = 12 skaler yaprak; sayaclar gcl_runner.c'deki
+   g_native_slot_maps[] ile AYNI olmak zorundadir. */
+static const GclNativeField f_simplemesh[] = {
+    {"Material","TerrainMaterial"}, {"Handle","int"},
+    {"Position","Vector3"}, {"Rotate","Vector3"}, {"Scale","Vector3"}
+};
+/* RaylibSimpleLight.SunLight: Handle + Rotate. The rotation IS the sun angle
+   (Rotate.z = elevation, Rotate.y = azimuth) — see Modules/gcl_SimpleLight.c,
+   whose slot table (Handle, RotX, RotY, RotZ) matches this list exactly. */
+static const GclNativeField f_sunlight[] = {
+    {"Handle","int"}, {"Rotate","Vector3"}
+};
+/* RaylibFOG.FOG — distance fog. The field order must match the module's
+   LastSlot channel and gcl_runner.c's `last_fog` + `g_native_slot_maps`
+   entry, character for character (12 scalar leaves).
+
+   `Color` is a packed 0..255 value like every other colour in GCL, while
+   `Enabled` and `HeightFog` are SWITCHES: the module reduces them with
+   `!= 0`, so writing `true` and writing `1` open the same layer. */
+static const GclNativeField f_fog[] = {
+    {"Handle","int"}, {"Color","int"}, {"Density","float"}, {"Start","float"},
+    {"End","float"}, {"Mode","int"}, {"Enabled","int"}, {"Height","float"},
+    {"Falloff","float"}, {"Alpha","float"}, {"Noise","float"}, {"HeightFog","int"}
+};
+
+/* RaylibShader.SimpleShader: the shader handle returned by CreateSimpleShader.
+   ONE scalar leaf, so passing the variable to Raylib.BeginShaderMode() forwards
+   the handle itself. */
+static const GclNativeField f_simpleshader[] = {
+    {"Handle","int"}
+};
+/* RaylibSimpleWater.Water — su yuzeyi. Alan sirasi modulun LastSlot kanaliyla
+   BIREBIR ayni olmak zorundadir (bkz. Modules/gcl_SimpleWater.c ve
+   gcl_runner.c'deki g_native_slot_maps[]): 19 skaler yaprak. Iki nokta:
+   Bu tip YALNIZCA SUYU TANIMLAR; icinde yuzme esigi, kapsul olcusu ya da
+   "yuzuyor sayilma" karari YOKTUR. Boyle bir esik tutmak, ekranin
+   "yuzuyorum" dedigi an ile fizigin yuzdugu ani birbirinden ayirirdi; karar
+   tek bir yerde (bkz. Modules/gcl_raylib_fps.c) verilir.
+
+   * `Color` SUYUN TONUDUR, aydinlatma rengi degil; shader'in taban renkleri
+     bununla CARPILIR. Varsayilan Raylib.WHITE oldugu icin hicbir sey
+     yazilmazsa varsayilan su rengi aynen gorunur.
+   * Yerlesim `Position/Rotate/Scale` ucundan kurulur ve RaylibSimpleMesh.Mesh
+     ile AYNI kurali izler (Rotate DERECE, Scale varsayilan 1). Ic ice Vector3
+     alanlari skaler yapraklara ACIYARAK katilir: Position x/y/z, sonra
+     Rotate x/y/z, sonra Scale x/y/z — slot sayaci bu sirayi bekler. */
+static const GclNativeField f_water[] = {
+    {"Color","int"}, {"Handle","int"},
+    {"Position","Vector3"}, {"Rotate","Vector3"}, {"Scale","Vector3"},
+    {"Alpha","float"}, {"Reflection","float"}, {"Refraction","float"},
+    {"Fresnel","float"}, {"WaveStrength","float"}, {"WaveSpeed","float"},
+    {"WaveScale","float"}, {"Foam","float"}
+};
+
+/* RaylibSKYBOX.Skybox — yazi tabanli shader gokyuzu. Alan sirasi modulun
+   LastSlot kanaliyla BIREBIR ayni olmak zorundadir (bkz. Modules/gcl_skybox.c
+   ve gcl_runner.c'deki g_native_slot_maps[]): 10 skaler yaprak. DailyCycle bir
+   SABIT GORUNUMdur (RaylibSKYBOX.night = 0 ... cycle = 10).
+
+   CloudON ek KATMANI acar: keskin kenarli, duz renkli (cartoon) ikinci bulut
+   katmani. Rengi gunesin yuksekligine gore degisir — gunduz beyaz, gece koyu
+   mavi-gri. 0 = kapali (varsayilan). */
+static const GclNativeField f_skybox[] = {
+    {"Handle","int"}, {"DailyCycle","int"},
+    {"Time","float"}, {"DayLength","float"},
+    {"CloudAmount","float"}, {"CloudSpeed","float"}, {"StarAmount","float"},
+    {"SunSize","float"}, {"SunBrightness","float"}, {"CloudON","int"}
+};
 
 /* ------------------------------------------------------------------ */
 /* Tip tablosu                                                          */
@@ -223,6 +306,14 @@ static const GclNativeStruct gcl_native_structs[] = {
     { "FPS",                f_fps,          (int)(sizeof(f_fps)          / sizeof(f_fps[0]))          },
     { "TerrainMaterial",    f_terrainmaterial,(int)(sizeof(f_terrainmaterial)/sizeof(f_terrainmaterial[0]))},
     { "Terrain",            f_terrain,      (int)(sizeof(f_terrain)      / sizeof(f_terrain[0]))      },
+    /* NITELIKLI ad sart: duz "Mesh" yukarida raylib'in ham mesh struct'i olarak
+       zaten kayitli (bkz. f_simplemesh notu). */
+    { "RaylibSimpleMesh.Mesh", f_simplemesh,(int)(sizeof(f_simplemesh)   / sizeof(f_simplemesh[0]))   },
+    { "SunLight",           f_sunlight,     (int)(sizeof(f_sunlight)     / sizeof(f_sunlight[0]))     },
+    { "SimpleShader",       f_simpleshader, (int)(sizeof(f_simpleshader) / sizeof(f_simpleshader[0])) },
+    { "Water",              f_water,        (int)(sizeof(f_water)        / sizeof(f_water[0]))        },
+    { "Skybox",             f_skybox,       (int)(sizeof(f_skybox)       / sizeof(f_skybox[0]))       },
+    { "FOG",                f_fog,          (int)(sizeof(f_fog)          / sizeof(f_fog[0]))          },
 };
 
 #define GCL_NATIVE_STRUCT_COUNT \

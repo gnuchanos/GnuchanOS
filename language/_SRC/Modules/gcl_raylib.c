@@ -433,6 +433,49 @@ GCL_EXPORT void gcl_raylib_camera_set(double px, double py, double pz,
     g_last_cam.projection = (int)projection;
 }
 
+/* Cross-module helper (EXPORTED, called from RaylibSKYBOX.dll).
+
+   Gokyuzu kubbesi, script'in Raylib.BeginMode3D()'ye verdigi kameranin goz
+   noktasina otelenmeli: gradyan boylece kameraya YAPISIK kalir ve oyuncu ne
+   kadar yururse yurusun ufuk ayni yerde durur. Kamera yuvasi yalnizca bu
+   modulde yasadigi icin soru buradan sorulur — ikinci bir kamera kopyasi
+   tutmak, iki degerin zamanla ayrisip gokyuzunun oyuncudan kopmasi demekti.
+
+   Donus: 1 (yazildi) / 0 (cikis gecersiz). */
+GCL_EXPORT int gcl_raylib_camera_pos(float *out3) {
+    if (!out3) return 0;
+    out3[0] = g_last_cam.position.x;
+    out3[1] = g_last_cam.position.y;
+    out3[2] = g_last_cam.position.z;
+    return 1;
+}
+
+/* Cross-module helper (EXPORTED, called from RaylibSimpleWater.dll).
+
+   Su alti ekran efekti, suyun ekrandaki IZDUSUMUNU (su cizgisi) bulmak
+   ZORUNDADIR: goz yuzeyin ustundeyken perde TUM ekrani degil, yalnizca su
+   yuzeyinin ALTINDA kalan bolgeyi kaplamalidir. Bunun icin kameranin yonu ve
+   gorus acisi gerekir; suyun viewpos icin zaten okudugu konum tek basina
+   yetmez.
+
+   Donus: 1 = out11 yazildi, 0 = gecersiz cikis. Sira: pos(3), target(3),
+   up(3), fovy(1), projection(1). */
+GCL_EXPORT int gcl_raylib_camera_state(float *out11) {
+    if (!out11) return 0;
+    out11[0] = g_last_cam.position.x;
+    out11[1] = g_last_cam.position.y;
+    out11[2] = g_last_cam.position.z;
+    out11[3] = g_last_cam.target.x;
+    out11[4] = g_last_cam.target.y;
+    out11[5] = g_last_cam.target.z;
+    out11[6] = g_last_cam.up.x;
+    out11[7] = g_last_cam.up.y;
+    out11[8] = g_last_cam.up.z;
+    out11[9] = g_last_cam.fovy;
+    out11[10] = (float)g_last_cam.projection;
+    return 1;
+}
+
 /* Cross-module helper (EXPORTED, called from RaylibSimpleMesh.dll).
 
    Textures live in this module's registry, so a terrain material asks here
@@ -442,6 +485,383 @@ GCL_EXPORT void gcl_raylib_camera_set(double px, double py, double pz,
 GCL_EXPORT Texture2D gcl_raylib_texture_get(int handle) {
     return get_tex(handle);
 }
+
+/* --------------------------------------------------------------------------
+   Cross-module helpers (EXPORTED, called from RaylibShader.dll and
+   RaylibSimpleLight.dll)
+
+   A shader and its uniforms belong to THIS module, because the GL program and
+   the camera slot live here and every module must share ONE raylib state. The
+   other two modules therefore compute values and hand them over; they never
+   call raylib's GL entry points themselves. That is the same split as
+   gcl_raylib_camera_set() / gcl_raylib_texture_get() above.
+   -------------------------------------------------------------------------- */
+
+/* SimpleShader(vsFileName, fsFileName, glslVersion) -> shader handle.
+
+   The two files are read as TEXT so a shader that does not carry its own
+   `#version` line still compiles: the requested GLSL version is prepended then.
+   A file that already declares `#version` is left untouched (raylib/rlgl
+   validates it). Undefined identifiers in the shader source are left to the
+   driver, exactly like raylib's own LoadShader(). */
+GCL_EXPORT int gcl_raylib_simple_shader(const char *vs_file, const char *fs_file,
+                                        int glsl_version) {
+    char *vs_src = NULL;
+    char *fs_src = NULL;
+    char *vs_full = NULL;
+    char *fs_full = NULL;
+    Shader shader = {0};
+
+    if (!vs_file || !vs_file[0] || !fs_file || !fs_file[0]) return -1;
+
+    vs_src = LoadFileText(asset_path(vs_file));
+    fs_src = LoadFileText(asset_path(fs_file));
+    if (!vs_src || !fs_src) {
+        if (vs_src) UnloadFileText(vs_src);
+        if (fs_src) UnloadFileText(fs_src);
+        return -1;
+    }
+
+    /* sizeof("#version ") == 9, plus up to 3 digits and the newline. */
+    vs_full = (char *)malloc(strlen(vs_src) + 16);
+    fs_full = (char *)malloc(strlen(fs_src) + 16);
+    if (vs_full && fs_full) {
+        if (strstr(vs_src, "#version")) snprintf(vs_full, strlen(vs_src) + 16, "%s", vs_src);
+        else snprintf(vs_full, strlen(vs_src) + 16, "#version %d\n%s", glsl_version, vs_src);
+        if (strstr(fs_src, "#version")) snprintf(fs_full, strlen(fs_src) + 16, "%s", fs_src);
+        else snprintf(fs_full, strlen(fs_src) + 16, "#version %d\n%s", glsl_version, fs_src);
+        shader = LoadShaderFromMemory(vs_full, fs_full);
+    }
+
+    free(vs_full);
+    free(fs_full);
+    UnloadFileText(vs_src);
+    UnloadFileText(fs_src);
+
+    if (shader.id == 0) return -1;
+    return reg_shader(shader);
+}
+
+GCL_EXPORT int gcl_raylib_shader_valid(int handle) {
+    return get_shader(handle).id != 0;
+}
+
+/* --- The shader Raylib.BeginShaderMode() selected ------------------------
+
+   raylib's DrawModel() does NOT honour BeginShaderMode(). DrawMesh() calls
+   rlEnableShader(material.shader.id) unconditionally, so a model always draws
+   with the shader stored in its MATERIAL — the default one it was loaded with —
+   and whatever BeginShaderMode bound in between is silently replaced.
+
+   A script writes
+
+       Raylib.BeginShaderMode(shader);
+           Terrain.Draw();
+       Raylib.EndShaderMode();
+
+   and never touches `model.materials[0].shader`, because the Model belongs to
+   RaylibSimpleMesh.dll. That module therefore asks HERE which shader is
+   currently selected and puts it into the material before drawing, which is
+   the only way the two lines above can have any effect.
+
+   -1 means "no shader selected": the material keeps its own, default shader. */
+static int g_current_shader = -1;
+
+/* Aynı seçim, ama EndShaderMode() tarafından TEMİZLENMEZ.
+
+   Işıklar Begin/EndShaderMode bloğunun DIŞINDA beslenir: script
+   `SUN.Update()`'i `Raylib.BeginMode3D()`'den ÖNCE çağırır, yani ışık
+   uniform'ları yazılırken hangi shader'ın çizileceği o an henüz belli
+   değildir. Bu yüzden ışık modülü "bu karede kullanılan shader"ı sorar ve o
+   değer blok kapandıktan sonra da geçerli kalır. */
+static int g_light_shader = -1;
+
+GCL_EXPORT int gcl_raylib_shader_current(void) {
+    return g_current_shader;
+}
+
+GCL_EXPORT int gcl_raylib_light_shader(void) {
+    return g_light_shader;
+}
+
+/* The real Shader behind a RaylibShader.CreateSimpleShader() handle. The GL
+   program lives in this module, so the drawing modules must ask for it here
+   instead of keeping a second copy of the shader. */
+GCL_EXPORT Shader gcl_raylib_shader_get(int handle) {
+    return get_shader(handle);
+}
+
+/* Per-(shader, light index) uniform locations, resolved once: GetShaderLocation
+   walks the uniform list by name, which is far too heavy to repeat every frame
+   of a game loop. */
+#define GCL_LIGHT_SLOTS 4
+typedef struct {
+    int shader;
+    int index;
+    int loc_enabled, loc_type, loc_position, loc_target, loc_color;
+} GclLightLocs;
+
+static GclLightLocs g_light_locs[GCL_LIGHT_SLOTS * 4];
+static int          g_light_locs_n = 0;
+
+static GclLightLocs *light_locs_for(int shader_handle, int index) {
+    for (int i = 0; i < g_light_locs_n; i++) {
+        GclLightLocs *L = &g_light_locs[i];
+        if (L->shader == shader_handle && L->index == index) return L;
+    }
+    if (g_light_locs_n >= (int)(sizeof(g_light_locs) / sizeof(g_light_locs[0]))) return NULL;
+    {
+        GclLightLocs *L = &g_light_locs[g_light_locs_n++];
+        char name[64];
+        Shader sh = get_shader(shader_handle);
+        L->shader = shader_handle;
+        L->index  = index;
+        snprintf(name, sizeof(name), "lights[%d].enabled",  index); L->loc_enabled  = GetShaderLocation(sh, name);
+        snprintf(name, sizeof(name), "lights[%d].type",     index); L->loc_type     = GetShaderLocation(sh, name);
+        snprintf(name, sizeof(name), "lights[%d].position", index); L->loc_position = GetShaderLocation(sh, name);
+        snprintf(name, sizeof(name), "lights[%d].target",   index); L->loc_target   = GetShaderLocation(sh, name);
+        snprintf(name, sizeof(name), "lights[%d].color",    index); L->loc_color    = GetShaderLocation(sh, name);
+        return L;
+    }
+}
+
+/* SetLight(handle, index, enabled, type, position, target, color).
+
+   `type` is raylib's LIGHT_DIRECTIONAL (0) / LIGHT_POINT (1) and `color` is a
+   packed R|G<<8|B<<16|A<<24 value, exactly like every other colour in GCL.
+   The GLSL uniform is vec4, so the bytes are NORMALIZED to 0..1 — passing 0..255
+   would blow the light out (the shader multiplies the texel by it). */
+GCL_EXPORT void gcl_raylib_shader_set_light(int handle, int index, int enabled, int type,
+                                            float px, float py, float pz,
+                                            float tx, float ty, float tz,
+                                            unsigned int color) {
+    GclLightLocs *L;
+    Shader sh = get_shader(handle);
+    float position[3], target[3], rgba[4];
+    if (sh.id == 0 || index < 0 || index >= GCL_LIGHT_SLOTS) return;
+    L = light_locs_for(handle, index);
+    if (!L) return;
+
+    position[0] = px; position[1] = py; position[2] = pz;
+    target[0]   = tx; target[1]   = ty; target[2]   = tz;
+    rgba[0] = (float)( color        & 0xFF) / 255.0f;
+    rgba[1] = (float)((color >>  8) & 0xFF) / 255.0f;
+    rgba[2] = (float)((color >> 16) & 0xFF) / 255.0f;
+    rgba[3] = (float)((color >> 24) & 0xFF) / 255.0f;
+
+    SetShaderValue(sh, L->loc_enabled,  &enabled, SHADER_UNIFORM_INT);
+    SetShaderValue(sh, L->loc_type,     &type,    SHADER_UNIFORM_INT);
+    SetShaderValue(sh, L->loc_position, position, SHADER_UNIFORM_VEC3);
+    SetShaderValue(sh, L->loc_target,   target,   SHADER_UNIFORM_VEC3);
+    SetShaderValue(sh, L->loc_color,    rgba,     SHADER_UNIFORM_VEC4);
+}
+
+/* Disable every light of a shader (shader switched: the old lights must not
+   stay enabled in the program's uniform block). */
+GCL_EXPORT void gcl_raylib_shader_clear_lights(int handle) {
+    Shader sh = get_shader(handle);
+    int off = 0;
+    if (sh.id == 0) return;
+    for (int i = 0; i < GCL_LIGHT_SLOTS; i++) {
+        GclLightLocs *L = light_locs_for(handle, i);
+        if (L) SetShaderValue(sh, L->loc_enabled, &off, SHADER_UNIFORM_INT);
+    }
+}
+
+/* Ambient + ViewPos locations, resolved once per shader for the same reason as
+   the light locations above. */
+typedef struct {
+    int shader;
+    int loc_ambient;
+    int loc_view;
+    /* RaylibFOG: the uniforms its Update() feeds. Cached here for the same
+       reason as the light locations above - GetShaderLocation walks the
+       uniform list by name and a game loop calls this every frame. */
+    int loc_fog_color;
+    int loc_fog_params;
+    int loc_fog_shape;
+} GclShaderGlobalLocs;
+
+static GclShaderGlobalLocs g_global_locs[8];
+static int                g_global_locs_n = 0;
+
+/* SON YAZILAN SIS DURUMU — cizilen shader'a gonderilen degerlerin AYNISI.
+
+   RaylibFOG yalnizca sahnenin shader'ini besler; kendi GLSL programiyla cizen
+   bir modul (RaylibSimpleWater) bu uniform'lari HIC gormez ve sisin disinda
+   kalir — su yuzeyi sisli bir arazinin uzerinde cam gibi durur. Su modulu ayni
+   sisi uygulayabilsin diye son degerler burada saklanir ve
+   `gcl_raylib_shader_get_fog` ile disa acilir. Boylece iki modul TEK bir sis
+   tanimi paylasir; suyun rengi araziyle AYNI yerde AYNI sekilde kayar.
+
+   Sira sozlesmesi (11 float):
+       0.. 2  fogColor   3.. 6  fogParams   7..10  fogShape */
+typedef struct {
+    int   valid;
+    float color[3];
+    float params[4];
+    float shape[4];
+} GclFogState;
+
+static GclFogState g_fog_state;
+
+static GclShaderGlobalLocs *global_locs_for(int shader_handle) {
+    for (int i = 0; i < g_global_locs_n; i++)
+        if (g_global_locs[i].shader == shader_handle) return &g_global_locs[i];
+    if (g_global_locs_n >= (int)(sizeof(g_global_locs) / sizeof(g_global_locs[0]))) return NULL;
+    {
+        GclShaderGlobalLocs *G = &g_global_locs[g_global_locs_n++];
+        Shader sh = get_shader(shader_handle);
+        G->shader         = shader_handle;
+        G->loc_ambient    = GetShaderLocation(sh, "ambient");
+        G->loc_view       = GetShaderLocation(sh, "viewPos");
+        G->loc_fog_color  = GetShaderLocation(sh, "fogColor");
+        G->loc_fog_params = GetShaderLocation(sh, "fogParams");
+        G->loc_fog_shape  = GetShaderLocation(sh, "fogShape");
+        return G;
+    }
+}
+
+/* SetAmbient(handle, ambientColor).
+
+   The ambient colour is a packed 0..255 value like every other colour in GCL
+   and is normalized on the way in. Its STRENGTH is decided by the caller:
+   RaylibSimpleLight.dll scales the sun colour by SUN_AMBIENT_NIGHT..
+   SUN_AMBIENT_DAY before it arrives here, and the fragment shader uses the
+   value AS IS. The shader used to divide by 10 as well, so the fill was
+   reduced TWICE and every face the sun did not hit stayed black - see the
+   "AYNI DEGERI IKI KEZ OLCEKLEMEK" note in Modules/gcl_SimpleLight.c.
+
+   `viewPos` is written from the camera the script last handed to
+   Raylib.BeginMode3D(), because that is the camera the scene is drawn with and
+   the shader's specular term needs exactly that eye position. The light module
+   therefore never has to track the camera itself. */
+GCL_EXPORT void gcl_raylib_shader_set_ambient(int handle, unsigned int ambient) {
+    Shader sh = get_shader(handle);
+    GclShaderGlobalLocs *G;
+    float rgba[4];
+    float eye[3];
+
+    if (sh.id == 0) return;
+    G = global_locs_for(handle);
+    if (!G) return;
+
+    rgba[0] = (float)( ambient        & 0xFF) / 255.0f;
+    rgba[1] = (float)((ambient >>  8) & 0xFF) / 255.0f;
+    rgba[2] = (float)((ambient >> 16) & 0xFF) / 255.0f;
+    rgba[3] = (float)((ambient >> 24) & 0xFF) / 255.0f;
+    SetShaderValue(sh, G->loc_ambient, rgba, SHADER_UNIFORM_VEC4);
+
+    eye[0] = g_last_cam.position.x;
+    eye[1] = g_last_cam.position.y;
+    eye[2] = g_last_cam.position.z;
+    SetShaderValue(sh, G->loc_view, eye, SHADER_UNIFORM_VEC3);
+}
+
+/* SetFog(handle, color, start, end, density, mode, strength,
+          heightFog, height, falloff).
+
+   This IS RaylibFOG: the module keeps no geometry and draws NOTHING. It only
+   hands these numbers to the shader the scene is already being drawn with, and
+   the terrain's own fragment shader mixes its colour towards `fogColor` by the
+   distance between the eye and the fragment. That is what makes this read as
+   Silent Hill rather than a grey curtain:
+
+     * the SKY IS UNTOUCHED - it is drawn by a DIFFERENT program (the skybox
+       shader), so no fog uniform reaches it at all;
+     * the effect follows the real depth of every pixel, so it has a GRADIENT
+       instead of a hard edge;
+     * nothing is drawn in front of anything, so there is no silhouette to see
+       through and no circular rim.
+
+   `color` is a packed 0..255 value like every other colour in GCL and is
+   NORMALIZED here, exactly like the ambient and light colours - the shader
+   mixes in 0..1 space. Passing 0..255 straight through turns the scene white.
+
+   `viewPos` is refreshed from the camera the script last handed to
+   Raylib.BeginMode3D(), for the same reason set_ambient() writes it: the
+   fragment shader needs the eye position to measure distance, and the camera
+   slot only lives in this module.
+
+   `strength` 0 turns the fog off WITHIN the shader - the mix factor is
+   multiplied by it - so terrain keeps its own colour at every distance and
+   nothing in the scene has to be rebuilt or hidden. */
+GCL_EXPORT void gcl_raylib_shader_set_fog(int handle, unsigned int color,
+                                          float start, float end, float density,
+                                          int mode, float strength,
+                                          float height_fog, float height,
+                                          float falloff) {
+    Shader sh = get_shader(handle);
+    GclShaderGlobalLocs *G;
+    float rgb[3], params[4], shape[4], eye[3];
+
+    if (sh.id == 0) return;
+    G = global_locs_for(handle);
+    if (!G) return;
+
+    rgb[0] = (float)( color        & 0xFF) / 255.0f;
+    rgb[1] = (float)((color >>  8) & 0xFF) / 255.0f;
+    rgb[2] = (float)((color >> 16) & 0xFF) / 255.0f;
+
+    /* params: the distance ramp. `end <= start` would divide by zero in the
+       shader, so the caller's end is pushed out here instead of leaving every
+       fragment to guard it. */
+    if (end <= start) end = start + 1.0f;
+    params[0] = start;
+    params[1] = end;
+    params[2] = density;
+    params[3] = (float)mode;
+
+    /* shape.x strength (0 = off), shape.y the height-fog switch, shape.z its
+       ceiling, shape.w the softness of the fades. */
+    shape[0] = strength;
+    shape[1] = height_fog;
+    shape[2] = height;
+    shape[3] = falloff;
+
+    SetShaderValue(sh, G->loc_fog_color,  rgb,    SHADER_UNIFORM_VEC3);
+    SetShaderValue(sh, G->loc_fog_params, params, SHADER_UNIFORM_VEC4);
+    SetShaderValue(sh, G->loc_fog_shape,  shape,  SHADER_UNIFORM_VEC4);
+
+    /* Su modulu icin saklanir: cizilen shader'a gonderilen degerlerin AYNISI
+       (bkz. GclFogState notu). */
+    { int i;
+      for (i = 0; i < 3; i++) g_fog_state.color[i]  = rgb[i];
+      for (i = 0; i < 4; i++) g_fog_state.params[i] = params[i];
+      for (i = 0; i < 4; i++) g_fog_state.shape[i]  = shape[i];
+      g_fog_state.valid = 1;
+    }
+
+    eye[0] = g_last_cam.position.x;
+    eye[1] = g_last_cam.position.y;
+    eye[2] = g_last_cam.position.z;
+    SetShaderValue(sh, G->loc_view, eye, SHADER_UNIFORM_VEC3);
+}
+
+/* SIS DURUMU — cizilen shader'a en son yazilan degerler (bkz. GclFogState).
+
+   RaylibSimpleWater kendi GLSL programini kullandigi icin `fogColor`,
+   `fogParams` ve `fogShape` ona HIC ULASMAZ: fog modulu uniform'lari
+   CIZILMEKTE OLAN sahnenin shader'ina yazar, su ise ayri bir programdir.
+   Su yuzeyi bu yuzden sisli bir arazinin uzerinde cam gibi duruyordu.
+
+   Cozum, gokyuzu icin kullanilanin aynisi: modul ayni degerleri BURADAN
+   okur, kendi shader'ina yazar ve paylasilan sis formulunu uygular
+   (gcl_water_shader.h: gclWaterFogAmount). Boylece su, araziyle AYNI sis
+   egrisini ve AYNI rengi kullanir.
+
+   Donus sozlesmesi gcl_raylib_camera_pos ile aynidir: 1 = out yazildi,
+   0 = sis henuz kurulmadi (cagiran kendi varsayilanina duser). Sira:
+   3 renk, 4 params, 4 shape. */
+GCL_EXPORT int gcl_raylib_shader_get_fog(float *out11) {
+    int i;
+    if (!out11 || !g_fog_state.valid) return 0;
+    for (i = 0; i < 3; i++) out11[i]     = g_fog_state.color[i];
+    for (i = 0; i < 4; i++) out11[3 + i] = g_fog_state.params[i];
+    for (i = 0; i < 4; i++) out11[7 + i] = g_fog_state.shape[i];
+    return 1;
+}
+
 static double fn_Ray(int argc,const char**argv){(void)argc;(void)argv;g_last_ray=(Ray){v3_arg(argv,0),v3_arg(argv,3)};return 0.0;}
 static double fn_BoundingBox(int argc,const char**argv){(void)argc;(void)argv;g_last_bb=(BoundingBox){v3_arg(argv,0),v3_arg(argv,3)};return 0.0;}
 static double fn_NPatchInfo(int argc,const char**argv){(void)argc;(void)argv;g_last_npatch=(NPatchInfo){rect_arg(argv,0),ii(argv[4]),ii(argv[5]),ii(argv[6]),ii(argv[7]),ii(argv[8])};return 0.0;}
@@ -617,8 +1037,26 @@ static double fn_BeginMode3D(int argc,const char**argv){
 static double fn_EndMode3D(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndMode3D);EndMode3D();return 0.0;}
 static double fn_BeginTextureMode(int argc,const char**argv){ GCL_NO_WINDOW(BeginTextureMode); BeginTextureMode(get_rt(ii(argv[0]))); return 0.0; }
 static double fn_EndTextureMode(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndTextureMode);EndTextureMode();return 0.0;}
-static double fn_BeginShaderMode(int argc,const char**argv){ GCL_NO_WINDOW(BeginShaderMode); BeginShaderMode(get_shader(ii(argv[0]))); return 0.0; }
-static double fn_EndShaderMode(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndShaderMode);EndShaderMode();return 0.0;}
+/* The selected shader is remembered (g_current_shader, defined next to
+   gcl_raylib_simple_shader): raylib's DrawModel() ignores BeginShaderMode()
+   and draws with the model's own material shader, so RaylibSimpleMesh.dll
+   reads the selection back through gcl_raylib_shader_current() and binds it
+   into the material before the draw. */
+static double fn_BeginShaderMode(int argc,const char**argv){
+    int handle = ii(argv[0]);
+    GCL_NO_WINDOW(BeginShaderMode);
+    BeginShaderMode(get_shader(handle));
+    g_current_shader = handle;
+    g_light_shader   = handle;
+    return 0.0;
+}
+static double fn_EndShaderMode(int argc,const char**argv){
+    (void)argc;(void)argv;
+    GCL_NO_WINDOW(EndShaderMode);
+    EndShaderMode();
+    g_current_shader = -1;
+    return 0.0;
+}
 static double fn_BeginBlendMode(int argc,const char**argv){ GCL_NO_WINDOW(BeginBlendMode); BeginBlendMode(ii(argv[0])); return 0.0; }
 static double fn_EndBlendMode(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndBlendMode);EndBlendMode();return 0.0;}
 static double fn_BeginScissorMode(int argc,const char**argv){ GCL_NO_WINDOW(BeginScissorMode); BeginScissorMode(ii(argv[0]),ii(argv[1]),ii(argv[2]),ii(argv[3])); return 0.0; }
