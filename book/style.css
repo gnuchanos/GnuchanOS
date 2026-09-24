@@ -1,0 +1,340 @@
+/* GCL Book - shared stylesheet.
+ *
+ * Purple only. There is no white, black or grey in this file: the page
+ * background, the cards, the table stripes, the code block, the syntax
+ * highlighting and even the ink are all the same hue at different depths.
+ */
+
+:root {
+  /* The purple ramp. Nothing at the light end is near-white: the lightest
+     value, p-100, is still a clearly visible lavender. */
+  --p-1000: #0f0119;
+  --p-950: #180327;
+  --p-900: #25043c;
+  --p-800: #340857;
+  --p-700: #460d75;
+  --p-600: #5a1696;
+  --p-500: #7226ba;
+  --p-400: #8d43d9;
+  --p-300: #a76beb;
+  --p-200: #bf92f2;
+  --p-100: #d4b4f7;
+  --p-075: #dcc0f9;
+  --p-050: #e4cdfa;
+
+  --ink: var(--p-950);
+  --paper: var(--p-200);
+  --card: var(--p-075);
+  --dim: var(--p-600);
+  --line: 3px solid var(--ink);
+  --shadow: 5px 5px 0 var(--ink);
+  --radius: 4px;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.65 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+a { color: var(--p-700); }
+
+/* ---------------------------------------------------------------- top bar */
+
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 20px;
+  background: var(--p-300);
+  border-bottom: var(--line);
+}
+.brand { display: flex; align-items: baseline; gap: 10px; font-weight: 900; }
+.brand .logo {
+  display: grid; place-items: center;
+  width: 34px; height: 34px;
+  background: var(--p-700); color: var(--p-100);
+  border-radius: var(--radius);
+  font-size: 20px;
+}
+.brand .name { font-size: 20px; letter-spacing: -0.4px; }
+.brand .sub { font-size: 12px; font-weight: 700; color: var(--p-700); }
+.topbar .grow { flex: 1 1 auto; }
+
+.nav { display: flex; gap: 8px; flex-wrap: wrap; }
+.nav a {
+  display: inline-block;
+  padding: 7px 16px;
+  background: var(--p-100); color: var(--p-900);
+  border: var(--line); border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 14px; font-weight: 800; text-decoration: none;
+}
+.nav a:hover { transform: translate(1px, 1px); box-shadow: 2px 2px 0 var(--ink); }
+.nav a[aria-current="page"] {
+  background: var(--p-800); color: var(--p-100);
+  box-shadow: none; transform: translate(3px, 3px);
+}
+
+/* ------------------------------------------------------------------ layout */
+
+.shell { display: flex; align-items: flex-start; }
+.side {
+  position: sticky; top: 60px;
+  flex: 0 0 292px; height: calc(100vh - 60px);
+  overflow-y: auto;
+  padding: 18px 14px 48px;
+  background: var(--p-100);
+  border-right: var(--line);
+}
+.side h2 {
+  margin: 22px 0 10px; font-size: 11px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--p-700);
+}
+.side h2:first-child { margin-top: 0; }
+.side a {
+  display: block;
+  margin-bottom: 4px; padding: 6px 10px;
+  border: 2px solid transparent; border-radius: var(--radius);
+  font-size: 13.5px; text-decoration: none; color: var(--p-900);
+  overflow-wrap: anywhere;
+}
+.side a:hover { border-color: var(--p-700); background: var(--p-200); }
+
+/* The content column takes whatever width the browser has. The old 1080px
+   cap was why anything wider than a small laptop left a dead strip on the
+   right and squeezed the tables. */
+main { flex: 1 1 auto; min-width: 0; width: 100%; padding: 28px 40px 96px; }
+
+/* ------------------------------------------------------------------ header */
+
+.crumb { font-size: 13px; color: var(--p-700); margin-bottom: 10px; }
+.head { margin-bottom: 30px; }
+.head h1 {
+  margin: 0 0 8px; font-size: 42px; line-height: 1.08; letter-spacing: -1.2px;
+  text-shadow: 3px 3px 0 var(--p-300);
+}
+.head p { margin: 0; color: var(--p-800); }
+
+/* ---------------------------------------------------------------- sections */
+
+.section { margin-bottom: 46px; }
+.section > h2 {
+  margin: 0 0 14px; padding-bottom: 8px;
+  font-size: 24px; border-bottom: var(--line);
+}
+.blocks > * { margin: 0 0 16px; }
+.blocks > *:last-child { margin-bottom: 0; }
+p { margin: 0 0 16px; }
+code {
+  font-family: var(--mono); font-size: 0.92em;
+  padding: 1px 5px; border-radius: 3px;
+  background: var(--p-200); color: var(--p-900);
+}
+
+/* ------------------------------------------------------------------ tables */
+
+table {
+  width: 100%; border-collapse: collapse;
+  background: var(--card);
+  border: var(--line); box-shadow: var(--shadow);
+  font-size: 13.5px;
+}
+th, td { padding: 8px 12px; text-align: left; border-bottom: 2px solid var(--ink); overflow-wrap: anywhere; word-break: break-word; }
+th {
+  background: var(--p-300); color: var(--p-950);
+  font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:nth-child(even) { background: var(--p-050); }
+/* Member tables. The word-break rule above is right for prose and wrong for an
+   identifier: UnloadMusicStream must not be cut in half because the column was
+   narrow. The first column therefore keeps its word whole and gets a floor
+   width, so a long name widens the column instead of breaking. The constant
+   grids opt back in, because there the cells are narrow by design. */
+td:first-child {
+  font-family: var(--mono); font-weight: 700; color: var(--p-800);
+  overflow-wrap: normal; word-break: normal; min-width: 13ch;
+}
+th:first-child { min-width: 13ch; }
+td:nth-child(2) { font-family: var(--mono); font-size: 12.5px; color: var(--p-700); }
+
+table.grid { table-layout: auto; }
+table.grid td {
+  font-family: var(--mono); font-size: 12.5px; color: var(--p-800);
+  overflow-wrap: anywhere; word-break: break-word; min-width: 0; width: 25%;
+}
+
+.stack-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+  width: 100%;
+}
+.stack-group {
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--p-050);
+  border: var(--line);
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.stack-group h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--p-700);
+}
+.stack-group code {
+  display: block;
+  margin: 0 0 5px;
+  padding: 6px 8px;
+  background: var(--p-900);
+  color: var(--p-100);
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.stack-group code:last-child { margin-bottom: 0; }
+
+/* ------------------------------------------------------------------- code */
+
+.code-card { border-radius: var(--radius); }
+.code-head {
+  padding: 7px 12px;
+  background: var(--p-300); color: var(--p-950);
+  border: var(--line); border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  font: 700 12px var(--mono);
+}
+pre.code {
+  margin: 0; padding: 16px 18px;
+  background: var(--p-900); color: var(--p-100);
+  border: var(--line); border-radius: 0 0 var(--radius) var(--radius);
+  box-shadow: var(--shadow);
+  overflow-x: auto;
+  font: 13.5px/1.62 var(--mono);
+  tab-size: 4;
+}
+
+/* Syntax highlighting: one hue, varied by depth only. */
+pre.code .cm  { color: var(--p-300); font-style: italic; }
+pre.code .kw  { color: var(--p-200); font-weight: 700; }
+pre.code .ty  { color: var(--p-100); }
+pre.code .str { color: var(--p-200); }
+pre.code .num { color: var(--p-100); }
+pre.code .fn  { color: var(--p-075); }
+pre.code .pre { color: var(--p-300); font-weight: 700; }
+
+/* ------------------------------------------------------------------ notes */
+
+.note {
+  display: block;
+  padding: 12px 15px;
+  background: var(--p-075);
+  border: var(--line); border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.note p { margin: 0 0 12px; }
+.note p:last-child { margin-bottom: 0; }
+.note code { background: var(--p-300); color: var(--p-950); }
+.note .icon {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 17px;
+  line-height: 1.45;
+  vertical-align: top;
+}
+/* Three purple depths, so a warning still reads as louder than a tip. */
+.note.warn { background: var(--p-300); }
+.note.tip  { background: var(--p-200); }
+.note.info { background: var(--p-075); }
+
+/* ------------------------------------------------------------------ cards */
+
+.cards { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.card {
+  display: block; padding: 20px;
+  background: var(--card); color: var(--ink);
+  border: var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); text-decoration: none;
+}
+.card h3 { margin: 0 0 6px; font-size: 20px; color: var(--p-800); }
+.card p { margin: 0; color: var(--p-700); font-size: 14px; }
+.card:hover { transform: translate(2px, 2px); box-shadow: 3px 3px 0 var(--ink); }
+.card .tag {
+  display: inline-block; margin-bottom: 10px;
+  padding: 2px 9px; background: var(--p-300); color: var(--p-950);
+  border: 2px solid var(--ink); border-radius: 999px;
+  font-size: 11px; font-weight: 800; text-transform: uppercase;
+}
+
+.home { max-width: 900px; margin: 0 auto; padding: 48px 24px 90px; }
+.home .note { margin-top: 34px; }
+
+footer {
+  padding: 18px 32px 40px;
+  background: var(--p-300);
+  border-top: var(--line);
+  color: var(--p-900); font-size: 13px;
+}
+
+/* ------------------------------------------------------------- scrollbars */
+
+/* The browser draws its own scrollbar, so without this it is the one place a
+   system grey or white shows through. Firefox reads scrollbar-color;
+   everything else reads the ::-webkit- rules. Both get the same purple ramp. */
+* {
+  scrollbar-color: var(--p-500) var(--p-200);
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-track {
+  background: var(--p-200);
+  border-left: var(--line);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--p-500);
+  border: 3px solid var(--p-200);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--p-600); }
+::-webkit-scrollbar-thumb:active { background: var(--p-700); }
+::-webkit-scrollbar-corner { background: var(--p-200); }
+
+/* The code block scrolls sideways; keep its bar at the dark end so it stays
+   the same hue as the block it belongs to. */
+pre.code { scrollbar-color: var(--p-400) var(--p-800); }
+pre.code::-webkit-scrollbar { height: 12px; }
+pre.code::-webkit-scrollbar-track { background: var(--p-800); border-left: none; }
+pre.code::-webkit-scrollbar-thumb {
+  background: var(--p-400); border: 3px solid var(--p-800);
+}
+pre.code::-webkit-scrollbar-thumb:hover { background: var(--p-300); }
+
+/* ------------------------------------------------------- selection & focus */
+
+::selection { background: var(--p-700); color: var(--p-100); }
+:focus-visible { outline: 3px solid var(--p-700); outline-offset: 2px; }
+.nav a:focus-visible,
+.side a:focus-visible { outline-offset: 0; }
+
+/* ------------------------------------------------------------------ mobile */
+
+@media (max-width: 900px) {
+  .brand .sub { display: none; }
+  .side { display: none; }
+  main, .home { padding: 20px 16px 80px; }
+  .head h1 { font-size: 30px; }
+  table { font-size: 12.5px; }
+  th, td { padding: 7px 8px; }
+  pre.code { font-size: 12.5px; }
+}

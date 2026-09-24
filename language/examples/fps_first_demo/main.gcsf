@@ -39,7 +39,15 @@ int main() {
     SUN.Rotate.z = 90;
     SUN.Rotate.y = 0;
 
-    RaylibFOG.FOG fogy = RaylibFOG.CreateFog(Raylib.SKYBLUE, 1.0f, 8.0f, 45.0f, true, true);
+    #// extra point light
+    RaylibSimpleLight.SunLight _0_point_light = RaylibSimpleLight.CreatePointLight(Raylib.RED, SUN, 5, 5, 0);
+    RaylibSimpleLight.SunLight _1_point_light = RaylibSimpleLight.CreatePointLight(Raylib.GREEN, SUN, 0, 5, 0);
+    RaylibSimpleLight.SunLight _2_point_light = RaylibSimpleLight.CreatePointLight(Raylib.YELLOW, SUN, 15, -1, -4);
+    RaylibSimpleLight.SunLight _3_point_light = RaylibSimpleLight.CreatePointLight(Raylib.YELLOW, SUN, 0, 0, 0);
+    # light color, sun light, x, y, 
+
+
+    RaylibFOG.FOG fogy = RaylibFOG.CreateFog(Raylib.SKYBLUE, 0.25f, 10.0f, 45.0f, true, true);
         #// Color, Density, Start, End, Enabled, HeightFog
     fogy.Mode = RaylibFOG.ExponentialSquared;
     #// Yukseklik sisi: arazi -11..+10 arasinda, kamera y=1.8. Tepeler daha az
@@ -62,16 +70,19 @@ int main() {
     Terrain.Material.Color   = Raylib.WHITE;
 
     RaylibSimpleWater.Water water = RaylibSimpleWater.CreateSimpleWaterFromOBJ("water.obj");
-    water.WaveStrength = 0.5f;
+    water.WaveStrength = 0.2f;
     water.WaveSpeed = 0.5f;
-    water.WaveScale = 0.5f;
-    water.Reflection = 5f;
+    water.WaveScale = 0.6f;
+    water.Reflection = 1f;
 
     #// Su modulu YALNIZCA GEOMETRIDIR (yuzey + taban). "Yuzuyor muyum",
     #// esikler ve fizik oyuncunun kendi modulunde (RaylibFPS) yasar; boylece
     #// ekranin "yuzuyorum" dedigi an ile fizigin yuzdugu an ayrisamaz.
 
     RaylibShader.SimpleShader shader = RaylibShader.CreateSimpleShader("lighting.vs", "lighting.fs", Raylib.GLSL_VERSION);
+
+
+
 
     RaylibSimpleMesh.Mesh CUBE = RaylibSimpleMesh.LoadObj("cube.obj");
     CUBE.Position.x = 0;  # default 0
@@ -82,9 +93,7 @@ int main() {
     CUBE.Rotate.y   = 45; # default 0; kutunun yuzlerini gosterir
     CUBE.Rotate.z   = 0;  # default 0
 
-    SUN.Rotate.x = 0;  # default 0
-    SUN.Rotate.z = 30; # default 0
-    SUN.Rotate.y = 0;  # default 0
+
 
     CUBE.Material.Texture = Raylib.LoadTexture("box.png");
 
@@ -104,6 +113,10 @@ int main() {
         #// Player Move And Look
         PLAYER.Move();
         PLAYER.Look();
+        _3_point_light.Position.x = PLAYER.Position.x;
+        _3_point_light.Position.y = PLAYER.Position.y + 5;
+        _3_point_light.Position.z = PLAYER.Position.z;
+        
 
         #// Terrain Collision (arazi + zemin tabani)
         RaylibSimpleCollision.TerrainCollision(PLAYER, Terrain);
@@ -118,26 +131,45 @@ int main() {
 
         #// skybox update
         SUN.Update();
+        _0_point_light.Update();
+        _1_point_light.Update();
+        _2_point_light.Update();
+        _3_point_light.Update();
         sky.Update();
         water.Update(); # update shader
-        fogy.Update();
+        # fogy.Update();
 
             Raylib.BeginMode3D(CurrentCamera);
                 sky.Draw(); #// no need for extra shader
-
-
 
                 Raylib.BeginShaderMode(shader);
                     #// SIS: uniform'lari ARazi ile AYNI shader'a yazar. Bu yuzden
                     #// BeginShaderMode'un ICINDE olmak ZORUNDA - disinda cagrilirsa
                     #// hangi programin hedeflendigi belli olmaz ve sis uygulanmaz.
                     Terrain.Draw();
-                    CUBE.Draw();
                     water.Draw();
-                    fogy.Update();
+                    CUBE.Draw();
+
+                
+
+
+
 
 
                 Raylib.EndShaderMode();
+
+                #// GLOW SAHNEDEN SONRA CIZILIR. Once cizildiginde derinlik
+                #// maskesi kapali oldugu icin hicbir derinlik yazmiyordu ve
+                #// ARDINDAN gelen opak arazi (ve kutu) onun uzerine boyanip
+                #// glow'u siliyordu: gokyuzune bakinca gorunuyor, araziye
+                #// donunce KAYBOLUYORDU. Artik sahne once cizilir; glow
+                #// VARSAYILAN programla, derinlik testine girerek cizilir.
+                #// Boylece hem araziye gore DOGRU sekilde kapanir, hem de ne
+                #// sis ne isiklandirma uygulanir.
+                _0_point_light.Draw(); #// glowing cube
+                _1_point_light.Draw(); #// glowing cube
+                _2_point_light.Draw(); #// glowing cube
+                _3_point_light.Draw(); #// glowing cube (oyuncunun tasidigi isik)
             Raylib.EndMode3D(void);
 
         #// SU ALTI EKRAN EFEKTI: 2B katmanda, BeginMode3D KAPANDIKTAN sonra

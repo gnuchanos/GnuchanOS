@@ -107,30 +107,6 @@ float16, float32, float64, float128
 uint8, uint16, uint32, uint64, uint128
 gcChar "UTF-8 Lenght real string"
 
-    TYPE WIDTHS - a value is an IEEE DOUBLE; a declared type narrows it on the
-    way in and never widens the storage. Four of the spellings above therefore
-    name a width the interpreter does not have:
-
-        int128 / uint128    = int64 / uint64     (same 8 bytes, same ceiling)
-        float128            = double             (the storage itself)
-        float16             = float32            (both are C `float`, 4 bytes)
-
-    There is no 128-bit arithmetic anywhere: 2^53 is already the last exactly
-    representable integer, which is why the uint64/uint128 DIGIT MIRROR exists
-    for printing at all. Narrowing happens in two regimes. Inside long long the
-    C conversion is applied, and GCL is C: `int8 = 200` is -56, `uint8 = -1` is
-    255, `int = 3e9` wraps negative. At or beyond 2^63 the C conversion is
-    undefined, so the value saturates to the DECLARED type's OWN bound:
-    `int8 = 1e30` is 127, `int = 1e30` is 2147483647, `uint64 = -1e30` is 0.
-    `sizeof(T)` reports what is really stored, so it agrees with all of this:
-    8 for int128/uint128/float128, 4 for float16. TWO-WORD spellings are
-    accepted as well, and mean exactly what the single-token alias means:
-    `sizeof(long long)` = `sizeof(int64)` = 8, `sizeof(unsigned int)` =
-    `sizeof(int32)` = 4, `sizeof(short int)` = 2, `sizeof(long double)` = 8.
-    Pinned by language/tests/gcsf/expressions/sizeof_type_words.gcsf (the
-    two-word row beside its alias), out_of_range_finite.gcsf and
-    wide_type_aliases.gcsf (the values and the single-token widths).
-
 # NUMERIC LITERALS
 
     42         decimal
@@ -162,32 +138,9 @@ EXAMPLE: scanf(name); #// backend is not scanf more safe alternatif
 #error ..., ...   #// red color + COMPILATION STOPS (exit 1, no statement runs)
 #debug ..., ...   #// blue color (diagnostic: compilation continues)
 
-    # ERROR SEMANTICS (B33) — measured, pinned by golden tests
-    `#error` stops the build exactly like C: the red line goes to stderr, a plain
-    `Error: #error directive stopped compilation` line follows it, NO statement runs
-    (stdout stays empty even for a printf written BEFORE the directive) and the process
-    exits with code 1.
-
-    A `#error` inside a FALSE `#if` branch never fires — that is the whole point of
-    guarding a directive with `#if`. An ACTIVE `#error` inside an `#include`d file stops
-    the WHOLE compilation, not just that fragment, and keeps the fragment's own message
-    so the failing file is identifiable.
-
-    `#warning` and `#debug` are diagnostics only: they print and compilation continues.
-
-    Golden tests: language/tests/gcsf/preproc/error_directive.gcsf (aborts, empty stdout,
-    exit 1), error_in_include.gcsf (aborts through an include), error_under_true_if.gcsf
-    (an active `#if` guard does not suppress it), error_inactive_and_warning.gcsf
-    (`#warning` and an inactive `#error` both continue).
-
 # LINK
 #include <script.gcsf>
     classic  like call
-
-    # INCLUDE SEMANTICS (B28) — text paste vs. include-once
-    Default behaviour is TEXT PASTE, exactly like C: a file included twice is
-    pasted twice. This is deliberate, not an oversight — some files are meant
-    to be included more than once (table generators, X-macro style patterns).
 
         int pastes = 0;
         #include <inc_plain.gcsf>      # inc_plain.gcsf has NO guard

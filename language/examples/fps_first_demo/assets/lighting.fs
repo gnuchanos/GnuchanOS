@@ -40,12 +40,25 @@ out vec4 finalColor;
 // ---------------------------------------------------------------------------
 // Isik
 // ---------------------------------------------------------------------------
-#define MAX_LIGHTS              4
+#define MAX_LIGHTS              5
 #define LIGHT_DIRECTIONAL       0
 #define LIGHT_POINT             1
 
 // Parlama keskinligi. Buyudukce vurgu kuculur ve sertlesir.
-#define SPECULAR_SHININESS      16.0
+#define SPECULAR_SHININESS      48.0
+
+// Noktasal isik sonum katsayilari: `atten = 1/(1 + k1*d + k2*d*d)`.
+//
+// NEDEN SART: noktasal isik, sonum olmadan butun dunyayi ayni parlaklikta
+// aydinlatir. Uzaklik duygusu olmadigi icin aydinlattigi nesne "isikla
+// aydinlatilmis" degil, KENDI KENDINE PARLAYAN bir malzeme gibi gorunur -
+// arizilan sikayet tam buydu: "hafif parlayan materialden yapilmis bir kup".
+#define POINT_ATTEN_K1          0.09
+#define POINT_ATTEN_K2          0.032
+
+// Isigin etki yaricapi (metre). Otesinde katki kirpilir; kirpma, isik
+// havuzunun kenarindaki sayisal gurultuyu onler.
+#define POINT_RANGE             18.0
 
 struct Light {
     int enabled;
@@ -105,15 +118,27 @@ void accumulate_light(int index, vec3 normal, vec3 viewDir,
                       inout vec3 lightDot, inout vec3 specular) {
     if (lights[index].enabled != 1) return;
 
-    vec3 lightDir = vec3(0.0);
+    vec3  lightDir = vec3(0.0);
+    /* Noktasal isikta mesafe sonumu; yonlu isikte 1 (gunes uzaklasmaz). */
+    float atten    = 1.0;
+
     if (lights[index].type == LIGHT_DIRECTIONAL) {
         lightDir = -normalize(lights[index].target - lights[index].position);
     } else if (lights[index].type == LIGHT_POINT) {
-        lightDir = normalize(lights[index].position - fragPosition);
+        vec3  toLight = lights[index].position - fragPosition;
+        float dist    = length(toLight);
+        lightDir      = normalize(toLight);
+
+        atten = 1.0/(1.0 + POINT_ATTEN_K1*dist + POINT_ATTEN_K2*dist*dist);
+
+        /* Etki yaricapinin disinda katki yok. Yumusak inis: sert bir esik
+           isik havuzunun kenarinda gorunur bir HALKA cizerdi, oysa gercek
+           isikta sonum zaten asimptotiktir. */
+        atten *= 1.0 - smoothstep(POINT_RANGE*0.75, POINT_RANGE, dist);
     }
 
     float NdotL = max(dot(normal, lightDir), 0.0);
-    lightDot += lights[index].color.rgb*NdotL;
+    lightDot += lights[index].color.rgb*(NdotL*atten);
 
     // Parlama isigin KENDI rengini tasir. Rengi `tint`e duz sayi olarak
     // eklemek (raylib'in stok ornegi boyle yapar) uc kanali esit yukseltir ve
@@ -121,7 +146,7 @@ void accumulate_light(int index, vec3 normal, vec3 viewDir,
     if (NdotL > 0.0) {
         float specCo = pow(max(0.0, dot(viewDir, reflect(-lightDir, normal))),
                            SPECULAR_SHININESS);
-        specular += lights[index].color.rgb*specCo;
+        specular += lights[index].color.rgb*(specCo*atten);
     }
 }
 
@@ -214,7 +239,23 @@ void main()
     // carpan uygulamak ayni kisitlamayi IKI KEZ uygular: dolgu gokyuzu
     // renginin %1-5'ine duser ve gunesin vurmadigi her yuz — sabah/aksam
     // sahnesinin tamami — parlak gokyuzunun altinda SIYAH cikar.
-    lit += texelLinear*ambient.rgb;
+    // YARIM-KURE (hemisphere) ORTAM ISIGI.
+    //
+    // Tek bir ambient rengi her yuzu AYNI yukseltir ve goruntu duzlesir: magara
+    // duvari ile acik arazinin yuzu ayirt edilemez ("magaralarin ici disi ile
+    // ayni dumduz"). Gercek sacilma GOKTEN gelir: yukari bakan yuz gokyuzunu
+    // gorur, asagi bakan yuz zeminden sekme alir.
+    //
+    // Gokyuzu rengi = modulden gelen ambient; zemin sekmesi onun koyu bir
+    // kesri. Yeni bir uniform GEREKMEZ ve mevcut denge korunur; yalnizca YONE
+    // bagli degisim eklenir: tavan/taban koyulasir, ust yuzler acilir.
+    //
+    // `normal.y` = 1 (yukari) -> skyAmb; = -1 (asagi) -> groundAmb.
+    vec3  skyAmb    = ambient.rgb;
+    vec3  groundAmb = ambient.rgb*0.35;
+    float hemi      = clamp(0.5 + 0.5*normal.y, 0.0, 1.0);
+
+    lit += texelLinear*mix(groundAmb, skyAmb, hemi);
 
     // Ekran icin sRGB'ye geri kodla.
     vec3 shaded = linear_to_srgb(lit*vec3(tint.r, tint.g, tint.b));

@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GCL Book - Python</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">G</span>
+    <span class="name">GCL Book</span>
+    <span class="sub">GnuchanOS</span>
+  </div>
+  <div class="grow"></div>
+  <nav class="nav">
+    <a href="raylib.html">Raylib</a>
+    <a href="python.html" aria-current="page">Python</a>
+    <a href="lua.html">Lua</a>
+  </nav>
+</header>
+
+<div class="shell">
+
+<aside class="side">
+  <h2>Contents</h2>
+  <a href="#intro">Python from GCL</a>
+  <a href="#embed">Starting the runtime</a>
+  <a href="#values">Moving values across</a>
+  <a href="#raylib">raylib from Python</a>
+  <a href="#example">A complete example</a>
+</aside>
+
+<main>
+
+<div class="crumb">GCL Book / Python</div>
+<div class="head">
+  <h1>Python</h1>
+  <p>Run a Python script from a GCL program, share values with it, and draw
+     with the raylib bindings that ship with the runtime.</p>
+</div>
+
+<section class="section" id="intro">
+<h2>Python from GCL</h2>
+<div class="blocks">
+
+<p>GCL can host a Python interpreter the same way it hosts raylib: as a module.
+   Load <code>#native <Embed></code>, start the runtime, and from then on
+   the two languages share one process. GCL keeps driving the window and the
+   frame loop; Python does whatever you would rather write in Python.</p>
+
+<div class="note info">
+  <span class="icon">&#8505;&#65039;</span>
+  <p>The interpreter runs on its own thread. Both sides keep working at once,
+     which is the point &mdash; but it also means the two must not touch the
+     same variable at the same moment.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="embed">
+<h2>Starting the runtime</h2>
+<div class="blocks">
+
+<p><code>Embed.Run</code> starts it and returns once the interpreter is up.
+   <code>Embed.IsActive</code> tells you whether it is still running, and
+   <code>Embed.Stop</code> shuts it down. Always stop it before the program
+   ends.</p>
+
+<div class="code-card">
+  <div class="code-head">start.gcsf</div>
+<pre class="code"><span class="pre">#native <Embed></span>
+
+<span class="ty">Embed</span>.<span class="fn">Run</span>(type=<span class="str">"python"</span>);
+
+<span class="kw">if</span> (<span class="ty">Embed</span>.<span class="fn">IsActive</span>(type=<span class="str">"python"</span>)) {
+    <span class="ty">Stdio</span>.<span class="fn">printf</span>(<span class="str">"python is up\n"</span>);
+}
+
+<span class="ty">Embed</span>.<span class="fn">Stop</span>(type=<span class="str">"python"</span>);</pre>
+</div>
+
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>Embed.Run(type="python")</td><td>Start the interpreter and load the script.</td></tr>
+<tr><td>Embed.IsActive(type="python")</td><td>1 while it is running.</td></tr>
+<tr><td>Embed.Stop(type="python")</td><td>Shut it down and join the thread.</td></tr>
+</tbody>
+</table>
+
+<p>Which file gets loaded follows the project: the entry sits next to the
+   <code>.gcsf</code> file. A project that keeps its Python in
+   <code>scripts/</code> loads it from there.</p>
+
+</div>
+</section>
+
+<section class="section" id="values">
+<h2>Moving values across</h2>
+<div class="blocks">
+
+<p><code>Embed.SendValue</code> writes a variable into the Python namespace, and
+   <code>Embed.GetValue</code> reads one back out. The name has to be a plain
+   global on the Python side &mdash; anything inside a function or a class is not
+   reachable. Values travel as int, float and char.</p>
+
+<div class="code-card">
+  <div class="code-head">values.gcsf</div>
+<pre class="code"><span class="ty">Embed</span>.<span class="fn">SendValue</span>(type=<span class="str">"python"</span>, name=<span class="str">"hp"</span>,    value=<span class="str">"100"</span>);
+<span class="ty">Embed</span>.<span class="fn">SendValue</span>(type=<span class="str">"python"</span>, name=<span class="str">"speed"</span>, value=<span class="str">"2.5"</span>);
+
+<span class="cm"># Python has had a frame or two to run by now.</span>
+<span class="ty">int</span> score = <span class="ty">Embed</span>.<span class="fn">GetValue</span>(type=<span class="str">"python"</span>, name=<span class="str">"score"</span>);</pre>
+</div>
+
+<div class="code-card">
+  <div class="code-head">game.py</div>
+<pre class="code"><span class="cm"># globals, so GCL can see them</span>
+hp = <span class="num">100</span>
+score = <span class="num">0</span>
+
+<span class="kw">def</span> <span class="fn">think</span>(dt):
+    <span class="kw">global</span> score
+    score += <span class="num">1</span></pre>
+</div>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p>Two things break this quietly. A variable defined inside a function is not a
+     global, so <code>GetValue</code> returns nothing; and reading a variable GCL
+     has not written yet gives you whatever Python last put there, which may be
+     stale. Give the Python side a sane default at the top of the file.</p>
+</div>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>Because both run at once, a value read mid-frame can be one frame behind.
+     For anything the renderer depends on, treat the Python number as input to
+     the next frame rather than as a value that must be exact this frame.</p>
+</div>
+
+<div class="note info">
+  <span class="icon">&#8505;&#65039;</span>
+  <p>All bindings use the same constant names. In Python the prefix is usually
+     <code>raylib.</code> or <code>rl.</code>, so <code>Raylib.KEY_W</code> becomes
+     <code>raylib.KEY_W</code> or <code>rl.KEY_W</code> depending on the import.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="raylib">
+<h2>raylib from Python</h2>
+<div class="blocks">
+
+<p>The runtime ships with raylib bindings, so a Python script can open its own
+   window and draw without GCL's help. That is the other way to use the two
+   together: instead of GCL driving, Python drives and GCL supplies the game
+   logic and the shared state.</p>
+
+<div class="code-card">
+  <div class="code-head">window.py</div>
+<pre class="code"><span class="kw">import</span> raylib <span class="kw">as</span> rl
+
+rl.<span class="fn">InitWindow</span>(<span class="num">800</span>, <span class="num">600</span>, <span class="str">"from Python"</span>)
+rl.<span class="fn">SetTargetFPS</span>(<span class="num">60</span>)
+
+<span class="kw">while</span> <span class="kw">not</span> rl.<span class="fn">WindowShouldClose</span>():
+    rl.<span class="fn">BeginDrawing</span>()
+    rl.<span class="fn">ClearBackground</span>(rl.RAYWHITE)
+    rl.<span class="fn">DrawText</span>(<span class="str">"hello"</span>, <span class="num">20</span>, <span class="num">20</span>, <span class="num">30</span>, rl.BLACK)
+    rl.<span class="fn">EndDrawing</span>()
+
+rl.<span class="fn">CloseWindow</span>()</pre>
+</div>
+
+<table>
+<thead><tr><th>Python</th><th>Matches</th></tr></thead>
+<tbody>
+<tr><td>rl.InitWindow(w, h, title)</td><td>Raylib.InitWindow</td></tr>
+<tr><td>rl.BeginDrawing() / rl.EndDrawing()</td><td>Same frame pair as GCL.</td></tr>
+<tr><td>rl.DrawText(text, x, y, size, color)</td><td>Raylib.DrawText.</td></tr>
+<tr><td>rl.RAYWHITE, rl.BLACK, ...</td><td>The same colour constants.</td></tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p>Only one of the two may own the window. If GCL already called
+     <code>InitWindow</code>, a Python script must not call it again &mdash;
+     raylib has a single global context and the second call is at best ignored
+     and at worst crashes. Pick one side to be the host.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="example">
+<h2>A complete example</h2>
+<div class="blocks">
+
+<p>GCL keeps the frame loop and the input, Python keeps the game rules. Each
+   frame GCL hands over the state it knows, asks Python to think, and reads the
+   answer back.</p>
+
+<div class="code-card">
+  <div class="code-head">main.gcsf</div>
+<pre class="code"><span class="pre">#native <Raylib></span>
+<span class="pre">#native <Embed></span>
+
+<span class="ty">int</span> <span class="fn">main</span>() {
+    <span class="ty">Raylib</span>.<span class="fn">InitWindow</span>(<span class="num">800</span>, <span class="num">600</span>, <span class="str">"GCL + Python"</span>);
+    <span class="ty">Raylib</span>.<span class="fn">SetTargetFPS</span>(<span class="num">60</span>);
+    <span class="ty">Embed</span>.<span class="fn">Run</span>(type=<span class="str">"python"</span>);
+
+    <span class="kw">while</span> (!<span class="ty">Raylib</span>.<span class="fn">WindowShouldClose</span>()) {
+        <span class="ty">Embed</span>.<span class="fn">SendValue</span>(type=<span class="str">"python"</span>, name=<span class="str">"dt"</span>, value=<span class="str">"0.016"</span>);
+
+        <span class="ty">int</span> x = <span class="ty">Embed</span>.<span class="fn">GetValue</span>(type=<span class="str">"python"</span>, name=<span class="str">"x"</span>);
+
+        <span class="ty">Raylib</span>.<span class="fn">BeginDrawing</span>();
+        <span class="ty">Raylib</span>.<span class="fn">ClearBackground</span>(<span class="ty">Raylib</span>.RAYWHITE);
+        <span class="ty">Raylib</span>.<span class="fn">DrawCircle</span>(x, <span class="num">300</span>, <span class="num">20</span>, <span class="ty">Raylib</span>.BLUE);
+        <span class="ty">Raylib</span>.<span class="fn">EndDrawing</span>();
+    }
+
+    <span class="ty">Embed</span>.<span class="fn">Stop</span>(type=<span class="str">"python"</span>);
+    <span class="ty">Raylib</span>.<span class="fn">CloseWindow</span>();
+    <span class="kw">return</span> <span class="num">0</span>;
+}</pre>
+</div>
+
+<div class="code-card">
+  <div class="code-head">game.py</div>
+<pre class="code">dt = <span class="num">0.016</span>
+x  = <span class="num">400</span>
+
+<span class="kw">def</span> <span class="fn">step</span>():
+    <span class="kw">global</span> x
+    x += <span class="num">60</span> * dt
+    <span class="kw">if</span> x > <span class="num">780</span>:
+        x = <span class="num">20</span></pre>
+</div>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>This is the whole pattern: the host owns the window and the frame, the
+     other language owns the rules, and a small set of named globals is the
+     contract between them. Keep that list short and written down.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="runtime-patterns">
+<h2>Runtime patterns that keep working</h2>
+<div class="blocks">
+
+<p>Once the Python runtime is alive, the important idea is simple: GCL is the host,
+   Python is the worker. The host can own the window and still hand control to the
+   script for AI, logic, networking, or data processing. The contract is a small set
+   of globals and a single shared frame loop.</p>
+
+<div class="code-card">
+  <div class="code-head">pattern.py</div>
+<pre class="code"><span class="kw">import</span> raylib <span class="kw">as</span> rl
+
+<span class="cm"># shared state visible to GCL</span>p = <span class="num">0</span>
+score = <span class="num">0</span>
+
+<span class="kw">def</span> <span class="fn">think</span>(dt):
+    <span class="kw">global</span> p, score
+    p += <span class="num">60</span> * dt
+    score += <span class="num">1</span>
+
+    <span class="kw">if</span> p > <span class="num">780</span>:
+        p = <span class="num">20</span>
+
+<span class="kw">while</span> <span class="kw">not</span> rl.<span class="fn">WindowShouldClose</span>():
+    rl.<span class="fn">BeginDrawing</span>()
+    rl.<span class="fn">ClearBackground</span>(rl.RAYWHITE)
+    rl.<span class="fn">DrawCircle</span>(p, <span class="num">300</span>, <span class="num">20</span>, rl.BLUE)
+    rl.<span class="fn">EndDrawing</span>()</pre>
+</div>
+
+<table>
+<thead><tr><th>Pattern</th><th>Why it matters</th></tr></thead>
+<tbody>
+<tr><td>Keep shared values at module scope</td><td>GCL can read them only when they are globals.</td></tr>
+<tr><td>Use a single owner for the window</td><td>raylib is a global context; do not re-init it from both sides.</td></tr>
+<tr><td>Read the new value next frame</td><td>Python and GCL run concurrently, so frame timing is not perfectly synchronous.</td></tr>
+<tr><td>Keep the interface small</td><td>Few globals are easier to debug than a big shared table.</td></tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p>If you write inside a function and then expect GCL to read it, the value is not
+     a module global. Every shared value must live at the outer level, not under a local
+     function scope.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="python-input">
+<h2>Input and key checks in Python</h2>
+<div class="blocks">
+
+<p>The Python binding follows the same raylib key names as GCL, but with the Python
+   module namespace in front. This is the most common expression pattern in Python:</p>
+
+<div class="code-card">
+  <div class="code-head">input.py</div>
+<pre class="code"><span class="kw">import</span> raylib <span class="kw">as</span> rl
+
+<span class="kw">if</span> rl.<span class="fn">IsKeyDown</span>(rl.KEY_W):
+    x += <span class="num">1</span>
+
+<span class="kw">if</span> rl.<span class="fn">IsKeyPressed</span>(rl.KEY_SPACE):
+    jump = <span class="num">1</span>
+
+<span class="kw">if</span> rl.<span class="fn">IsMouseButtonPressed</span>(rl.MOUSE_BUTTON_LEFT):
+    shoot = <span class="num">1</span>
+
+mx = rl.<span class="fn">GetMouseX</span>()
+my = rl.<span class="fn">GetMouseY</span>()</pre>
+</div>
+
+<table>
+<thead><tr><th>Python call</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>rl.IsKeyDown(rl.KEY_W)</td><td>True while W is held.</td></tr>
+<tr><td>rl.IsKeyPressed(rl.KEY_SPACE)</td><td>True only on the frame it was pressed.</td></tr>
+<tr><td>rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)</td><td>One-shot click check.</td></tr>
+<tr><td>rl.GetMouseX()</td><td>X position of the cursor.</td></tr>
+<tr><td>rl.GetMouseY()</td><td>Y position of the cursor.</td></tr>
+<tr><td>rl.GetKeyPressed()</td><td>Last key typed, useful for text entry.</td></tr>
+</tbody>
+</table>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>The exact same names are used in all languages. For Python you usually write
+     <code>rl.KEY_W</code> or <code>raylib.KEY_W</code>, depending on your import. The difference is the prefix, not the constant name itself.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="python-keys">
+<h2>Full key and mouse names in Python</h2>
+<div class="blocks">
+
+<p>Here are the names that matter in everyday input code. The entire pattern is the same as GCL, just with a Python module prefix in front.</p>
+
+<div class="stack-list">
+  <div class="stack-group">
+    <h4>Letters and digits</h4>
+    <code>rl.KEY_A</code>
+    <code>rl.KEY_B</code>
+    <code>rl.KEY_C</code>
+    <code>rl.KEY_D</code>
+    <code>rl.KEY_E</code>
+    <code>rl.KEY_F</code>
+    <code>rl.KEY_G</code>
+    <code>rl.KEY_H</code>
+    <code>rl.KEY_I</code>
+    <code>rl.KEY_J</code>
+    <code>rl.KEY_K</code>
+    <code>rl.KEY_L</code>
+    <code>rl.KEY_M</code>
+    <code>rl.KEY_N</code>
+    <code>rl.KEY_O</code>
+    <code>rl.KEY_P</code>
+    <code>rl.KEY_Q</code>
+    <code>rl.KEY_R</code>
+    <code>rl.KEY_S</code>
+    <code>rl.KEY_T</code>
+    <code>rl.KEY_U</code>
+    <code>rl.KEY_V</code>
+    <code>rl.KEY_W</code>
+    <code>rl.KEY_X</code>
+    <code>rl.KEY_Y</code>
+    <code>rl.KEY_Z</code>
+    <code>rl.KEY_ZERO</code>
+    <code>rl.KEY_ONE</code>
+    <code>rl.KEY_TWO</code>
+    <code>rl.KEY_THREE</code>
+    <code>rl.KEY_FOUR</code>
+    <code>rl.KEY_FIVE</code>
+    <code>rl.KEY_SIX</code>
+    <code>rl.KEY_SEVEN</code>
+    <code>rl.KEY_EIGHT</code>
+    <code>rl.KEY_NINE</code>
+  </div>
+
+  <div class="stack-group">
+    <h4>Controls and function keys</h4>
+    <code>rl.KEY_SPACE</code>
+    <code>rl.KEY_ESCAPE</code>
+    <code>rl.KEY_ENTER</code>
+    <code>rl.KEY_TAB</code>
+    <code>rl.KEY_BACKSPACE</code>
+    <code>rl.KEY_INSERT</code>
+    <code>rl.KEY_DELETE</code>
+    <code>rl.KEY_RIGHT</code>
+    <code>rl.KEY_LEFT</code>
+    <code>rl.KEY_DOWN</code>
+    <code>rl.KEY_UP</code>
+    <code>rl.KEY_F1</code>
+    <code>rl.KEY_F2</code>
+    <code>rl.KEY_F3</code>
+    <code>rl.KEY_F4</code>
+    <code>rl.KEY_F5</code>
+    <code>rl.KEY_F6</code>
+    <code>rl.KEY_F7</code>
+    <code>rl.KEY_F8</code>
+    <code>rl.KEY_F9</code>
+    <code>rl.KEY_F10</code>
+    <code>rl.KEY_F11</code>
+    <code>rl.KEY_F12</code>
+    <code>rl.KEY_KP_0</code>
+    <code>rl.KEY_KP_1</code>
+    <code>rl.KEY_KP_2</code>
+    <code>rl.KEY_KP_3</code>
+    <code>rl.KEY_KP_4</code>
+    <code>rl.KEY_KP_5</code>
+    <code>rl.KEY_KP_6</code>
+    <code>rl.KEY_KP_7</code>
+    <code>rl.KEY_KP_8</code>
+    <code>rl.KEY_KP_9</code>
+    <code>rl.KEY_KP_ENTER</code>
+  </div>
+
+  <div class="stack-group">
+    <h4>Mouse buttons</h4>
+    <code>rl.MOUSE_BUTTON_LEFT</code>
+    <code>rl.MOUSE_BUTTON_RIGHT</code>
+    <code>rl.MOUSE_BUTTON_MIDDLE</code>
+    <code>rl.MOUSE_BUTTON_SIDE</code>
+    <code>rl.MOUSE_BUTTON_EXTRA</code>
+    <code>rl.MOUSE_BUTTON_FORWARD</code>
+    <code>rl.MOUSE_BUTTON_BACK</code>
+  </div>
+</div>
+
+</div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  GnuchanOS GCL Book &middot; GCL, Lua and Python
+</footer>
+
+</body>
+</html>

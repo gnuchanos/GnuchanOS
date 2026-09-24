@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GCL Book - Lua</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">G</span>
+    <span class="name">GCL Book</span>
+    <span class="sub">GnuchanOS</span>
+  </div>
+  <div class="grow"></div>
+  <nav class="nav">
+    <a href="raylib.html">Raylib</a>
+    <a href="python.html">Python</a>
+    <a href="lua.html" aria-current="page">Lua</a>
+  </nav>
+</header>
+
+<div class="shell">
+
+<aside class="side">
+  <h2>Contents</h2>
+  <a href="#intro">Lua inside GCL</a>
+  <a href="#start">Starting the runtime</a>
+  <a href="#state">Shared state</a>
+  <a href="#raylib">raylib module</a>
+  <a href="#raygui">raygui module</a>
+  <a href="#consts">Colors and constants</a>
+  <a href="#example">Complete example</a>
+  <a href="#traps">The three traps</a>
+</aside>
+
+<main>
+
+<div class="crumb">GCL Book / Lua</div>
+<div class="head">
+  <h1>Lua</h1>
+  <p>An in-process Lua 5.4 runtime, a <code>raylib</code> and a
+     <code>raygui</code> module, and a <code>gcl</code> module to talk to the
+     rest of the program.</p>
+</div>
+
+<section class="section" id="intro">
+<h2>Lua inside GCL</h2>
+<div class="blocks">
+
+<p>GCL loads the Lua runtime the way it loads any other module. From then on
+   there is one process with two languages in it: GCL keeps whatever you wrote
+   in GCL, and Lua runs a real Lua 5.4 program on its own thread. Three
+   globals are created before your script runs:</p>
+
+<table>
+<thead><tr><th>Global</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td>raylib</td><td>The raylib binding: window, drawing, input, shapes, textures, text, 3D, audio.</td></tr>
+<tr><td>raygui</td><td>The raygui binding: widgets, on top of raylib.</td></tr>
+<tr><td>gcl</td><td>The shared store and the runtime handshake.</td></tr>
+</tbody>
+</table>
+
+<p>Function names are the C names, unchanged and in CamelCase:
+   <code>raylib.InitWindow</code>, <code>raylib.DrawCircleV</code>. There is no
+   prefix of your own to add and no wrapper module to import &mdash; the tables
+   are already global.</p>
+
+<div class="note info">
+  <span class="icon">&#8505;&#65039;</span>
+  <p>Your script is loaded as a file by the host, so it runs top to bottom like
+     any Lua program. It usually ends in its own frame loop and its own
+     <code>raylib.CloseWindow()</code>.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="start">
+<h2>Starting the runtime</h2>
+<div class="blocks">
+
+<p>From the GCL side, <code>Embed</code> starts and stops the Lua runtime.</p>
+
+<div class="code-card">
+  <div class="code-head">host.gcsf</div>
+<pre class="code"><span class="pre">#native <Embed></span>
+
+<span class="ty">Embed</span>.<span class="fn">Run</span>(type=<span class="str">"lua"</span>);
+
+<span class="kw">if</span> (<span class="ty">Embed</span>.<span class="fn">IsActive</span>(type=<span class="str">"lua"</span>)) {
+    <span class="ty">Stdio</span>.<span class="fn">printf</span>(<span class="str">"lua is up\n"</span>);
+}
+
+<span class="ty">Embed</span>.<span class="fn">Stop</span>(type=<span class="str">"lua"</span>);</pre>
+</div>
+
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>Embed.Run(type="lua")</td><td>Start Lua and load the script.</td></tr>
+<tr><td>Embed.IsActive(type="lua")</td><td>1 while it is running.</td></tr>
+<tr><td>Embed.Stop(type="lua")</td><td>Shut it down and join the thread.</td></tr>
+</tbody>
+</table>
+
+<p>The script the runtime loads follows the project layout: an entry next to the
+   <code>.gcsf</code> file, or in <code>scripts/</code> when the project keeps
+   its scripts there.</p>
+
+</div>
+</section>
+
+<section class="section" id="state">
+<h2>Shared state</h2>
+<div class="blocks">
+
+<p>This is the part that matters and the part that is easiest to get wrong.
+   The Lua script does not read GCL variables directly. Both sides meet in a
+   small shared store, and each value is a number under a string key.</p>
+
+<div class="code-card">
+  <div class="code-head">state.lua</div>
+<pre class="code"><span class="ty">gcl</span>.<span class="fn">init</span>()
+
+<span class="ty">gcl</span>.<span class="fn">set_state</span>(<span class="str">"paddle_y"</span>, <span class="num">300</span>)
+
+<span class="kw">local</span> ball_x = <span class="ty">gcl</span>.<span class="fn">get_state</span>(<span class="str">"ball_x"</span>)
+<span class="kw">if</span> <span class="kw">type</span>(ball_x) ~= <span class="str">"number"</span> <span class="kw">then</span>
+    ball_x = <span class="num">400</span>          <span class="cm">-- the key has not been written yet</span>
+<span class="kw">end</span></pre>
+</div>
+
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>gcl.init()</td><td>-</td><td>Handshake with the host. Call it once, first.</td></tr>
+<tr><td>gcl.set_state(key, value)</td><td>-</td><td>Write a number under a string key.</td></tr>
+<tr><td>gcl.get_state(key)</td><td>number or nil</td><td>Read it back. <strong>nil</strong> when the key has never been written.</td></tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p><code>get_state</code> returns <code>nil</code> for a key that does not
+     exist yet, not <code>0</code>. Arithmetic on that nil stops your script at
+     the line where it happens, which is why every read in the demo goes through
+     a helper with a fallback.</p>
+</div>
+
+<p>The store is shared across the whole program, not just this one script. The
+   demo project <code>examples/demo_pong_lua_vs_python</code> runs the Lua court
+   and the Python court side by side, and the ball is a single pair of keys they
+   both read.</p>
+
+</div>
+</section>
+
+<section class="section" id="raylib">
+<h2>raylib module</h2>
+<div class="blocks">
+
+<p>The full binding, grouped the way raylib groups it. Everything is
+   <code>raylib.Name(args)</code>. Functions that return a value in C return it
+   here; functions that return void return nothing. A C <code>bool</code>
+   arrives as a Lua <code>true</code>/<code>false</code>.</p>
+
+<div class="code-card">
+  <div class="code-head">window.lua</div>
+<pre class="code"><span class="ty">raylib</span>.<span class="fn">InitWindow</span>(<span class="num">800</span>, <span class="num">600</span>, <span class="str">"from Lua"</span>)
+<span class="ty">raylib</span>.<span class="fn">SetTargetFPS</span>(<span class="num">60</span>)
+
+<span class="kw">while</span> <span class="kw">not</span> <span class="ty">raylib</span>.<span class="fn">WindowShouldClose</span>() <span class="kw">do</span>
+    <span class="ty">raylib</span>.<span class="fn">BeginDrawing</span>()
+    <span class="ty">raylib</span>.<span class="fn">ClearBackground</span>(<span class="ty">raylib</span>.RAYWHITE)
+    <span class="ty">raylib</span>.<span class="fn">DrawText</span>(<span class="str">"hello"</span>, <span class="num">20</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="ty">raylib</span>.BLACK)
+    <span class="ty">raylib</span>.<span class="fn">EndDrawing</span>()
+<span class="kw">end</span>
+
+<span class="ty">raylib</span>.<span class="fn">CloseWindow</span>()</pre>
+</div>
+
+<h3>Window and core</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.InitWindow(w, h, title)</td><td>Title is a Lua string.</td></tr>
+<tr><td>raylib.WindowShouldClose()</td><td>Real boolean, so <code>while not ...</code>.</td></tr>
+<tr><td>raylib.CloseWindow()</td><td>End of the program.</td></tr>
+<tr><td>raylib.SetTargetFPS(fps)</td><td></td></tr>
+<tr><td>raylib.SetWindowSize(w, h) / SetWindowPosition(x, y)</td><td></td></tr>
+<tr><td>raylib.SetWindowTitle(title) / SetWindowMinSize(w, h) / SetWindowMaxSize(w, h)</td><td></td></tr>
+<tr><td>raylib.SetWindowOpacity(opacity) / SetWindowMonitor(monitor)</td><td></td></tr>
+<tr><td>raylib.SetWindowFocused() / MaximizeWindow() / MinimizeWindow() / RestoreWindow()</td><td></td></tr>
+<tr><td>raylib.ToggleFullscreen() / ToggleBorderlessWindowed()</td><td></td></tr>
+<tr><td>raylib.SetConfigFlags(flags) / SetExitKey(key)</td><td></td></tr>
+<tr><td>raylib.IsWindowReady() / IsWindowFullscreen() / IsWindowHidden()</td><td>boolean</td></tr>
+<tr><td>raylib.IsWindowMinimized() / IsWindowMaximized() / IsWindowFocused() / IsWindowResized()</td><td>boolean</td></tr>
+<tr><td>raylib.GetScreenWidth() / GetScreenHeight()</td><td>integer</td></tr>
+<tr><td>raylib.GetRenderWidth() / GetRenderHeight()</td><td>integer</td></tr>
+<tr><td>raylib.GetMonitorCount() / GetCurrentMonitor()</td><td>integer</td></tr>
+<tr><td>raylib.GetMonitorWidth(m) / GetMonitorHeight(m) / GetMonitorRefreshRate(m)</td><td>integer</td></tr>
+<tr><td>raylib.GetWindowPosition()</td><td>two returns: x, y</td></tr>
+<tr><td>raylib.GetWindowScaleDPI()</td><td>two returns: x, y</td></tr>
+<tr><td>raylib.SetClipboardText(t) / GetClipboardText()</td><td>getter returns a string</td></tr>
+<tr><td>raylib.EnableEventWaiting() / DisableEventWaiting()</td><td></td></tr>
+</tbody>
+</table>
+
+<h3>Cursor</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.ShowCursor() / HideCursor() / EnableCursor() / DisableCursor()</td><td></td></tr>
+<tr><td>raylib.IsCursorHidden() / IsCursorOnScreen()</td><td>boolean</td></tr>
+</tbody>
+</table>
+
+<h3>Drawing and modes</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.BeginDrawing() / EndDrawing()</td><td>The frame pair.</td></tr>
+<tr><td>raylib.ClearBackground(color)</td><td>Colour is a packed integer.</td></tr>
+<tr><td>raylib.BeginMode2D(camera2d)</td><td>Takes a table from raylib.Camera2D.</td></tr>
+<tr><td>raylib.BeginMode3D(camera3d)</td><td>Takes a table from raylib.Camera3D, or 11 numbers.</td></tr>
+<tr><td>raylib.EndMode2D() / EndMode3D()</td><td></td></tr>
+<tr><td>raylib.BeginShaderMode(shaderId) / EndShaderMode()</td><td>Shader id from LoadShader.</td></tr>
+<tr><td>raylib.BeginBlendMode(mode) / EndBlendMode()</td><td></td></tr>
+<tr><td>raylib.BeginScissorMode(x, y, w, h) / EndScissorMode()</td><td></td></tr>
+<tr><td>raylib.BeginTextureMode(id, texId, w, h, depthId)</td><td>Render target; five numbers.</td></tr>
+<tr><td>raylib.EndTextureMode()</td><td></td></tr>
+<tr><td>raylib.UpdateCamera(cameraOr12Numbers, mode)</td><td>Free, orbital, first or third person.</td></tr>
+</tbody>
+</table>
+
+<h3>Timing and system</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.GetFrameTime() / GetTime()</td><td>seconds, float</td></tr>
+<tr><td>raylib.GetFPS()</td><td>integer</td></tr>
+<tr><td>raylib.WaitTime(seconds)</td><td></td></tr>
+<tr><td>raylib.TakeScreenshot(fileName) / OpenURL(url)</td><td></td></tr>
+<tr><td>raylib.SetRandomSeed(seed) / GetRandomValue(min, max)</td><td>getter returns integer</td></tr>
+</tbody>
+</table>
+
+<h3>Input</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.IsKeyDown(key) / IsKeyPressed(key)</td><td>boolean</td></tr>
+<tr><td>raylib.IsKeyPressedRepeat(key) / IsKeyReleased(key) / IsKeyUp(key)</td><td>boolean</td></tr>
+<tr><td>raylib.GetKeyPressed() / GetCharPressed()</td><td>integer</td></tr>
+<tr><td>raylib.GetKeyName(key)</td><td>string</td></tr>
+<tr><td>raylib.IsMouseButtonDown(b) / IsMouseButtonPressed(b)</td><td>boolean</td></tr>
+<tr><td>raylib.IsMouseButtonReleased(b) / IsMouseButtonUp(b)</td><td>boolean</td></tr>
+<tr><td>raylib.GetMouseX() / GetMouseY()</td><td>integer</td></tr>
+<tr><td>raylib.GetMousePosition() / GetMouseDelta()</td><td>two returns: x, y</td></tr>
+<tr><td>raylib.GetMouseWheelMove()</td><td>float</td></tr>
+<tr><td>raylib.SetMousePosition(x, y) / SetMouseOffset(x, y) / SetMouseScale(x, y)</td><td></td></tr>
+<tr><td>raylib.SetMouseCursor(cursor)</td><td></td></tr>
+<tr><td>raylib.IsGamepadAvailable(gamepad) / GetGamepadName(gamepad)</td><td>boolean / string</td></tr>
+<tr><td>raylib.IsGamepadButtonPressed(g, b) / IsGamepadButtonDown(g, b)</td><td>boolean</td></tr>
+<tr><td>raylib.IsGamepadButtonReleased(g, b) / IsGamepadButtonUp(g, b)</td><td>boolean</td></tr>
+<tr><td>raylib.GetGamepadButtonPressed() / GetGamepadAxisCount(g)</td><td>integer</td></tr>
+<tr><td>raylib.GetGamepadAxisMovement(g, axis)</td><td>float</td></tr>
+<tr><td>raylib.SetGamepadMappings(csv) / SetGamepadVibration(g, left, right, dur)</td><td></td></tr>
+<tr><td>raylib.GetTouchX() / GetTouchY() / GetTouchPointId(i) / GetTouchPointCount()</td><td>integer</td></tr>
+<tr><td>raylib.GetTouchPosition(i)</td><td>two returns: x, y</td></tr>
+<tr><td>raylib.SetGesturesEnabled(flags) / IsGestureDetected(flags)</td><td>boolean</td></tr>
+<tr><td>raylib.GetGestureDetected() / GetGestureHoldDuration()</td><td>integer / float</td></tr>
+<tr><td>raylib.GetGestureDragVector()</td><td>two returns: x, y</td></tr>
+<tr><td>raylib.GetGestureDragAngle()</td><td>float</td></tr>
+</tbody>
+</table>
+
+<h3>Shapes</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.DrawPixel(x, y, color)</td><td></td></tr>
+<tr><td>raylib.DrawLine(x1, y1, x2, y2, color)</td><td></td></tr>
+<tr><td>raylib.DrawLineEx(x1, y1, x2, y2, thick, color)</td><td></td></tr>
+<tr><td>raylib.DrawRectangle(x, y, w, h, color)</td><td>The common one.</td></tr>
+<tr><td>raylib.DrawRectangleV(x, y, w, h, color) / DrawRectangleRec(rect, color)</td><td>Rec takes a Rectangle userdata.</td></tr>
+<tr><td>raylib.DrawRectangleLines(x, y, w, h, color)</td><td></td></tr>
+<tr><td>raylib.DrawRectangleLinesEx(rect, thick, color)</td><td></td></tr>
+<tr><td>raylib.DrawRectangleRounded(rect, roundness, segments, color)</td><td>rect first, not numbers.</td></tr>
+<tr><td>raylib.DrawCircle(x, y, radius, color) / DrawCircleV(x, y, radius, color)</td><td></td></tr>
+<tr><td>raylib.DrawCircleGradient(x, y, radius, inner, outer)</td><td></td></tr>
+<tr><td>raylib.DrawCircleLines(x, y, radius, color)</td><td></td></tr>
+<tr><td>raylib.DrawEllipse(x, y, radiusH, radiusV, color)</td><td></td></tr>
+<tr><td>raylib.DrawTriangle(x1, y1, x2, y2, x3, y3, color)</td><td>Winding decides whether it fills.</td></tr>
+<tr><td>raylib.DrawPoly(x, y, sides, radius, rotation, color)</td><td></td></tr>
+<tr><td>raylib.DrawPolyLines(x, y, sides, radius, rotation, color)</td><td></td></tr>
+<tr><td>raylib.DrawRing(x, y, innerR, outerR, startDeg, endDeg, segments, color)</td><td></td></tr>
+<tr><td>raylib.DrawGrid(slices, spacing)</td><td>Inside BeginMode3D.</td></tr>
+</tbody>
+</table>
+
+<h3>Textures and images</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.LoadTexture(fileName)</td><td>Returns a texture id, an integer.</td></tr>
+<tr><td>raylib.LoadTextureFromImage(data, w, h)</td><td>Three values back from LoadImage.</td></tr>
+<tr><td>raylib.UnloadTexture(id) / IsTextureValid(id)</td><td>boolean for the test</td></tr>
+<tr><td>raylib.SetTextureFilter(id, filter) / SetTextureWrap(id, wrap)</td><td></td></tr>
+<tr><td>raylib.DrawTexture(id, x, y, tint)</td><td></td></tr>
+<tr><td>raylib.DrawTextureEx(id, x, y, rotation, scale, tint)</td><td></td></tr>
+<tr><td>raylib.LoadImage(fileName)</td><td>three returns: data, width, height</td></tr>
+<tr><td>raylib.GenImageColor(w, h, color)</td><td>three returns: data, width, height</td></tr>
+<tr><td>raylib.UnloadImage(data, w, h)</td><td>Same three values back.</td></tr>
+</tbody>
+</table>
+
+<h3>Text and fonts</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.DrawText(text, x, y, size, color)</td><td>Built-in font.</td></tr>
+<tr><td>raylib.MeasureText(text, size)</td><td>Width in pixels, integer.</td></tr>
+<tr><td>raylib.GetFontDefault() / LoadFont(file) / LoadFontEx(file, size)</td><td>two returns: baseSize, textureId</td></tr>
+<tr><td>raylib.UnloadFont(baseSize, textureId)</td><td>Those same two values.</td></tr>
+<tr><td>raylib.DrawTextEx(baseSize, texId, text, x, y, size, spacing, tint)</td><td>Font first, then the string.</td></tr>
+<tr><td>raylib.TextFormat(text)</td><td>raylib's own {} formatting, not Lua's.</td></tr>
+<tr><td>raylib.TextToUpper(t) / TextToLower(t)</td><td>string</td></tr>
+<tr><td>raylib.TextToInteger(t) / TextToFloat(t)</td><td>number</td></tr>
+<tr><td>raylib.TextLength(t)</td><td>integer, code points</td></tr>
+</tbody>
+</table>
+
+<h3>3D</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.DrawCube(x, y, z, w, h, length, color)</td><td>Or a Vector3 table first.</td></tr>
+<tr><td>raylib.DrawCubeWires(x, y, z, w, h, length, color)</td><td></td></tr>
+<tr><td>raylib.DrawSphere(x, y, z, radius, color)</td><td></td></tr>
+<tr><td>raylib.DrawCylinder(x, y, z, rTop, rBottom, height, sides, color)</td><td></td></tr>
+<tr><td>raylib.DrawPlane(x, y, z, width, length, color)</td><td></td></tr>
+<tr><td>raylib.DrawLine3D(x1, y1, z1, x2, y2, z2, color)</td><td></td></tr>
+<tr><td>raylib.DrawPoint3D(x, y, z, color)</td><td></td></tr>
+</tbody>
+</table>
+
+<h3>Structs</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.Vector3(x, y, z)</td><td>A table with x, y, z fields.</td></tr>
+<tr><td>raylib.Camera3D()</td><td>A table with position, target, up, fovy, projection.</td></tr>
+<tr><td>raylib.Camera2D()</td><td>A table with offset, target, rotation, zoom.</td></tr>
+<tr><td>raylib.Rectangle(x, y, w, h)</td><td>Userdata with readable and writable x, y, w, h.</td></tr>
+</tbody>
+</table>
+
+<h3>Shaders</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.LoadShader(vsFile, fsFile)</td><td>Returns the shader id.</td></tr>
+<tr><td>raylib.LoadShaderFromMemory(vsCode, fsCode)</td><td>Same, from source strings.</td></tr>
+<tr><td>raylib.IsShaderValid(id)</td><td>boolean</td></tr>
+<tr><td>raylib.GetShaderLocation(id, uniformName)</td><td>integer</td></tr>
+<tr><td>raylib.GetShaderLocationAttrib(id, attribName)</td><td>integer</td></tr>
+<tr><td>raylib.UnloadShader(id)</td><td></td></tr>
+</tbody>
+</table>
+
+<h3>Filesystem</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.FileExists(f) / DirectoryExists(d)</td><td>boolean</td></tr>
+<tr><td>raylib.LoadFileText(file)</td><td>string, or nil if it could not be read</td></tr>
+<tr><td>raylib.SaveFileText(file, text)</td><td>boolean, true on success</td></tr>
+<tr><td>raylib.GetFileExtension(p) / GetFileName(p) / GetFileNameWithoutExt(p)</td><td>string</td></tr>
+<tr><td>raylib.GetDirectoryPath(p) / GetWorkingDirectory() / GetApplicationDirectory()</td><td>string</td></tr>
+<tr><td>raylib.MakeDirectory(path)</td><td>integer, 0 on success</td></tr>
+</tbody>
+</table>
+
+<h3>Audio</h3>
+<table>
+<thead><tr><th>Signature</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>raylib.InitAudioDevice() / CloseAudioDevice() / IsAudioDeviceReady()</td><td>boolean for the test</td></tr>
+<tr><td>raylib.SetMasterVolume(v) / GetMasterVolume()</td><td></td></tr>
+<tr><td>raylib.LoadSound(file) / UnloadSound(id)</td><td>The id is what LoadSound returns.</td></tr>
+<tr><td>raylib.PlaySound(id) / StopSound(id) / PauseSound(id) / ResumeSound(id)</td><td></td></tr>
+<tr><td>raylib.IsSoundPlaying(id)</td><td>boolean</td></tr>
+<tr><td>raylib.LoadMusicStream(file) / PlayMusicStream(id) / UpdateMusicStream(id)</td><td>Update every frame.</td></tr>
+</tbody>
+</table>
+
+</div>
+</section>
+
+<section class="section" id="raygui">
+<h2>raygui module</h2>
+<div class="blocks">
+
+<p>Widgets are <code>raygui.GuiName(rect, ...)</code>. The rectangle is built
+   with <code>raylib.Rectangle</code> and passed <strong>explicitly as the first
+   argument</strong> &mdash; there is no implicit "last rectangle" state across
+   the two tables, so each widget carries its own layout.</p>
+
+<div class="code-card">
+  <div class="code-head">gui.lua</div>
+<pre class="code"><span class="ty">raylib</span>.<span class="fn">Rectangle</span>(<span class="num">20</span>, <span class="num">20</span>, <span class="num">200</span>, <span class="num">40</span>)   <span class="cm">-- built inline, one per widget</span>
+<span class="kw">if</span> <span class="ty">raygui</span>.<span class="fn">GuiButton</span>(<span class="ty">raylib</span>.<span class="fn">Rectangle</span>(<span class="num">20</span>, <span class="num">20</span>, <span class="num">200</span>, <span class="num">40</span>), <span class="str">"Reset"</span>) <span class="kw">then</span>
+    width = <span class="num">200</span>
+<span class="kw">end</span>
+
+width = <span class="ty">raygui</span>.<span class="fn">GuiSlider</span>(<span class="ty">raylib</span>.<span class="fn">Rectangle</span>(<span class="num">20</span>, <span class="num">80</span>, <span class="num">300</span>, <span class="num">30</span>),
+                      <span class="str">""</span>, <span class="str">"Width"</span>, width, <span class="num">50.0</span>, <span class="num">500.0</span>)</pre>
+</div>
+
+<h3>Basic widgets</h3>
+<table>
+<thead><tr><th>Signature</th><th>Returns</th></tr></thead>
+<tbody>
+<tr><td>raygui.GuiButton(rect, text)</td><td>true when clicked</td></tr>
+<tr><td>raygui.GuiLabel(rect, text)</td><td>-</td></tr>
+<tr><td>raygui.GuiLabelButton(rect, text)</td><td>true when clicked</td></tr>
+<tr><td>raygui.GuiCheckBox(rect, text, checked)</td><td>new checked value</td></tr>
+<tr><td>raygui.GuiToggle(rect, text, active)</td><td>new active value</td></tr>
+<tr><td>raygui.GuiToggleGroup(rect, text, active)</td><td>new active index</td></tr>
+<tr><td>raygui.GuiToggleSlider(rect, text, active)</td><td>new active index</td></tr>
+<tr><td>raygui.GuiDropdownBox(rect, text, active, editMode)</td><td>new active index</td></tr>
+<tr><td>raygui.GuiComboBox(rect, text, active)</td><td>new active index</td></tr>
+<tr><td>raygui.GuiSlider(rect, textLeft, textRight, value, min, max)</td><td>new value</td></tr>
+<tr><td>raygui.GuiSliderBar(rect, textLeft, textRight, value, min, max)</td><td>new value</td></tr>
+<tr><td>raygui.GuiProgressBar(rect, textLeft, textRight, value, min, max)</td><td>new value</td></tr>
+<tr><td>raygui.GuiSpinner(rect, text, value, min, max, editMode)</td><td>new value</td></tr>
+<tr><td>raygui.GuiValueBox(rect, text, value, min, max, editMode)</td><td>new value</td></tr>
+<tr><td>raygui.GuiTextBox(rect, text, bufferSize, editMode)</td><td>the edited string</td></tr>
+<tr><td>raygui.GuiDummyRec(rect, text)</td><td>result code</td></tr>
+<tr><td>raygui.GuiGrid(rect, text, spacing, subdivs)</td><td>result code, then cell x, cell y</td></tr>
+</tbody>
+</table>
+
+<h3>Containers</h3>
+<table>
+<thead><tr><th>Signature</th><th>Returns</th></tr></thead>
+<tbody>
+<tr><td>raygui.GuiWindowBox(rect, title)</td><td>result code</td></tr>
+<tr><td>raygui.GuiGroupBox(rect, text)</td><td>result code</td></tr>
+<tr><td>raygui.GuiLine(rect, text)</td><td>result code</td></tr>
+<tr><td>raygui.GuiPanel(rect, text)</td><td>-</td></tr>
+<tr><td>raygui.GuiStatusBar(rect, text)</td><td>-</td></tr>
+<tr><td>raygui.GuiScrollPanel(rect, text, contentTable, text2)</td><td>result code, then scroll x/y and view x/y/w/h</td></tr>
+</tbody>
+</table>
+
+<h3>Advanced</h3>
+<table>
+<thead><tr><th>Signature</th><th>Returns</th></tr></thead>
+<tbody>
+<tr><td>raygui.GuiListView(rect, text, active)</td><td>new active index</td></tr>
+<tr><td>raygui.GuiListViewEx(rect)</td><td>active index</td></tr>
+<tr><td>raygui.GuiTabBar(rect, text, active)</td><td>new active index</td></tr>
+<tr><td>raygui.GuiMessageBox(rect, title, message, buttons)</td><td>result code, then button</td></tr>
+<tr><td>raygui.GuiTextInputBox(rect, title, message, buttons, text, textSize)</td><td>result code, then the text</td></tr>
+<tr><td>raygui.GuiColorPicker(rect, text, color)</td><td>new colour</td></tr>
+<tr><td>raygui.GuiColorPanel(rect, text, color)</td><td>new colour</td></tr>
+<tr><td>raygui.GuiColorBarAlpha(rect, text, alpha)</td><td>new alpha</td></tr>
+<tr><td>raygui.GuiColorBarHue(rect, text, hue)</td><td>new hue</td></tr>
+<tr><td>raygui.GuiColorPickerHSV(rect, text, h, s, v)</td><td>three returns: h, s, v</td></tr>
+<tr><td>raygui.GuiColorPanelHSV(rect, text, h, s, v)</td><td>three returns: h, s, v</td></tr>
+</tbody>
+</table>
+
+<h3>State and styling</h3>
+<table>
+<thead><tr><th>Signature</th><th>Returns</th></tr></thead>
+<tbody>
+<tr><td>raygui.GuiEnable() / GuiDisable() / GuiLock() / GuiUnlock()</td><td>-</td></tr>
+<tr><td>raygui.GuiIsLocked()</td><td>boolean</td></tr>
+<tr><td>raygui.GuiSetAlpha(a) / GuiSetState(s) / GuiGetState()</td><td>getter returns integer</td></tr>
+<tr><td>raygui.GuiSetFont(baseSize, texId) / GuiGetFont()</td><td>getter returns two values</td></tr>
+<tr><td>raygui.GuiSetStyle(control, property, value) / GuiGetStyle(control, property)</td><td>getter returns integer</td></tr>
+<tr><td>raygui.GuiLoadStyle(file) / GuiLoadStyleDefault()</td><td>-</td></tr>
+<tr><td>raygui.GuiEnableTooltip() / GuiDisableTooltip() / GuiSetTooltip(text)</td><td>-</td></tr>
+<tr><td>raygui.GuiGetTextWidth(text)</td><td>integer</td></tr>
+<tr><td>raygui.GuiIconText(iconId, text)</td><td>string</td></tr>
+<tr><td>raygui.GuiSetIconScale(scale) / GuiDrawIcon(id, x, y, pixelSize, color)</td><td>-</td></tr>
+</tbody>
+</table>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>Callbacks that carry state in and out are the ones to watch:
+     <code>GuiCheckBox</code> and <code>GuiToggle</code> return a boolean,
+     <code>GuiSlider</code> and friends return a number, and the indexed ones
+     return an integer. Assign the return value back to your own variable; the
+     widget does not remember it for you.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="consts">
+<h2>Colors and constants</h2>
+<div class="blocks">
+
+<p>Colors are packed 32-bit integers. The named ones are fields on the
+   <code>raylib</code> table, and <code>raylib.Color</code> builds one from
+   four channels.</p>
+
+<table class="grid">
+<tbody>
+<tr><td>raylib.RAYWHITE</td><td>raylib.LIGHTGRAY</td><td>raylib.GRAY</td><td>raylib.DARKGRAY</td></tr>
+<tr><td>raylib.YELLOW</td><td>raylib.GOLD</td><td>raylib.ORANGE</td><td>raylib.PINK</td></tr>
+<tr><td>raylib.RED</td><td>raylib.MAROON</td><td>raylib.GREEN</td><td>raylib.LIME</td></tr>
+<tr><td>raylib.DARKGREEN</td><td>raylib.SKYBLUE</td><td>raylib.BLUE</td><td>raylib.DARKBLUE</td></tr>
+<tr><td>raylib.PURPLE</td><td>raylib.VIOLET</td><td>raylib.DARKPURPLE</td><td>raylib.BEIGE</td></tr>
+<tr><td>raylib.BROWN</td><td>raylib.DARKBROWN</td><td>raylib.WHITE</td><td>raylib.BLACK</td></tr>
+<tr><td>raylib.BLANK</td><td>raylib.MAGENTA</td><td></td><td></td></tr>
+</tbody>
+</table>
+
+<h3>Colour functions</h3>
+<table>
+<thead><tr><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>raylib.Color(r, g, b, a)</td><td>Build a colour. Four channels, each 0-255; alpha is the fourth.</td></tr>
+<tr><td>raylib.Fade(color, alpha)</td><td>Same colour, alpha between 0.0 and 1.0. The usual way to draw a soft glow.</td></tr>
+<tr><td>raylib.ColorAlpha(color, alpha)</td><td>Set alpha, keeping the other channels.</td></tr>
+<tr><td>raylib.ColorTint(a, b)</td><td>Multiply two colours.</td></tr>
+<tr><td>raylib.ColorBrightness(color, factor) / ColorContrast(color, factor)</td><td>Adjust.</td></tr>
+<tr><td>raylib.ColorToInt(color) / ColorFromHSV(h, s, v) / GetColor(hex)</td><td>Convert between forms.</td></tr>
+</tbody>
+</table>
+
+<h3>Camera modes and mouse buttons</h3>
+<table class="grid">
+<tbody>
+<tr><td>raylib.CAMERA_FREE</td><td>raylib.CAMERA_ORBITAL</td></tr>
+<tr><td>raylib.CAMERA_FIRST_PERSON</td><td>raylib.CAMERA_THIRD_PERSON</td></tr>
+<tr><td>raylib.CAMERA_PERSPECTIVE</td><td>raylib.CAMERA_ORTHOGRAPHIC</td></tr>
+<tr><td>raylib.MOUSE_BUTTON_LEFT</td><td>raylib.MOUSE_BUTTON_RIGHT</td></tr>
+<tr><td>raylib.MOUSE_BUTTON_MIDDLE</td><td></td></tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p>Only a small set of key constants is exported:
+     <code>KEY_W</code>, <code>KEY_A</code>, <code>KEY_S</code>,
+     <code>KEY_D</code>, <code>KEY_Z</code>, <code>KEY_X</code>,
+     <code>KEY_C</code>, <code>KEY_V</code>, <code>KEY_ESCAPE</code>,
+     <code>KEY_SPACE</code>, <code>KEY_TAB</code>, the four arrows. Any other
+     <code>KEY_</code> name is <code>nil</code>, and passing nil to
+     <code>IsKeyDown</code> is the kind of mistake that goes unnoticed until the
+     key never fires.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="example">
+<h2>Complete example</h2>
+<div class="blocks">
+
+<p>A window with a paddle, driven by shared state and drawn with the bindings
+   above. This is the shape of the Lua half of the pong demo.</p>
+
+<div class="code-card">
+  <div class="code-head">court.lua</div>
+<pre class="code"><span class="ty">gcl</span>.<span class="fn">init</span>()
+
+<span class="kw">local</span> W, H     = <span class="num">800</span>, <span class="num">600</span>
+<span class="kw">local</span> PADDLE_H = <span class="num">96</span>
+<span class="kw">local</span> SPEED    = <span class="num">470</span>
+
+<span class="cm">-- read a shared number, with a fallback for the first frames</span>
+<span class="kw">local</span> <span class="kw">function</span> <span class="fn">get</span>(key, fallback)
+    <span class="kw">local</span> v = <span class="ty">gcl</span>.<span class="fn">get_state</span>(key)
+    <span class="kw">if</span> <span class="kw">type</span>(v) ~= <span class="str">"number"</span> <span class="kw">then</span> <span class="kw">return</span> fallback <span class="kw">end</span>
+    <span class="kw">return</span> v
+<span class="kw">end</span>
+
+<span class="kw">local</span> <span class="kw">function</span> <span class="fn">clamp</span>(v, lo, hi)
+    <span class="kw">if</span> v < lo <span class="kw">then</span> <span class="kw">return</span> lo <span class="kw">end</span>
+    <span class="kw">if</span> v > hi <span class="kw">then</span> <span class="kw">return</span> hi <span class="kw">end</span>
+    <span class="kw">return</span> v
+<span class="kw">end</span>
+
+<span class="ty">raylib</span>.<span class="fn">InitWindow</span>(W, H, <span class="str">"Lua court"</span>)
+<span class="ty">raylib</span>.<span class="fn">SetTargetFPS</span>(<span class="num">60</span>)
+
+<span class="kw">local</span> accent  = <span class="ty">raylib</span>.<span class="fn">Color</span>(<span class="num">102</span>, <span class="num">178</span>, <span class="num">255</span>, <span class="num">255</span>)
+<span class="kw">local</span> court   = <span class="ty">raylib</span>.<span class="fn">Color</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">102</span>, <span class="num">255</span>)
+<span class="kw">local</span> paddle_y = H / <span class="num">2</span>
+
+<span class="ty">gcl</span>.<span class="fn">set_state</span>(<span class="str">"paddle_y"</span>, paddle_y)
+
+<span class="kw">while</span> <span class="kw">not</span> <span class="ty">raylib</span>.<span class="fn">WindowShouldClose</span>() <span class="kw">do</span>
+    <span class="kw">local</span> dt <span class="cm">-- seconds this frame took</span>
+    dt = <span class="ty">raylib</span>.<span class="fn">GetFrameTime</span>()
+    <span class="kw">if</span> dt > <span class="num">0.05</span> <span class="kw">then</span> dt = <span class="num">0.05</span> <span class="kw">end</span>
+
+    <span class="kw">local</span> ball_y = <span class="fn">get</span>(<span class="str">"ball_y"</span>, H / <span class="num">2</span>)
+
+    <span class="cm">-- walk toward the ball, one step at a time</span>
+    <span class="kw">local</span> step = SPEED * dt
+    paddle_y = paddle_y + <span class="fn">clamp</span>(ball_y - paddle_y, -step, step)
+    paddle_y = <span class="fn">clamp</span>(paddle_y, PADDLE_H / <span class="num">2</span>, H - PADDLE_H / <span class="num">2</span>)
+
+    <span class="ty">gcl</span>.<span class="fn">set_state</span>(<span class="str">"paddle_y"</span>, paddle_y)
+
+    <span class="ty">raylib</span>.<span class="fn">BeginDrawing</span>()
+    <span class="ty">raylib</span>.<span class="fn">ClearBackground</span>(court)
+
+    <span class="ty">raylib</span>.<span class="fn">DrawRectangleRounded</span>(
+        <span class="ty">raylib</span>.<span class="fn">Rectangle</span>(<span class="num">36</span>, paddle_y - PADDLE_H / <span class="num">2</span>, <span class="num">18</span>, PADDLE_H),
+        <span class="num">0.5</span>, <span class="num">8</span>, accent)
+
+    <span class="ty">raylib</span>.<span class="fn">DrawCircleV</span>(<span class="fn">get</span>(<span class="str">"ball_x"</span>, W / <span class="num">2</span>), ball_y,
+                         <span class="num">10</span>, <span class="ty">raylib</span>.<span class="fn">Fade</span>(<span class="ty">raylib</span>.WHITE, <span class="num">0.9</span>))
+
+    <span class="ty">raylib</span>.<span class="fn">EndDrawing</span>()
+
+    <span class="kw">if</span> <span class="ty">raylib</span>.<span class="fn">IsKeyPressed</span>(<span class="ty">raylib</span>.KEY_ESCAPE) <span class="kw">then</span> <span class="kw">break</span> <span class="kw">end</span>
+<span class="kw">end</span>
+
+<span class="ty">raylib</span>.<span class="fn">CloseWindow</span>()</pre>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="traps">
+<h2>The three traps</h2>
+<div class="blocks">
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p><strong><code>local</code> is not exported.</strong> Only globals exist as
+     far as the host is concerned. A shared value written as
+     <code>local score = 0</code> disappears from the other side without any
+     error at all &mdash; which is the worst kind of bug, because the script runs
+     perfectly and the number simply never arrives.</p>
+</div>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p><strong>A missing key is <code>nil</code>, not 0.</strong>
+     <code>gcl.get_state("x") + 1</code> on the first frame is an arithmetic
+     error. Read through a helper with a fallback, every time.</p>
+</div>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p><strong>One window per program.</strong> raylib has a single global
+     context. If GCL or another script has already called
+     <code>InitWindow</code>, calling it again is at best ignored. Decide which
+     language owns the window before writing either file.</p>
+</div>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>Two smaller ones worth knowing: <code>DrawTriangle</code> only fills when
+     its vertices wind the same way raylib expects, so a mirrored triangle can
+     vanish silently; and <code>raylib.TextFormat</code> is raylib's own
+     formatter, so reach for Lua's <code>string.format</code> unless you
+     specifically want raylib's <code>{}</code> style.</p>
+</div>
+
+</div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  GnuchanOS GCL Book &middot; GCL, Lua and Python
+</footer>
+
+</body>
+</html>

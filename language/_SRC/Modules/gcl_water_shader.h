@@ -330,17 +330,25 @@ WATER_FOG_FN \
    game water uses, and it is what makes the reflection readable at all. The
    grazing end still reaches 1.0, so the horizon keeps the almost-total mirror
    that makes water read as water. */ \
-"    float fresnel = mix(0.45, 1.0, pow(1.0 - facing, fres_pow));\n" \
+"    float fresnel = mix(0.10, 1.0, pow(1.0 - facing, fres_pow));\n" \
 "    fresnel *= clamp(reflection, 0.0, 1.0)*(1.0 - backfacing);\n" \
+"    fresnel  = clamp(fresnel, 0.0, 0.82);\n" \
 "    vec3  rdir = reflect(-v, n);\n" \
 "    vec3  sky  = gclSkyColor(vec3(rdir.x, max(rdir.y, 0.001), rdir.z));\n" \
 "    vec3  sun  = normalize(sunDir);\n" \
 "    float spec = pow(max(dot(rdir, sun), 0.0), 180.0);\n" \
-"    sky += sunColor*spec*2.2;\n" \
+"    sky += sunColor*spec*0.30;\n" \
+"    /* Yansima BEYAZA VARMAZ. Gokyuzunun kendi gunes diski ve halesi\n" \
+"       yansimayi tam (1,1,1) yapar; `min(sky, vec3(1.0))` bunu\n" \
+"       GECIRIR ve ekran DUZ BEYAZ boyanir - isiga dogru bakinca gorulen\n" \
+"       sey tam olarak budur. 0.72 tavani, fresnel tavanina (0.82)\n" \
+"       carpildiginda bile su govdesini karisimda tutar. */\n" \
+"    sky  = min(sky, vec3(0.72));\n" \
 "    vec3 body = mix(waterShallow, waterDeep,\n" \
 "                    clamp((1.0 - facing)*(1.0 - refraction*0.6), 0.0, 1.0));\n" \
 "    vec3 col  = mix(body, sky, fresnel);\n" \
 "    col = mix(col, waterDeep*0.75 + waterShallow*0.10, backfacing);\n" \
+"    col = clamp(col, vec3(0.0), vec3(1.0));\n" \
 "    float crest = clamp((n.y - 0.90)*10.0, 0.0, 1.0);\n" \
 "    float fleck = gclWaterNoise(vWorldPos.xz*2.3 + waterTime*0.35);\n" \
 "    float foam  = smoothstep(0.55, 0.55 + max(waterFoam.y, 0.02), crest*fleck);\n" \

@@ -594,7 +594,7 @@ GCL_EXPORT Shader gcl_raylib_shader_get(int handle) {
 /* Per-(shader, light index) uniform locations, resolved once: GetShaderLocation
    walks the uniform list by name, which is far too heavy to repeat every frame
    of a game loop. */
-#define GCL_LIGHT_SLOTS 4
+#define GCL_LIGHT_SLOTS 5
 typedef struct {
     int shader;
     int index;

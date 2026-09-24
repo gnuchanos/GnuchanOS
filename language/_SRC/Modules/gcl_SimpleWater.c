@@ -19,11 +19,6 @@ water.Rotate.z = 0; # default
 water.Update(); # update shader
 water.Draw();   # 3B yuzey. BeginMode3D'nin ICINDE cagrilir.
 
-#// SUYUN ICINDEN BAKIS. BeginMode3D KAPANDIKTAN SONRA cagrilir, HER KAREDE.
-#// Her pikselden gecen isinin GERCEK 3B dalga yuzeyini vurup vurmadigina
-#// bakar; vuruyorsa pikselli su ile boyar, vurmuyorsa birakir. Ekrandaki su
-#// siniri boylece uydurma bir animasyon degil, 3B mesh'in izdusumudur.
-water.DrawUnderwaterEffect();
 
 #check
 water.FPS_InWater();
@@ -145,6 +140,18 @@ RaylibSimpleWater.UnloadSimpleWaterFromOBJ(water);
 #define WATER_WAVE_CRESTS    6.0f
 #define WATER_WAVE_AMP_RATIO 0.018f
 
+/* ---------- DALGA: MUTLAK DUNYA OLCEGI ----------
+   Genlik ve frekans MODELIN genisliginden turetiliyordu
+   (`extent*0.018`, `2*PI*6/extent`). Genis bir levhada dalgalar metrelerce
+   yuksek ve onlarca metre aralikli oluyor, normaller yatay cikiyor ve yuzey
+   her yerde gokyuzunu yansitip DUZ BEYAZ gorunuyordu. Ayrica dalga boyu
+   modelin boyutuna bagli oldugu icin kameranin gordugu dalgayla ilgisi
+   kalmiyordu.
+
+   Dalga suyun KENDI olcegidir; model ne kadar buyuk olursa olsun aynidir. */
+#define WATER_WAVE_AMP_WORLD 0.16f   /* metre: tepe genligi (WaveStrength ile olceklenir) */
+#define WATER_WAVE_LEN_WORLD 4.00f   /* metre: tepe-tepe uzaklik (WaveScale ile olceklenir) */
+
 #define WATER_DEF_ALPHA      0.5
 #define WATER_DEF_REFLECT    0.5
 #define WATER_DEF_REFRACT    0.2
@@ -204,8 +211,44 @@ RaylibSimpleWater.UnloadSimpleWaterFromOBJ(water);
 #define UW_FADE_RISE     3.2f
 #define UW_FADE_FALL     4.0f
 #define UW_FILL_MIN      0.004f
-#define UW_EYE_LEAD      0.35f
-#define UW_EYE_SUBMERGE  1.10f
+/* Perdenin TAM SIDDETE ulastigi derinlik (metre), mercek yuzeyin ALTINA
+   indikten SONRA. Esik KESKINDIR: mercek yuzeyin USTUNDE oldugu surece perde
+   HIC acilmaz.
+
+   Eski UW_EYE_LEAD 0.35 yuzeyin USTUNDE aciyordu ve YANLISTI: yarim batmis
+   oyuncuda 3B dalga yuzeyi de hala cizildigi icin ekranda ALT ALTA IKI SU
+   olusuyordu ("dalgalar havada duruyor", "bacak suya girince ekran mavi"). */
+#define UW_EYE_RAMP      0.35f
+
+/* Dalga alaninin tepe-tepe toplami: a1+a2+a3 = 1.96
+   (bkz. gcl_water_shader.h: gclWaterWave - 1.00 + 0.62 + 0.34).
+
+   Yuzey shader'i `world.y += h*amp` yapar, yani GORUNEN su yuzeyi model
+   duzleminden +-1.96*amp araliginda gezinir. Bu sayi BURADA gerekli cunku
+   gecis bandi dalga araligindan DAR OLAMAZ: dar olursa iki hata birden
+   cikar - (1) dalga tepesi duzlemin ustune tastigi icin goz suyun icindeyken
+   perde kapali kalir ("dalgalar havada duruyor"), (2) dalga kameranin onunden
+   gecerken durum kare kare acilip kapanir. */
+#define WATER_WAVE_SUM   1.96f
+
+/* ---------- EKRAN PERDESININ ACTIGI GOVDE ORANI ----------
+
+   OLCU GOVDENIN BATMA ORANIDIR: (yuzey - ayak) / boy.
+
+   Neden GOZ DEGIL: yuzme modunda KAFA YUZEYE KILITLIDIR (bkz.
+   gcl_raylib_fps.c: swim_move -> `max_feet = surface - Height`). Yani goz
+   yuzeyin ALTINA hicbir zaman inmez; "yuzey - goz" ifadesi yuzme boyunca
+   TAM 0 kalir. Gozle olcen bir perde bu yuzden hicbir zaman acilmaz - kod
+   calisir ama gorunmez ("suyun altinda shader yok, silmissin"). Goz olcusu
+   yalnizca serbest kamera icin dogrudur ve YEDEK yol olarak durur.
+
+   ESIKLER: diz boyu suda ekran maviye donmemeli (eski sikayet), ama yuzme
+   baslar baslamaz su goruntuyu kaplamalidir. FPS yuzme esigi 0.60'tir
+   (gcl_raylib_fps.c: FPS_SWIM_SUBMERGE); perde oradan once acilmaya baslar
+   ve tam orada doyar, boylece ekranin "suya girdim" dedigi an ile fizigin
+   dedigi an cakisir. */
+#define UW_BODY_START    0.45f
+#define UW_BODY_FULL     0.65f
 
 enum {
     W_COLOR = 0, W_HANDLE,
@@ -253,14 +296,84 @@ static int    g_loc_fog_color = -1, g_loc_fog_params = -1, g_loc_fog_shape = -1;
 static Shader g_uw_shader;
 static int    g_uw_ready = 0;
 static int uw_loc_res = -1, uw_loc_time = -1;
+static int uw_loc_shallow = -1, uw_loc_deep = -1;
+static int uw_loc_submerge = -1;
 static int uw_loc_campos = -1, uw_loc_camfwd = -1;
 static int uw_loc_camright = -1, uw_loc_camup = -1;
 static int uw_loc_tanhalf = -1, uw_loc_aspect = -1;
 static int uw_loc_surfacey = -1;
-static int uw_loc_boxmin = -1, uw_loc_boxmax = -1;
 static int uw_loc_amp = -1, uw_loc_freq = -1, uw_loc_speed = -1;
-static int uw_loc_shallow = -1, uw_loc_deep = -1;
-static int uw_loc_submerge = -1;
+
+/* ---------- CIZILMIS KARE DOKUSU ----------
+
+   Perde CIZILMIS SAHNEYI orneklemek zorundadir; bulaniklik, kirilma ve
+   sogurma ancak boyle anlamli olur. Eski surum sahneyi hic okumuyordu,
+   yalnizca uzerine koyu bir renk biniyordu - "blur yok" sikayetinin sebebi.
+
+   Kare, raylib'in KENDI ekran okumasIyla alinir (LoadImageFromScreen) ve
+   ONCEDEN OLUSTURULMUS bir dokuya yuklenir (UpdateTexture). Doku her karede
+   YENIDEN OLUSTURULMAZ: yalnizca boyutu degistiginde kurulur, boylece kare
+   basina bir VRAM ayirma/tahliye olmaz.
+
+   SAHNE OKUMASI PAHALIDIR (glReadPixels senkron bir okumadir) ve bu yuzden
+   YALNIZCA perde gorunurken yapilir - su altinda degilken hicbir maliyeti
+   yoktur.
+
+   DONDURME GEREKMEZ - KAYNAKTAN DOGRULANDI. `rlReadScreenPixels` (bkz.
+   rlgl.h) glReadPixels'in ALT-SOL kokenli ciktisini KENDISI cevirir, yani
+   `LoadImageFromScreen` goruntuyu UST-SOL kokenli dondurur: ilk satir
+   ekranin USTUDUR. glTexImage2D ilk satiri V=0 yapar ve `DrawTexturePro`
+   V=0'i dortgenin UST kenarina baglar; iki uc birbirini tutar. Shader bu
+   yuzden ornegi HAM `fragTexCoord` ile alir; buraya elle bir `1.0 - v`
+   eklemek goruntuyu TERS cevirir - "kamera ters donmus gibi" hatasi
+   tam olarak bundan cikmisti. */
+static Texture2D g_uw_frame = {0};
+static int       g_uw_frame_w = 0;
+static int       g_uw_frame_h = 0;
+
+/* Kareyi dokuya tazele. Doku hazir degilse/boyut degistiyse yeniden kurar.
+   Donus: 1 = doku kullanilabilir. */
+static int uw_frame_refresh(int w, int h) {
+    Image img;
+
+    if (w <= 0 || h <= 0) return 0;
+
+    /* Kare HER ZAMAN once okunur ve GECERLILIGI KONTROL EDILIR.
+
+       Eski surum iki ayri hata tasiyordu ve ikisi de ekranda goruluyordu:
+
+         * Ilk dalda `LoadImageFromScreen()` dogrudan `LoadTextureFromImage`e
+           veriliyordu; okuma basarisizsa (pencere simge durumunda, GL baglami
+           hazir degil) BEYAZ bir doku olusuyor ve perde o kareyi ekrana
+           bastigi icin goruntu duz beyaza donuyordu. Ustelik o `Image` hic
+           serbest birakilmiyordu.
+
+         * Okuma basarisiz oldugunda fonksiyon 0 doner, cagiran da cizimi
+           atlar; bu yuzden perde "bazen hic devreye girmiyor" gibi gorunuyordu.
+
+       Simdi gecersiz kare dokuya hic yazilmaz: once dogrulanir, sonra
+       kullanilir. Doku zaten kareyi tutuyorsa bir onceki gecerli kare kalir -
+       ekran beyaza boyanmaz, yalnizca bir kare gecikir. */
+    img = LoadImageFromScreen();
+    if (!img.data || img.width <= 0 || img.height <= 0) {
+        if (img.data) UnloadImage(img);
+        return 0;
+    }
+
+    if (g_uw_frame.id == 0 || g_uw_frame_w != img.width || g_uw_frame_h != img.height) {
+        if (g_uw_frame.id != 0) UnloadTexture(g_uw_frame);
+        g_uw_frame = LoadTextureFromImage(img);
+        UnloadImage(img);   /* dokuya kopyalandi; Image artik gerekmez */
+        if (g_uw_frame.id == 0) return 0;
+        g_uw_frame_w = img.width;
+        g_uw_frame_h = img.height;
+        return 1;
+    }
+
+    UpdateTexture(g_uw_frame, img.data);
+    UnloadImage(img);
+    return 1;
+}
 
 /* ---------- GOKYUZU DURUMU (PAYLASILAN) ----------
 
@@ -291,9 +404,6 @@ static const char *const g_sky_uniform_names[SKY_LOC_COUNT] = {
     SKY_U_CLOUD_P, SKY_U_STAR_COLOR, SKY_U_STAR_P, SKY_U_SKY_P, SKY_U_BAND_P
 };
 
-/* Dolgu shader'inin gokyuzu konumlari; su yuzeyininkinden AYRI bir programa
-   aittir. */
-static int g_uw_sky_loc[SKY_LOC_COUNT];
 
 /* ---------- kucuk yardimcilar ---------- */
 
@@ -538,9 +648,11 @@ static void water_shader_locations(void) {
 }
 
 static void underwater_locations(void) {
-    int i;
     uw_loc_res      = GetShaderLocation(g_uw_shader, UW_U_RES);
     uw_loc_time     = GetShaderLocation(g_uw_shader, UW_U_TIME);
+    uw_loc_shallow  = GetShaderLocation(g_uw_shader, UW_U_SHALLOW);
+    uw_loc_deep     = GetShaderLocation(g_uw_shader, UW_U_DEEP);
+    uw_loc_submerge = GetShaderLocation(g_uw_shader, UW_U_SUBMERGE);
     uw_loc_campos   = GetShaderLocation(g_uw_shader, UW_U_CAMPOS);
     uw_loc_camfwd   = GetShaderLocation(g_uw_shader, UW_U_CAMFWD);
     uw_loc_camright = GetShaderLocation(g_uw_shader, UW_U_CAMRIGHT);
@@ -548,16 +660,9 @@ static void underwater_locations(void) {
     uw_loc_tanhalf  = GetShaderLocation(g_uw_shader, UW_U_TANHALF);
     uw_loc_aspect   = GetShaderLocation(g_uw_shader, UW_U_ASPECT);
     uw_loc_surfacey = GetShaderLocation(g_uw_shader, UW_U_SURFACEY);
-    uw_loc_boxmin   = GetShaderLocation(g_uw_shader, UW_U_BOXMIN);
-    uw_loc_boxmax   = GetShaderLocation(g_uw_shader, UW_U_BOXMAX);
     uw_loc_amp      = GetShaderLocation(g_uw_shader, UW_U_AMP);
     uw_loc_freq     = GetShaderLocation(g_uw_shader, UW_U_FREQ);
     uw_loc_speed    = GetShaderLocation(g_uw_shader, UW_U_SPEED);
-    uw_loc_shallow  = GetShaderLocation(g_uw_shader, UW_U_SHALLOW);
-    uw_loc_deep     = GetShaderLocation(g_uw_shader, UW_U_DEEP);
-    uw_loc_submerge = GetShaderLocation(g_uw_shader, UW_U_SUBMERGE);
-    for (i = 0; i < SKY_LOC_COUNT; i++)
-        g_uw_sky_loc[i] = GetShaderLocation(g_uw_shader, g_sky_uniform_names[i]);
 }
 
 /* Shader'lar yalnizca BIR KEZ, ilk cizimde kurulur: o anda GL baglami zaten
@@ -600,21 +705,6 @@ static void water_push_sky(const float *sky) {
     SetShaderValue(g_shader, g_loc_band_p,      sky + SS_BAND_PARAMS, SHADER_UNIFORM_VEC4);
 }
 
-static void uw_push_sky(const float *sky) {
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_TOP],        sky + SS_TOP,          SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_HOR],        sky + SS_HOR,          SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_BOT],        sky + SS_BOT,          SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_SUN_DIR],    sky + SS_SUN_DIR,      SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_SUN_COLOR],  sky + SS_SUN_COLOR,    SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_SUN_PARAMS], sky + SS_SUN_PARAMS,   SHADER_UNIFORM_VEC4);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_CLOUD_LIT],  sky + SS_CLOUD_COLOR,  SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_CLOUD_DARK], sky + SS_CLOUD_SHADE,  SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_CLOUD_P],    sky + SS_CLOUD_PARAMS, SHADER_UNIFORM_VEC4);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_STAR_COLOR], sky + SS_STAR_COLOR,   SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_STAR_P],     sky + SS_STAR_PARAMS,  SHADER_UNIFORM_VEC4);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_SKY_P],      sky + SS_SKY_PARAMS,   SHADER_UNIFORM_VEC4);
-    SetShaderValue(g_uw_shader, g_uw_sky_loc[SKY_LOC_BAND_P],     sky + SS_BAND_PARAMS,  SHADER_UNIFORM_VEC4);
-}
 
 /* ---------- kayit defteri ---------- */
 
@@ -838,6 +928,98 @@ static Matrix compose_transform(double px, double py, double pz,
    ONCE hicbir guncelleme yapmamis olur ve yuzey 0'da kalir - yani oyuncu
    suyun icindeyken "suda degil" cevabini alir. Bu yuzden donusum TEK bir
    yerde kurulur ve hem Update() hem Draw() onu cagirir. */
+/* ---------- MERCEGIN SUYA GIRME SIDDETI (0 = kuru, 1 = tam su altinda) ----------
+
+   TEK KAYNAK. Iki katman da bu sayiyi kullanir:
+
+     * ekran PERDESI bu oranda GUC LENIR (bkz. fn_underwater_effect)
+     * dolgu shader'inin `uwSubmerge` degeri budur
+
+   YUZEYI BU ORANLA SAYDAMLASMAK DENENDI VE YANLISTI: yuzme esiginde oran
+   1.0'a ulastigi icin alfa sifira iniyor ve su tamamen SAYDAM oluyordu
+   ("suyu gorunmez mi yaptin"). Su bir hacimdir; icindeyken de gorunen sey
+   odur. Yuzey HER ZAMAN cizilir (bkz. fn_draw).
+
+   OLCU GOVDENIN BATMA ORANIDIR; `amp` yalnizca YEDEK yol icin gerekir. */
+static float water_eye_depth01(float amp) {
+    float st[8];
+    float eye[3];
+    float surface = 0.0f;
+    float eye_y;
+    float ramp;
+    float depth, height, body, body_d = 0.0f, eye_d = 0.0f, d;
+
+    /* ---------- ANA YOL: GOVDENIN BATMA ORANI ----------
+
+       FPS modulu her karede suya ne kadar girildigini zaten hesaplar
+       (gcl_raylib_fps.c: water_classify) ve PAYLASIR. Bu olcu yuzme
+       boyunca da gecerlidir, cunku ayaklar yuzeyin altindadir.
+
+       Gozle olcmek bu oyunda imkansizdir: kafa yuzeye kilitlidir, fark
+       her zaman 0 cikar ve perde hic acilmaz. */
+    if (fps_water_state(st)) {
+        eye_y   = st[UW_FPS_EYE];
+        surface = st[UW_FPS_SURFACE];
+        height  = st[UW_FPS_HEIGHT];
+        depth   = st[UW_FPS_DEPTH];
+        /* GOVDE OLCUSU KALDIRILDI.
+
+           Eskiden burada `depth/height` orani hesaplanip FONKSIYON BURADA
+           KESIP DONUYORDU. Esikler UW_BODY_START=0.45 / UW_BODY_FULL=0.65
+           oldugu icin efekt ancak govdenin YARISI suya girdiginde aciliyordu.
+           KAFA suya girdiginde govde hala ayaktadir (batma orani ~0.1), olcu
+           esigin ALTINDA kalir, fonksiyon 0 doner ve ekran DUZ BOS gorunur.
+           Bildirilen "kamera az suya giriyor ama suyun alti bos" hali TAM
+           OLARAK budur.
+
+           Dogru olcu MERCEK ile SU YUZEYI arasidir ve asagida zaten
+           hesaplaniyor: `surface - eye_y`. Erken donus kaldirildigi icin
+           artik o kod calisir: kafa yuzeyin altina indigi an perde acilir,
+           ciktigi an kapanir. */
+    } else {
+        /* Yedek yol: FPS modulu yoksa hacmi dogrudan sorgula. */
+        if (!camera_eye(eye)) return 0.0f;
+        eye_y = eye[1];
+        if (!water_area_at(eye[0], eye[2], 0.0f, &surface, NULL)) return 0.0f;
+    }
+
+    /* YEDEK YOL: MERCEGIN DERINLIGI.
+
+       Goz, ortalama su duzlemiyle karsilastirilir. Gercek su yuzeyi o
+       duzlemin uzerinde +-WATER_WAVE_SUM*amp kadar gezinir (bkz.
+       gcl_water_shader.h: `world.y += h*waterWave.x`). Bant bu zarfin IKI
+       katidir; dar olursa dalga kameranin onunden gecerken durum kare kare
+       acilip kapanir. */
+    ramp = 2.0f * WATER_WAVE_SUM * amp;
+    if (ramp < UW_EYE_RAMP) ramp = UW_EYE_RAMP;
+
+    eye_d = (surface - eye_y) / ramp;
+    if (eye_d > 1.0f) eye_d = 1.0f;
+    if (eye_d < 0.0f) eye_d = 0.0f;
+
+    /* GOVDE BATMA ORANI. Yuzerken perdeyi acan olcu BUDUR.
+
+       Yuzme modunda kafa yuzeye KILITLIDIR (bkz. gcl_raylib_fps.c:
+       swim_move -> max_feet = surface - Height), yani eye == surface TAM
+       olarak saglanir ve eye_d yuzme boyunca TAM 0 kalir. Tek basina goz
+       olcusune bakan perde HIC ACILMAZ. */
+
+    /* ANA OLCU: GOVDENIN BATMA ORANI. Ayaklar yuzeyin altinda oldugu icin
+       `depth / height` yuzme boyunca GECERLIDIR. Esikler: 0.45 -> 0.65. */
+    body   = (height > 0.01f && depth > 0.0f) ? (depth / height) : 0.0f;
+    body_d = (body - UW_BODY_START) / (UW_BODY_FULL - UW_BODY_START);
+    if (body_d > 1.0f) body_d = 1.0f;
+    if (body_d < 0.0f) body_d = 0.0f;
+
+    /* BUYUK OLAN KAZANIR. Govde batmasi YUZMEYI, mercek derinligi serbest
+       kamerayi ve kafa suya girdiginde yurumeyi kapsar. Ikisi bir arada her
+       durumu yakalar. */
+    d = (body_d > eye_d) ? body_d : eye_d;
+    if (d > 1.0f) d = 1.0f;
+    if (d < 0.0f) d = 0.0f;
+    return d;
+}
+
 static void water_apply_transform(int index) {
     WaterEntry *e = entry_of(index);
     if (!e) return;
@@ -894,8 +1076,13 @@ static void read_slots(int argc, const char **argv) {
    su ile ekrandaki cizgiyi ayristirir ve cizgi suyu tutmaz. */
 static void wave_params(WaterEntry *e, float *amp, float *freq, float *speed) {
     float ext = entry_extent(e);
-    if (amp)   *amp   = ext * WATER_WAVE_AMP_RATIO * (float)g_slot[W_WAVE_STRENGTH];
-    if (freq)  *freq  = (WATER_TWO_PI * WATER_WAVE_CRESTS / ext)
+    if (amp) {
+        float a   = WATER_WAVE_AMP_WORLD*(float)g_slot[W_WAVE_STRENGTH];
+        float cap = ext*0.05f;   /* cok kucuk levhada dalga ondan buyuk olmasin */
+        if (cap > 0.0f && a > cap) a = cap;
+        *amp = a;
+    }
+    if (freq)  *freq  = (WATER_TWO_PI / WATER_WAVE_LEN_WORLD)
                       * (float)g_slot[W_WAVE_SCALE];
     if (speed) *speed = (float)g_slot[W_WAVE_SPEED];
 }
@@ -1011,6 +1198,10 @@ static double fn_update(int argc, const char **argv) {
    suyun ALTINDAKI bosluk aciga cikar. Durum cagri sonunda GERI ALINIR.
 
    KARISIM: su yarim saydamdir; alfa karisimi acikken cizilir. */
+/* On bildirim: ekran gecisi `fn_draw`in ICINDEN cagrilir ama tanimi
+   dosyada SONRA gelir (bkz. fn_draw sonundaki birlesik cagri). */
+static double fn_underwater_effect(int argc, const char **argv);
+
 static double fn_draw(int argc, const char **argv) {
     WaterEntry *e;
     float eye[3];
@@ -1075,6 +1266,36 @@ static double fn_draw(int argc, const char **argv) {
         SetShaderValue(g_shader, g_loc_fog_shape,  fog + 7, SHADER_UNIFORM_VEC4);
     }
 
+    /* ---------- GOZ SUYUN ALTINDAYKEN 3B YUZEY CIZILMEZ ----------
+
+       Iki katman ayni karede acik kalirsa ekranda ALT ALTA IKI SU gorunur:
+       3B dalga yuzeyi bir kez, ekran perdesi bir kez. "Dalgalar havada
+       duruyor gibi" ve "bacaklar suya girince ekran maviye donuyor" diye
+       bildirilen hal budur. Ikisi BIRBIRINI DISLAR: mercek yuzeyin USTUNDE
+       -> 3B YUZEY (yansima + Fresnel + kopuk), ALTINDA -> EKRAN PERDESI.
+
+       Saat yukarida yine ilerletilir, yani suya cikinca dalga kaldigi yerden
+       akar ve sicramaz. Karar TEK yerden gelir: g_uw_fade, DrawUnderwater
+       Effect ile AYNI yumusatilmis siddettir. */
+    /* ---------- YUZEY HER ZAMAN CIZILIR ----------
+
+       BURADA ALFA DUSURULMEZ ve BURADAN ERKEN DONULMEZ. Ikisi de denendi ve
+       ikisi de YANLISTI:
+
+         * `if (goz yuzeyin altinda) return 0.0;` -> suya girerken 3B su bir
+           karede tamamen kayboluyordu ("su toptan gidiyor").
+         * `surf[0] = Alpha * (1 - batma_orani)` -> yuzme esiginde oran 1.0
+           oldugu icin alfa SIFIRA iniyordu; su tamamen SAYDAM oluyordu
+           ("suyu gorunmez mi yaptin").
+
+       Dogrusu: su BIR HACIMDIR ve icindeyken de gorunen sey ODUR. Arka yuz
+       eleme kapali oldugu icin kameradan hacmin ic duvarlari ve yuzeyin ALTI
+       cizilir; oyuncuyu saran su budur. Ekran perdesi onun YERINE gecmez,
+       yalnizca derinlik sisine katkida bulunur (bkz. fn_underwater_effect).
+
+       Yani iki katman BIRBIRINI DISLAMAZ, ust uste biner - gercek suda da
+       oyle olur. `surf[0]` yalnizca script'in verdigi `Alpha` degeridir. */
+
     /* YUZEY. Kendi dalga shader'iyla: gokyuzu yansimasi, Fresnel, kopuk.
        Dolgu BURADA YAPILMAZ: o, BeginMode3D kapandiktan sonra ekran
        uzayinda calisir (bkz. fn_underwater_effect). */
@@ -1086,6 +1307,45 @@ static double fn_draw(int argc, const char **argv) {
     DrawModel(e->model, (Vector3){0.0f, 0.0f, 0.0f}, 1.0f, WHITE);
     rlEnableBackfaceCulling();
     EndBlendMode();
+
+    /* ---------- SU ALTI EKRAN GECISI: AYNI CAGRI ICINDE ----------
+
+       Eskiden bu is AYRI bir uye cagrisiydi (`DrawUnderwaterEffect`) ve
+       script onu `EndMode3D()`ten SONRA cagirmak zorundaydi. Ayri cagri
+       olmasi iki sorun uretiyordu:
+
+         * Cagriyi UNUTMAK mumkundu ve efekt sessizce kaybolurdu.
+         * Iki cagri ARASINDA kalan her sey ile efekt arasinda bir kare
+           kaymasi olusabiliyordu - "gecikmeli" gorunum.
+
+       Artik ekran gecisi `Draw()`in ICINDE, yuzey cizildikten hemen sonra
+       calisir. Ayri cagri YOKTUR.
+
+       ORTHO GECISI: `Draw()` normalde BeginMode3D'nin ICINDEDIR, yani o an
+       aktif matrisler KAMERA matrisleridir. Ekran gecisi ise 2B'dir; 3B
+       matrislerle cizilirse dortgen kameraya gore yerlesir ve ekrani
+       kaplamaz. Bu yuzden once matrisler SAKLANIR, 2B ortho kurulur, gecis
+       calistirilir, sonra matrisler AYNEN GERI KONUR.
+
+       GERI KOYMAK ZORUNLUDUR: script `EndMode3D()`ten sonra UI cizmeye devam
+       eder; matrisler geri konmazsa UI yanlis yere duser. */
+    {
+        Matrix saved_mv   = rlGetMatrixModelview();
+        Matrix saved_proj = rlGetMatrixProjection();
+        int    rw = GetRenderWidth();
+        int    rh = GetRenderHeight();
+
+        if (rw > 0 && rh > 0) {
+            rlOrtho(0.0, (double)rw, (double)rh, 0.0, 0.0, 1.0);
+            rlSetMatrixModelview(MatrixIdentity());
+            /* argc = 0: ekran gecisi yuvalari YENIDEN OKUMAZ; `Draw()`in
+               az once okudugu degerleri kullanir. */
+            (void)fn_underwater_effect(0, NULL);
+        }
+
+        rlSetMatrixProjection(saved_proj);
+        rlSetMatrixModelview(saved_mv);
+    }
     return 0.0;
 }
 
@@ -1111,17 +1371,24 @@ static double fn_draw(int argc, const char **argv) {
    SU YUZEYINE HIC DOKUNMAZ: yalnizca 2B ekranda, yuzeyin ALTINDA kalan
    pikselleri boyar; yuzeyin gokyuzu yansimasi, Fresnel ve kopugu bozulmaz. */
 static double fn_underwater_effect(int argc, const char **argv) {
-    float cam[11];
-    float eye[3];
-    float surface = 0.0f;
-    float amp = 0.0f, freq = 1.0f, speed = 1.0f;
+    /* ---------- ERKEN DONUS KALDIRILDI ----------
+
+       Burada eskiden kosulsuz bir `return 0.0;` vardi: efektin TAMAMI olu
+       koddur. Sonuc, suya girildiginde ekranda HICBIR sey degismemesiydi -
+       ne blur, ne kirilma, ne de su tonu. Asagidaki govde artik GERCEKTEN
+       calisir.
+
+       Efektin isi: cizilmis kareyi okuyup (uw_frame_refresh), uzerinde
+       kirilma + blur + kromatik sapma + sogurma + kursagi/caustic
+       uygulamak. Sahne okumasi pahali oldugu icin yalnizca perde
+       gorunurken yapilir. */
     float shallow[3], deep[3];
-    float target, fade;
-    float res[2], aspect, tan_half;
-    float pos[3], fwd[3], right[3], upv[3];
-    float sky[SS_COUNT];
+    float target, fade, amp = 0.0f, freq = 1.0f, speed = 1.0f;
+    float res[2];
     float t, dt;
-    float box_lo[3], box_hi[3];
+    float cam[11];
+    float pos[3], fwd[3], right[3], upv[3];
+    float aspect = 1.0f, tan_half = 0.5f, surface = 0.0f;
     int   sw, sh;
     WaterEntry *e;
 
@@ -1129,39 +1396,56 @@ static double fn_underwater_effect(int argc, const char **argv) {
     e = entry_of((int)g_slot[W_HANDLE]);
     if (!e) return 0.0;
 
-    sw = GetScreenWidth();
-    sh = GetScreenHeight();
-    if (sw <= 0 || sh <= 0) return 0.0;
-    if (!camera_state(cam)) return 0.0;
-    if (!camera_eye(eye)) return 0.0;
+    /* FRAMEBUFFER OLCUSU, PENCERE OLCUSU DEGIL.
 
-    /* ---------- MERCEGIN SUYA GIRME ORANI ---------- */
+       `GetScreenWidth/Height` PENCEREYI verir; `GetRenderWidth/Height` ise
+       gercekte cizilen framebuffer'i. Ikisi (DPI olceklemesi ya da hedef
+       doku kullanildiginda) FARKLI olur ve yanlis olani secmek iki hatayi
+       birden uretir:
+
+         * `LoadImageFromScreen` framebuffer'i okur; beklenen boyut pencere
+           boyutundan farkliysa okunan goruntu ile blit uyusmaz ve goruntu
+           BOZULUR (gecikmeli/yanlis kare izlenimi).
+         * Blit hedefi yanlis olcekte kalir; perde ekrani tam kaplamaz.
+
+       Ekran uzayinda calisan bir efekt icin dogru olcu her zaman RENDER
+       olcusudur - shader'daki `uwRes` de ayni sayiyi almali. */
+    sw = GetRenderWidth();
+    sh = GetRenderHeight();
+    if (sw <= 0 || sh <= 0) return 0.0;
+    /* Uyari: kameranin KONUMU artik gerekmez. Kursak shader'i ekran uzayinda
+       calisir (kaynak `underwater.glsl` de oyle); dunya uzayindan izdusurme
+       YOKTUR. Tek gereken ekran olcusu, zaman ve batma siddetidir. */
+
+    /* ---------- EFEKT SIDDETI ----------
+
+       Kaynak shader'in kendi zaman ilerlemesi yoktur; isinlar `iTime` ile
+       akar. SIDDET ise oyuncunun suya ne kadar girdiginden gelir ve FPS
+       modulunden OKUNUR (bkz. water_eye_depth01): yuzme sirasinda kafa
+       yuzeye kilitli oldugu icin "goz suyun altinda mi" sorusu bu oyunda
+       her zaman "hayir" doner ve o olcu tek basina yetersizdir.
+
+       Dalga genligi de bu olcuye girer cunku gecis bandi dalga zarfindan
+       dar olamaz. */
+    wave_params(e, &amp, &freq, &speed);
+    target = water_eye_depth01(amp);
+    if (target > 1.0f) target = 1.0f;
+    if (target < 0.0f) target = 0.0f;
+
+    /* ---------- SU YUZEYININ DUNYA YUKSEKLIGI ----------
+       Sinir PIKSEL BASINA bu duzleme gore hesaplanir; bu yuzden modul
+       burada yalnizca TEK bir sayi besler. Once FPS modulu sorulur
+       (govde icin dogru olan yuzey), yoksa hacim dogrudan taranir. */
     {
         float st[8];
-
         if (fps_water_state(st)) {
-            float eye_y = st[UW_FPS_EYE];
             surface = st[UW_FPS_SURFACE];
-            target = (surface - eye_y + UW_EYE_LEAD) / UW_EYE_SUBMERGE;
         } else {
-            /* Yedek yol: FPS modulu yoksa su hacmini dogrudan sorgula ve
-               batmayi mercegin konumuyla olc. */
-            float top, bottom;
-            target = 0.0f;
-            if (water_area_at(eye[0], eye[2], WATER_BODY_RADIUS, &top, &bottom)) {
-                surface = top;
-                target = (surface - eye[1] + UW_EYE_LEAD) / UW_EYE_SUBMERGE;
+            float eye3[3];
+            if (camera_eye(eye3)) {
+                float top, bottom;
+                if (water_area_at(eye3[0], eye3[2], 0.0f, &top, &bottom)) surface = top;
             }
-        }
-        if (target > 1.0f) target = 1.0f;
-        if (target < 0.0f) target = 0.0f;
-
-        /* Yuzey, MERCEGIN altindaki sudan okunur: FPS modulunun bildirdigi
-           yuzey govde icin dogruyken serbest kamerada yanlis olabilir.
-           Snell penceresi ve dalga genligi bu degeri kullanir. */
-        {
-            float top, bottom;
-            if (water_area_at(eye[0], eye[2], 0.0f, &top, &bottom)) surface = top;
         }
     }
 
@@ -1181,66 +1465,155 @@ static double fn_underwater_effect(int argc, const char **argv) {
     /* Renkler yuzeyle AYNI paletten: suyun ustu ile ekrandaki su ayni suya
        ait gorunmeli. */
     water_base_colors(shallow, deep);
-    wave_params(e, &amp, &freq, &speed);
     t = wave_clock(e);   /* YUZEYIN saatiyle AYNI deger; faz ayrisamaz */
-    sky_uniform_state(sky);
 
-    /* Kamera tabani: her pikselin isin yonu ve yuzey vurusu buradan cikar. */
-    {
-        float fx, fy, fz, rx, ry, rz, tf;
+    res[0] = (float)sw;
+    res[1] = (float)sh;
+    aspect = (float)sw/(float)sh;
+
+    /* ---------- KAMERA TABANI ----------
+       Piksel basina isin yonu buradan cikar; su cizgisinin sekli tamamen
+       bu tabana ve `surface`e baglidir. Semboller yoksa kimlik kalir ve
+       efekt kapali sayilir. */
+    pos[0] = pos[1] = pos[2] = 0.0f;
+    fwd[0] = 0.0f; fwd[1] = 0.0f; fwd[2] = -1.0f;
+    right[0] = 1.0f; right[1] = right[2] = 0.0f;
+    upv[0] = upv[2] = 0.0f; upv[1] = 1.0f;
+    if (camera_state(cam)) {
+        float fx, fy, fz, rx, ry, rz, len;
         pos[0] = cam[0]; pos[1] = cam[1]; pos[2] = cam[2];
         fx = cam[3] - cam[0]; fy = cam[4] - cam[1]; fz = cam[5] - cam[2];
-        tf = sqrtf(fx*fx + fy*fy + fz*fz);
-        if (tf > 1.0e-6f) { fx /= tf; fy /= tf; fz /= tf; }
+        len = sqrtf(fx*fx + fy*fy + fz*fz);
+        if (len > 1.0e-6f) { fx /= len; fy /= len; fz /= len; }
         fwd[0] = fx; fwd[1] = fy; fwd[2] = fz;
-        upv[0] = cam[6]; upv[1] = cam[7]; upv[2] = cam[8];
-        rx = fy*upv[2] - fz*upv[1];
-        ry = fz*upv[0] - fx*upv[2];
-        rz = fx*upv[1] - fy*upv[0];
-        tf = sqrtf(rx*rx + ry*ry + rz*rz);
-        if (tf > 1.0e-6f) { rx /= tf; ry /= tf; rz /= tf; }
-        right[0] = rx; right[1] = ry; right[2] = rz;
-        upv[0] = ry*fz - rz*fy;
-        upv[1] = rz*fx - rx*fz;
-        upv[2] = rx*fy - ry*fx;
-        tan_half = ((cam[9] > 0.0f) ? cam[9] : 60.0f) * 0.5f * WATER_DEG2RAD;
+        /* sag = ileri x yukari; sonra yukari = sag x ileri (diklestirme) */
+        rx = fy*cam[8] - fz*cam[7];
+        ry = fz*cam[6] - fx*cam[8];
+        rz = fx*cam[7] - fy*cam[6];
+        len = sqrtf(rx*rx + ry*ry + rz*rz);
+        if (len > 1.0e-6f) {
+            rx /= len; ry /= len; rz /= len;
+            right[0] = rx; right[1] = ry; right[2] = rz;
+            upv[0] = ry*fz - rz*fy;
+            upv[1] = rz*fx - rx*fz;
+            upv[2] = rx*fy - ry*fx;
+        }
+        tan_half = ((cam[9] > 0.0f) ? cam[9] : 60.0f)*0.5f*WATER_DEG2RAD;
         tan_half = tanf(tan_half);
         if (tan_half < 1.0e-6f) tan_half = 1.0e-6f;
     }
-    aspect = (float)sw / (float)sh;
-    res[0] = (float)sw;
-    res[1] = (float)sh;
 
-    SetShaderValue(g_uw_shader, uw_loc_res,      res,        SHADER_UNIFORM_VEC2);
-    SetShaderValue(g_uw_shader, uw_loc_time,     &t,         SHADER_UNIFORM_FLOAT);
-    SetShaderValue(g_uw_shader, uw_loc_campos,   pos,        SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, uw_loc_camfwd,   fwd,        SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, uw_loc_camright, right,      SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, uw_loc_camup,    upv,        SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, uw_loc_tanhalf,  &tan_half,  SHADER_UNIFORM_FLOAT);
-    SetShaderValue(g_uw_shader, uw_loc_aspect,   &aspect,    SHADER_UNIFORM_FLOAT);
-    water_world_aabb(e, box_lo, box_hi);
-    SetShaderValue(g_uw_shader, uw_loc_surfacey, &surface,   SHADER_UNIFORM_FLOAT);
-    SetShaderValue(g_uw_shader, uw_loc_boxmin,   box_lo,     SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, uw_loc_boxmax,   box_hi,     SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, uw_loc_amp,      &amp,       SHADER_UNIFORM_FLOAT);
-    SetShaderValue(g_uw_shader, uw_loc_freq,     &freq,      SHADER_UNIFORM_FLOAT);
-    SetShaderValue(g_uw_shader, uw_loc_speed,    &speed,     SHADER_UNIFORM_FLOAT);
-    SetShaderValue(g_uw_shader, uw_loc_shallow,  shallow,    SHADER_UNIFORM_VEC3);
-    SetShaderValue(g_uw_shader, uw_loc_deep,     deep,       SHADER_UNIFORM_VEC3);
+    SetShaderValue(g_uw_shader, uw_loc_res,      res,      SHADER_UNIFORM_VEC2);
+    SetShaderValue(g_uw_shader, uw_loc_time,     &t,       SHADER_UNIFORM_FLOAT);
+    SetShaderValue(g_uw_shader, uw_loc_shallow,  shallow,  SHADER_UNIFORM_VEC3);
+    SetShaderValue(g_uw_shader, uw_loc_deep,     deep,     SHADER_UNIFORM_VEC3);
+    SetShaderValue(g_uw_shader, uw_loc_campos,   pos,      SHADER_UNIFORM_VEC3);
+    SetShaderValue(g_uw_shader, uw_loc_camfwd,   fwd,      SHADER_UNIFORM_VEC3);
+    SetShaderValue(g_uw_shader, uw_loc_camright, right,    SHADER_UNIFORM_VEC3);
+    SetShaderValue(g_uw_shader, uw_loc_camup,    upv,      SHADER_UNIFORM_VEC3);
+    SetShaderValue(g_uw_shader, uw_loc_tanhalf,  &tan_half,SHADER_UNIFORM_FLOAT);
+    SetShaderValue(g_uw_shader, uw_loc_aspect,   &aspect,  SHADER_UNIFORM_FLOAT);
+    SetShaderValue(g_uw_shader, uw_loc_surfacey, &surface, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(g_uw_shader, uw_loc_amp,      &amp,     SHADER_UNIFORM_FLOAT);
+    SetShaderValue(g_uw_shader, uw_loc_freq,     &freq,    SHADER_UNIFORM_FLOAT);
+    SetShaderValue(g_uw_shader, uw_loc_speed,    &speed,   SHADER_UNIFORM_FLOAT);
     /* `uwSubmerge` YUMUSATILMIS siddettir: su, oyuncu indikce KADEMELI
-       yukselir, bir karede belirmez. `uwFade` sabit iskence katsayisidir. */
-    SetShaderValue(g_uw_shader, uw_loc_submerge, &fade,      SHADER_UNIFORM_FLOAT);
-    uw_push_sky(sky);
+       yukselir, bir karede belirmez. */
+    SetShaderValue(g_uw_shader, uw_loc_submerge, &fade,   SHADER_UNIFORM_FLOAT);
 
-    /* 2B dolgu. Ekran uzayinda calisir; kamera matrisi kullanilmaz. Dalgali
-       sinirin ustunde kalan pikseller shader'da ATILIR, yani zaten cizilmis
-       olan sahne orada aynen kalir. */
+    /* 2B dolgu. Ekran uzayinda calisir; kamera matrisi kullanilmaz.
+
+       DERINLIK TESTI KAPATILIR ve bu BIR ZORUNLULUKTUR.
+
+       Neden: raylib'in 2B toplu ciziminde (DrawRectangle) dortgen ekran
+       uzayindadir ve NDC z'si 0'dir - pencere derinliginde 0.5. Derinlik
+       testi acikken onunden gecen HER 3B geometri (arazi duvari, zemin, hatta
+       su yuzeyinin kendisi) 0.5'ten DAHA YAKIN bir derinlige sahiptir ve
+       dolguyu EZER. Kamera suyun icindeyken bakilan yonde su olmasi
+       gerekirken arkadaki arazi ve gokyuzu gorunur; "su beni kaplamiyor,
+       suyun yukarisini goruyorum" hatasi tam olarak budur.
+
+       Fiziksel gerekce: mercek suyun ICINDE iken baktigi her yonde SU vardir.
+       Onunden daha yakin bir geometri gecemez; dolgu bu yuzden kosulsuz
+       ustune yazmalidir.
+
+       DERINLIK YAZIMI DA KAPATILIR: dolgu, kendisinden sonra cizilecek
+       hicbir seyin derinligini bozmaz. Iki durum da cagri sonunda GERI ALINIR.
+
+       ATILAN PIKSEL YINE ATILIR: derinlik testi kapali olsa bile shader'in
+       `discard`i orada hicbir sey yazmaz. Kamera suyun DISINDAYKEN veya isin
+       suyu iskalayip gokyuzune kactiginda piksel bos kalir; su kenarinda ekran
+       gereksizce maviye boyanmaz. */
     rlDrawRenderBatchActive();
+    /* DERINLIK TESTI KAPATILIR ve bu DOGRUDUR: perde artik SAHNENIN KENDISINI
+       tasir (kare dokuya okunur, shader onu bulaniklastirip tonlar). Sahne
+       zaten `col`in icindedir, dolayisiyla ekran derinligine gore kirpmak
+       yalnizca rastgele bir bolgeyi acikta birakir. Suyun icindeyken tum
+       goruntu ayni su tonundan gecmelidir. */
+    rlDisableDepthTest();
     BeginBlendMode(BLEND_ALPHA);
-    BeginShaderMode(g_uw_shader);
-    DrawRectangle(0, 0, sw, sh, WHITE);
-    EndShaderMode();
+    /* DERINLIK TESTI ACIK KALIR - ONCEDEN KAPATILIYORDU VE YANLISTI.
+
+       Kapatildiginda perde her pikselin ustune KOSULSUZ yaziyordu: 2 m
+       otedeki magara tavani ile 30 m otedeki su yuzeyi perde icin AYNIYDI.
+       Perde tavani eziyor, magara duvarlari gorunmuyordu.
+
+       Perde 2B bir dortgendir; NDC z'si 0 yani derinlik 0.5'tir. Test
+       acikken:
+         * YAKIN geometri (magara tavani/duvari, kaya) perdeyi EZER ve
+           gorunur kalir.
+         * UZAK geometri (acik deniz, gokyuzu) perdeye YENILIR ve suya doner.
+       Boylece magara ici okunur ama acik suda ekran su ile kaplanir.
+
+       YAZMA KAPALI KALIR: perde kendisinden sonra cizilecek hicbir seyin
+       derinligini bozmaz. */
+    /* ---------- DERINLIK TESTI ACIK ----------
+
+       EndMode3D() derinlik testini KAPATIR. Bu yuzden perde, varsayilan
+       haldeyken her pikselin ustune KOSULSUZ yaziyordu: 2 m otedeki magara
+       tavani ile 30 m otedeki su yuzeyi perde icin AYNIYDI. Perde tavani
+       ezip magara duvarlarini gorunmez yapiyordu.
+
+       Test acilinca siralama su olur (dortgen, tasiyici asamada arka
+       duzleme itilir - bkz. gcl_underwater_shader.h: UNDERWATER_VERTEX_SRC):
+
+         * YAKIN geometri (magara tavani/duvari) perdeyi EZER -> gorunur kalir.
+         * BOS/zemin pikseller perdeye YENILIR -> su rengi orayi kaplar.
+
+       Koprunun altinda YILDIZ gorunmesinin sebebi de buydu: orada geometri
+       yoktur, perde atilir ve arkadaki gokyuzu aciga cikar. Perde arka
+       duzleme itildigi icin artik o boslugu da SU doldurur.
+
+       YAZMA KAPALI KALIR (rlDisableDepthMask): perde, kendisinden sonra
+       cizilecek hicbir seyin derinligini bozmaz. Test, cagri sonunda 2B
+       varsayilanina GERI ALINIR ki UI ve DrawFPS etkilenmesin. */
+    rlDisableDepthMask();
+    /* KAREYI OKU ve PERDEYI O KARENIN UZERINDEN GECIR.
+       Artik cizilen sey duz bir dikdortgen degil, CIZILMIS KARENIN
+       KENDISIDIR: shader onu bulaniklastirir, dalgayla buker ve sogurur.
+       `DrawTexturePro` partinin doku birimini otomatik baglar, shader da onu
+       `texture0` adiyla okur (bkz. gcl_underwater_shader.h). */
+    if (uw_frame_refresh(sw, sh)) {
+        /* KAYNAK DORTGEN DOKUNUN KENDI OLCUSUDUR, ekranin degil.
+
+           Doku, yakalanan karenin boyutuyla olusur; `sw/sh` ise cizim
+           hedefidir. Ikisi (pencere yeniden boyutlandirildiginda ya da
+           pencere olcusu ile cizim olcusu ayristiginda) FARKLI olabilir ve o
+           anda kaynak dortgen doku sinirlarinin DISINA tasar; shader gecerli
+           kare yerine kenar/tasma ornekler ve ekran bozulur ("bazen shader
+           devreye girmiyor" goruntusu). Doku olcusunu kullanmak bu uyusmayi
+           tamamen ortadan kaldirir. */
+        float fw = (float)g_uw_frame.width;
+        float fh = (float)g_uw_frame.height;
+        BeginShaderMode(g_uw_shader);
+        DrawTexturePro(g_uw_frame,
+                       (Rectangle){0.0f, 0.0f, fw, fh},
+                       (Rectangle){0.0f, 0.0f, (float)sw, (float)sh},
+                       (Vector2){0.0f, 0.0f}, 0.0f, WHITE);
+        EndShaderMode();
+    }
+    rlEnableDepthMask();
+    rlEnableDepthTest();
     EndBlendMode();
     return 0.0;
 }
@@ -1312,12 +1685,12 @@ static const GclNativeEntry g_entries[] = {
     E(fps_is_swimming,     "FPS_IsSwimming"),
     E(color,               "Color"),
     E(handle,              "Handle"),
-    E(pos_x,               "PosX"),
-    E(pos_y,               "PosY"),
-    E(pos_z,               "PosZ"),
-    E(rot_x,               "RotX"),
-    E(rot_y,               "RotY"),
-    E(rot_z,               "RotZ"),
+    E(pos_x,               "PositionX"),
+    E(pos_y,               "PositionY"),
+    E(pos_z,               "PositionZ"),
+    E(rot_x,               "RotateX"),
+    E(rot_y,               "RotateY"),
+    E(rot_z,               "RotateZ"),
     E(scale_x,             "ScaleX"),
     E(scale_y,             "ScaleY"),
     E(scale_z,             "ScaleZ"),

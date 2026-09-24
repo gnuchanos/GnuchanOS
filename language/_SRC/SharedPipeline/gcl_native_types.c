@@ -192,11 +192,20 @@ static const GclNativeField f_simplemesh[] = {
     {"Material","TerrainMaterial"}, {"Handle","int"},
     {"Position","Vector3"}, {"Rotate","Vector3"}, {"Scale","Vector3"}
 };
-/* RaylibSimpleLight.SunLight: Handle + Rotate. The rotation IS the sun angle
-   (Rotate.z = elevation, Rotate.y = azimuth) — see Modules/gcl_SimpleLight.c,
-   whose slot table (Handle, RotX, RotY, RotZ) matches this list exactly. */
+/* RaylibSimpleLight.SunLight — TEK struct, IKI ISIK TURU.
+
+   Gunes (directional) yonunu `Rotate`ten alir; nokta isik KONUMUNU
+   `Position`dan. `Sun`, nokta isigin bagli oldugu gunesin tutamacini tasir
+   (-1 = bagimsiz). Ayrim tutamac araligiyla yapilir: gunes 0..3, nokta
+   isiklar 1000'den baslar.
+
+   YAPRAK SIRASI (8 skaler) Modules/gcl_SimpleLight.c'nin LastSlot kanali ve
+   gcl_runner.c: last_sunlight[] ile BIREBIR ayni olmak zorundadir:
+
+       0 Handle   1 PosX   2 PosY   3 PosZ
+       4 RotX     5 RotY   6 RotZ   7 Sun                                       */
 static const GclNativeField f_sunlight[] = {
-    {"Handle","int"}, {"Rotate","Vector3"}
+    {"Handle","int"}, {"Position","Vector3"}, {"Rotate","Vector3"}, {"Sun","int"}
 };
 /* RaylibFOG.FOG — distance fog. The field order must match the module's
    LastSlot channel and gcl_runner.c's `last_fog` + `g_native_slot_maps`

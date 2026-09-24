@@ -1,21 +1,73 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GnuchanOS — GCL Book</title>
-  <link rel="stylesheet" href="css/style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GCL Book</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="topbar" id="topbar"></header>
 
-  <div class="layout">
-    <nav class="sidebar" id="sidebar"></nav>
-    <main class="content" id="content"></main>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">G</span>
+    <span class="name">GCL Book</span>
+    <span class="sub">GnuchanOS</span>
+  </div>
+  <div class="grow"></div>
+  <nav class="nav">
+    <a href="raylib.html">Raylib</a>
+    <a href="python.html">Python</a>
+    <a href="lua.html">Lua</a>
+  </nav>
+</header>
+
+<main class="home">
+
+  <div class="head">
+    <h1>GCL Book</h1>
+    <p>Three complete tracks. Each one starts from a blank file and ends with a
+       running raylib program.</p>
   </div>
 
-  <footer class="footer" id="footer"></footer>
+  <div class="cards">
+    <a class="card" href="raylib.html">
+      <span class="tag">Complete</span>
+      <h3>Raylib</h3>
+      <p>The Raylib module, the Raygui widgets, and the eight simple modules
+         that turn them into a game: player, terrain, collision, shaders,
+         lights, sky, fog and water.</p>
+    </a>
 
-  <script src="js/app.js?v=2"></script>
+    <a class="card" href="python.html">
+      <span class="tag">Complete</span>
+      <h3>Python</h3>
+      <p>Running a Python runtime from GCL with the Embed module, sharing values
+         across the boundary, and using the raylib bindings that ship with it.</p>
+    </a>
+
+    <a class="card" href="lua.html">
+      <span class="tag">Complete</span>
+      <h3>Lua</h3>
+      <p>Running a Lua runtime from GCL with the Embed module, sharing values
+         across the boundary, and using the raylib and raygui bindings that ship
+         with it.</p>
+    </a>
+  </div>
+
+  <div class="note info">
+    <span class="icon">&#8505;&#65039;</span>
+    <p>The full book is here: all three pages are complete and ready to read.
+       Every page is a plain file next to this one. There is no script, no
+       server and no build step: open <code>book/index.html</code> directly and
+       the links work.</p>
+  </div>
+
+</main>
+
+<footer>
+  GnuchanOS GCL Book &middot; GCL, Lua and Python
+</footer>
+
 </body>
 </html>

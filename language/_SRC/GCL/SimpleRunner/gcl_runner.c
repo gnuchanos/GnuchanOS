@@ -3028,7 +3028,9 @@ static const char *const last_aevent[] = {
    (RaylibShader: Handle; RaylibSimpleLight: Handle + RotX/RotY/RotZ).
    Sira, gcl_native_types.c'deki alan listesinin SKALER YAPRAK sirasidir. */
 static const char *const last_simpleshader[] = { "Handle" };
-static const char *const last_sunlight[] = { "Handle", "RotX", "RotY", "RotZ" };
+static const char *const last_sunlight[] = {
+    "Handle", "PosX", "PosY", "PosZ", "RotX", "RotY", "RotZ", "Sun"
+};
 /* RaylibFOG.FOG: mesafe sisi. Raylib'in Last* adlari DEGIL, modulun KENDI
    erisimci adlari kullanilir — degerler g_last_* yuvalarinda degil modulun
    kendi durumundadir (bkz. Modules/gcl_fog.c). Sira,
@@ -3166,7 +3168,13 @@ static const GclNativeSlotMap g_native_slot_maps[] = {
        of this same failure mode. Both types are LoadObj() registry handles
        drawn by the same fn_draw() in Modules/gcl_SimpleMesh.c. */
     { "RaylibSimpleMesh.Mesh", "RaylibSimpleMesh", 12 },
-    { "SunLight",    "RaylibSimpleLight",  4 },
+    /* RaylibSimpleLight.SunLight: 8 skaler yaprak (Handle, PosX/Y/Z,
+       RotX/Y/Z, Sun) — bkz. gcl_native_types.c: f_sunlight[] ve
+       last_sunlight[]. Sayi 4 KALIRSA `SUN.Update()` cagrisi yapilamaz:
+       call_native_struct_method() sayaclari karsilastirir ve uyusmazlikta
+       cagriyi tumden reddeder; cagri modul yoluna dusup
+       "'SUN.Update' is not a module call" diye raporlanir. */
+    { "SunLight",    "RaylibSimpleLight",  8 },
     { "SimpleShader", "RaylibShader",      1 },
     /* RaylibSKYBOX.Skybox: 9 skaler yaprak (Handle, DailyCycle, Time, DayLength,
        CloudAmount, CloudSpeed, StarAmount, SunSize, SunBrightness) — sayi

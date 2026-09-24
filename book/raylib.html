@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GCL Book - Raylib</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">G</span>
+    <span class="name">GCL Book</span>
+    <span class="sub">GnuchanOS</span>
+  </div>
+  <div class="grow"></div>
+  <nav class="nav">
+    <a href="raylib.html" aria-current="page">Raylib</a>
+    <a href="python.html">Python</a>
+    <a href="lua.html">Lua</a>
+  </nav>
+</header>
+
+<div class="shell">
+
+<aside class="side">
+  <h2>1. Getting started</h2>
+  <a href="#window">Window and the frame loop</a>
+  <a href="#drawing">Drawing in 2D</a>
+  <a href="#colors">Colors</a>
+  <a href="#input">Input</a>
+  <a href="#text">Text and fonts</a>
+
+  <h2>2. Assets</h2>
+  <a href="#textures">Textures and images</a>
+  <a href="#models">Models and meshes</a>
+  <a href="#audio">Audio</a>
+
+  <h2>3. 3D</h2>
+  <a href="#camera3d">3D mode and the camera</a>
+  <a href="#shaders">Shaders</a>
+
+  <h2>4. Simple modules</h2>
+  <a href="#fps">RaylibFPS</a>
+  <a href="#simplemesh">RaylibSimpleMesh</a>
+  <a href="#collision">RaylibSimpleCollision</a>
+  <a href="#shadermod">RaylibShader</a>
+  <a href="#light">RaylibSimpleLight</a>
+  <a href="#skybox">RaylibSkybox</a>
+  <a href="#fog">RaylibFOG</a>
+  <a href="#water">RaylibSimpleWater</a>
+
+  <h2>5. Core modules</h2>
+  <a href="#math">Math</a>
+  <a href="#stdio">Stdio</a>
+  <a href="#embed">Embed</a>
+
+  <h2>6. Other</h2>
+  <a href="#collisionapi">Collision helpers</a>
+  <a href="#files">Filesystem</a>
+  <a href="#gui">Raygui</a>
+</aside>
+
+<main>
+
+<div class="crumb">GCL Book / Raylib</div>
+<div class="head">
+  <h1>Raylib</h1>
+  <p>From an empty window to a lit, swimmable level. The module in the order
+     you actually need it.</p>
+</div>
+
+<section class="section" id="window">
+<h2>Window and the frame loop</h2>
+<div class="blocks">
+
+<p>The <strong>Raylib</strong> module is loaded with
+   <code>#native <Raylib></code>. Every program has the same skeleton:
+   open a window, run a loop, close it. <code>InitWindow</code> takes the size
+   and the title; <code>WindowShouldClose</code> returns 1 when the user clicks
+   the X or presses Escape, so the loop condition is negated.</p>
+
+<div class="code-card">
+  <div class="code-head">raylib.gcsf</div>
+<pre class="code"><span class="pre">#native <Raylib></span>
+
+<span class="ty">int</span> <span class="fn">main</span>() {
+    <span class="ty">Raylib</span>.<span class="fn">InitWindow</span>(<span class="num">800</span>, <span class="num">600</span>, <span class="str">"GCL Raylib"</span>);
+    <span class="ty">Raylib</span>.<span class="fn">SetTargetFPS</span>(<span class="num">60</span>);
+
+    <span class="kw">while</span> (!<span class="ty">Raylib</span>.<span class="fn">WindowShouldClose</span>()) {
+        <span class="ty">Raylib</span>.<span class="fn">BeginDrawing</span>();
+        <span class="ty">Raylib</span>.<span class="fn">ClearBackground</span>(<span class="ty">Raylib</span>.RAYWHITE);
+
+        <span class="cm"># everything you draw goes between these two calls</span>
+        <span class="ty">Raylib</span>.<span class="fn">DrawText</span>(<span class="str">"Hello from GCL"</span>, <span class="num">20</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="ty">Raylib</span>.BLACK);
+
+        <span class="ty">Raylib</span>.<span class="fn">EndDrawing</span>();
+    }
+
+    <span class="ty">Raylib</span>.<span class="fn">CloseWindow</span>();
+    <span class="kw">return</span> <span class="num">0</span>;
+}</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>InitWindow</td><td>InitWindow(int width, int height, gcChar title)</td><td>Open the window and the OpenGL context.</td></tr>
+<tr><td>CloseWindow</td><td>CloseWindow()</td><td>Close it and free the context.</td></tr>
+<tr><td>WindowShouldClose</td><td>WindowShouldClose() -> int</td><td>1 when the user asked to quit.</td></tr>
+<tr><td>SetTargetFPS</td><td>SetTargetFPS(int fps)</td><td>Cap the frame rate. 60 is the usual choice.</td></tr>
+<tr><td>BeginDrawing</td><td>BeginDrawing()</td><td>Start the frame.</td></tr>
+<tr><td>EndDrawing</td><td>EndDrawing()</td><td>Finish the frame and present it.</td></tr>
+<tr><td>ClearBackground</td><td>ClearBackground(Color color)</td><td>Fill the screen with one colour.</td></tr>
+<tr><td>GetScreenWidth</td><td>GetScreenWidth() -> int</td><td>Window width in pixels.</td></tr>
+<tr><td>GetScreenHeight</td><td>GetScreenHeight() -> int</td><td>Window height in pixels.</td></tr>
+<tr><td>GetFPS</td><td>GetFPS() -> int</td><td>Frames per second over the last second.</td></tr>
+<tr><td>GetFrameTime</td><td>GetFrameTime() -> int</td><td>Seconds the last frame took.</td></tr>
+<tr><td>GetTime</td><td>GetTime() -> int</td><td>Seconds since InitWindow.</td></tr>
+<tr><td>ShowCursor</td><td>ShowCursor()</td><td>Show the mouse cursor.</td></tr>
+<tr><td>HideCursor</td><td>HideCursor()</td><td>Hide it.</td></tr>
+<tr><td>DisableCursor</td><td>DisableCursor()</td><td>Hide it and lock it to the window centre.</td></tr>
+<tr><td>EnableCursor</td><td>EnableCursor()</td><td>Undo DisableCursor.</td></tr>
+<tr><td>SetWindowTitle</td><td>SetWindowTitle(gcChar title)</td><td>Change the title at runtime.</td></tr>
+<tr><td>SetWindowSize</td><td>SetWindowSize(int width, int height)</td><td>Resize the window.</td></tr>
+<tr><td>SetWindowPosition</td><td>SetWindowPosition(int x, int y)</td><td>Move the window on the desktop.</td></tr>
+<tr><td>SetWindowMinSize</td><td>SetWindowMinSize(int width, int height)</td><td>Smallest allowed size, for a resizable window.</td></tr>
+<tr><td>SetWindowState</td><td>SetWindowState(uint flags)</td><td>Apply a flag such as FLAG_WINDOW_RESIZABLE.</td></tr>
+<tr><td>ClearWindowState</td><td>ClearWindowState(uint flags)</td><td>Remove a flag.</td></tr>
+<tr><td>SetConfigFlags</td><td>SetConfigFlags(uint flags)</td><td>Must be called before InitWindow.</td></tr>
+<tr><td>ToggleFullscreen</td><td>ToggleFullscreen()</td><td>Switch between windowed and fullscreen.</td></tr>
+<tr><td>MaximizeWindow</td><td>MaximizeWindow()</td><td>Maximise the window.</td></tr>
+<tr><td>MinimizeWindow</td><td>MinimizeWindow()</td><td>Minimise it.</td></tr>
+<tr><td>RestoreWindow</td><td>RestoreWindow()</td><td>Back to the normal size.</td></tr>
+<tr><td>IsWindowReady</td><td>IsWindowReady() -> int</td><td>1 once the window exists.</td></tr>
+<tr><td>IsWindowResized</td><td>IsWindowResized() -> int</td><td>1 on the frame the window was resized.</td></tr>
+<tr><td>IsWindowMinimized</td><td>IsWindowMinimized() -> int</td><td>1 while minimised.</td></tr>
+<tr><td>IsWindowFocused</td><td>IsWindowFocused() -> int</td><td>1 while the window has focus.</td></tr>
+<tr><td>GetMonitorCount</td><td>GetMonitorCount() -> int</td><td>How many monitors are connected.</td></tr>
+<tr><td>GetMonitorWidth</td><td>GetMonitorWidth(int monitor) -> int</td><td>Monitor width in pixels.</td></tr>
+<tr><td>GetMonitorHeight</td><td>GetMonitorHeight(int monitor) -> int</td><td>Monitor height in pixels.</td></tr>
+<tr><td>GetMonitorRefreshRate</td><td>GetMonitorRefreshRate(int monitor) -> int</td><td>Monitor refresh rate in Hz.</td></tr>
+<tr><td>TakeScreenshot</td><td>TakeScreenshot(gcChar fileName)</td><td>Save the frame; the extension picks the format.</td></tr>
+</tbody>
+</table>
+
+<div class="note info">
+  <span class="icon">&#8505;&#65039;</span>
+  <p><code>WindowShouldClose()</code> returns 1/0 rather than a real bool, which
+     is why the loop reads <code>while (!Raylib.WindowShouldClose())</code>.</p>
+</div>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p><code>SetConfigFlags</code> only works before <code>InitWindow</code>. Call
+     it afterwards and the window is already built from the defaults.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="drawing">
+<h2>Drawing in 2D</h2>
+<div class="blocks">
+
+<p>Once the frame is open, everything is a draw call. Coordinates are pixels
+   from the top-left corner. These calls are immediate: they paint the current
+   frame and are forgotten, so the loop redraws the scene every time.</p>
+
+<div class="code-card">
+  <div class="code-head">shapes.gcsf</div>
+<pre class="code"><span class="ty">Raylib</span>.<span class="fn">DrawRectangle</span>(<span class="num">50</span>, <span class="num">50</span>, <span class="num">200</span>, <span class="num">100</span>, <span class="ty">Raylib</span>.RED);
+<span class="ty">Raylib</span>.<span class="fn">DrawRectangleLines</span>(<span class="num">50</span>, <span class="num">50</span>, <span class="num">200</span>, <span class="num">100</span>, <span class="ty">Raylib</span>.BLACK);
+<span class="ty">Raylib</span>.<span class="fn">DrawCircle</span>(<span class="num">400</span>, <span class="num">300</span>, <span class="num">40</span>, <span class="ty">Raylib</span>.BLUE);
+<span class="ty">Raylib</span>.<span class="fn">DrawLine</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">400</span>, <span class="num">300</span>, <span class="ty">Raylib</span>.GREEN);
+<span class="ty">Raylib</span>.<span class="fn">DrawFPS</span>(<span class="num">10</span>, <span class="num">10</span>);</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>DrawPixel</td><td>DrawPixel(int posX, int posY, Color color)</td><td>One pixel.</td></tr>
+<tr><td>DrawLine</td><td>DrawLine(int startPosX, int startPosY, int endPosX, int endPosY, Color color)</td><td>Straight line.</td></tr>
+<tr><td>DrawCircle</td><td>DrawCircle(int centerX, int centerY, float radius, Color color)</td><td>Filled circle.</td></tr>
+<tr><td>DrawCircleLines</td><td>DrawCircleLines(int centerX, int centerY, float radius, Color color)</td><td>Circle outline.</td></tr>
+<tr><td>DrawEllipse</td><td>DrawEllipse(int centerX, int centerY, float radiusH, float radiusV, Color color)</td><td>Filled ellipse.</td></tr>
+<tr><td>DrawEllipseLines</td><td>DrawEllipseLines(int centerX, int centerY, float radiusH, float radiusV, Color color)</td><td>Ellipse outline.</td></tr>
+<tr><td>DrawRectangle</td><td>DrawRectangle(int posX, int posY, int width, int height, Color color)</td><td>Filled rectangle.</td></tr>
+<tr><td>DrawRectangleLines</td><td>DrawRectangleLines(int posX, int posY, int width, int height, Color color)</td><td>Rectangle outline.</td></tr>
+<tr><td>DrawRectangleRec</td><td>DrawRectangleRec(Rectangle rec, Color color)</td><td>Filled rectangle from a Rectangle value.</td></tr>
+<tr><td>DrawRectangleRounded</td><td>DrawRectangleRounded(Rectangle rec, float roundness, int segments, Color color)</td><td>Rounded rectangle.</td></tr>
+<tr><td>DrawTriangle</td><td>DrawTriangle(Vector2 v1, Vector2 v2, Vector2 v3, Color color)</td><td>Filled triangle.</td></tr>
+<tr><td>DrawTriangleLines</td><td>DrawTriangleLines(Vector2 v1, Vector2 v2, Vector2 v3, Color color)</td><td>Triangle outline.</td></tr>
+<tr><td>DrawPoly</td><td>DrawPoly(Vector2 centerX, Vector2 centerY, int sides, float radius, float rotation, Color color)</td><td>Regular polygon; sides is the number of edges.</td></tr>
+<tr><td>DrawPolyLines</td><td>DrawPolyLines(Vector2 centerX, Vector2 centerY, int sides, float radius, float rotation, Color color)</td><td>Polygon outline.</td></tr>
+<tr><td>DrawFPS</td><td>DrawFPS(int posX, int posY)</td><td>Frame counter, top-left by convention.</td></tr>
+<tr><td>BeginBlendMode</td><td>BeginBlendMode(int mode)</td><td>Blend mode until the matching End.</td></tr>
+<tr><td>EndBlendMode</td><td>EndBlendMode()</td><td>Back to normal alpha blending.</td></tr>
+<tr><td>BeginScissorMode</td><td>BeginScissorMode(int x, int y, int width, int height)</td><td>Clip drawing to a rectangle.</td></tr>
+<tr><td>EndScissorMode</td><td>EndScissorMode()</td><td>End clipping.</td></tr>
+<tr><td>Rectangle</td><td>Rectangle(float x, float y, float width, float height) -> Rectangle</td><td>Build a Rectangle; also the raygui layout.</td></tr>
+</tbody>
+</table>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>Order is order: the last call paints over the earlier ones. That is the
+     entire depth model in 2D, so draw the background first and the HUD last.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="colors">
+<h2>Colors</h2>
+<div class="blocks">
+
+<p>A color is a 32-bit integer with the channels packed into it, so it is a
+   plain value you can store, pass and return. All the standard raylib colours
+   are constants on the module.</p>
+
+<div class="code-card">
+  <div class="code-head">colors.gcsf</div>
+<pre class="code"><span class="ty">int</span> sky = <span class="ty">Raylib</span>.SKYBLUE;
+
+<span class="ty">Raylib</span>.<span class="fn">ClearBackground</span>(<span class="ty">Raylib</span>.RAYWHITE);
+<span class="ty">Raylib</span>.<span class="fn">DrawText</span>(<span class="str">"dark"</span>, <span class="num">10</span>, <span class="num">10</span>, <span class="num">20</span>, <span class="ty">Raylib</span>.DARKGRAY);
+
+<span class="cm"># build your own: Color(r, g, b, a), each channel 0..255</span>
+<span class="ty">int</span> mine = <span class="ty">Raylib</span>.<span class="fn">Color</span>(<span class="num">255</span>, <span class="num">128</span>, <span class="num">0</span>, <span class="num">255</span>);
+<span class="ty">Raylib</span>.<span class="fn">DrawRectangle</span>(<span class="num">10</span>, <span class="num">40</span>, <span class="num">120</span>, <span class="num">40</span>, mine);</pre>
+</div>
+
+<table class="grid">
+<tbody>
+<tr><td>Raylib.RAYWHITE</td><td>Raylib.LIGHTGRAY</td><td>Raylib.GRAY</td><td>Raylib.DARKGRAY</td></tr>
+<tr><td>Raylib.YELLOW</td><td>Raylib.GOLD</td><td>Raylib.ORANGE</td><td>Raylib.PINK</td></tr>
+<tr><td>Raylib.RED</td><td>Raylib.MAROON</td><td>Raylib.GREEN</td><td>Raylib.LIME</td></tr>
+<tr><td>Raylib.DARKGREEN</td><td>Raylib.SKYBLUE</td><td>Raylib.BLUE</td><td>Raylib.DARKBLUE</td></tr>
+<tr><td>Raylib.PURPLE</td><td>Raylib.VIOLET</td><td>Raylib.DARKPURPLE</td><td>Raylib.BEIGE</td></tr>
+<tr><td>Raylib.BROWN</td><td>Raylib.DARKBROWN</td><td>Raylib.WHITE</td><td>Raylib.BLACK</td></tr>
+<tr><td>Raylib.BLANK</td><td>Raylib.MAGENTA</td><td></td><td></td></tr>
+</tbody>
+</table>
+
+<div class="note info">
+  <span class="icon">&#8505;&#65039;</span>
+  <p><code>Color()</code> takes alpha as the fourth channel, so
+     <code>Raylib.Color(255, 0, 0, 128)</code> is a half-transparent red.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="input">
+<h2>Input</h2>
+<div class="blocks">
+
+<p>Input calls all return 1 or 0. <code>IsKeyDown</code> is true for as long as
+   the key is held; <code>IsKeyPressed</code> is true only on the frame it went
+   down, which is what you want for one-shot actions such as jumping or
+   shooting.</p>
+
+<div class="code-card">
+  <div class="code-head">input.gcsf</div>
+<pre class="code"><span class="kw">if</span> (<span class="ty">Raylib</span>.<span class="fn">IsKeyDown</span>(<span class="ty">Raylib</span>.KEY_W)) {
+    <span class="cm"># held down: keep walking</span>
+}
+
+<span class="kw">if</span> (<span class="ty">Raylib</span>.<span class="fn">IsKeyPressed</span>(<span class="ty">Raylib</span>.KEY_SPACE)) {
+    <span class="cm"># pressed this frame: jump once</span>
+}
+
+<span class="ty">int</span> mx = <span class="ty">Raylib</span>.<span class="fn">GetMouseX</span>();
+<span class="ty">int</span> my = <span class="ty">Raylib</span>.<span class="fn">GetMouseY</span>();
+
+<span class="kw">if</span> (<span class="ty">Raylib</span>.<span class="fn">IsMouseButtonPressed</span>(<span class="ty">Raylib</span>.MOUSE_BUTTON_LEFT)) {
+    <span class="ty">Raylib</span>.<span class="fn">DrawCircle</span>(mx, my, <span class="num">10</span>, <span class="ty">Raylib</span>.RED);
+}</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>IsKeyDown</td><td>IsKeyDown(int key) -> int</td><td>1 while the key is held.</td></tr>
+<tr><td>IsKeyPressed</td><td>IsKeyPressed(int key) -> int</td><td>1 on the frame it went down.</td></tr>
+<tr><td>IsKeyReleased</td><td>IsKeyReleased(int key) -> int</td><td>1 on the frame it came up.</td></tr>
+<tr><td>IsKeyUp</td><td>IsKeyUp(int key) -> int</td><td>1 while the key is not held.</td></tr>
+<tr><td>GetKeyPressed</td><td>GetKeyPressed() -> int</td><td>The last key pressed, for text entry.</td></tr>
+<tr><td>GetCharPressed</td><td>GetCharPressed() -> int</td><td>The last character, already code-point.</td></tr>
+<tr><td>IsMouseButtonDown</td><td>IsMouseButtonDown(int button) -> int</td><td>1 while the button is held.</td></tr>
+<tr><td>IsMouseButtonPressed</td><td>IsMouseButtonPressed(int button) -> int</td><td>1 on the frame it went down.</td></tr>
+<tr><td>IsMouseButtonReleased</td><td>IsMouseButtonReleased(int button) -> int</td><td>1 on the frame it came up.</td></tr>
+<tr><td>GetMouseX</td><td>GetMouseX() -> int</td><td>Mouse X in pixels.</td></tr>
+<tr><td>GetMouseY</td><td>GetMouseY() -> int</td><td>Mouse Y in pixels.</td></tr>
+<tr><td>GetMousePosition</td><td>GetMousePosition() -> Vector2</td><td>Both coordinates as a Vector2.</td></tr>
+<tr><td>GetMouseWheelMove</td><td>GetMouseWheelMove() -> int</td><td>Wheel delta this frame.</td></tr>
+<tr><td>SetMousePosition</td><td>SetMousePosition(int x, int y) -> void</td><td>Move the cursor.</td></tr>
+<tr><td>SetMouseCursor</td><td>SetMouseCursor(int cursor) -> void</td><td>Pick a system cursor shape.</td></tr>
+<tr><td>IsGamepadAvailable</td><td>IsGamepadAvailable(int gamepad) -> int</td><td>1 if that gamepad is plugged in.</td></tr>
+<tr><td>GetGamepadAxisMovement</td><td>GetGamepadAxisMovement(int gamepad, int axis) -> int</td><td>Stick or trigger position.</td></tr>
+<tr><td>IsGamepadButtonPressed</td><td>IsGamepadButtonPressed(int gamepad, int button) -> int</td><td>1 on the frame it went down.</td></tr>
+</tbody>
+</table>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>Every binding uses the same names. The only difference is the prefix:
+     <code>Raylib.KEY_W</code> in GCL, <code>rl.KEY_W</code> in Lua, and the same
+     constant on the raylib module in Python. The full GCL list stays here on the
+     Raylib page; the Lua and Python pages explain the language-specific prefix.</p>
+
+  <div class="stack-list">
+    <div class="stack-group">
+      <h4>GCL letters + digits</h4>
+      <code>Raylib.KEY_A</code>
+      <code>Raylib.KEY_B</code>
+      <code>Raylib.KEY_C</code>
+      <code>Raylib.KEY_D</code>
+      <code>Raylib.KEY_E</code>
+      <code>Raylib.KEY_F</code>
+      <code>Raylib.KEY_G</code>
+      <code>Raylib.KEY_H</code>
+      <code>Raylib.KEY_I</code>
+      <code>Raylib.KEY_J</code>
+      <code>Raylib.KEY_K</code>
+      <code>Raylib.KEY_L</code>
+      <code>Raylib.KEY_M</code>
+      <code>Raylib.KEY_N</code>
+      <code>Raylib.KEY_O</code>
+      <code>Raylib.KEY_P</code>
+      <code>Raylib.KEY_Q</code>
+      <code>Raylib.KEY_R</code>
+      <code>Raylib.KEY_S</code>
+      <code>Raylib.KEY_T</code>
+      <code>Raylib.KEY_U</code>
+      <code>Raylib.KEY_V</code>
+      <code>Raylib.KEY_W</code>
+      <code>Raylib.KEY_X</code>
+      <code>Raylib.KEY_Y</code>
+      <code>Raylib.KEY_Z</code>
+      <code>Raylib.KEY_ZERO</code>
+      <code>Raylib.KEY_ONE</code>
+      <code>Raylib.KEY_TWO</code>
+      <code>Raylib.KEY_THREE</code>
+      <code>Raylib.KEY_FOUR</code>
+      <code>Raylib.KEY_FIVE</code>
+      <code>Raylib.KEY_SIX</code>
+      <code>Raylib.KEY_SEVEN</code>
+      <code>Raylib.KEY_EIGHT</code>
+      <code>Raylib.KEY_NINE</code>
+    </div>
+
+    <div class="stack-group">
+      <h4>GCL controls + function keys</h4>
+      <code>Raylib.KEY_SPACE</code>
+      <code>Raylib.KEY_ESCAPE</code>
+      <code>Raylib.KEY_ENTER</code>
+      <code>Raylib.KEY_TAB</code>
+      <code>Raylib.KEY_BACKSPACE</code>
+      <code>Raylib.KEY_INSERT</code>
+      <code>Raylib.KEY_DELETE</code>
+      <code>Raylib.KEY_RIGHT</code>
+      <code>Raylib.KEY_LEFT</code>
+      <code>Raylib.KEY_DOWN</code>
+      <code>Raylib.KEY_UP</code>
+      <code>Raylib.KEY_PAGE_UP</code>
+      <code>Raylib.KEY_PAGE_DOWN</code>
+      <code>Raylib.KEY_HOME</code>
+      <code>Raylib.KEY_END</code>
+      <code>Raylib.KEY_CAPS_LOCK</code>
+      <code>Raylib.KEY_SCROLL_LOCK</code>
+      <code>Raylib.KEY_PAUSE</code>
+      <code>Raylib.KEY_NUM_LOCK</code>
+      <code>Raylib.KEY_PRINT_SCREEN</code>
+      <code>Raylib.KEY_MENU</code>
+      <code>Raylib.KEY_F1</code>
+      <code>Raylib.KEY_F2</code>
+      <code>Raylib.KEY_F3</code>
+      <code>Raylib.KEY_F4</code>
+      <code>Raylib.KEY_F5</code>
+      <code>Raylib.KEY_F6</code>
+      <code>Raylib.KEY_F7</code>
+      <code>Raylib.KEY_F8</code>
+      <code>Raylib.KEY_F9</code>
+      <code>Raylib.KEY_F10</code>
+      <code>Raylib.KEY_F11</code>
+      <code>Raylib.KEY_F12</code>
+      <code>Raylib.KEY_APOSTROPHE</code>
+      <code>Raylib.KEY_COMMA</code>
+      <code>Raylib.KEY_MINUS</code>
+      <code>Raylib.KEY_PERIOD</code>
+      <code>Raylib.KEY_SLASH</code>
+      <code>Raylib.KEY_SEMICOLON</code>
+      <code>Raylib.KEY_EQUAL</code>
+      <code>Raylib.KEY_LEFT_BRACKET</code>
+      <code>Raylib.KEY_BACKSLASH</code>
+      <code>Raylib.KEY_RIGHT_BRACKET</code>
+      <code>Raylib.KEY_GRAVE</code>
+    </div>
+
+    <div class="stack-group">
+      <h4>GCL keypad + mouse</h4>
+      <code>Raylib.KEY_KP_0</code>
+      <code>Raylib.KEY_KP_1</code>
+      <code>Raylib.KEY_KP_2</code>
+      <code>Raylib.KEY_KP_3</code>
+      <code>Raylib.KEY_KP_4</code>
+      <code>Raylib.KEY_KP_5</code>
+      <code>Raylib.KEY_KP_6</code>
+      <code>Raylib.KEY_KP_7</code>
+      <code>Raylib.KEY_KP_8</code>
+      <code>Raylib.KEY_KP_9</code>
+      <code>Raylib.KEY_KP_DECIMAL</code>
+      <code>Raylib.KEY_KP_DIVIDE</code>
+      <code>Raylib.KEY_KP_MULTIPLY</code>
+      <code>Raylib.KEY_KP_SUBTRACT</code>
+      <code>Raylib.KEY_KP_ADD</code>
+      <code>Raylib.KEY_KP_ENTER</code>
+      <code>Raylib.KEY_KP_EQUAL</code>
+      <code>Raylib.MOUSE_BUTTON_LEFT</code>
+      <code>Raylib.MOUSE_BUTTON_RIGHT</code>
+      <code>Raylib.MOUSE_BUTTON_MIDDLE</code>
+      <code>Raylib.MOUSE_BUTTON_SIDE</code>
+      <code>Raylib.MOUSE_BUTTON_EXTRA</code>
+      <code>Raylib.MOUSE_BUTTON_FORWARD</code>
+      <code>Raylib.MOUSE_BUTTON_BACK</code>
+    </div>
+  </div>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="text">
+<h2>Text and fonts</h2>
+<div class="blocks">
+
+<p><code>DrawText</code> uses the built-in font and is enough for a HUD. For
+   anything larger or non-ASCII, load a <code>Font</code> and use
+   <code>DrawTextEx</code>, which takes an extra spacing value and a position
+   as a <code>Vector2</code>.</p>
+
+<div class="code-card">
+  <div class="code-head">text.gcsf</div>
+<pre class="code"><span class="ty">Raylib</span>.<span class="fn">DrawText</span>(<span class="str">"Score: 120"</span>, <span class="num">20</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="ty">Raylib</span>.BLACK);
+
+<span class="ty">Raylib</span>.Font big = <span class="ty">Raylib</span>.<span class="fn">LoadFontEx</span>(<span class="str">"font.ttf"</span>, <span class="num">64</span>, <span class="str">""</span>);
+
+<span class="ty">int</span> w = <span class="ty">Raylib</span>.<span class="fn">MeasureText</span>(<span class="str">"Score: 120"</span>, <span class="num">30</span>);
+<span class="ty">int</span> cx = (<span class="ty">Raylib</span>.<span class="fn">GetScreenWidth</span>() - w) / <span class="num">2</span>;
+
+<span class="ty">Raylib</span>.<span class="fn">DrawText</span>(<span class="str">"Score: 120"</span>, cx, <span class="num">20</span>, <span class="num">30</span>, <span class="ty">Raylib</span>.BLACK);
+
+<span class="ty">Raylib</span>.<span class="fn">UnloadFont</span>(big);</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>DrawText</td><td>DrawText(gcChar text, int posX, int posY, int fontSize, Color color)</td><td>Draw with the built-in font.</td></tr>
+<tr><td>DrawTextEx</td><td>DrawTextEx(Font font, gcChar text, Vector2 position, float fontSize, float spacing, Color tint)</td><td>Draw with a loaded font and custom spacing.</td></tr>
+<tr><td>MeasureText</td><td>MeasureText(gcChar text, int fontSize) -> int</td><td>Width in pixels, for centring.</td></tr>
+<tr><td>MeasureTextEx</td><td>MeasureTextEx(Font font, gcChar text, float fontSize, float spacing) -> Vector2</td><td>Width and height of a loaded font run.</td></tr>
+<tr><td>LoadFont</td><td>LoadFont(gcChar fileName) -> Font</td><td>Load a font at its default size.</td></tr>
+<tr><td>LoadFontEx</td><td>LoadFontEx(gcChar fileName, int fontSize, gcChar codepointsCsv) -> Font</td><td>Load at a chosen size; empty string means ASCII.</td></tr>
+<tr><td>UnloadFont</td><td>UnloadFont(Font font) -> void</td><td>Free it.</td></tr>
+<tr><td>SetTextLineSpacing</td><td>SetTextLineSpacing(int spacing) -> void</td><td>Spacing used by DrawText.</td></tr>
+<tr><td>TextFormat</td><td>TextFormat(gcChar text) -> gcChar</td><td>Format a string with the {} placeholders.</td></tr>
+<tr><td>TextToUpper</td><td>TextToUpper(gcChar text) -> gcChar</td><td>Upper case copy.</td></tr>
+<tr><td>TextToLower</td><td>TextToLower(gcChar text) -> gcChar</td><td>Lower case copy.</td></tr>
+<tr><td>TextLength</td><td>TextLength(gcChar text) -> int</td><td>Length in code points, not bytes.</td></tr>
+<tr><td>TextSubtext</td><td>TextSubtext(gcChar text, int position, int length) -> gcChar</td><td>A slice of a string.</td></tr>
+<tr><td>TextFindIndex</td><td>TextFindIndex(gcChar text, gcChar search) -> int</td><td>Index of a substring, or -1.</td></tr>
+</tbody>
+</table>
+
+</div>
+</section>
+
+<section class="section" id="textures">
+<h2>Textures and images</h2>
+<div class="blocks">
+
+<p>An <code>Image</code> is pixel data on the CPU; a <code>Texture2D</code> is
+   the same data uploaded to the GPU. You load an image when you want to read
+   or edit pixels, a texture when you only want to draw it. Both are objects
+   held in the module's registry, so the value you store is a handle.</p>
+
+<div class="code-card">
+  <div class="code-head">texture.gcsf</div>
+<pre class="code"><span class="ty">Raylib</span>.Texture2D logo = <span class="ty">Raylib</span>.<span class="fn">LoadTexture</span>(<span class="str">"logo.png"</span>);
+
+<span class="ty">Raylib</span>.<span class="fn">BeginDrawing</span>();
+    <span class="ty">Raylib</span>.<span class="fn">DrawTexture</span>(logo, <span class="num">10</span>, <span class="num">10</span>, <span class="ty">Raylib</span>.WHITE);
+<span class="ty">Raylib</span>.<span class="fn">EndDrawing</span>();
+
+<span class="ty">Raylib</span>.<span class="fn">UnloadTexture</span>(logo);</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>LoadTexture</td><td>LoadTexture(gcChar fileName) -> Texture2D</td><td>Load an image straight to the GPU.</td></tr>
+<tr><td>UnloadTexture</td><td>UnloadTexture(Texture2D texture) -> void</td><td>Free the GPU copy.</td></tr>
+<tr><td>DrawTexture</td><td>DrawTexture(Texture2D texture, int posX, int posY, Color tint) -> void</td><td>Draw at native size.</td></tr>
+<tr><td>DrawTextureEx</td><td>DrawTextureEx(Texture2D texture, Vector2 position, float rotation, float scale, Color tint) -> void</td><td>Draw rotated and scaled.</td></tr>
+<tr><td>DrawTextureRec</td><td>DrawTextureRec(Texture2D texture, Rectangle source, Vector2 position, Color tint) -> void</td><td>Draw one rectangle out of the sheet.</td></tr>
+<tr><td>LoadImage</td><td>LoadImage(gcChar fileName) -> Image</td><td>Load into CPU memory.</td></tr>
+<tr><td>LoadTextureFromImage</td><td>LoadTextureFromImage(Image image) -> Texture2D</td><td>Upload an image you loaded.</td></tr>
+<tr><td>UnloadImage</td><td>UnloadImage(Image image) -> void</td><td>Free the pixels.</td></tr>
+<tr><td>ImageResize</td><td>ImageResize(Image image, int newWidth, int newHeight) -> void</td><td>Scale the pixels.</td></tr>
+<tr><td>ImageFlipVertical</td><td>ImageFlipVertical(Image image) -> void</td><td>Flip the pixels.</td></tr>
+<tr><td>ImageColorTint</td><td>ImageColorTint(Image image, Color color) -> void</td><td>Tint the pixels in place.</td></tr>
+<tr><td>ImageDrawPixel</td><td>ImageDrawPixel(Image image, int x, int y, Color color) -> void</td><td>Set one pixel.</td></tr>
+<tr><td>ImageClearBackground</td><td>ImageClearBackground(Image image, Color color) -> void</td><td>Fill the whole image.</td></tr>
+<tr><td>ExportImage</td><td>ExportImage(Image image, gcChar fileName) -> void</td><td>Save the pixels to a file.</td></tr>
+<tr><td>GetImageWidth</td><td>GetImageWidth(Image image) -> int</td><td>Width in pixels.</td></tr>
+<tr><td>GetImageHeight</td><td>GetImageHeight(Image image) -> int</td><td>Height in pixels.</td></tr>
+</tbody>
+</table>
+
+<div class="note info">
+  <span class="icon">&#8505;&#65039;</span>
+  <p>A <code>Texture2D</code> has <code>width</code>, <code>height</code>,
+     <code>mipmaps</code> and <code>format</code> members you can read back
+     after the load.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="models">
+<h2>Models and meshes</h2>
+<div class="blocks">
+
+<p>A <code>Model</code> is a mesh plus the material it is drawn with. OBJ, IQM
+   and GLTF all load the same way. A <code>Mesh</code> is the raw geometry, for
+   when you generate it yourself.</p>
+
+<div class="code-card">
+  <div class="code-head">model.gcsf</div>
+<pre class="code"><span class="ty">Raylib</span>.Model cube = <span class="ty">Raylib</span>.<span class="fn">LoadModel</span>(<span class="str">"cube.obj"</span>);
+<span class="ty">Raylib</span>.Texture2D skin = <span class="ty">Raylib</span>.<span class="fn">LoadTexture</span>(<span class="str">"box.png"</span>);
+
+<span class="ty">Raylib</span>.<span class="fn">SetMaterialTexture</span>(cube.material, <span class="ty">Raylib</span>.MATERIAL_MAP_ALBEDO, skin);
+
+<span class="ty">Raylib</span>.<span class="fn">BeginMode3D</span>(camera);
+    <span class="ty">Raylib</span>.<span class="fn">DrawModel</span>(cube, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">1.0</span>f, <span class="ty">Raylib</span>.WHITE);
+<span class="ty">Raylib</span>.<span class="fn">EndMode3D</span>();
+
+<span class="ty">Raylib</span>.<span class="fn">UnloadModel</span>(cube);
+<span class="ty">Raylib</span>.<span class="fn">UnloadTexture</span>(skin);</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>LoadModel</td><td>LoadModel(gcChar fileName) -> Model</td><td>Load a model file.</td></tr>
+<tr><td>UnloadModel</td><td>UnloadModel(Model model)</td><td>Free it.</td></tr>
+<tr><td>DrawModel</td><td>DrawModel(Model model, float posX, float posY, float posZ, float scale, Color tint)</td><td>Draw it. Inside BeginMode3D.</td></tr>
+<tr><td>DrawModelEx</td><td>DrawModelEx(Model model, Vector3 position, Vector3 rotationAxis, float rotationAngle, Vector3 scale, Color tint)</td><td>Draw with explicit rotation and scale.</td></tr>
+<tr><td>SetMaterialTexture</td><td>SetMaterialTexture(Material material, int mapType, Texture2D texture)</td><td>Attach a texture to a material slot.</td></tr>
+<tr><td>GetModelBoundingBox</td><td>GetModelBoundingBox(Model model) -> BoundingBox</td><td>Axis-aligned box around the model.</td></tr>
+<tr><td>LoadModelFromMesh</td><td>LoadModelFromMesh(Mesh mesh) -> Model</td><td>Wrap a mesh you built yourself.</td></tr>
+<tr><td>GenMeshCube</td><td>GenMeshCube(float width, float height, float length) -> Mesh</td><td>Generate a cube.</td></tr>
+<tr><td>GenMeshSphere</td><td>GenMeshSphere(float radius, int rings, int slices) -> Mesh</td><td>Generate a sphere.</td></tr>
+<tr><td>GenMeshPlane</td><td>GenMeshPlane(float width, float length, int resX, int resZ) -> Mesh</td><td>Generate a subdivided plane, for terrain.</td></tr>
+<tr><td>GenMeshCylinder</td><td>GenMeshCylinder(float radius, float height, int slices) -> Mesh</td><td>Generate a cylinder.</td></tr>
+<tr><td>UnloadMesh</td><td>UnloadMesh(Mesh mesh)</td><td>Free the geometry.</td></tr>
+<tr><td>LoadModelAnimations</td><td>LoadModelAnimations(gcChar fileName) -> ModelAnimation</td><td>Load the animation clips of a model.</td></tr>
+<tr><td>UpdateModelAnimation</td><td>UpdateModelAnimation(Model model, ModelAnimation anim, int frame)</td><td>Pose the model at one frame.</td></tr>
+<tr><td>DrawMesh</td><td>DrawMesh(Mesh mesh, Material material, Matrix transform)</td><td>Draw raw geometry with a matrix.</td></tr>
+<tr><td>DrawBoundingBox</td><td>DrawBoundingBox(BoundingBox box, Color color)</td><td>Draw a debug box.</td></tr>
+<tr><td>DrawGrid</td><td>DrawGrid(int slices, float spacing)</td><td>Ground grid; useful while building a level.</td></tr>
+</tbody>
+</table>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>The material slots are constants: <code>MATERIAL_MAP_ALBEDO</code> is the
+     colour texture, <code>MATERIAL_MAP_NORMAL</code> the normal map,
+     <code>MATERIAL_MAP_ROUGHNESS</code> and <code>MATERIAL_MAP_METALNESS</code>
+     the two PBR channels.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="audio">
+<h2>Audio</h2>
+<div class="blocks">
+
+<p>Sounds are short and loaded whole; music streams from disk. Both need
+   <code>InitAudioDevice</code> before the first load and
+   <code>CloseAudioDevice</code> at the end. Every frame must call
+   <code>UpdateMusicStream</code> for the tracks that are playing &mdash; skip it
+   and the music goes quiet after one buffer.</p>
+
+<div class="code-card">
+  <div class="code-head">audio.gcsf</div>
+<pre class="code"><span class="ty">Raylib</span>.<span class="fn">InitAudioDevice</span>();
+
+<span class="ty">Raylib</span>.Sound hit = <span class="ty">Raylib</span>.<span class="fn">LoadSound</span>(<span class="str">"hit.wav"</span>);
+<span class="ty">Raylib</span>.Music theme = <span class="ty">Raylib</span>.<span class="fn">LoadMusicStream</span>(<span class="str">"theme.ogg"</span>);
+<span class="ty">Raylib</span>.<span class="fn">PlayMusicStream</span>(theme);
+
+<span class="kw">while</span> (!<span class="ty">Raylib</span>.<span class="fn">WindowShouldClose</span>()) {
+    <span class="ty">Raylib</span>.<span class="fn">UpdateMusicStream</span>(theme);   <span class="cm"># required every frame</span>
+
+    <span class="kw">if</span> (<span class="ty">Raylib</span>.<span class="fn">IsKeyPressed</span>(<span class="ty">Raylib</span>.KEY_SPACE)) {
+        <span class="ty">Raylib</span>.<span class="fn">PlaySound</span>(hit);
+    }
+}
+
+<span class="ty">Raylib</span>.<span class="fn">UnloadSound</span>(hit);
+<span class="ty">Raylib</span>.<span class="fn">UnloadMusicStream</span>(theme);
+<span class="ty">Raylib</span>.<span class="fn">CloseAudioDevice</span>();</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>InitAudioDevice</td><td>InitAudioDevice()</td><td>Open the audio device.</td></tr>
+<tr><td>CloseAudioDevice</td><td>CloseAudioDevice()</td><td>Close it.</td></tr>
+<tr><td>IsAudioDeviceReady</td><td>IsAudioDeviceReady() -> int</td><td>1 once it is open.</td></tr>
+<tr><td>SetMasterVolume</td><td>SetMasterVolume(float volume)</td><td>0.0 to 1.0, affects everything.</td></tr>
+<tr><td>LoadSound</td><td>LoadSound(gcChar fileName) -> Sound</td><td>Load a short clip whole.</td></tr>
+<tr><td>UnloadSound</td><td>UnloadSound(Sound sound)</td><td>Free it.</td></tr>
+<tr><td>PlaySound</td><td>PlaySound(Sound sound)</td><td>Play once.</td></tr>
+<tr><td>StopSound</td><td>StopSound(Sound sound)</td><td>Stop it.</td></tr>
+<tr><td>PauseSound</td><td>PauseSound(Sound sound)</td><td>Pause playback.</td></tr>
+<tr><td>ResumeSound</td><td>ResumeSound(Sound sound)</td><td>Resume playback.</td></tr>
+<tr><td>IsSoundPlaying</td><td>IsSoundPlaying(Sound sound) -> int</td><td>1 while it is audible.</td></tr>
+<tr><td>SetSoundVolume</td><td>SetSoundVolume(Sound sound, float volume)</td><td>Per-sound volume.</td></tr>
+<tr><td>SetSoundPitch</td><td>SetSoundPitch(Sound sound, float pitch)</td><td>Playback rate.</td></tr>
+<tr><td>LoadMusicStream</td><td>LoadMusicStream(gcChar fileName) -> Music</td><td>Stream a long track from disk.</td></tr>
+<tr><td>UnloadMusicStream</td><td>UnloadMusicStream(Music music)</td><td>Free it.</td></tr>
+<tr><td>PlayMusicStream</td><td>PlayMusicStream(Music music)</td><td>Start streaming.</td></tr>
+<tr><td>UpdateMusicStream</td><td>UpdateMusicStream(Music music)</td><td>Feed the buffer. Call every frame.</td></tr>
+<tr><td>StopMusicStream</td><td>StopMusicStream(Music music)</td><td>Stop it.</td></tr>
+<tr><td>PauseMusicStream</td><td>PauseMusicStream(Music music)</td><td>Pause it.</td></tr>
+<tr><td>ResumeMusicStream</td><td>ResumeMusicStream(Music music)</td><td>Resume it.</td></tr>
+<tr><td>SetMusicVolume</td><td>SetMusicVolume(Music music, float volume)</td><td>Per-track volume.</td></tr>
+<tr><td>SetMusicPitch</td><td>SetMusicPitch(Music music, float pitch)</td><td>Playback rate.</td></tr>
+<tr><td>GetMusicTimeLength</td><td>GetMusicTimeLength(Music music) -> int</td><td>Length in seconds.</td></tr>
+<tr><td>GetMusicTimePlayed</td><td>GetMusicTimePlayed(Music music) -> int</td><td>Position in seconds.</td></tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p>Forget <code>UpdateMusicStream</code> and the music plays for a fraction of
+     a second then goes quiet. It belongs inside the frame loop, not before it.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="camera3d">
+<h2>3D mode and the camera</h2>
+<div class="blocks">
+
+<p>3D lives between <code>BeginMode3D</code> and <code>EndMode3D</code>, which
+   take a <code>Camera3D</code>: a position, a target it looks at, an up vector
+   and a field of view. <code>CAMERA_PERSPECTIVE</code> is the normal choice,
+   <code>CAMERA_ORTHOGRAPHIC</code> the flat one.</p>
+
+<div class="code-card">
+  <div class="code-head">camera3d.gcsf</div>
+<pre class="code"><span class="ty">Raylib</span>.Camera3D cam = <span class="ty">Raylib</span>.<span class="fn">Camera3D</span>(
+    <span class="num">0</span>, <span class="num">10</span>, <span class="num">10</span>,    <span class="cm"># position</span>
+    <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>,      <span class="cm"># target</span>
+    <span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>,      <span class="cm"># up</span>
+    <span class="num">60.0</span>f, <span class="ty">Raylib</span>.CAMERA_PERSPECTIVE);
+
+<span class="ty">Raylib</span>.<span class="fn">BeginMode3D</span>(cam);
+    <span class="ty">Raylib</span>.<span class="fn">DrawGrid</span>(<span class="num">10</span>, <span class="num">1.0</span>f);
+    <span class="ty">Raylib</span>.<span class="fn">DrawCube</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">2</span>, <span class="num">2</span>, <span class="num">2</span>, <span class="ty">Raylib</span>.RED);
+<span class="ty">Raylib</span>.<span class="fn">EndMode3D</span>();</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>BeginMode3D</td><td>BeginMode3D(Camera3D camera)</td><td>Enter 3D mode.</td></tr>
+<tr><td>EndMode3D</td><td>EndMode3D()</td><td>Back to 2D.</td></tr>
+<tr><td>Camera3D</td><td>Camera3D(Vector3 position, Vector3 target, Vector3 up, float fovy, int projection) -> Camera3D</td><td>Build a camera.</td></tr>
+<tr><td>DrawCube</td><td>DrawCube(float posX, float posY, float posZ, float width, float height, float length, Color color)</td><td>Filled cube.</td></tr>
+<tr><td>DrawCubeWires</td><td>DrawCubeWires(float posX, float posY, float posZ, float width, float height, float length, Color color)</td><td>Cube edges.</td></tr>
+<tr><td>DrawSphere</td><td>DrawSphere(float posX, float posY, float posZ, float radius, Color color)</td><td>Filled sphere.</td></tr>
+<tr><td>DrawPlane</td><td>DrawPlane(Vector3 center, Vector2 size, Color color)</td><td>Ground quad.</td></tr>
+<tr><td>DrawRay</td><td>DrawRay(Ray ray, Color color)</td><td>Debug ray.</td></tr>
+<tr><td>GetCameraMatrix</td><td>GetCameraMatrix(Camera camera) -> Matrix</td><td>View matrix, for shader uniforms.</td></tr>
+<tr><td>UpdateCamera</td><td>UpdateCamera(Camera camera, int mode)</td><td>Built-in free / orbital / first person controls.</td></tr>
+<tr><td>GetScreenToWorldRay</td><td>GetScreenToWorldRay(Vector2 position, Camera camera) -> Ray</td><td>Mouse position to a 3D ray, for picking.</td></tr>
+<tr><td>GetWorldToScreen</td><td>GetWorldToScreen(float positionx, float positiony, float positionz, Camera camera) -> Vector2</td><td>Project a world point onto the screen, for labels.</td></tr>
+</tbody>
+</table>
+
+<div class="note info">
+  <span class="icon">&#8505;&#65039;</span>
+  <p>Everything between the two mode calls is 3D and depth tested; anything after
+     <code>EndMode3D</code> is 2D and always on top. That is why a HUD or an
+     underwater tint goes after the block.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="shaders">
+<h2>Shaders</h2>
+<div class="blocks">
+
+<p>A shader is a pair of programs: a vertex stage that positions geometry and a
+   fragment stage that decides the colour of every pixel. GCL can load them from
+   files, set their uniforms and draw with them. The
+   <a href="#shadermod">RaylibShader</a> module below is the same idea packaged
+   for the simple modules.</p>
+
+<div class="code-card">
+  <div class="code-head">shader.gcsf</div>
+<pre class="code"><span class="ty">Raylib</span>.Shader sh = <span class="ty">Raylib</span>.<span class="fn">LoadShader</span>(<span class="str">"wave.vs"</span>, <span class="str">"wave.fs"</span>);
+
+<span class="ty">int</span> loc = <span class="ty">Raylib</span>.<span class="fn">GetShaderLocation</span>(sh, <span class="str">"time"</span>);
+<span class="ty">Raylib</span>.<span class="fn">SetShaderValue</span>(sh, loc, <span class="str">"1.5"</span>, <span class="ty">Raylib</span>.SHADER_UNIFORM_FLOAT);
+
+<span class="ty">Raylib</span>.<span class="fn">BeginShaderMode</span>(sh);
+    <span class="ty">Raylib</span>.<span class="fn">DrawModel</span>(level, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">1.0</span>f, <span class="ty">Raylib</span>.WHITE);
+<span class="ty">Raylib</span>.<span class="fn">EndShaderMode</span>();
+
+<span class="ty">Raylib</span>.<span class="fn">UnloadShader</span>(sh);</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>LoadShader</td><td>LoadShader(gcChar vsFileName, gcChar fsFileName) -> Shader</td><td>Load a vertex / fragment pair.</td></tr>
+<tr><td>LoadShaderFromMemory</td><td>LoadShaderFromMemory(gcChar vsCode, gcChar fsCode) -> Shader</td><td>Same, from source strings.</td></tr>
+<tr><td>IsShaderValid</td><td>IsShaderValid(Shader shader) -> int</td><td>1 if it compiled and linked.</td></tr>
+<tr><td>UnloadShader</td><td>UnloadShader(Shader shader)</td><td>Free it.</td></tr>
+<tr><td>GetShaderLocation</td><td>GetShaderLocation(Shader shader, gcChar uniformName) -> int</td><td>Look up a uniform.</td></tr>
+<tr><td>SetShaderValue</td><td>SetShaderValue(Shader shader, int locIndex, gcChar value, int uniformType)</td><td>Write a uniform scalar.</td></tr>
+<tr><td>SetShaderValueV</td><td>SetShaderValueV(Shader shader, int locIndex, gcChar value, int uniformType, int count)</td><td>Write a vector of uniforms.</td></tr>
+<tr><td>SetShaderValueMatrix</td><td>SetShaderValueMatrix(Shader shader, int locIndex, Matrix mat)</td><td>Write a 4x4 matrix.</td></tr>
+<tr><td>SetShaderValueTexture</td><td>SetShaderValueTexture(Shader shader, int locIndex, Texture2D texture)</td><td>Bind a sampler.</td></tr>
+<tr><td>BeginShaderMode</td><td>BeginShaderMode(Shader shader)</td><td>Everything until End uses this shader.</td></tr>
+<tr><td>EndShaderMode</td><td>EndShaderMode()</td><td>Back to the default shader.</td></tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p>The uniform type must match the declaration in the shader source, and the
+     value travels as text. The constants are
+     <code>SHADER_UNIFORM_FLOAT</code>, <code>SHADER_UNIFORM_VEC2</code>,
+     <code>SHADER_UNIFORM_VEC3</code>, <code>SHADER_UNIFORM_VEC4</code>,
+     <code>SHADER_UNIFORM_INT</code> and <code>SHADER_UNIFORM_SAMPLER2D</code>.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="fps">
+<h2>RaylibFPS &mdash; the player</h2>
+<div class="blocks">
+
+<p>The module owns the walk camera. Declare an <code>FPS</code>, place it, then
+   call the two methods that move it: <code>Move()</code> reads the keyboard and
+   <code>Look()</code> reads the mouse. <code>Height</code> is the eye height
+   above the player's feet.</p>
+
+<p><code>PLAYER.Camera</code> is the <code>Camera3D</code> the scene is drawn
+   with, so it goes straight into <code>BeginMode3D</code>. Swimming state also
+   lives here, for the reason given at the water module.</p>
+
+<div class="code-card">
+  <div class="code-head">player.gcsf</div>
+<pre class="code"><span class="ty">RaylibFPS</span>.FPS PLAYER;
+
+PLAYER.<span class="ty">Position</span>.x = <span class="num">0</span>;
+PLAYER.<span class="ty">Position</span>.y = <span class="num">5</span>;
+PLAYER.<span class="ty">Position</span>.z = <span class="num">0</span>;
+PLAYER.Height     = <span class="num">1.8</span>f;   <span class="cm"># eye height</span>
+
+<span class="kw">while</span> (!<span class="ty">Raylib</span>.<span class="fn">WindowShouldClose</span>()) {
+    PLAYER.<span class="fn">Move</span>();               <span class="cm"># WASD / arrow keys</span>
+    PLAYER.<span class="fn">Look</span>();               <span class="cm"># mouse look</span>
+
+    <span class="ty">Raylib</span>.<span class="fn">BeginMode3D</span>(PLAYER.Camera);
+        Terrain.<span class="fn">Draw</span>();
+    <span class="ty">Raylib</span>.<span class="fn">EndMode3D</span>();
+}</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Position.x / .y / .z</td><td>Where the player's feet are.</td></tr>
+<tr><td>Height</td><td>Eye height above the feet. Default 1.8.</td></tr>
+<tr><td>Camera</td><td>The Camera3D handed to BeginMode3D.</td></tr>
+<tr><td>Move()</td><td>Keyboard movement for this frame.</td></tr>
+<tr><td>Look()</td><td>Mouse look for this frame.</td></tr>
+<tr><td>SetPosition(x, y, z)</td><td>Teleport the player.</td></tr>
+<tr><td>GetPositionX() / Y() / Z()</td><td>Read the position back, one axis at a time.</td></tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p>Moving alone does not respect the ground: without a collision pass the
+     player walks through hills and floats off cliffs. That is the next
+     module's job.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="simplemesh">
+<h2>RaylibSimpleMesh &mdash; terrain and props</h2>
+<div class="blocks">
+
+<p><code>TerrainLoad(obj)</code> loads a level and returns a handle whose fields
+   you set: a texture and a tint colour. <code>LoadObj(file)</code> does the same
+   for a single prop. Both are drawn with <code>Draw()</code> from inside
+   <code>BeginMode3D</code>.</p>
+
+<p>Terrain and Mesh are the same operation underneath: load a file as a raylib
+   Model and keep it in this module's registry. The returned number is the
+   registry index, and that is what the struct's handle leaf stores. There is
+   deliberately one registry and one <code>Draw()</code> path, so a Terrain and
+   a Mesh behave identically and neither drifts from the other.</p>
+
+<p>Placement uses <code>Position</code>, <code>Rotate</code> and
+   <code>Scale</code>; rotation is in degrees. Always pair a load with its
+   unload at the end of the program.</p>
+
+<div class="code-card">
+  <div class="code-head">mesh.gcsf</div>
+<pre class="code"><span class="ty">RaylibSimpleMesh</span>.Terrain Terrain = <span class="ty">RaylibSimpleMesh</span>.<span class="fn">TerrainLoad</span>(<span class="str">"terrain.obj"</span>);
+Terrain.Material.Texture = <span class="ty">Raylib</span>.<span class="fn">LoadTexture</span>(<span class="str">"terrain.png"</span>);
+Terrain.Material.Color   = <span class="ty">Raylib</span>.WHITE;
+
+<span class="ty">RaylibSimpleMesh</span>.Mesh CUBE = <span class="ty">RaylibSimpleMesh</span>.<span class="fn">LoadObj</span>(<span class="str">"cube.obj"</span>);
+CUBE.Material.Texture = <span class="ty">Raylib</span>.<span class="fn">LoadTexture</span>(<span class="str">"box.png"</span>);
+CUBE.Material.Color   = <span class="ty">Raylib</span>.WHITE;
+
+CUBE.<span class="ty">Position</span>.z = <span class="num">6</span>;    <span class="cm"># world position, default 0,0,0</span>
+CUBE.<span class="ty">Rotate</span>.y   = <span class="num">45</span>;   <span class="cm"># degrees, default 0,0,0</span>
+CUBE.<span class="ty">Scale</span>.x    = <span class="num">1</span>;    <span class="cm"># default 1,1,1</span>
+
+<span class="cm"># inside BeginMode3D:  Terrain.Draw();  CUBE.Draw();</span>
+
+<span class="ty">RaylibSimpleMesh</span>.<span class="fn">TerrainUnload</span>(<span class="str">"terrain.obj"</span>);
+<span class="ty">RaylibSimpleMesh</span>.<span class="fn">UnloadObj</span>(CUBE);</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>TerrainLoad(file)</td><td>Load a level; returns a terrain handle.</td></tr>
+<tr><td>TerrainUnload(name)</td><td>Free it; takes the file name it was loaded with.</td></tr>
+<tr><td>LoadObj(file)</td><td>Load a single prop.</td></tr>
+<tr><td>UnloadObj(handle)</td><td>Free that prop.</td></tr>
+<tr><td>Material.Texture</td><td>Texture handle from Raylib.LoadTexture.</td></tr>
+<tr><td>Material.Color</td><td>Tint multiplied over the texture.</td></tr>
+<tr><td>Position.x / .y / .z</td><td>Where the object sits.</td></tr>
+<tr><td>Rotate.x / .y / .z</td><td>Rotation in degrees.</td></tr>
+<tr><td>Scale.x / .y / .z</td><td>Size multiplier, default 1.</td></tr>
+<tr><td>Draw()</td><td>Draw it. Must be inside BeginMode3D.</td></tr>
+</tbody>
+</table>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>File names are resolved for you: <code>"terrain.obj"</code> is enough and
+     the module looks in the project's asset directory. A name that already
+     contains a slash is used as-is.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="collision">
+<h2>RaylibSimpleCollision &mdash; standing and sliding</h2>
+<div class="blocks">
+
+<p>Two calls do the whole job. <code>TerrainCollision(player, terrain)</code>
+   finds the ground height under the player and keeps them standing on it.
+   <code>MoveAndSlide(player, dx, dy, dz, iterations, mesh)</code> resolves
+   overlap against solid meshes and <strong>slides</strong> along whatever was
+   hit &mdash; the same idea as Godot's <code>move_and_slide()</code>.</p>
+
+<p>The player is treated as a capsule: <code>Height</code> tall and a small
+   radius. The first three arguments are a movement vector; because the player
+   module has already moved the player this frame, the demo passes
+   <code>0, 0, 0</code> and lets the call perform only the resolution step.</p>
+
+<div class="code-card">
+  <div class="code-head">collision.gcsf</div>
+<pre class="code">PLAYER.<span class="fn">Move</span>();
+PLAYER.<span class="fn">Look</span>();
+
+<span class="cm"># Ground: keep the player on the terrain.</span>
+<span class="ty">RaylibSimpleCollision</span>.<span class="fn">TerrainCollision</span>(PLAYER, Terrain);
+
+<span class="cm"># Solid objects: push out of the crate and slide along it.</span>
+<span class="ty">RaylibSimpleCollision</span>.<span class="fn">MoveAndSlide</span>(PLAYER, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">4</span>, CUBE);</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>TerrainCollision(player, terrain)</td><td>Ground clamp against the terrain mesh.</td></tr>
+<tr><td>MoveAndSlide(player, dx, dy, dz, iterations, mesh)</td><td>Resolve overlap and slide along the mesh.</td></tr>
+<tr><td>iterations</td><td>How many resolution passes to run; 4 is plenty.</td></tr>
+</tbody>
+</table>
+
+<div class="note info">
+  <span class="icon">&#8505;&#65039;</span>
+  <p>Order matters: move and look first, then collide. Resolving before the
+     player has moved would test last frame's position.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="shadermod">
+<h2>RaylibShader &mdash; your own fragment shader</h2>
+<div class="blocks">
+
+<p><code>CreateSimpleShader(vs, fs, version)</code> loads a vertex/fragment pair
+   and returns a handle. The files are looked up in <code>assets/</code>; a file
+   that does not already start with <code>#version</code> gets the version you
+   pass prepended to it.</p>
+
+<p>The module exists because <code>DrawModel</code> does not honour
+   <code>BeginShaderMode</code> by itself: it always draws with the shader stored
+   in the model's <em>material</em>. The mesh module therefore asks which shader
+   the script selected before drawing, which is what makes the block below
+   actually take effect.</p>
+
+<div class="code-card">
+  <div class="code-head">shader_module.gcsf</div>
+<pre class="code"><span class="ty">RaylibShader</span>.SimpleShader shader =
+    <span class="ty">RaylibShader</span>.<span class="fn">CreateSimpleShader</span>(<span class="str">"lighting.vs"</span>, <span class="str">"lighting.fs"</span>,
+                                    <span class="ty">Raylib</span>.GLSL_VERSION);
+
+<span class="ty">Raylib</span>.<span class="fn">BeginShaderMode</span>(shader);
+    Terrain.<span class="fn">Draw</span>();   <span class="cm"># drawn with lighting.fs</span>
+    water.<span class="fn">Draw</span>();
+    CUBE.<span class="fn">Draw</span>();
+<span class="ty">Raylib</span>.<span class="fn">EndShaderMode</span>();</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>CreateSimpleShader(vs, fs, glslVersion)</td><td>Load a shader pair; returns a handle.</td></tr>
+<tr><td>Handle</td><td>The shader handle, for read-back.</td></tr>
+</tbody>
+</table>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>Everything that must be lit or fogged goes <strong>inside</strong> the
+     block. Anything drawn outside it uses the default shader &mdash; which is
+     exactly how the light glow cubes stay unfogged.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="light">
+<h2>RaylibSimpleLight &mdash; sun and point lights</h2>
+<div class="blocks">
+
+<p>One struct serves both light kinds and the module tells them apart by handle
+   range: suns are <code>0..SUN_MAX-1</code>, point lights start at
+   <code>1000</code>. A sun uses <code>Rotate</code> (a direction, in degrees);
+   a point light uses <code>Position</code>.</p>
+
+<p><code>Update()</code> is the part that matters: it writes the light into the
+   shader's uniforms. Until it is called, setting <code>Position.x</code>
+   changes a variable in the interpreter and nothing on screen.
+   <code>Draw()</code> is pure visualisation &mdash; a glowing cube marking where
+   the light is &mdash; and must be called inside <code>BeginMode3D</code>.</p>
+
+<div class="code-card">
+  <div class="code-head">lights.gcsf</div>
+<pre class="code"><span class="ty">RaylibSimpleLight</span>.SunLight SUN = <span class="ty">RaylibSimpleLight</span>.<span class="fn">CreateSun</span>(<span class="ty">Raylib</span>.WHITE);
+SUN.<span class="ty">Rotate</span>.x = <span class="num">0</span>;
+SUN.<span class="ty">Rotate</span>.z = <span class="num">90</span>;   <span class="cm"># elevation: 90 = straight overhead</span>
+SUN.<span class="ty">Rotate</span>.y = <span class="num">0</span>;
+
+<span class="cm"># CreatePointLight(color, sun, x, y, z)</span>
+<span class="ty">RaylibSimpleLight</span>.SunLight lamp =
+    <span class="ty">RaylibSimpleLight</span>.<span class="fn">CreatePointLight</span>(<span class="ty">Raylib</span>.YELLOW, SUN, <span class="num">15</span>, -<span class="num">1</span>, -<span class="num">4</span>);
+
+<span class="kw">while</span> (!<span class="ty">Raylib</span>.<span class="fn">WindowShouldClose</span>()) {
+    SUN.<span class="fn">Update</span>();      <span class="cm"># push the sun into the shader</span>
+    lamp.<span class="fn">Update</span>();     <span class="cm"># push the point light into the shader</span>
+
+    <span class="ty">Raylib</span>.<span class="fn">BeginMode3D</span>(PLAYER.Camera);
+        Terrain.<span class="fn">Draw</span>();
+        lamp.<span class="fn">Draw</span>();   <span class="cm"># glowing cube, so you can find it</span>
+    <span class="ty">Raylib</span>.<span class="fn">EndMode3D</span>();
+}</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>CreateSun(color)</td><td>Directional light; returns a handle.</td></tr>
+<tr><td>CreatePointLight(color, sun, x, y, z)</td><td>Point light at a position.</td></tr>
+<tr><td>Handle</td><td>The light's id: 0.. for suns, 1000+ for point lights.</td></tr>
+<tr><td>Position.x / .y / .z</td><td>Point light position.</td></tr>
+<tr><td>Rotate.x / .y / .z</td><td>Sun direction, in degrees.</td></tr>
+<tr><td>Sun</td><td>Optional sun a point light is balanced against.</td></tr>
+<tr><td>Update()</td><td>Writes the light into the shader uniforms.</td></tr>
+<tr><td>Draw()</td><td>Draws the glow marker cube. Visual only.</td></tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p>Lights share the shader's <code>lights[]</code> array with the sun. The slot
+     limit is one number that must stay identical in three places &mdash; the
+     shader source, <code>gcl_raylib.c</code> and the light module. Raise one and
+     not the others and the extra light is dropped <strong>silently</strong>.</p>
+</div>
+
+<p>The demo also gives the player a light that follows them: a point light whose
+   <code>Position</code> is copied from <code>PLAYER.Position</code> every frame,
+   then updated.</p>
+
+</div>
+</section>
+
+<section class="section" id="skybox">
+<h2>RaylibSkybox &mdash; sky, sun and clouds</h2>
+<div class="blocks">
+
+<p><code>CreateSimpleSkybox()</code> draws the whole sky from one fragment
+   shader &mdash; gradient, sun/moon disc, banded clouds and stars. Because it is
+   a separate GL program, <strong>fog uniforms never reach it</strong>: the sky
+   stays crisp while the terrain fades, which is the entire point of doing fog in
+   the terrain shader.</p>
+
+<p><code>Update()</code> advances the day cycle and, more importantly, is the
+   source of truth for the lighting module: <code>RaylibSimpleLight</code> asks
+   the skybox for the sun's direction, colour and power. There is only ever one
+   sun definition in the process.</p>
+
+<p>The sky dome is recentred on the camera every frame, so the horizon stays put
+   no matter how far the player walks.</p>
+
+<div class="code-card">
+  <div class="code-head">sky.gcsf</div>
+<pre class="code"><span class="ty">RaylibSKYBOX</span>.Skybox sky = <span class="ty">RaylibSKYBOX</span>.<span class="fn">CreateSimpleSkybox</span>();
+sky.DailyCycle = <span class="ty">RaylibSKYBOX</span>.night;  <span class="cm"># night / day / morning / noon ...</span>
+sky.cloudON    = <span class="kw">true</span>;
+sky.CloudSpeed = <span class="num">0.05</span>;
+
+<span class="kw">while</span> (!<span class="ty">Raylib</span>.<span class="fn">WindowShouldClose</span>()) {
+    sky.<span class="fn">Update</span>();
+
+    <span class="ty">Raylib</span>.<span class="fn">BeginMode3D</span>(PLAYER.Camera);
+        sky.<span class="fn">Draw</span>();   <span class="cm"># needs no extra shader</span>
+    <span class="ty">Raylib</span>.<span class="fn">EndMode3D</span>();
+}</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>DailyCycle</td><td>Preset: day, night, morning, noon, evening, midnight, dawn, sunset, sunrise, twilight.</td></tr>
+<tr><td>Time</td><td>Position in the cycle.</td></tr>
+<tr><td>DayLength</td><td>How long one full cycle lasts.</td></tr>
+<tr><td>CloudAmount</td><td>Cloud coverage.</td></tr>
+<tr><td>CloudSpeed</td><td>Cloud drift speed.</td></tr>
+<tr><td>CloudON</td><td>Adds an extra cloud layer on top of the soft clouds.</td></tr>
+<tr><td>StarAmount</td><td>Star density at night.</td></tr>
+<tr><td>SunSize / SunBrightness</td><td>Disc size and brightness.</td></tr>
+<tr><td>CycleCount</td><td>How many full cycles have elapsed.</td></tr>
+<tr><td>Draw()</td><td>Draws the dome. Inside BeginMode3D.</td></tr>
+</tbody>
+</table>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p><code>DailyCycle</code> just sets <code>Time</code> for you. Animating
+     <code>Time</code> yourself gives a moving sun, and the lights follow it
+     automatically because they read the sun from here.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="fog">
+<h2>RaylibFOG &mdash; distance fog</h2>
+<div class="blocks">
+
+<p>This module draws <strong>nothing at all</strong>. It only fills the
+   <code>fogColor</code>, <code>fogParams</code> and <code>fogShape</code>
+   uniforms of the shader the scene is already being drawn with, and the terrain's
+   own fragment shader mixes each pixel towards the fog colour by its real
+   distance from the eye.</p>
+
+<p>That is what separates it from a grey curtain: the effect follows true depth,
+   so it is a smooth gradient instead of a hard edge, and the sky is untouched
+   because it is a different program.</p>
+
+<div class="code-card">
+  <div class="code-head">fog.gcsf</div>
+<pre class="code"><span class="cm"># CreateFog(color, density, start, end, enabled, heightFog)</span>
+<span class="ty">RaylibFOG</span>.FOG fogy =
+    <span class="ty">RaylibFOG</span>.<span class="fn">CreateFog</span>(<span class="ty">Raylib</span>.SKYBLUE, <span class="num">0.25</span>f, <span class="num">10.0</span>f, <span class="num">45.0</span>f, <span class="kw">true</span>, <span class="kw">true</span>);
+
+fogy.Mode = <span class="ty">RaylibFOG</span>.ExponentialSquared;
+fogy.HeightFog = <span class="kw">true</span>;
+fogy.Height  = <span class="num">30.0</span>f;   <span class="cm"># height fog ceiling</span>
+fogy.Falloff = <span class="num">0.5</span>f;    <span class="cm"># softness of the fade</span>
+
+<span class="cm"># inside BeginShaderMode, together with the terrain and the water:</span>
+fogy.<span class="fn">Update</span>();</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>CreateFog(color, density, start, end, enabled, heightFog)</td><td>Build a fog value.</td></tr>
+<tr><td>Color</td><td>Fog colour.</td></tr>
+<tr><td>Density</td><td>How thick the fog gets.</td></tr>
+<tr><td>Start / End</td><td>Near and far edge of the fog band, in world units.</td></tr>
+<tr><td>Mode</td><td>Linear, Exponential or ExponentialSquared.</td></tr>
+<tr><td>HeightFog / Height / Falloff</td><td>Fog that settles below a ceiling, and how softly it fades out.</td></tr>
+<tr><td>Enabled</td><td>Master switch.</td></tr>
+<tr><td>Update()</td><td>Writes the uniforms.</td></tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p><code>Update()</code> belongs <strong>inside</strong> the
+     <code>BeginShaderMode</code> block. Outside it there is no way to know which
+     program is being targeted, and the fog simply does not apply &mdash; the call
+     succeeds and nothing changes on screen.</p>
+</div>
+
+<p>Height fog is what stops the whole world reading as a flat grey wall: hills
+   below the ceiling stay clearer, hollows fill up first.</p>
+
+</div>
+</section>
+
+<section class="section" id="water">
+<h2>RaylibSimpleWater &mdash; water that knows about swimming</h2>
+<div class="blocks">
+
+<p>The module is <strong>geometry only</strong>: a surface and a bed loaded from
+   an OBJ, animated with waves in the vertex stage and rendered with its own
+   shader. Whether you are <em>swimming</em>, and the thresholds involved, live in
+   the player module (<code>RaylibFPS</code>) &mdash; so the moment the screen
+   says "swimming" and the moment the physics swims can never drift apart.</p>
+
+<p>Reflection and sun values are read from the skybox, and the fog values from
+   the shared fog state, so water sits in exactly the same world as the terrain
+   rather than looking like glass laid over it.</p>
+
+<div class="code-card">
+  <div class="code-head">water.gcsf</div>
+<pre class="code"><span class="ty">RaylibSimpleWater</span>.Water water =
+    <span class="ty">RaylibSimpleWater</span>.<span class="fn">CreateSimpleWaterFromOBJ</span>(<span class="str">"water.obj"</span>);
+
+water.WaveStrength = <span class="num">0.2</span>f;
+water.WaveSpeed    = <span class="num">0.5</span>f;
+water.WaveScale    = <span class="num">0.6</span>f;
+water.Reflection   = <span class="num">1.0</span>f;
+
+<span class="kw">while</span> (!<span class="ty">Raylib</span>.<span class="fn">WindowShouldClose</span>()) {
+    water.<span class="fn">Update</span>();   <span class="cm"># advances the waves, refreshes uniforms</span>
+
+    <span class="ty">Raylib</span>.<span class="fn">BeginMode3D</span>(PLAYER.Camera);
+        water.<span class="fn">Draw</span>();
+    <span class="ty">Raylib</span>.<span class="fn">EndMode3D</span>();
+
+    <span class="cm"># 2D overlay: only active when the eyes are under the surface.</span>
+    water.<span class="fn">DrawUnderwaterEffect</span>();
+}</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>CreateSimpleWaterFromOBJ(file)</td><td>Load surface + bed; returns a handle.</td></tr>
+<tr><td>WaveStrength / WaveSpeed / WaveScale</td><td>Wave amplitude, speed and frequency.</td></tr>
+<tr><td>Reflection / Refraction / Fresnel</td><td>How much sky bounces off, how much shows through, and how the two blend.</td></tr>
+<tr><td>Foam</td><td>Foam amount near the shoreline.</td></tr>
+<tr><td>Color / Alpha</td><td>Water tint and opacity.</td></tr>
+<tr><td>FPS_InWater / FPS_IsSwimming</td><td>State reported by the player module.</td></tr>
+<tr><td>Draw()</td><td>Draws the water. Inside BeginMode3D.</td></tr>
+<tr><td>DrawUnderwaterEffect()</td><td>Full-screen tint. Call it <strong>after</strong> EndMode3D.</td></tr>
+</tbody>
+</table>
+
+<div class="note info">
+  <span class="icon">&#8505;&#65039;</span>
+  <p><code>DrawUnderwaterEffect()</code> is drawn in the 2D layer on purpose.
+     Inside the 3D block it would be perspective-transformed and would slide as
+     you turn the camera.</p>
+</div>
+
+</div>
+</section>
+
+<section class="section" id="math">
+<h2>Math</h2>
+<div class="blocks">
+<p>Loaded with <code>#native <Math></code>. Small, and used by everything
+   else.</p>
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>randInt</td><td>Math.randInt(int min, int max) -> int</td><td>Random integer in the range, both ends included.</td></tr>
+<tr><td>randFloat</td><td>Math.randFloat(float min, float max) -> float</td><td>Random float in the range.</td></tr>
+<tr><td>randBool</td><td>Math.randBool() -> int</td><td>1 or 0.</td></tr>
+<tr><td>randChoice</td><td>Math.randChoice(a, b, c) -> int</td><td>One of the given values.</td></tr>
+<tr><td>min / max</td><td>Math.min(a, b) / Math.max(a, b) -> int</td><td>Smaller / larger of two values.</td></tr>
+<tr><td>abs</td><td>Math.abs(x) -> int</td><td>Absolute value.</td></tr>
+<tr><td>floor / ceil</td><td>Math.floor(x) / Math.ceil(x) -> int</td><td>Round down / up.</td></tr>
+<tr><td>sqrt / pow</td><td>Math.sqrt(x) / Math.pow(base, exp) -> int</td><td>Square root and power.</td></tr>
+<tr><td>sin / cos</td><td>Math.sin(deg) / Math.cos(deg) -> int</td><td>Trigonometry, in degrees.</td></tr>
+<tr><td>clamp</td><td>Math.clamp(x, min, max) -> int</td><td>Keep a value inside a range.</td></tr>
+<tr><td>sign</td><td>Math.sign(x) -> int</td><td>-1, 0 or 1.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section class="section" id="stdio">
+<h2>Stdio</h2>
+<div class="blocks">
+<p><code>printf</code> and <code>scanf</code> are built into the language; the
+   <code>Stdio.</code> prefixed forms need <code>#native <Stdio></code>.
+   GCL uses <code>{}</code> placeholders instead of C's <code>%s</code> /
+   <code>%d</code>, and supports forms like <code>{.2f}</code>.</p>
+
+<div class="code-card">
+  <div class="code-head">stdio.gcsf</div>
+<pre class="code"><span class="pre">#native <Stdio></span>
+
+<span class="ty">Stdio</span>.<span class="fn">printf</span>(<span class="str">"Name: {}"</span>, <span class="str">"Emre"</span>);
+<span class="ty">Stdio</span>.<span class="fn">printf</span>(<span class="str">"Score: {.2f}"</span>, <span class="num">87.5</span>);
+
+<span class="ty">Stdio</span>.<span class="fn">scanf</span>(age);   <span class="cm"># safe input: no & and no format scanner</span>
+
+<span class="ty">Stdio</span>.<span class="fn">writeFile</span>(file=<span class="str">"save.txt"</span>, text=<span class="str">"score=120"</span>);
+<span class="ty">int</span> size = <span class="ty">Stdio</span>.<span class="fn">fileSize</span>(file=<span class="str">"save.txt"</span>);</pre>
+</div>
+
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>printf</td><td>Stdio.printf(gcChar text)</td><td>Print with {} placeholders.</td></tr>
+<tr><td>scanf</td><td>Stdio.scanf(...)</td><td>Read input into a variable; no & needed.</td></tr>
+<tr><td>openFile</td><td>Stdio.openFile(file)</td><td>Open a file handle.</td></tr>
+<tr><td>readFile</td><td>Stdio.readFile(file) -> gcChar</td><td>Read the whole file.</td></tr>
+<tr><td>writeFile</td><td>Stdio.writeFile(file, text)</td><td>Overwrite with text.</td></tr>
+<tr><td>appendFile</td><td>Stdio.appendFile(file, text)</td><td>Add to the end.</td></tr>
+<tr><td>fileExists</td><td>Stdio.fileExists(file) -> int</td><td>1 if the file is there.</td></tr>
+<tr><td>deleteFile</td><td>Stdio.deleteFile(file)</td><td>Remove it.</td></tr>
+<tr><td>renameFile</td><td>Stdio.renameFile(file, newName)</td><td>Rename or move it.</td></tr>
+<tr><td>fileSize</td><td>Stdio.fileSize(file) -> int</td><td>Size in bytes.</td></tr>
+<tr><td>flushFile</td><td>Stdio.flushFile(file)</td><td>Flush the buffer.</td></tr>
+</tbody>
+</table>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>The file members accept named arguments, so
+     <code>Stdio.writeFile(file="save.txt", text="hi")</code> reads clearly and
+     you cannot swap the two by accident.</p>
+</div>
+</div>
+</section>
+
+<section class="section" id="embed">
+<h2>Embed</h2>
+<div class="blocks">
+<p>The bridge the Lua and Python tracks are built on: it starts the runtime,
+   keeps its variables in <code>__main__</code> globals, and moves numbers and
+   text between the two sides.</p>
+
+<div class="code-card">
+  <div class="code-head">embed.gcsf</div>
+<pre class="code"><span class="pre">#native <Embed></span>
+
+<span class="ty">Embed</span>.<span class="fn">Run</span>(type=<span class="str">"python"</span>);
+<span class="ty">int</span> active = <span class="ty">Embed</span>.<span class="fn">IsActive</span>(type=<span class="str">"python"</span>);
+
+<span class="ty">Embed</span>.<span class="fn">SendValue</span>(type=<span class="str">"python"</span>, name=<span class="str">"myVar"</span>, value=<span class="str">"42"</span>);
+<span class="ty">int</span> val = <span class="ty">Embed</span>.<span class="fn">GetValue</span>(type=<span class="str">"python"</span>, name=<span class="str">"myVar"</span>);
+
+<span class="ty">Embed</span>.<span class="fn">Stop</span>(type=<span class="str">"python"</span>);</pre>
+</div>
+
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>Embed.Run(type)</td><td>Start a runtime: "python" or "lua".</td></tr>
+<tr><td>Embed.Stop(type)</td><td>Stop it.</td></tr>
+<tr><td>Embed.IsActive(type)</td><td>1 while it is running.</td></tr>
+<tr><td>Embed.SendValue(type, name, value)</td><td>Write a variable into the runtime.</td></tr>
+<tr><td>Embed.GetValue(type, name)</td><td>Read one back.</td></tr>
+</tbody>
+</table>
+
+<div class="note warn">
+  <span class="icon">&#9888;&#65039;</span>
+  <p>The variable on the Python or Lua side must exist in <code>__main__</code>
+     globals. Values currently travel as int, float and char.</p>
+</div>
+</div>
+</section>
+
+<section class="section" id="collisionapi">
+<h2>Collision helpers</h2>
+<div class="blocks">
+<p>Pure tests: each returns 1 or 0 and none of them moves anything. To actually
+   resolve a collision, use <a href="#collision">RaylibSimpleCollision</a>.</p>
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>CheckCollisionRecs</td><td>CheckCollisionRecs(Rectangle rec1, Rectangle rec2) -> int</td><td>Two 2D rectangles overlap.</td></tr>
+<tr><td>CheckCollisionCircles</td><td>CheckCollisionCircles(Vector2 center1, float radius1, Vector2 center2, float radius2) -> int</td><td>Two circles overlap.</td></tr>
+<tr><td>CheckCollisionCircleRec</td><td>CheckCollisionCircleRec(Vector2 center, float radius, Rectangle rec) -> int</td><td>Circle against rectangle.</td></tr>
+<tr><td>CheckCollisionPointRec</td><td>CheckCollisionPointRec(Vector2 point, Rectangle rec) -> int</td><td>Point inside a rectangle; the usual button hit test.</td></tr>
+<tr><td>CheckCollisionPointCircle</td><td>CheckCollisionPointCircle(Vector2 point, Vector2 center, float radius) -> int</td><td>Point inside a circle.</td></tr>
+<tr><td>CheckCollisionBoxes</td><td>CheckCollisionBoxes(BoundingBox box1, BoundingBox box2) -> int</td><td>Two 3D boxes overlap.</td></tr>
+<tr><td>CheckCollisionBoxSphere</td><td>CheckCollisionBoxSphere(BoundingBox box, Vector3 center, float radius) -> int</td><td>Box against sphere.</td></tr>
+<tr><td>GetCollisionRec</td><td>GetCollisionRec(Rectangle rec1, Rectangle rec2) -> Rectangle</td><td>The overlapping rectangle itself.</td></tr>
+<tr><td>GetRayCollisionBox</td><td>GetRayCollisionBox(Ray ray, BoundingBox box) -> RayCollision</td><td>Where a ray meets a box, for picking.</td></tr>
+<tr><td>GetRayCollisionSphere</td><td>GetRayCollisionSphere(Ray ray, Vector3 center, float radius) -> RayCollision</td><td>Where a ray meets a sphere.</td></tr>
+<tr><td>GetRayCollisionMesh</td><td>GetRayCollisionMesh(Ray ray, Mesh mesh, Matrix transform) -> RayCollision</td><td>Where a ray meets real geometry.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section class="section" id="files">
+<h2>Filesystem</h2>
+<div class="blocks">
+<p>Reading and writing without the Stdio module: file bytes, file text, and the
+   functions that walk a directory. Paths are relative to the running program
+   unless they start with a drive.</p>
+<table>
+<thead><tr><th>Member</th><th>Signature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>FileExists</td><td>FileExists(gcChar fileName) -> int</td><td>1 if the file is there.</td></tr>
+<tr><td>DirectoryExists</td><td>DirectoryExists(gcChar dirPath) -> int</td><td>1 if the directory is there.</td></tr>
+<tr><td>IsFileExtension</td><td>IsFileExtension(gcChar fileName, gcChar ext) -> int</td><td>Check the extension; include the dot.</td></tr>
+<tr><td>GetFileLength</td><td>GetFileLength(gcChar fileName) -> int</td><td>Size in bytes.</td></tr>
+<tr><td>GetFileModTime</td><td>GetFileModTime(gcChar fileName) -> int</td><td>Last write time.</td></tr>
+<tr><td>GetFileExtension</td><td>GetFileExtension(gcChar fileName) -> gcChar</td><td>Extension, dot included.</td></tr>
+<tr><td>GetFileName</td><td>GetFileName(gcChar filePath) -> gcChar</td><td>Just the file name.</td></tr>
+<tr><td>GetFileNameWithoutExt</td><td>GetFileNameWithoutExt(gcChar filePath) -> gcChar</td><td>File name with no extension.</td></tr>
+<tr><td>LoadFileText</td><td>LoadFileText(gcChar fileName) -> gcChar</td><td>Read a text file.</td></tr>
+<tr><td>SaveFileText</td><td>SaveFileText(gcChar fileName, gcChar text)</td><td>Write a text file.</td></tr>
+<tr><td>LoadFileData</td><td>LoadFileData(gcChar fileName) -> gcChar</td><td>Read bytes.</td></tr>
+<tr><td>SaveFileData</td><td>SaveFileData(gcChar fileName, gcChar data, int dataSize)</td><td>Write bytes.</td></tr>
+<tr><td>FileRename / FileRemove / FileCopy / FileMove</td><td>FileRename(gcChar fileName, gcChar fileRename) -> int</td><td>Housekeeping, 0 on success.</td></tr>
+<tr><td>GetDirectoryFileCount</td><td>GetDirectoryFileCount(gcChar dirPath) -> int</td><td>How many entries a directory has.</td></tr>
+<tr><td>GetWorkingDirectory</td><td>GetWorkingDirectory() -> gcChar</td><td>Where the program is running from.</td></tr>
+<tr><td>IsFileDropped</td><td>IsFileDropped() -> int</td><td>1 when the user dragged a file onto the window.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section class="section" id="gui">
+<h2>Raygui</h2>
+<div class="blocks">
+
+<p>Loaded with <code>#native <Raygui></code>, and it needs
+   <code>#native <Raylib></code> as well. Widgets read the last
+   <code>Raylib.Rectangle</code> call as their layout rectangle, so a widget is
+   always preceded by the rectangle it occupies.</p>
+
+<div class="code-card">
+  <div class="code-head">raygui.gcsf</div>
+<pre class="code"><span class="ty">float</span> width = <span class="num">200.0</span>f;
+
+<span class="ty">Raylib</span>.<span class="fn">Rectangle</span>(<span class="num">20</span>, <span class="num">20</span>, <span class="num">200</span>, <span class="num">40</span>);
+<span class="kw">if</span> (<span class="ty">Raygui</span>.<span class="fn">GuiButton</span>(<span class="str">"Reset"</span>) == <span class="num">1</span>) {
+    width = <span class="num">200.0</span>f;
+}
+
+<span class="ty">Raylib</span>.<span class="fn">Rectangle</span>(<span class="num">20</span>, <span class="num">80</span>, <span class="num">300</span>, <span class="num">30</span>);
+width = <span class="ty">Raygui</span>.<span class="fn">GuiSlider</span>(<span class="str">""</span>, <span class="str">"Width"</span>, width, <span class="num">50.0</span>f, <span class="num">500.0</span>f);
+
+<span class="ty">Raylib</span>.<span class="fn">DrawRectangle</span>(<span class="num">20</span>, <span class="num">140</span>, (<span class="ty">int</span>)width, <span class="num">60</span>, <span class="ty">Raylib</span>.BLUE);</pre>
+</div>
+
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>GuiButton(text)</td><td>1 when clicked</td><td>Push button.</td></tr>
+<tr><td>GuiLabel(text)</td><td>-</td><td>Static text.</td></tr>
+<tr><td>GuiCheckBox(text, checked)</td><td>new state</td><td>Check box.</td></tr>
+<tr><td>GuiSlider(textLeft, textRight, value, min, max)</td><td>new value</td><td>Horizontal slider.</td></tr>
+<tr><td>GuiProgressBar(textLeft, textRight, value, min, max)</td><td>value</td><td>Progress bar.</td></tr>
+<tr><td>GuiTextBox(text, bufferSize, editMode)</td><td>new edit state</td><td>Editable text field.</td></tr>
+<tr><td>GuiSpinner(text, value, min, max, editMode)</td><td>new value</td><td>Number spinner.</td></tr>
+<tr><td>GuiComboBox(text, active)</td><td>new index</td><td>Drop-down list.</td></tr>
+<tr><td>GuiPanel(text)</td><td>-</td><td>Container panel.</td></tr>
+<tr><td>GuiStatusBar(text)</td><td>-</td><td>Status bar strip.</td></tr>
+<tr><td>GuiSetStyle(control, property, value)</td><td>-</td><td>Change a widget colour or size.</td></tr>
+<tr><td>GuiGetStyle(control, property)</td><td>int</td><td>Read one back.</td></tr>
+</tbody>
+</table>
+
+<div class="note tip">
+  <span class="icon">&#128161;</span>
+  <p>Because the layout comes from the previous <code>Rectangle</code>, moving a
+     widget is a matter of moving that one call. Build the interface as a series
+     of rectangles, each followed by its widget.</p>
+</div>
+
+</div>
+</section>
+</main>
+</div>
+
+<footer>
+  GnuchanOS GCL Raylib Book
+</footer>
+
+</body>
+</html>
