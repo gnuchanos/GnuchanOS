@@ -779,6 +779,13 @@ def raylib_arch_matches(lib_path: Path) -> bool:
 
 
 def build_raylib() -> Path:
+    if os_name() == "gnuLinux":
+        print("[gcl] Linux X11/OpenGL geliştirme bağımlılıkları kontrol ediliyor...", flush=True)
+        if not ensure_linux_dev_deps():
+            print("[gcl] hata: Linux X11/OpenGL geliştirme paketleri kurulamadı — Raylib derlemesi durduruldu",
+                  file=sys.stderr, flush=True)
+            raise SystemExit(1)
+
     clone_raylib()
     lib = RAYLIB_SRC / "libraylib.a"
     if lib.exists() and raylib_arch_matches(lib):
@@ -1679,9 +1686,15 @@ def install_gcl_system() -> None:
     For Linux, prefer a user-local install under ~/.local so normal developers
     can use the command without sudo. If the script is running as root, the
     conventional /usr/local target is used instead.
+
+    This path MUST install the X11/OpenGL development headers before building
+    Raylib; otherwise the laptop build dies on the missing Xrandr/Xlib headers.
     """
     if os_name() != "gnuLinux":
         raise SystemExit("[gcl] hata: sadece Linux için kurulum desteklenir")
+
+    if not ensure_linux_dev_deps():
+        raise SystemExit("[gcl] hata: sistem geliştirme paketleri kurulamadı — derleme durduruldu")
 
     build_dir = build_gcl()
     bin_dir = _live_user_bin_dir()
@@ -1731,6 +1744,10 @@ def uninstall_gcl_system() -> None:
 def main() -> int:
     target = sys.argv[1] if len(sys.argv) > 1 else TARGET_DEFAULT
     if target in ("install", "-install", "--install"):
+        if os_name() == "gnuLinux" and not ensure_linux_dev_deps():
+            print("[gcl] hata: sistem geliştirme paketleri kurulamadı — install durduruldu",
+                  file=sys.stderr, flush=True)
+            return 1
         install_gcl_system()
         return 0
     if target in ("uninstall", "-uninstall", "--uninstall"):
