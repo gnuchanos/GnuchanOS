@@ -1,71 +1,64 @@
 #!/usr/bin/env python3
 # =============================================================================
-# GnuchanOS - make the wifi work on Debian
+# GnuchanOS - fix the wifi on Debian, whatever is wrong with it
 # -----------------------------------------------------------------------------
 # Standard library only, and no options: running
 #
 #     python3 fix_wifi.py
 #
 # is the whole fix. It re-runs itself through sudo, because everything it does -
-# installing packages, unloading and loading kernel modules, unblocking the
-# radio - is root's.
+# installing packages, unblocking the radio, loading kernel modules - is root's.
 #
-# The problem
-# -----------
-# A fresh Debian install has the wifi driver in the kernel but not the firmware
-# the driver loads at start-up, because the firmware is not free and is not in
-# the installer's default set. The module loads, asks the kernel for a firmware
-# file, does not find it, and gives up - and the result is a wireless card that
-# is there, whose driver is there, and whose interface never appears:
+# The report this was written from
+# --------------------------------
+#     $ /usr/sbin/rfkill
+#     ID TYPE      DEVICE SOFT      HARD
+#     0  bluetooth hci0   unblocked unblocked
+#     1  wlan      phy0   unblocked blocked
 #
-#     wlan0: Failed to load firmware "iwlwifi-cc-a0-72.ucode"
+# The wireless radio is SOFT unblocked and HARD blocked. That is the case this
+# script exists for and the one a plain `rfkill unblock all` does not fix:
 #
-# The package a chip needs is one of the firmware-* packages in the
-# non-free-firmware component of the Debian archive, and that component is not
-# in sources.list on a machine installed before it existed. So the two halves of
-# this fix are: make the component available to apt, and install the firmware
-# package the chip actually uses - not the whole set, because the set is several
-# hundred megabytes nobody needs.
+#   SOFT blocked   the kernel's own block, cleared with rfkill unblock all.
+#   HARD blocked   the block is held by the machine's firmware/EC. No rfkill
+#                  command clears it. It clears when the firmware is told the
+#                  radio may be on - which is the wireless key (Fn+F11 on most
+#                  laptops) - and then the driver reads that state again. The
+#                  driver only reads it when it is loaded, so the sequence that
+#                  works is:
 #
-# Which chip it is
+#                      rfkill unblock all
+#                      modprobe -r ath5k
+#                      modprobe ath5k
+#
+#                  which is exactly what this script does, and why the wireless
+#                  key is bound to run it: pressing Fn+F11 tells the firmware to
+#                  enable the radio, and the script that runs on that press
+#                  reloads the driver so the hard block is gone.
+#
+# What else it fixes
+# ------------------
+# Every other way wifi is broken on Debian, because a fix that only handles one
+# of them is not a fix:
+#
+#   Missing firmware. The driver is in the kernel but the firmware it loads at
+#   start-up is not, because it is non-free. The interface then never appears.
+#   The chip is detected from /sys (PCI class 0x0280, /sys/class/net, USB) and
+#   the right firmware-* package is installed, from the non-free-firmware
+#   component - which is added to apt's sources first, as Debian 12 requires.
+#
+#   No network stack. wpasupplicant, and a network manager when the machine has
+#   none, because firmware makes the interface appear and nothing joins a network.
+#
+#   A card probed before its firmware existed, which keeps the failure it had
+#   then until the module is reloaded.
+#
+# The wireless key
 # ----------------
-# The card is looked for in three places, because a card whose firmware is
-# missing is a card whose driver may not have finished loading:
-#
-#   /sys/class/net/*/wireless       an interface that is up and working
-#   /sys/bus/pci/devices  class 0x0280xx    a PCI card, bound or not; an unbound
-#                                   one is matched to its package by the vendor
-#                                   id even though no driver name is available
-#   /sys/bus/usb/devices            a USB dongle whose driver is bound
-#
-# The driver name is then mapped to a chip family, and the family to the
-# package. A name that is not recognised falls back to firmware-misc-nonfree,
-# which is where the drivers that do not have a package of their own keep their
-# firmware.
-#
-# What else it does
-# -----------------
-#   wpasupplicant is installed, and a network manager if the machine has none,
-#   because firmware alone makes the interface appear and nothing join a network.
-#
-#   The radio is unblocked with rfkill, which is the other reason an interface
-#   that exists is invisible to a network manager.
-#
-#   The detected drivers are unloaded and loaded again, so a card whose firmware
-#   was missing when it was first probed gets a second chance now that the
-#   firmware is on disk - without a reboot, in the case where it works.
-#
-# Undo
-# ----
-# There are no flags, so undoing is by hand and always possible: apt-get remove
-# the firmware-* package this script installed, and take the non-free-firmware
-# component back out of sources.list (a .gnuchan-backup copy of it is beside it
-# for that). Nothing else is changed: the kernel modules, the radio and the
-# network manager are only asked to do what they were already there to do.
-#
-# The chip this machine has, the drivers it found and whether the interface came
-# up are all printed at the end, so a machine that is still without wifi after
-# this says what it is rather than leaving the next step a guess.
+# Fn+F11 (the wireless key) is bound through acpid, which is the layer below any
+# desktop and works whatever window manager is running. The key runs this same
+# script in a fast path that only unblocks the radio and reloads the driver - no
+# package manager, no delay - so pressing the key is the whole recovery.
 #
 # License: GPL3
 # =============================================================================
@@ -85,6 +78,10 @@ SCRIPT_PATH = Path(__file__).resolve()
 #: The suffix a file this script rewrites is kept under, once.
 BACKUP_SUFFIX = ".gnuchan-backup"
 
+#: Set by the wireless-key handler. It is what makes a key press take the fast
+#: path - unblock the radio and reload the driver - instead of a full install.
+KEY_MODE_VARIABLE = "GNUGHAN_WIFI_KEY"
+
 #: The environment variable that stops a sudo which fails to change the user
 #: from re-running the script for ever.
 ELEVATED_VARIABLE = "GNUGHAN_WIFI_ELEVATED"
@@ -97,32 +94,22 @@ ELEVATED_VARIABLE = "GNUGHAN_WIFI_ELEVATED"
 #: name is picked by the release rather than both being written.
 COMPONENTS_BOOKWORM = ("non-free-firmware", "non-free")
 COMPONENTS_BEFORE_BOOKWORM = ("non-free",)
-
-#: The release non-free-firmware exists from.
 NON_FREE_FIRMWARE_RELEASE = 12
-
-#: The release assumed when /etc/os-release names no number.
 ASSUMED_RELEASE = 12
 
-#: Where apt reads what to download from. The classic one-file format and the
-#: newer one-directory format are both handled, because which is present depends
-#: on when the machine was installed.
 APT_SOURCES_LIST = Path("/etc/apt/sources.list")
 APT_SOURCES_DIR = Path("/etc/apt/sources.list.d")
 
 #: Only a line that names Debian is edited: a machine with a third-party
-#: repository must not have a component added to it that its archive does not
-#: have.
+#: repository must not have a component added to it that its archive lacks.
 DEBIAN_MARKER = "debian"
 
-#: How many times apt is asked to retry a download before giving up.
 APT_RETRIES = "3"
 
 # --- the chip ----------------------------------------------------------------
 
-#: The driver names a wireless chip uses, by the first characters that make it
-#: one family, and the family's name. The order matters: b43 is checked before
-#: brcm, and rtw before rtl, so the longer prefix wins.
+#: Driver name prefixes, longest first within each family. The order matters:
+#: b43 is checked before brcm and rtw before rtl, so the longer prefix wins.
 DRIVER_FAMILIES: tuple[tuple[str, str], ...] = (
     ("iwl", "intel"),
     ("b43", "b43"),
@@ -157,8 +144,8 @@ DRIVER_FAMILIES: tuple[tuple[str, str], ...] = (
 )
 
 #: The packages that carry a family's firmware, best first. More than one is
-#: listed where the package was folded into firmware-misc-nonfree in a later
-#: release, and the first that apt will install is the one used.
+#: listed where the package moved into firmware-misc-nonfree in a later release,
+#: and the first apt will install is the one used.
 FAMILY_PACKAGES: dict[str, tuple[str, ...]] = {
     "intel": ("firmware-iwlwifi",),
     "realtek": ("firmware-realtek",),
@@ -171,9 +158,8 @@ FAMILY_PACKAGES: dict[str, tuple[str, ...]] = {
     "misc": ("firmware-misc-nonfree",),
 }
 
-#: The PCI vendor ids that make a card one family, used when a card is present
-#: but no driver is bound to it - which is exactly the state a card is in when
-#: its firmware could not be loaded.
+#: PCI vendor ids, for a card whose firmware failed so no driver is bound and no
+#: driver name exists to match on. This is exactly the reported machine's state.
 VENDOR_FAMILIES: dict[str, str] = {
     "8086": "intel",
     "10ec": "realtek",
@@ -188,28 +174,43 @@ VENDOR_FAMILIES: dict[str, str] = {
     "17cb": "misc",
 }
 
-#: The PCI class of a network controller that is wireless: 0x0280xx. An
-#: ethernet controller is 0x0200xx and is looked for nowhere, because wired
-#: networking has no firmware to install.
+#: The PCI class of a wireless network controller, 0x0280xx. Ethernet is
+#: 0x0200xx and is not looked for: wired networking has no firmware to install.
 PCI_WIRELESS_CLASS = "0x0280"
 
-#: Where the kernel describes the hardware.
 NET_DIR = Path("/sys/class/net")
 PCI_DIR = Path("/sys/bus/pci/devices")
 USB_DIR = Path("/sys/bus/usb/devices")
 
 # --- the network stack -------------------------------------------------------
 
-#: The supplicant every wireless network manager uses. It is small and it is the
-#: one package without which no WPA network can be joined.
 SUPPLICANT_PACKAGE = "wpasupplicant"
 
-#: The network managers, best first. One of them has to be installed for a
-#: wireless network to be joinable, and none is installed on a minimal Debian.
+#: The network managers, best first: one has to be installed for a wireless
+#: network to be joinable, and none is installed on a minimal Debian.
 NETWORK_MANAGERS: tuple[tuple[str, str], ...] = (
     ("network-manager", "NetworkManager"),
     ("connman", "connman"),
     ("wicd-daemon", "wicd"),
+)
+
+# --- the wireless key --------------------------------------------------------
+
+#: acpid's event files and the command they run. acpid is the layer below any
+#: desktop: it sees ACPI hotkey events before any window manager exists, so the
+#: binding works under XFCE, i3, openbox and a bare console alike.
+ACPI_EVENTS_DIR = Path("/etc/acpi/events")
+KEY_HANDLER = Path("/usr/local/bin/gnuchan-fix-wifi")
+
+#: The ACPI event names the wireless key sends on the machines where the key
+#: reaches ACPI at all. A file for an event a machine never sends simply never
+#: runs, and costs nothing.
+KEY_EVENT_NAMES = (
+    "button/wlan",
+    "button/wireless",
+    "button/rfkill",
+    "rfkill",
+    "wlan",
 )
 
 
@@ -242,7 +243,7 @@ def run(
     capture: bool = False,
     environment: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run a command, with its output kept only when it is asked for.
+    """Run a command, keeping its output only when it is asked for.
 
     Nothing goes through a shell: every command is a list, so a path with a
     space in it cannot turn into two arguments.
@@ -255,7 +256,7 @@ def run(
 
 
 def apt_environment() -> dict[str, str]:
-    """The environment apt is run in, so it never stops to ask a question."""
+    """The environment apt runs in, so it never stops to ask a question."""
     return {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
 
 
@@ -275,9 +276,9 @@ def ensure_root(log: Log) -> None:
 
     Everything this script does is root's - the package database, the kernel
     module table, the rfkill state - so there is no useful partial run as a
-    normal user. sudo is used when it exists and the fact is announced rather
-    than done silently; the environment variable stops a sudo that fails to
-    change the user from looping.
+    normal user. The environment variable stops a sudo that fails to change the
+    user from looping; the wireless-key handler already runs as root and never
+    reaches this.
     """
     if is_root():
         return
@@ -289,10 +290,10 @@ def ensure_root(log: Log) -> None:
     sudo = shutil.which("sudo")
     if sudo is None:
         raise SystemExit(
-            "error: this installs packages and loads kernel modules; run this "
+            "error: this installs packages and reloads kernel modules; run this "
             "script as root"
         )
-    log.step("This installs system packages; re-running it through sudo")
+    log.step("This changes system packages and modules; re-running it through sudo")
     environment = dict(os.environ)
     environment[ELEVATED_VARIABLE] = "1"
     os.execvpe(sudo, [sudo, sys.executable, str(SCRIPT_PATH), *sys.argv[1:]], environment)
@@ -316,12 +317,11 @@ def write_text(path: Path, text: str) -> None:
 
 
 def backup_once(path: Path) -> Path | None:
-    """Copy an existing file aside, returning where the copy went.
+    """Copy an existing file aside once, returning where the copy went.
 
-    The copy is taken once and kept: a second run must not overwrite it with
-    this script's own output, because the file worth keeping is the one the
-    machine had before the script ever touched it. It is copied rather than
-    moved for the same reason - the caller merges into the file afterwards.
+    The copy is kept as the machine had it, because a second run must not
+    overwrite it with this script's own output - and it is copied rather than
+    moved, because the caller merges into the file afterwards.
     """
     if not path.exists():
         return None
@@ -346,23 +346,21 @@ def os_release() -> dict[str, str]:
 
 
 def distro_description() -> str:
-    """What this distribution calls itself, for the first line of output."""
     release = os_release()
     return release.get("PRETTY_NAME") or release.get("NAME") or "unknown distribution"
 
 
 def release_major() -> int:
-    """The distribution's major version number, or the assumed one.
+    """The distribution's major version, or the assumed one.
 
-    Only the digits are kept, so a version of "12" or "12.5" both give 12, and a
-    distribution that names no number at all gets the current Debian release,
-    which is the one whose component names this script writes.
+    Only the digits are kept, so "12" and "12.5" both give 12, and a
+    distribution that names no number gets the current Debian release, whose
+    component names this script writes.
     """
-    digits = "".join(character for character in os_release().get("VERSION_ID", "") if character.isdigit())
-    try:
-        return int(digits[:2]) if digits else ASSUMED_RELEASE
-    except ValueError:
-        return ASSUMED_RELEASE
+    digits = "".join(
+        character for character in os_release().get("VERSION_ID", "") if character.isdigit()
+    )
+    return int(digits[:2]) if digits else ASSUMED_RELEASE
 
 
 def firmware_components() -> tuple[str, ...]:
@@ -386,48 +384,76 @@ def apt_source_files() -> list[Path]:
     return files
 
 
+def source_tokens(line: str) -> list[str]:
+    """Split a sources line on whitespace, keeping a ``[...]`` option list whole.
+
+    ``deb [arch=amd64 trusted=yes] http://... bookworm main`` is a URI, a suite
+    and a component list with an option group in front - the group may hold
+    spaces, and splitting it apart puts a component in the middle of it.
+    """
+    tokens: list[str] = []
+    current = ""
+    depth = 0
+    for character in line:
+        if character == "[":
+            depth += 1
+        elif character == "]":
+            depth = max(0, depth - 1)
+        if character.isspace() and depth == 0:
+            if current:
+                tokens.append(current)
+                current = ""
+            continue
+        current += character
+    if current:
+        tokens.append(current)
+    return tokens
+
+
 def components_of(text: str) -> set[str]:
     """The archive components a sources file already names.
 
     Both formats are read: the classic ``deb URI suite component ...`` line and
-    the newer ``Components: component ...`` one.
+    the deb822 ``Components: component ...`` line Debian 12 writes.
     """
     found: set[str] = set()
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped.startswith("#"):
+        if not stripped or stripped.startswith("#"):
             continue
-        if stripped.startswith("deb "):
-            found.update(stripped.split()[3:])
-        elif stripped.lower().startswith("components:"):
+        if stripped.lower().startswith("components:"):
             found.update(stripped.partition(":")[2].split())
+            continue
+        tokens = source_tokens(stripped)
+        if tokens and tokens[0] == "deb":
+            start = 4 if len(tokens) > 1 and tokens[1].startswith("[") else 3
+            found.update(tokens[start:])
     return found
 
 
 def add_components(text: str, components: tuple[str, ...]) -> str:
     """Add ``components`` to the Debian lines of a sources file.
 
-    A ``deb`` line gets them appended, and a ``Components:`` line gets them
-    appended to its list. Nothing else is touched, and a line whose URI is not
-    Debian is skipped, so a third-party repository is not given a component its
-    archive does not have.
+    A ``deb`` line gets them appended after its component list and a
+    ``Components:`` line gets them appended to its own. Nothing else is touched,
+    and a line that does not name Debian is skipped, so a third-party repository
+    is never given a component its archive does not have.
     """
     lines: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped.startswith("Components:") or stripped.startswith("components:"):
-            name, separator, value = line.partition(":")
+        if not stripped or stripped.startswith("#"):
+            lines.append(line)
+            continue
+        if stripped.lower().startswith("components:"):
+            name, _, value = line.partition(":")
             existing = value.split()
-            for component in components:
-                if component not in existing:
-                    existing.append(component)
-            lines.append(f"{name}:{' ' if separator else ' '}{' '.join(existing)}")
+            existing += [c for c in components if c not in existing]
+            lines.append(f"{name}: {' '.join(existing)}")
             continue
         if stripped.startswith("deb ") and DEBIAN_MARKER in stripped.lower():
-            tokens = line.split()
-            for component in components:
-                if component not in tokens:
-                    tokens.append(component)
+            tokens = source_tokens(line)
+            tokens += [c for c in components if c not in tokens]
             lines.append(" ".join(tokens))
             continue
         lines.append(line)
@@ -437,18 +463,15 @@ def add_components(text: str, components: tuple[str, ...]) -> str:
 def ensure_components(log: Log, components: tuple[str, ...]) -> bool:
     """Put the firmware component into the sources, returning whether anything changed.
 
-    Only a file that already names Debian is edited, and the file is copied
-    aside before the edit, because sources.list is the machine's and this
-    script only adds one word to it.
+    Only a file that already names Debian is edited, and it is copied aside
+    first, because sources.list is the machine's and this script adds one word.
     """
     changed = False
     for path in apt_source_files():
         text = read_text(path)
         if not text or DEBIAN_MARKER not in text.lower():
             continue
-        missing = tuple(
-            component for component in components if component not in components_of(text)
-        )
+        missing = tuple(c for c in components if c not in components_of(text))
         if not missing:
             continue
         backup = backup_once(path)
@@ -474,8 +497,7 @@ def apt_update(log: Log) -> bool:
     result = run(command, capture=True, environment=apt_environment())
     if result.returncode != 0:
         log.warn("apt-get update failed; the package lists may be out of date")
-        output = (result.stdout or "") + (result.stderr or "")
-        for line in output.splitlines()[-10:]:
+        for line in ((result.stdout or "") + (result.stderr or "")).splitlines()[-8:]:
             log.detail(f"  {line}")
         return False
     log.detail("updated the package lists")
@@ -484,9 +506,7 @@ def apt_update(log: Log) -> bool:
 
 def package_installed(package: str) -> bool:
     """Whether dpkg has a package installed, whatever apt thinks of it."""
-    result = run(
-        ["dpkg-query", "-W", "-f", "${Status}", package], capture=True
-    )
+    result = run(["dpkg-query", "-W", "-f", "${Status}", package], capture=True)
     return result.returncode == 0 and "install ok installed" in result.stdout
 
 
@@ -494,14 +514,16 @@ def install_package(log: Log, package: str) -> bool:
     """Install one package, returning whether it ended up installed.
 
     Recommended packages are not pulled in: a firmware package recommends
-    nothing this needs, and the network stack is asked for separately.
+    nothing this needs, and the network stack is asked for by name.
     """
+    if package_installed(package):
+        log.detail(f"{package} is already installed")
+        return True
     command = ["apt-get", "install", "-y", "--no-install-recommends", package]
     log.detail("running: " + " ".join(command))
     result = run(command, capture=True, environment=apt_environment())
     if result.returncode != 0:
-        output = (result.stdout or "") + (result.stderr or "")
-        for line in output.splitlines()[-4:]:
+        for line in ((result.stdout or "") + (result.stderr or "")).splitlines()[-4:]:
             log.detail(f"  {line}")
         return False
     return True
@@ -511,7 +533,6 @@ def install_package(log: Log, package: str) -> bool:
 
 
 def net_interfaces() -> list[str]:
-    """The names of the network interfaces the kernel has."""
     try:
         return sorted(path.name for path in NET_DIR.iterdir())
     except OSError:
@@ -519,7 +540,7 @@ def net_interfaces() -> list[str]:
 
 
 def is_wireless_interface(name: str) -> bool:
-    """Whether an interface is a wireless one.
+    """Whether an interface is wireless.
 
     Two markers are accepted, because a driver creates one or the other: the
     ``wireless`` directory of the old wireless extensions and the ``phy80211``
@@ -532,7 +553,7 @@ def is_wireless_interface(name: str) -> bool:
 def device_driver(path: Path) -> str | None:
     """The name of the driver bound to a device, or None when none is.
 
-    The driver is a symlink into /sys/bus/.../drivers, and its last component is
+    The driver is a symlink into /sys/bus/.../drivers and its last component is
     the module name - the name the family is matched on.
     """
     link = path / "driver"
@@ -542,11 +563,6 @@ def device_driver(path: Path) -> str | None:
         return link.resolve().name
     except OSError:
         return None
-
-
-def interface_driver(name: str) -> str | None:
-    """The driver behind a network interface."""
-    return device_driver(NET_DIR / name / "device")
 
 
 def family_for_driver(driver: str | None) -> str | None:
@@ -563,10 +579,9 @@ def family_for_driver(driver: str | None) -> str | None:
 def pci_wireless_cards() -> list[tuple[str | None, str]]:
     """Every wireless PCI card as (driver or None, vendor id).
 
-    A card whose firmware could not be loaded has no driver bound to it, which
-    is the state this script exists to fix - so the vendor id is returned
-    alongside the driver and the card is matched to its package by that when no
-    driver name is available.
+    A card whose firmware failed has no driver bound to it, which is the state
+    this script exists to fix - so the vendor id comes back with the driver and
+    the card is matched to its package by that when no driver name exists.
     """
     cards: list[tuple[str | None, str]] = []
     if not PCI_DIR.is_dir():
@@ -584,11 +599,11 @@ def pci_wireless_cards() -> list[tuple[str | None, str]]:
 
 
 def usb_wifi_drivers() -> set[str]:
-    """The drivers of the USB wireless interfaces the kernel has.
+    """The drivers of the USB wireless devices the kernel has.
 
-    The driver is what says the device is wireless here: a USB dongle's
-    interface class is often vendor specific, so the class is not a usable test,
-    while the driver name is the same one the PCI side is matched on.
+    The driver is the test here, not the interface class: a USB dongle's class
+    is often vendor specific, while the driver name is the same one the PCI side
+    is matched on.
     """
     drivers: set[str] = set()
     if not USB_DIR.is_dir():
@@ -613,21 +628,18 @@ class Hardware:
     interfaces: tuple[str, ...]
     drivers: tuple[str, ...]
     families: frozenset[str]
-    has_pci_card: bool
 
     def found(self) -> bool:
-        """Whether any wireless hardware was found at all."""
-        return bool(self.interfaces or self.drivers or self.has_pci_card)
+        return bool(self.interfaces or self.drivers or self.families)
 
 
 def detect_hardware() -> Hardware:
     """Find the wireless hardware and the families its firmware belongs to.
 
-    Three sources are read because no one of them covers every state: a working
-    card shows up as an interface, a card whose firmware failed shows up as a
-    PCI device with no driver, and a USB dongle shows up as a bound driver. A
-    name that matches no family is treated as ``misc``, which is where the
-    drivers without a package of their own keep their firmware.
+    Three sources are read because no one covers every state: a working card is
+    an interface, a card whose firmware failed is a PCI device with no driver,
+    and a USB dongle is a bound driver. A name matching no family is ``misc``,
+    where the drivers without a package of their own keep their firmware.
     """
     interfaces: list[str] = []
     drivers: set[str] = set()
@@ -637,13 +649,12 @@ def detect_hardware() -> Hardware:
         if not is_wireless_interface(name):
             continue
         interfaces.append(name)
-        driver = interface_driver(name)
+        driver = device_driver(NET_DIR / name / "device")
         if driver:
             drivers.add(driver)
         families.add(family_for_driver(driver) or "misc")
 
-    cards = pci_wireless_cards()
-    for driver, vendor in cards:
+    for driver, vendor in pci_wireless_cards():
         if driver:
             drivers.add(driver)
         families.add(family_for_driver(driver) or VENDOR_FAMILIES.get(vendor, "misc"))
@@ -652,68 +663,142 @@ def detect_hardware() -> Hardware:
         drivers.add(driver)
         families.add(family_for_driver(driver) or "misc")
 
-    if (interfaces or cards) and not families:
+    if (interfaces or drivers) and not families:
         families.add("misc")
 
     return Hardware(
         interfaces=tuple(interfaces),
         drivers=tuple(sorted(drivers)),
         families=frozenset(families),
-        has_pci_card=bool(cards),
     )
 
 
-# --- installing ---------------------------------------------------------------
+# --- the radio ---------------------------------------------------------------
+# The reported bug lives here. A hard block is held by the machine's firmware and
+# no rfkill command clears it; it clears when the firmware is told the radio may
+# be on, which is the wireless key, and then the driver re-reads that state. So
+# the fix is: unblock, reload the driver, unblock again.
 
 
-def install_firmware(log: Log, hardware: Hardware) -> list[str]:
-    """Install the firmware package each detected family needs.
+@dataclass(frozen=True)
+class Radio:
+    """One radio's block state, as rfkill reports it."""
 
-    The candidates for a family are tried in order and the first that apt will
-    install is kept, because a package folded into firmware-misc-nonfree in a
-    later release is not on an older machine and the other way round - and apt
-    aborts a whole transaction over one name it does not know.
+    identifier: str
+    soft: bool
+    hard: bool
+
+    def describe(self) -> str:
+        soft = "soft blocked" if self.soft else "soft unblocked"
+        hard = "hard blocked" if self.hard else "hard unblocked"
+        return f"{self.identifier} ({soft}, {hard})"
+
+
+def parse_block_listing(text: str) -> list[Radio]:
+    """Read the ``rfkill list`` form, where each radio is a block of lines.
+
+        0: phy0: Wireless LAN
+            Soft blocked: no
+            Hard blocked: yes
     """
-    installed: list[str] = []
-    for family in sorted(hardware.families):
-        candidates = FAMILY_PACKAGES.get(family)
-        if not candidates:
+    radios: list[Radio] = []
+    identifier: str | None = None
+    soft: bool | None = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        low = line.lower()
+        if low.startswith("soft blocked:"):
+            soft = low.endswith("yes")
             continue
-        for package in candidates:
-            if package_installed(package):
-                log.detail(f"{package} is already installed")
-                installed.append(package)
-                break
-            if install_package(log, package):
-                log.detail(f"installed {package} for the {family} chip")
-                installed.append(package)
-                break
-            log.detail(f"{package} is not available here")
-        else:
-            log.warn(f"no firmware package for the {family} chip could be installed")
-    return installed
+        if low.startswith("hard blocked:"):
+            hard = low.endswith("yes")
+            if identifier is not None and soft is not None:
+                radios.append(Radio(identifier, soft, hard))
+            identifier, soft = None, None
+            continue
+        if ":" in line:
+            identifier = line
+    return radios
 
 
-def install_network_stack(log: Log) -> None:
-    """Install the supplicant, and a network manager when there is none.
+def parse_table_listing(text: str) -> list[Radio]:
+    """Read the table ``rfkill`` prints with no arguments.
 
-    Firmware makes the interface appear; none of it joins a network. Installing
-    a second network manager over one the machine already has would be the
-    kind of change a fix script has no business making, so the manager is only
-    installed when none of the known ones is present.
+        ID TYPE      DEVICE SOFT      HARD
+        1  wlan      phy0   unblocked blocked
     """
-    if install_package(log, SUPPLICANT_PACKAGE):
-        log.detail(f"installed {SUPPLICANT_PACKAGE}")
-    else:
-        log.warn(f"{SUPPLICANT_PACKAGE} could not be installed")
+    radios: list[Radio] = []
+    for raw in text.splitlines():
+        tokens = raw.split()
+        if len(tokens) < 3:
+            continue
+        if tokens[-1] not in ("blocked", "unblocked"):
+            continue
+        if tokens[-2] not in ("blocked", "unblocked"):
+            continue
+        label = " ".join(tokens[1:-2]) or tokens[0]
+        radios.append(Radio(label, tokens[-2] == "blocked", tokens[-1] == "blocked"))
+    return radios
 
-    if manager_installed() is not None:
-        log.detail(f"{manager_installed()} is already installed")
+
+def rfkill_radios() -> list[Radio]:
+    """Every radio and its block state, from whichever rfkill form this prints."""
+    rfkill = shutil.which("rfkill")
+    if rfkill is None:
+        return []
+    listed = parse_block_listing(run([rfkill, "list"], capture=True).stdout)
+    if listed:
+        return listed
+    return parse_table_listing(run([rfkill], capture=True).stdout)
+
+
+def unblock_all(log: Log) -> bool:
+    """Clear every soft block, returning whether rfkill was there to do it."""
+    rfkill = shutil.which("rfkill")
+    if rfkill is None:
+        log.detail("rfkill is not installed; install the rfkill package to manage the radio")
+        return False
+    run([rfkill, "unblock", "all"], capture=True)
+    return True
+
+
+def reload_drivers(log: Log, drivers: tuple[str, ...]) -> None:
+    """Unload and load the wireless drivers, giving a card its firmware and its radio.
+
+    A card probed before its firmware existed keeps that failure until the module
+    is reloaded, and a hard block is re-read from the firmware when the module
+    loads - so this is the step that makes the fix apply now instead of at the
+    next boot. A module that will not unload is left alone.
+    """
+    modprobe = shutil.which("modprobe")
+    if modprobe is None:
+        log.detail("modprobe is not installed; the drivers were not reloaded")
         return
-    if install_package(log, NETWORK_MANAGERS[0][0]):
-        log.detail(f"installed {NETWORK_MANAGERS[0][0]}")
-    else:
-        log.warn("no network manager could be installed")
+    if not drivers:
+        log.detail("no wireless driver name was found, so none could be reloaded")
+        return
+    for driver in drivers:
+        run([modprobe, "-r", driver], capture=True)
+    for driver in drivers:
+        if run([modprobe, driver], capture=True).returncode == 0:
+            log.detail(f"reloaded {driver}")
+        else:
+            log.detail(f"{driver} could not be reloaded; it loads at the next boot")
+
+
+def fix_radio(log: Log, hardware: Hardware) -> None:
+    """Unblock, reload the drivers, and unblock again.
+
+    The second unblock is not redundant: reloading a driver resets the kernel's
+    soft state, so a machine that was soft blocked before the reload would be
+    soft blocked after it as well without this.
+    """
+    unblock_all(log)
+    reload_drivers(log, hardware.drivers)
+    unblock_all(log)
+
+
+# --- the network stack -------------------------------------------------------
 
 
 def manager_installed() -> str | None:
@@ -724,107 +809,152 @@ def manager_installed() -> str | None:
     return None
 
 
-# --- the radio and the drivers -----------------------------------------------
+def install_network_stack(log: Log) -> None:
+    """Install the supplicant, and a network manager when there is none.
 
-
-def unblock_radio(log: Log) -> None:
-    """Unblock the radio, which is the other reason an interface is invisible.
-
-    rfkill is not always present; when it is not, nothing is done rather than a
-    package installed for it, because a machine without it does not have the
-    block it clears.
+    Firmware makes the interface appear; none of it joins a network. A second
+    manager over one the machine already has is the kind of change a fix script
+    has no business making, so the manager is only installed when none is present.
     """
-    rfkill = shutil.which("rfkill")
-    if rfkill is None:
-        log.detail("rfkill is not installed; the radio was not touched")
+    install_package(log, SUPPLICANT_PACKAGE)
+    manager = manager_installed()
+    if manager is not None:
+        log.detail(f"{manager} is already installed")
         return
-    run([rfkill, "unblock", "all"], capture=True)
-    log.detail("unblocked the radio")
+    install_package(log, NETWORK_MANAGERS[0][0])
 
 
-def reload_drivers(log: Log, drivers: tuple[str, ...]) -> None:
-    """Unload and load the drivers, giving a card a second chance at its firmware.
+def install_firmware(log: Log, hardware: Hardware) -> None:
+    """Install the firmware package each detected family needs.
 
-    A card that was probed before its firmware existed keeps the failure it had
-    then until the module is reloaded. This is the step that makes the fix apply
-    now instead of at the next boot, and it is safe: the modules are unloaded and
-    loaded again, and a reload that fails leaves the machine exactly as it was.
+    The candidates for a family are tried in order and the first apt will
+    install is kept, because a package folded into firmware-misc-nonfree in a
+    later release is not on an older machine and the other way round - and apt
+    aborts a whole transaction over one name it does not know.
     """
-    modprobe = shutil.which("modprobe")
-    if modprobe is None:
+    if not hardware.families:
         return
-    for driver in drivers:
-        run([modprobe, "-r", driver], capture=True)
-        if run([modprobe, driver], capture=True).returncode == 0:
-            log.detail(f"reloaded {driver}")
+    for family in sorted(hardware.families):
+        candidates = FAMILY_PACKAGES.get(family)
+        if not candidates:
+            continue
+        for package in candidates:
+            if install_package(log, package):
+                log.detail(f"{package} covers the {family} chip")
+                break
+            log.detail(f"{package} is not available here")
         else:
-            log.detail(f"{driver} could not be reloaded; it will load at the next boot")
+            log.warn(f"no firmware package for the {family} chip could be installed")
 
 
-def enable_network_manager(log: Log) -> None:
-    """Start the network manager, when the machine runs systemd."""
-    if manager_installed() != NETWORK_MANAGERS[0][0]:
-        return
-    if not systemd_running():
-        log.detail("systemd is not running; the network manager starts at the next boot")
+def enable_service(log: Log, unit: str) -> None:
+    """Enable and start a service, on a machine that runs systemd."""
+    if not Path("/run/systemd/system").is_dir():
         return
     systemctl = shutil.which("systemctl")
     if systemctl is None:
         return
-    if run([systemctl, "enable", "--now", NETWORK_MANAGERS[0][1]], capture=True).returncode == 0:
-        log.detail(f"started {NETWORK_MANAGERS[0][1]}")
+    if run([systemctl, "enable", "--now", unit], capture=True).returncode == 0:
+        log.detail(f"enabled {unit}")
 
 
-def systemd_running() -> bool:
-    return Path("/run/systemd/system").is_dir()
+# --- binding the wireless key ------------------------------------------------
+# Fn+F11 is the wireless key on most laptops. acpid sees ACPI hotkey events
+# before any desktop exists, so binding there works whatever window manager the
+# machine runs - which is the whole point: the key has to work on a machine whose
+# wifi is not up, and a desktop-level binding cannot be relied on for that.
+
+
+def key_handler_script() -> str:
+    """The shell the wireless key runs.
+
+    It sets the fast-path variable and re-runs this script as it is - the same
+    file, so there is one fix and not two. acpid runs it as root, so it does not
+    go through sudo.
+    """
+    return "\n".join(
+        [
+            "#!/bin/sh",
+            f"# written by {SCRIPT_NAME}",
+            "#",
+            "# The wireless key (Fn+F11) runs this. It unblocks the radio and",
+            "# reloads the driver, which is what clears a hard block the firmware",
+            "# is holding - no package manager, because a key press has to be",
+            "# instant.",
+            f"export {KEY_MODE_VARIABLE}=1",
+            f'exec "{sys.executable}" "{SCRIPT_PATH}"',
+            "",
+        ]
+    )
+
+
+def acpi_event_file(event_name: str) -> str:
+    """One acpid event file: the key's ACPI event, and what it runs."""
+    return "\n".join(
+        [
+            f"# written by {SCRIPT_NAME}",
+            f"event={event_name}",
+            f"action={KEY_HANDLER}",
+            "",
+        ]
+    )
+
+
+def install_key_binding(log: Log) -> None:
+    """Install the handler and the acpid events, and start acpid.
+
+    The handler is written from this script's own path, so it always runs the
+    fix that is installed beside it. Every known event name is written rather
+    than guessing one; a file for an event the machine never sends never runs.
+    """
+    if not package_installed("acpid"):
+        install_package(log, "acpid")
+    if not package_installed("acpid"):
+        log.detail("acpid could not be installed, so the wireless key cannot be bound")
+        return
+
+    write_text(KEY_HANDLER, key_handler_script())
+    KEY_HANDLER.chmod(0o755)
+    log.detail(f"wrote {KEY_HANDLER}")
+
+    for event_name in KEY_EVENT_NAMES:
+        path = ACPI_EVENTS_DIR / f"gnuchan-wifi-{event_name.replace('/', '-')}"
+        write_text(path, acpi_event_file(event_name))
+    log.detail(f"bound {', '.join(KEY_EVENT_NAMES)} to {KEY_HANDLER}")
+
+    enable_service(log, "acpid")
+    systemctl = shutil.which("systemctl")
+    if systemctl is not None and Path("/run/systemd/system").is_dir():
+        run([systemctl, "restart", "acpid"], capture=True)
+    log.detail("the wireless key now runs the fix")
 
 
 # --- checking the result -----------------------------------------------------
-# Everything here is read back from the machine rather than trusted. Every way
-# this can fail ends in the same place - a wireless network that cannot be
-# joined - and the checks are separated because the fix for each is different: a
-# missing interface is a firmware problem, a blocked radio is one rfkill command,
-# and a running interface with no manager is one package.
+# Everything is read back from the machine rather than trusted. Every way this
+# can fail ends in the same place - a wireless network that cannot be joined -
+# and the checks are separated because the fix for each is different: a hard
+# block is the wireless key, a soft block is one rfkill command, a missing
+# interface is firmware, and a silent interface is one package.
 
 
-def rfkill_state() -> tuple[bool, bool]:
-    """Whether the radio is soft blocked and whether it is hard blocked.
-
-    A soft block is the kernel's, and ``rfkill unblock all`` clears it. A hard
-    block is a physical switch or a firmware setting on the machine, which no
-    software can clear - and saying so is the difference between a fix that did
-    not work and a fix that cannot work.
-    """
-    rfkill = shutil.which("rfkill")
-    if rfkill is None:
-        return False, False
-    result = run([rfkill, "list"], capture=True)
-    soft = False
-    hard = False
-    for line in result.stdout.splitlines():
-        text = line.strip().lower()
-        if text.startswith("soft blocked:"):
-            soft = text.endswith("yes")
-        elif text.startswith("hard blocked:"):
-            hard = text.endswith("yes")
-    return soft, hard
-
-
-def manager_running() -> bool:
-    """Whether the installed network manager is running."""
-    manager = manager_installed()
-    if manager is None:
-        return False
-    if not systemd_running():
-        return True
-    systemctl = shutil.which("systemctl")
-    if systemctl is None:
-        return True
-    for package, unit in NETWORK_MANAGERS:
-        if package == manager:
-            result = run([systemctl, "is-active", unit], capture=True)
-            return result.stdout.strip() == "active"
-    return True
+def check_radios(log: Log) -> list[str]:
+    """Report each radio's block state, returning the problems it implies."""
+    problems: list[str] = []
+    radios = rfkill_radios()
+    if not radios:
+        log.detail("rfkill reports no radios")
+        return problems
+    for radio in radios:
+        log.detail(radio.describe())
+        if radio.hard:
+            problems.append(
+                f"{radio.identifier} is hard blocked, which no software clears: "
+                "press the wireless key (Fn+F11), which now runs this fix, and "
+                "make sure the machine's wireless switch is on"
+            )
+        elif radio.soft:
+            problems.append(f"{radio.identifier} is soft blocked; run: rfkill unblock all")
+    return problems
 
 
 def check_result(log: Log, hardware: Hardware) -> int:
@@ -836,37 +966,24 @@ def check_result(log: Log, hardware: Hardware) -> int:
         log.detail("wireless interfaces: " + ", ".join(interfaces))
     else:
         problems.append(
-            "no wireless interface exists, so the firmware for this chip is "
-            "either a package this script did not find or the machine needs a "
-            "reboot"
+            "no wireless interface exists, so the firmware for this chip is either "
+            "a package this script did not find or the machine needs a reboot"
         )
 
     for family in sorted(hardware.families):
         candidates = FAMILY_PACKAGES.get(family, ())
         if not any(package_installed(package) for package in candidates):
             problems.append(
-                f"no firmware package for the {family} chip is installed; the "
+                f"no firmware package for the {family} chip is installed; this "
                 f"machine needs one of: {', '.join(candidates)}"
             )
 
-    soft, hard = rfkill_state()
-    if hard:
-        problems.append(
-            "the radio is hard blocked by a switch or key on the machine, which "
-            "no software can clear"
-        )
-    elif soft:
-        problems.append("the radio is soft blocked; run: rfkill unblock all")
+    problems += check_radios(log)
 
     if manager_installed() is None:
         problems.append(
-            "no network manager is installed, so the wireless interface cannot "
-            "be used to join a network"
-        )
-    elif not manager_running():
-        problems.append(
-            f"{manager_installed()} is installed but not running; start it, or "
-            "reboot"
+            "no network manager is installed, so the wireless interface cannot be "
+            "used to join a network"
         )
 
     if problems:
@@ -881,19 +998,7 @@ def check_result(log: Log, hardware: Hardware) -> int:
 # --- entry point -------------------------------------------------------------
 
 
-def main() -> int:
-    """Fix the wifi, with no options to pass."""
-    log = Log()
-    ensure_root(log)
-
-    log.step(f"Fixing the wifi ({distro_description()})")
-
-    if not apt_available():
-        raise SystemExit(
-            "error: this fixes a Debian system; apt-get is not installed here"
-        )
-
-    hardware = detect_hardware()
+def report_hardware(log: Log, hardware: Hardware) -> None:
     if hardware.interfaces:
         log.detail("wireless interfaces: " + ", ".join(hardware.interfaces))
     if hardware.drivers:
@@ -901,20 +1006,47 @@ def main() -> int:
     if hardware.families:
         log.detail("chip families: " + ", ".join(sorted(hardware.families)))
 
+
+def needs_packages(hardware: Hardware) -> bool:
+    """Whether a package has to be fetched, and so whether the lists need refreshing.
+
+    This is what keeps a wireless-key press fast: when everything is already
+    installed, the key press never reaches the package manager at all.
+    """
+    for family in hardware.families:
+        candidates = FAMILY_PACKAGES.get(family, ())
+        if candidates and not any(package_installed(package) for package in candidates):
+            return True
+    return (
+        not package_installed(SUPPLICANT_PACKAGE)
+        or not package_installed("acpid")
+        or manager_installed() is None
+    )
+
+
+def full_fix(log: Log) -> int:
+    """Install what is missing, fix the radio, and bind the wireless key."""
+    if not apt_available():
+        raise SystemExit(
+            "error: this fixes a Debian system, and apt-get is not installed here"
+        )
+
+    hardware = detect_hardware()
+    report_hardware(log, hardware)
     if not hardware.found():
         log.note("")
-        log.note("No wireless hardware was found on this machine: no wireless")
-        log.note("interface, no wireless card on the PCI bus and no wireless USB")
-        log.note("driver. There is no firmware to install for a chip that is not")
-        log.note("there, so nothing was changed.")
+        log.note("No wireless hardware was found: no wireless interface, no wireless")
+        log.note("card on the PCI bus and no wireless USB driver. There is no")
+        log.note("firmware to install for a chip that is not there, so nothing was")
+        log.note("changed. Check that the card is seated and enabled in the firmware.")
         return 0
 
     log.step("Making the firmware component available")
-    if ensure_components(log, firmware_components()):
-        log.detail("the sources were changed, so the package lists are refreshed")
+    changed = ensure_components(log, firmware_components())
 
-    log.step("Updating the package lists")
-    apt_update(log)
+    if changed or needs_packages(hardware):
+        log.step("Updating the package lists")
+        apt_update(log)
 
     log.step("Installing the firmware")
     install_firmware(log, hardware)
@@ -922,35 +1054,65 @@ def main() -> int:
     log.step("Installing the network stack")
     install_network_stack(log)
 
-    if hardware.drivers:
-        log.step("Reloading the drivers")
-        reload_drivers(log, hardware.drivers)
+    log.step("Fixing the radio")
+    fix_radio(log, hardware)
 
-    log.step("Unblocking the radio")
-    unblock_radio(log)
-
-    enable_network_manager(log)
+    log.step("Binding the wireless key")
+    install_key_binding(log)
 
     log.step("Checking the result")
     problems = check_result(log, hardware)
 
     log.note("")
     if problems:
-        log.note("The problems listed above have to be fixed before the wireless")
-        log.note("interface can be used; until then there is no wifi.")
+        log.note("The problems above have to be fixed before the wireless interface")
+        log.note("can be used; until then there is no wifi.")
     else:
-        log.note("Done. The firmware is on disk and the drivers have been given it:")
-        log.note("a network manager can now be used to join a wireless network.")
-        log.note("If the interface still does not appear, reboot, because a card")
-        log.note("that was already probed keeps the failure it had at boot.")
+        log.note("Done. The firmware is on disk, the radio is unblocked and the")
+        log.note("drivers have been reloaded, so a network manager can join a")
+        log.note("network now. If the interface still does not appear, reboot: a")
+        log.note("card probed at boot keeps the failure it had then.")
+    log.note("")
+    log.note("The wireless key (Fn+F11) now runs this fix, so pressing it unblocks")
+    log.note("the radio and reloads the driver without a terminal.")
     log.note("")
     if hardware.drivers:
         log.note("  drivers   " + ", ".join(hardware.drivers))
     if hardware.families:
         log.note("  chips     " + ", ".join(sorted(hardware.families)))
-    log.note(f"  undo      apt-get remove the firmware package, and restore the "
-             f"{BACKUP_SUFFIX} copy of the sources file")
+    log.note(f"  key       {KEY_HANDLER}")
+    log.note(
+        f"  undo      apt-get remove the firmware package, and restore the "
+        f"{BACKUP_SUFFIX} copy of the sources file"
+    )
     return 1 if problems else 0
+
+
+def key_press(log: Log) -> int:
+    """What the wireless key runs: unblock the radio, reload the driver.
+
+    Nothing is installed and nothing is read back beyond the radios: a key press
+    has to return instantly, and the state that changes is the one the firmware
+    holds, which only a reload makes readable to the driver.
+    """
+    hardware = detect_hardware()
+    unblock_all(log)
+    reload_drivers(log, hardware.drivers)
+    unblock_all(log)
+    for radio in rfkill_radios():
+        log.note(f"  {radio.describe()}")
+    return 0
+
+
+def main() -> int:
+    """Fix the wifi, or, when the wireless key calls it, just fix the radio."""
+    log = Log()
+    ensure_root(log)
+    if os.environ.get(KEY_MODE_VARIABLE) == "1":
+        return key_press(log)
+
+    log.step(f"Fixing the wifi ({distro_description()})")
+    return full_fix(log)
 
 
 if __name__ == "__main__":
