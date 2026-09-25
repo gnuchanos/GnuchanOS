@@ -290,10 +290,18 @@ def session_entry() -> str:
 
 
 def write(path: Path, text: str, mode: int) -> None:
+    """Write a file in place, whatever is running from it.
+
+    The file is written beside its destination and then renamed over it. A
+    rename replaces the directory entry; it does not open the old file, so it
+    succeeds even when the process being replaced is still running. Writing to
+    the destination directly would fail with ETXTBSY for the launcher, which
+    the running greeter is executing.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".new")
+    temporary = path.with_name(path.name + ".new")
     temporary.write_text(text, encoding="utf-8")
-    shutil.move(str(temporary), str(path))
+    os.replace(str(temporary), str(path))
     path.chmod(mode)
     detail(f"installed {path}")
 
@@ -327,8 +335,15 @@ def install(binary: Path) -> None:
     step("Installing")
     BIN_DIR.mkdir(parents=True, exist_ok=True)
 
-    shutil.copyfile(binary, BIN_DIR / PROGRAM)
-    (BIN_DIR / PROGRAM).chmod(0o755)
+    # The old greeter is what is running this install — a display manager has
+    # no one else to be replaced by. Writing to its path would fail with
+    # ETXTBSY, so the new binary is put beside it and renamed over it: a rename
+    # swaps the directory entry and never opens the file being replaced, and
+    # the running process keeps its copy until it is restarted below.
+    staged = BIN_DIR / (PROGRAM + ".new")
+    shutil.copyfile(binary, staged)
+    staged.chmod(0o755)
+    os.replace(str(staged), str(BIN_DIR / PROGRAM))
     detail(f"installed {BIN_DIR / PROGRAM}")
 
     write(LAUNCHER, launcher_text(), 0o755)

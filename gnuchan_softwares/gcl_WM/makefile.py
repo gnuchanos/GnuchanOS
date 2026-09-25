@@ -228,13 +228,20 @@ def install(binary: Path) -> None:
     step("Installing")
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
-    shutil.copyfile(binary, BIN_DIR / PROGRAM)
-    (BIN_DIR / PROGRAM).chmod(0o755)
+    # The window manager already running a session is the one this install is
+    # replacing, so writing to its path would fail with ETXTBSY. The new
+    # binary is written beside it and renamed over it: a rename swaps the
+    # directory entry and never opens the file being replaced, and the running
+    # session keeps its copy until it is logged out and back in.
+    staged = BIN_DIR / (PROGRAM + ".new")
+    shutil.copyfile(binary, staged)
+    staged.chmod(0o755)
+    os.replace(str(staged), str(BIN_DIR / PROGRAM))
     detail(f"installed {BIN_DIR / PROGRAM}")
 
-    temporary = BUILD / "gnuchanwm.desktop"
+    temporary = BUILD / "gnuchanwm.desktop.new"
     temporary.write_text(session_entry(), encoding="utf-8")
-    shutil.move(str(temporary), str(SESSION_FILE))
+    os.replace(str(temporary), str(SESSION_FILE))
     SESSION_FILE.chmod(0o644)
     detail(f"installed {SESSION_FILE}")
 
