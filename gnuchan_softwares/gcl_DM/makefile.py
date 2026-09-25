@@ -51,7 +51,8 @@ SERVICE_NAME = "gnuchandm.service"
 SERVICE_FILE = Path("/etc/systemd/system") / SERVICE_NAME
 
 RIVAL_SERVICES = ("lightdm.service", "lxdm.service", "gdm3.service",
-                  "sddm.service", "xdm.service", "gdm.service")
+                  "sddm.service", "xdm.service", "gdm.service",
+                  "getty@tty1.service", "autovt@tty1.service")
 
 SOURCES = (
     "dm_style.c", "dm_core.c", "dm_form.c", "dm_draw.c", "dm_login.c",
@@ -346,13 +347,16 @@ def stop_rival_managers() -> None:
         present = run(["systemctl", "list-unit-files", name], capture=True)
         if name not in present.stdout:
             continue
-        step(f"Disabling {name}")
+        step(f"Disabling and masking {name}")
+        systemctl("stop", name)
         systemctl("disable", "--now", name)
+        systemctl("mask", "--now", name)
 
 
 def enable_service() -> None:
     step("Enabling as the display manager")
     systemctl("daemon-reload")
+    systemctl("set-default", "graphical.target")
     systemctl("enable", SERVICE_NAME)
     systemctl("restart", SERVICE_NAME)
 
