@@ -1,20 +1,15 @@
 [Unit]
 Description=GnuChanOS Display Manager
 Documentation=file:/usr/local/bin/gnuchandm-session
-Conflicts=getty@tty1.service
-After=getty@tty1.service systemd-user-sessions.service systemd-udev-settle.service
+After=systemd-user-sessions.service systemd-udev-settle.service
 Before=display-manager.service
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/gnuchandm-session
-Restart=always
-RestartSec=1
+Restart=on-failure
+RestartSec=2
 KillMode=mixed
-StandardInput=tty
-TTYPath=/dev/tty1
-TTYReset=yes
-TTYVHangup=yes
 
 [Install]
 Alias=display-manager.service
