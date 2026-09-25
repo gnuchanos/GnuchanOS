@@ -133,8 +133,13 @@ int dm_core_init(DmCore *core) {
 
     if (core_create_buffer(core) != 0) return -1;
 
-    XSetInputFocus(core->display, core->window, RevertToPointerRoot, CurrentTime);
+    /* Map first, then take the keyboard. XSetInputFocus on a window that is not
+       viewable is a BadMatch: the request is refused, the error handler prints
+       it, and the keyboard ends up nowhere — so the user types a password into
+       a screen that never receives a key. The focus request is only meaningful
+       once the window is on the screen, which is why it comes second. */
     XMapRaised(core->display, core->window);
+    XSetInputFocus(core->display, core->window, RevertToPointerRoot, CurrentTime);
     XSync(core->display, False);
     return 0;
 }

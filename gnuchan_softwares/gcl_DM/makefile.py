@@ -228,16 +228,25 @@ else
     touch "$AUTH"
     chmod 600 "$AUTH"
 
-    mcookie=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -tx1 | tr -d ' \\\\n')
+    mcookie=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -tx1 | tr -d ' \\n')
     xauth -f "$AUTH" add "$DISPLAY" . "$mcookie"
 
     # X is put on vt7 explicitly. Debian runs text logins on tty1 to tty6 and
     # keeps vt7 for X, so Ctrl+Alt+F1 to F6 always reach a login and
     # Ctrl+Alt+F7 comes back to the greeter. Every display manager uses this
-    # same terminal for the same reason: it is the one no getty holds.    # A service that starts X while the console is still on tty1 will flash a
-    # white line and then drop back out, so we switch VT to 7 before starting X.
-    chvt 7 >/dev/null 2>&1 || true    /usr/bin/Xorg "$DISPLAY" vt7 -nolisten tcp -auth "$AUTH" -noreset \\\\
-        >>"$LOG" 2>&1 &
+    # same terminal for the same reason: it is the one no getty holds.
+    #
+    # A service that starts X while the console is still on tty1 will flash a
+    # white line and then drop back out, so the VT is switched to 7 first. The
+    # switch is best-effort: a machine whose console is already elsewhere still
+    # gets its X server, because chvt failing is not a reason to have no login.
+    chvt 7 >/dev/null 2>&1 || true
+
+    # One line, one command. Split across a continuation the trailing redirect
+    # would belong to a command of its own: X would start without its log and,
+    # worse, without the & that puts it in the background, which leaves the
+    # launcher waiting on the server forever instead of starting the greeter.
+    /usr/bin/Xorg "$DISPLAY" vt7 -nolisten tcp -auth "$AUTH" -noreset >>"$LOG" 2>&1 &
     Xorg_pid=$!
 
     for _ in $(seq 1 100); do
@@ -329,10 +338,15 @@ def write(path: Path, text: str, mode: int) -> None:
     succeeds even when the process being replaced is still running. Writing to
     the destination directly would fail with ETXTBSY for the launcher, which
     the running greeter is executing.
+
+    The newline is forced to \\n: a launcher and a systemd unit are read by sh
+    and by systemd, and a stray \\r at the end of a line makes the last word of
+    every line a different word. On a machine where an editor has saved this
+    file with CRLF, the generated shell would be silently wrong.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".new")
-    temporary.write_text(text, encoding="utf-8")
+    temporary.write_text(text, encoding="utf-8", newline="\n")
     os.replace(str(temporary), str(path))
     path.chmod(mode)
     detail(f"installed {path}")
