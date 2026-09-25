@@ -13,11 +13,91 @@
  * input, so every window is resolved to the client it holds before anything is
  * done with it. That resolution is the whole reason this module knows about
  * frames at all.
+ *
+ * The module also keeps the order the windows were last used in. That order is
+ * not the frame table's: the table is creation order, and a user does not work
+ * through their windows in the order they were opened. It is kept here because
+ * this is the one place that knows a focus change has happened, and it is what
+ * the switcher key reads to mean "the window before this one".
  */
 #include <stdio.h>
 
 #include "wm_core.h"
 #include "wm_frame.h"
+
+/* Note that a window is now the most recent one, moving it to the front of the
+   order if it was already in it. The order holds each window once: a window
+   seen twice would take two presses of the key to pass. */
+static void focus_history_push(WmCore *core, Window window) {
+    if (window == None) {
+        return;
+    }
+
+    int found = -1;
+    for (int i = 0; i < core->focus_history_count; i++) {
+        if (core->focus_history[i] == window) {
+            found = i;
+            break;
+        }
+    }
+    if (found == 0) {
+        return;   /* already the most recent */
+    }
+
+    int count = core->focus_history_count;
+    if (found > 0) {
+        /* Move it up, closing the gap it leaves behind. */
+        for (int i = found; i > 0; i--) {
+            core->focus_history[i] = core->focus_history[i - 1];
+        }
+    } else {
+        /* A window not in the order goes on the front, and the oldest falls
+           off the end when the order is full. The one dropped is the least
+           recently used, which is the one no longer worth a key press. */
+        if (count == WM_MAX_FRAMES) {
+            count--;
+        }
+        for (int i = count; i > 0; i--) {
+            core->focus_history[i] = core->focus_history[i - 1];
+        }
+        core->focus_history_count = count + 1;
+    }
+    core->focus_history[0] = window;
+}
+
+void wm_focus_forget(WmCore *core, Window window) {
+    if (window == None) {
+        return;
+    }
+    for (int i = 0; i < core->focus_history_count; i++) {
+        if (core->focus_history[i] != window) {
+            continue;
+        }
+        for (int j = i; j + 1 < core->focus_history_count; j++) {
+            core->focus_history[j] = core->focus_history[j + 1];
+        }
+        core->focus_history_count--;
+        return;
+    }
+}
+
+WmFrame *wm_focus_previous(WmCore *core) {
+    /* The front of the order is the window that is focused now, so the
+       previous one is the first entry after it that still exists. Entries are
+       checked against the frame table because a window can be named here after
+       it is gone; this must never offer a window the manager no longer has. */
+    for (int i = 0; i < core->focus_history_count; i++) {
+        Window window = core->focus_history[i];
+        if (window == core->focused) {
+            continue;
+        }
+        WmFrame *frame = wm_frame_find(core, window);
+        if (frame) {
+            return frame;
+        }
+    }
+    return NULL;
+}
 
 /* The window that should actually take keyboard focus for one that was entered
    or clicked: the client, when the window is a frame. */
@@ -49,6 +129,10 @@ void wm_focus_set(WmCore *core, Window window) {
     Window previous = core->focused;
     core->focused = window;
     XSetInputFocus(core->display, window, RevertToPointerRoot, CurrentTime);
+
+    /* The window just focused is now the most recently used one, so it goes to
+       the front of the order before anything reads it. */
+    focus_history_push(core, window);
 
     /* Tell the window and everyone watching which window is active. This is
        what a task list highlights and what makes a window title bold. */

@@ -30,6 +30,13 @@ typedef struct WmStyle {
     int border_width;            /* the frame drawn around a window          */
 } WmStyle;
 
+/* Resolve one colour name to the pixel the server will draw with, or the
+   fallback when the name is empty or unknown. Public because the settings file
+   holds colour names, not pixels: only code with a display can turn one into
+   the other, and the config module is what has a display when it needs to. */
+unsigned long wm_style_colour(Display *display, int screen,
+                              const char *name, unsigned long fallback);
+
 /* Resolve every colour and load a font. Returns 0 on success. A font that
    cannot be loaded is not fatal: a missing font falls back to whatever the X
    server offers, because a desktop that refuses to draw is worse than one

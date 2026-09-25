@@ -53,11 +53,11 @@ typedef int (*GclIdeRunFn)(const char *path);
 typedef int (*GclIdeRunFn)(const char *path);
 #endif
 
-/* Directory containing the running gcl.exe.
-   Windows: GetModuleFileNameA → always a FULL path (even if argv[0] is relative).
-   Linux: if argv[0] is not an absolute path, resolve it with realpath relative
-   to the working directory. The old code never trimmed exe_dir when argv[0] was
-   "./gcl.exe" or "gcl.exe", producing WRONG paths like "gcl.exe\Programs\ide.dll". */
+/* Resolve the actual executable path for argv[0], including shell PATH lookups
+   and symlinks. If the user invokes `gcl` from a symlink in ~/.local/bin, we
+   must resolve to the real binary under ~/.local/lib/gnuchan/gcl/gcl rather than
+   to the symlink path itself, otherwise `Programs/ide.so` is looked up as
+   `gcl/Programs/ide.so` relative to the current directory. */
 static void get_exe_dir(char *out, size_t outsz) {
     out[0] = '\0';
 #ifdef _WIN32
@@ -69,16 +69,43 @@ static void get_exe_dir(char *out, size_t outsz) {
     }
 #else
     if (g_gcl_argc > 0 && g_gcl_argv && g_gcl_argv[0] && g_gcl_argv[0][0]) {
-        /* Always produce an absolute path: resolve with realpath.
-           Otherwise, from a relative path like "./language/build/gnuLinux/gcl"
-           "exe_dir" stays relative and LD_LIBRARY_PATH becomes relative — dlopen
-           cannot find libpython3.14.so.1.0 ("unknown module 'Embed'"). */
-        char abs_path[4096];
-        if (realpath(g_gcl_argv[0], abs_path) != NULL) {
-            snprintf(out, outsz, "%s", abs_path);
+        const char *arg0 = g_gcl_argv[0];
+        char probe[4096];
+        probe[0] = '\0';
+
+        if (arg0[0] == '/' || arg0[0] == '~') {
+            snprintf(probe, sizeof(probe), "%s", arg0);
+        } else if (strchr(arg0, '/') != NULL || strchr(arg0, '\\') != NULL) {
+            snprintf(probe, sizeof(probe), "%s", arg0);
         } else {
-            snprintf(out, outsz, "%s", g_gcl_argv[0]);
+            const char *path_env = getenv("PATH");
+            if (path_env && path_env[0]) {
+                char paths[8192];
+                snprintf(paths, sizeof(paths), "%s", path_env);
+                char *save = NULL;
+                char *tok = strtok_r(paths, ":", &save);
+                while (tok) {
+                    snprintf(probe, sizeof(probe), "%s/%s", tok, arg0);
+                    struct stat st;
+                    if (stat(probe, &st) == 0 && (st.st_mode & S_IXUSR)) {
+                        break;
+                    }
+                    probe[0] = '\0';
+                    tok = strtok_r(NULL, ":", &save);
+                }
+            }
+            if (!probe[0]) {
+                snprintf(probe, sizeof(probe), "%s", arg0);
+            }
         }
+
+        char abs_path[4096];
+        if (realpath(probe, abs_path) != NULL) {
+            snprintf(out, outsz, "%s", abs_path);
+        } else if (probe[0]) {
+            snprintf(out, outsz, "%s", probe);
+        }
+
         char *es = strrchr(out, '/');
         if (es) {
             *es = '\0';

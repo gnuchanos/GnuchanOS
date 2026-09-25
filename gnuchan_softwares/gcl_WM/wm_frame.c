@@ -100,34 +100,6 @@ WmFrame *wm_frame_find_by_frame(WmCore *core, Window frame) {
     return NULL;
 }
 
-/* The next window after the given one, wrapping around, walking the whole
-   table.
- *
- * A minimised window is part of the ring and is returned like any other; the
- * caller restores it. That is the point of the switcher key on a desktop with
- * no task list — it is the only way back from the minimise button — and
- * skipping minimised windows made the key able to put a window away and never
- * to bring it back, which is the one thing it is for. */
-WmFrame *wm_frame_next(WmCore *core, Window client) {
-    if (core->frame_count == 0) {
-        return NULL;
-    }
-
-    int start = -1;
-    for (int i = 0; i < core->frame_count; i++) {
-        if (core->frames[i].client == client) {
-            start = i;
-            break;
-        }
-    }
-
-    int i = (start + 1) % core->frame_count;
-    if (i < 0) {
-        i += core->frame_count;
-    }
-    return &core->frames[i];
-}
-
 /* --- naming --------------------------------------------------------------- */
 
 /* A window's name, from the two places one is written. _NET_WM_NAME is UTF-8
@@ -474,11 +446,11 @@ void wm_frame_maximize(WmCore *core, WmFrame *frame) {
 /* The next window that is still on screen, after the given one and wrapping
    around.
  *
- * This is not wm_frame_next(): that one walks every window, minimised ones
- * included, because the switcher has to be able to reach them. Here the window
- * the keyboard is on is being taken away, so the focus has to land on
- * something the user can see — and walking on to the window just put away
- * would make the minimise button undo itself. */
+ * This is not the order the switcher key walks: that one goes through the
+ * recent-focus order and may land on a minimised window, because it has to be
+ * able to reach them. Here the window the keyboard is on is being taken away,
+ * so the focus has to land on something the user can see - and walking on to
+ * the window just put away would make the minimise button undo itself. */
 static WmFrame *frame_next_visible(WmCore *core, Window client) {
     int start = -1;
     for (int i = 0; i < core->frame_count; i++) {
@@ -626,6 +598,26 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
     XSelectInput(core->display, client,
                  PropertyChangeMask | StructureNotifyMask | EnterWindowMask);
 
+    /* A click on the program's own pixels is taken with a passive grab rather
+       than by asking to be told about button presses through the event mask.
+     *
+     * The mask is the obvious way and it does not work: a program that handles
+     * the mouse itself — a terminal with mouse reporting, which is what this
+     * session opens — already has the button selected on its window, and
+     * asking for it too is refused with BadAccess, which takes the whole mask
+     * down with it. The manager then hears nothing at all from that window,
+     * clicks included, and that is exactly the window a user clicks.
+     *
+     * A grab does not collide. It is held per button and per window, so the
+     * program's own interest in the button does not stop this from registering,
+     * and AnyModifier means the click is taken whether or not a modifier is
+     * held. owner_events is False so the grab is the manager's, not the
+     * program's, and the press waits here (GrabModeSync) until it is decided
+     * what to do with it — see the ButtonPress case below, where it is replayed
+     * to the program so a click meant for the program still reaches it. */
+    XGrabButton(core->display, Button1, AnyModifier, client, False,
+                ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
+
     /* A safety net: if this window manager dies, the X server puts the client
        back on the root instead of leaving it inside a window nobody owns. */
     XAddToSaveSet(core->display, client);
@@ -676,6 +668,9 @@ void wm_frame_destroy(WmCore *core, WmFrame *frame, int client_gone) {
     if (core->focused == frame->client) {
         core->focused = 0;
     }
+    /* A window that is gone must leave the focus order too, or the switcher
+       would try to activate a window the server no longer has. */
+    wm_focus_forget(core, frame->client);
 
     /* Take the frame out of the table by moving the last one into its place.
        Order does not matter here, and this keeps the array packed. */
@@ -802,6 +797,20 @@ static void frame_event(WmCore *core, XEvent *event) {
         if (event->xbutton.button != Button1) {
             break;
         }
+        /* A press the passive grab took on a program's own window. The click
+           was aimed at the program, so it is not answered here: the window is
+           focused and raised, and the press is then replayed. Replaying is both
+           what releases the synchronous grab and what hands the event on, so a
+           click meant for the program still reaches it. */
+        WmFrame *clicked = wm_frame_find(core, event->xbutton.window);
+        if (clicked) {
+            wm_focus_set(core, clicked->client);
+            wm_frame_raise(core, clicked);
+            XAllowEvents(core->display, ReplayPointer, event->xbutton.time);
+            XFlush(core->display);
+            break;
+        }
+
         WmFrame *frame = wm_frame_find_by_frame(core, event->xbutton.window);
         if (!frame) {
             break;

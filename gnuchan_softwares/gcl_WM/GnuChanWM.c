@@ -51,6 +51,7 @@ static void register_modules(WmCore *core) {
        the desktop paints the background next; windows are managed on top of
        it; focus names the current one; and keys come last so a key that
        cannot be bound cannot stop the window manager itself from running. */
+    wm_register(core, &wm_config_module);
     wm_register(core, &wm_theme_module);
     wm_register(core, &wm_desktop_module);
     wm_register(core, &wm_manage_module);

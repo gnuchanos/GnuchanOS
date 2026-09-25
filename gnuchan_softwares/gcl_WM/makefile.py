@@ -43,6 +43,7 @@ SESSION_FILE = SESSION_DIR / "gnuchanwm.desktop"
 SOURCES = (
     "wm_core.c",
     "wm_style.c",
+    "wm_config_file.c",
     "wm_theme.c",
     "wm_desktop.c",
     "wm_frame.c",
@@ -57,6 +58,7 @@ SOURCES = (
 HEADERS = (
     "wm_module.h", "wm_core.h", "wm_style.h", "wm_frame.h", "wm_spawn.h",
     "wm_theme.h",
+    "wm_config.h",
 )
 
 FALLBACK_TERMINAL = "xterm"

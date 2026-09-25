@@ -1640,11 +1640,106 @@ def print_suite_summary(results: list[tuple[str, bool]],
     return False
 
 
+def _live_user_bin_dir() -> Path:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return Path("/usr/local/bin")
+    return Path.home() / ".local" / "bin"
+
+
+def _live_runtime_root() -> Path:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return Path("/usr/local/lib/gnuchan")
+    return Path.home() / ".local" / "lib" / "gnuchan"
+
+
+def _ensure_path_in_shell(bin_dir: Path) -> None:
+    shell_file = Path.home() / ".bashrc"
+    if os.environ.get("SHELL", "").endswith("zsh"):
+        shell_file = Path.home() / ".zshrc"
+    elif not shell_file.exists():
+        shell_file = Path.home() / ".profile"
+
+    export_line = f'export PATH="{bin_dir}:$PATH"'
+    if shell_file.exists():
+        text = shell_file.read_text(encoding="utf-8", errors="ignore")
+        if export_line in text:
+            return
+    else:
+        text = ""
+
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += f"\n{export_line}\n"
+    shell_file.write_text(text, encoding="utf-8")
+
+
+def install_gcl_system() -> None:
+    """Install the built CLI so it is callable as `gcl` from PATH.
+
+    For Linux, prefer a user-local install under ~/.local so normal developers
+    can use the command without sudo. If the script is running as root, the
+    conventional /usr/local target is used instead.
+    """
+    if os_name() != "gnuLinux":
+        raise SystemExit("[gcl] hata: sadece Linux için kurulum desteklenir")
+
+    build_dir = build_gcl()
+    bin_dir = _live_user_bin_dir()
+    runtime_root = _live_runtime_root()
+    install_dir = runtime_root / "gcl"
+
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    if install_dir.exists() or install_dir.is_symlink():
+        if install_dir.is_dir() and not install_dir.is_symlink():
+            shutil.rmtree(install_dir)
+        else:
+            install_dir.unlink()
+    shutil.copytree(build_dir, install_dir, dirs_exist_ok=True)
+
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    launcher = bin_dir / "gcl"
+    if launcher.exists() or launcher.is_symlink():
+        if launcher.is_dir() and not launcher.is_symlink():
+            shutil.rmtree(launcher)
+        else:
+            launcher.unlink()
+    launcher.symlink_to(install_dir / "gcl")
+    _ensure_path_in_shell(bin_dir)
+
+    print(f"[gcl] installed: {launcher}", flush=True)
+    print(f"[gcl] runtime: {install_dir}", flush=True)
+    print(f"[gcl] shell PATH: {bin_dir}", flush=True)
+    print("[gcl] artık terminalde `gcl` komutu kullanılabilir", flush=True)
+
+
+def uninstall_gcl_system() -> None:
+    if os_name() != "gnuLinux":
+        raise SystemExit("[gcl] hata: sadece Linux için kaldırma desteklenir")
+
+    launcher = _live_user_bin_dir() / "gcl"
+    installed = _live_runtime_root() / "gcl"
+
+    for path in (launcher, installed):
+        if path.is_symlink() or path.exists():
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+    print(f"[gcl] removed: {launcher} and {installed}", flush=True)
+
+
 def main() -> int:
     target = sys.argv[1] if len(sys.argv) > 1 else TARGET_DEFAULT
+    if target in ("install", "-install", "--install"):
+        install_gcl_system()
+        return 0
+    if target in ("uninstall", "-uninstall", "--uninstall"):
+        uninstall_gcl_system()
+        return 0
+
     if target not in KNOWN_TARGETS:
         print(f"[gcl] hata: bilinmeyen hedef '{target}' — "
-              f"geçerli hedefler: {', '.join(KNOWN_TARGETS)}", file=sys.stderr, flush=True)
+              f"geçerli hedefler: {', '.join(KNOWN_TARGETS + ('install', '-install', '--install'))}", file=sys.stderr, flush=True)
         return 2
 
     # Eksik X11/OpenGL -dev paketleri varsa önce onları kur, sonra derlemeye

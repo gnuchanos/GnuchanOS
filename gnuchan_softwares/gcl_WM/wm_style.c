@@ -10,7 +10,7 @@
 
 #include "wm_style.h"
 
-static unsigned long style_colour(Display *display, int screen,
+unsigned long wm_style_colour(Display *display, int screen,
                                   const char *name, unsigned long fallback) {
     Colormap cmap = DefaultColormap(display, screen);
     XColor colour;
@@ -25,16 +25,16 @@ int wm_style_load(WmStyle *style, Display *display, int screen) {
     unsigned long black = BlackPixel(display, screen);
     unsigned long white = WhitePixel(display, screen);
 
-    style->background       = style_colour(display, screen, "#1a0b2e", black);
-    style->panel            = style_colour(display, screen, "#32143f", black);
-    style->panel_edge       = style_colour(display, screen, "#7b2cbf", white);
-    style->field            = style_colour(display, screen, "#241033", black);
-    style->text             = style_colour(display, screen, "#e0c3fc", white);
-    style->text_muted       = style_colour(display, screen, "#9d7bba", white);
-    style->accent           = style_colour(display, screen, "#c77dff", white);
-    style->accent_dim       = style_colour(display, screen, "#7b2cbf", white);
-    style->border           = style_colour(display, screen, "#c77dff", white);
-    style->border_unfocused = style_colour(display, screen, "#32143f", black);
+    style->background       = wm_style_colour(display, screen, "#1a0b2e", black);
+    style->panel            = wm_style_colour(display, screen, "#32143f", black);
+    style->panel_edge       = wm_style_colour(display, screen, "#7b2cbf", white);
+    style->field            = wm_style_colour(display, screen, "#241033", black);
+    style->text             = wm_style_colour(display, screen, "#e0c3fc", white);
+    style->text_muted       = wm_style_colour(display, screen, "#9d7bba", white);
+    style->accent           = wm_style_colour(display, screen, "#c77dff", white);
+    style->accent_dim       = wm_style_colour(display, screen, "#7b2cbf", white);
+    style->border           = wm_style_colour(display, screen, "#c77dff", white);
+    style->border_unfocused = wm_style_colour(display, screen, "#32143f", black);
 
     style->border_width = 2;
 

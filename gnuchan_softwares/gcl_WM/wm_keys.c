@@ -18,6 +18,7 @@
 #include "wm_core.h"
 #include "wm_frame.h"
 #include "wm_spawn.h"
+#include "wm_config.h"
 
 typedef void (*KeyAction)(WmCore *core);
 
@@ -44,21 +45,28 @@ static void action_close_focused(WmCore *core) {
     }
 }
 
-/* Alt+Tab: go to the next window.
+/* Alt+Tab: go back to the window that was in use before this one.
  *
- * The window the switch starts from is the focused one, and the switch itself
- * is wm_frame_activate(), which is also what a click and the focus module use.
- * So there is one answer to "go to this window" and the key only chooses which
- * window that is. Minimised windows are restored by the same call, which is
- * what makes the key the way back from the minimise button.
+ * The target is the most recently used window, not the next one in the frame
+ * table: that is what every desktop's Alt+Tab means, and it is what makes one
+ * press undo one move — pressing it twice goes there and back. The switch
+ * itself is wm_frame_activate(), which is also what a click and the focus
+ * module use; a minimised window is restored by that same call, which is what
+ * makes the key the way back from the minimise button.
  *
  * Nothing is drawn for the switch: a list of windows on screen needs a grab
  * and a release to end it, and what a machine with one window open sees is a
  * pop-up listing one name. The window that arrives is its own announcement. */
 static void action_switch_window(WmCore *core) {
-    WmFrame *next = wm_frame_next(core, core->focused);
-    if (next) {
-        wm_frame_activate(core, next);
+    WmFrame *previous = wm_focus_previous(core);
+    if (previous) {
+        wm_frame_activate(core, previous);
+    }
+}
+
+static void action_reload_config(WmCore *core) {
+    if (wm_config_reload(core) == 0) {
+        fprintf(stderr, "gnuchanwm: hot reload applied\n");
     }
 }
 
@@ -72,8 +80,9 @@ static const KeyBinding BINDINGS[] = {
     { Mod4Mask, XK_Return, action_spawn_terminal, "open terminal" },
     { Mod1Mask, XK_F4, action_close_focused, "close window" },
     { Mod4Mask, XK_F4, action_close_focused, "close window" },
-    { Mod1Mask, XK_Tab, action_switch_window, "next window" },
-    { Mod4Mask, XK_Tab, action_switch_window, "next window" },
+    { Mod1Mask, XK_Tab, action_switch_window, "previous window" },
+    { Mod4Mask, XK_Tab, action_switch_window, "previous window" },
+    { ControlMask | Mod1Mask, XK_r, action_reload_config, "reload config" },
 };
 
 #define BINDING_COUNT (sizeof(BINDINGS) / sizeof(BINDINGS[0]))

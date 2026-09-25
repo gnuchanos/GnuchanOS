@@ -14,6 +14,7 @@
 #include "wm_module.h"
 #include "wm_style.h"
 #include "wm_frame.h"
+#include "wm_config.h"
 
 /* The window state the core selects on the root. */
 #define WM_EVENT_MASK (SubstructureRedirectMask | SubstructureNotifyMask | \
@@ -48,11 +49,21 @@ struct WmCore {
     /* The window that currently has input focus, 0 when none. */
     Window focused;
 
+    /* Every window that has had the focus, most recent first, with no window
+       appearing twice. The switcher key walks this rather than the frame
+       table: the table is creation order, and creation order has nothing to
+       do with what the user was doing. Alt+Tab has to go back to the window
+       the user was last in — that is the only order in which one press of the
+       key undoes one move. */
+    Window focus_history[WM_MAX_FRAMES];
+    int focus_history_count;
+
     /* The picture the whole desktop shares: the palette, the font and the
        one graphics context everything draws with. Modules never create their
        own — a second palette is how one desktop starts looking like two. */
     WmStyle style;
     GC gc;
+    WmConfig config;                        /* the parsed settings file */
 
     /* The pointer set on the root. Kept so the module that made it can free
        it; a cursor allocated and forgotten is a leak per session. */
@@ -99,6 +110,15 @@ int  wm_register(WmCore *core, const WmModule *module);
 void wm_focus_set(WmCore *core, Window window);
 void wm_focus_click(WmCore *core, Window window);
 
+/* The most recently used window other than the focused one, or NULL when
+   there is none. This is what Alt+Tab goes to: the window the user was in
+   before, not the next one in the frame table. */
+WmFrame *wm_focus_previous(WmCore *core);
+
+/* Forget a window that no longer exists, so the switcher cannot activate a
+   window that has been closed. Called when a window is destroyed. */
+void wm_focus_forget(WmCore *core, Window window);
+
 /* wm_manage.c — re-draws a window's border in the focused/unfocused colour. */
 void wm_manage_frame(WmCore *core, Window window);
 
@@ -111,5 +131,6 @@ extern const WmModule wm_frame_module;    /* wm_frame.c   */
 extern const WmModule wm_autostart_module;/* wm_autostart.c */
 extern const WmModule wm_menu_module;     /* wm_menu.c    */
 extern const WmModule wm_theme_module;    /* wm_theme.c   */
+extern const WmModule wm_config_module;   /* wm_config_file.c */
 
 #endif /* GNUCHANWM_CORE_H */

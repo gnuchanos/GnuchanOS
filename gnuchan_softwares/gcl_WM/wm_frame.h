@@ -99,11 +99,6 @@ typedef struct WmFrame {
 WmFrame *wm_frame_find(WmCore *core, Window client);
 WmFrame *wm_frame_find_by_frame(WmCore *core, Window frame);
 
-/* The next managed window after the given one, wrapping around, skipping any
-   that are minimised or not viewable. NULL when no window can be switched to.
-   The switcher key is the caller, and it wants exactly this order. */
-WmFrame *wm_frame_next(WmCore *core, Window client);
-
 /* --- the frame ------------------------------------------------------------ */
 
 /* Take a client into a frame: make the frame, reparent the client into it, map

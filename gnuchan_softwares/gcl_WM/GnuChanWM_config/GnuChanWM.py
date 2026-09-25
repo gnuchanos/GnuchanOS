@@ -1,4 +1,10 @@
-/*
+from gcl_DM import gcl_BAR, gcl_Widgets, gcl_themes, gcl_key, gcl_keys, gcl_mouse, gcl_touchpad, gcl_Window
+
+# path ~/.config/GnuChanWM/GnuChanWM.py
+
+
+gcl_Window.set_active_window_border_color("#c369ff")
+gcl_Window.set_inactive_window_border_color("#280440")
 
 # can be call multiple bar but for now it's just one bar
 gcl_BAR.call(
@@ -45,7 +51,6 @@ gcl_BAR.call(
     ]
 )
 
-
 # system theme, icon theme, cursor theme
 gcl_themes.Theme_gtk(
     ThemeName="GnuChanTheme",
@@ -61,6 +66,7 @@ gcl_themes.Theme_cursor(
     ThemeName="GnuChanCursorTheme",
     ThemePath="" # D:\GnuchanOS\dotfile\CURSOR_THEME bunun kuruldugu yer
 )
+
 
 default_terminal = "xterm"
 super_key1 = "Mod1" # ctrl
@@ -91,9 +97,3 @@ gcl_touchpad.TouchpadBehavior(
     ThreeFingerSwipe=False,
     FourFingerSwipe=False,
 )
-
-
-
-# file name for settings
-GnuChanWM.py --> ~/.config/GnuChanWM_config/ hot reload config file
-*/
