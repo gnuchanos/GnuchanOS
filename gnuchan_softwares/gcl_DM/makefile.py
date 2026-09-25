@@ -11,9 +11,11 @@
 #     python3 makefile.py build      compile only
 #     python3 makefile.py uninstall  remove and disable everything
 #
-# A display manager owns the X server, so the install also writes a small
-# launcher that starts X on tty1 and puts the greeter on it, and the systemd
-# unit runs that launcher.
+# A display manager owns the X server, so the install writes a small launcher
+# that starts X and puts the greeter on it, and the systemd unit runs that
+# launcher. The unit owns no terminal: the X server takes a virtual terminal of
+# its own, and a unit that also held one would leave two owners for a single
+# console — which is what stops Ctrl+Alt+F from switching to a text login.
 #
 # Debian only, on purpose.
 #
@@ -53,9 +55,10 @@ RIVAL_SERVICES = ("lightdm.service", "lxdm.service", "gdm3.service",
 
 SOURCES = (
     "dm_style.c", "dm_core.c", "dm_form.c", "dm_draw.c", "dm_login.c",
-    "dm_input.c", "dm_auth.c", "dm_session.c", "dm_power.c", "GnuChanDM.c",
+    "dm_input.c", "dm_auth.c", "dm_sessions.c", "dm_session.c", "dm_power.c",
+    "GnuChanDM.c",
 )
-HEADERS = ("dm_module.h", "dm_style.h", "dm_core.h")
+HEADERS = ("dm_module.h", "dm_style.h", "dm_sessions.h", "dm_core.h")
 
 ELEVATED_VARIABLE = "GNUCHANDM_ELEVATED"
 
@@ -201,7 +204,7 @@ def build() -> Path:
 
 def launcher_text() -> str:
     return f"""#!/bin/sh
-# gnuchandm-session - start X on tty1, then run the greeter on it.
+# gnuchandm-session - put the greeter on its own X server.
 # Written by GnuChanDM's makefile; edits here are overwritten on reinstall.
 set -e
 
@@ -212,28 +215,41 @@ LOG=/tmp/gnuchandm-session.log
 
 mkdir -p "$RUNDIR"
 chmod 700 "$RUNDIR"
-rm -f "$AUTH"
-touch "$AUTH"
-chmod 600 "$AUTH"
 
-mcookie=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -tx1 | tr -d ' \\n')
-xauth -f "$AUTH" add "$DISPLAY" . "$mcookie"
+# If a server is already answering on this display, reuse it. The greeter is
+# restarted without the server being torn down, and starting a second X on a
+# display already in use fails — which is what leaves a bare screen while the
+# service dies and restarts.
+if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
+    echo "gnuchandm: reusing the X server already on $DISPLAY"
+else
+    rm -f "$AUTH"
+    touch "$AUTH"
+    chmod 600 "$AUTH"
+
+    mcookie=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -tx1 | tr -d ' \\\\n')
+    xauth -f "$AUTH" add "$DISPLAY" . "$mcookie"
+
+    # X is put on vt7 explicitly. Debian runs text logins on tty1 to tty6 and
+    # keeps vt7 for X, so Ctrl+Alt+F1 to F6 always reach a login and
+    # Ctrl+Alt+F7 comes back to the greeter. Every display manager uses this
+    # same terminal for the same reason: it is the one no getty holds.
+    /usr/bin/Xorg "$DISPLAY" vt7 -nolisten tcp -auth "$AUTH" -noreset \\\\
+        >>"$LOG" 2>&1 &
+    Xorg_pid=$!
+
+    for _ in $(seq 1 100); do
+        if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then break; fi
+        if ! kill -0 "$Xorg_pid" 2>/dev/null; then
+            echo "gnuchandm: the X server exited; see $LOG" >&2
+            exit 1
+        fi
+        sleep 0.2
+    done
+fi
+
 export XAUTHORITY="$AUTH"
 export DISPLAY
-
-/usr/bin/Xorg "$DISPLAY" vt1 -nolisten tcp -auth "$AUTH" -noreset \\
-    >>"$LOG" 2>&1 &
-Xorg_pid=$!
-
-for _ in $(seq 1 100); do
-    if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then break; fi
-    if ! kill -0 "$Xorg_pid" 2>/dev/null; then
-        echo "gnuchandm: the X server exited; see $LOG" >&2
-        exit 1
-    fi
-    sleep 0.2
-done
-
 exec {BIN_DIR / PROGRAM}
 """
 
@@ -243,20 +259,35 @@ def service_text() -> str:
 [Unit]
 Description=GnuChanOS Display Manager
 Documentation=file:{LAUNCHER}
-Conflicts=getty@tty1.service
-After=getty@tty1.service systemd-user-sessions.service systemd-udev-settle.service
+
+# No Conflicts with a getty and no After on one. The greeter runs on vt7 and the
+# text logins stay on tty1 to tty6, so all six keep working while it is up —
+# Ctrl+Alt+F1 to F6 reach a login, Ctrl+Alt+F7 returns here. Taking tty1 from
+# its getty would remove one of the ways back into a session that cannot start,
+# which is the opposite of what a login screen should do.
+After=systemd-user-sessions.service systemd-udev-settle.service
 Before=display-manager.service
+
+# A greeter that cannot start — no usable X server, a broken configuration —
+# is tried a few times and then left alone. Restarting it forever would spin a
+# dead login screen; a machine with no display manager falls back to its text
+# logins, which is a system that can still be repaired.
+StartLimitIntervalSec=30
+StartLimitBurst=3
 
 [Service]
 Type=simple
 ExecStart={LAUNCHER}
-Restart=always
-RestartSec=1
+Restart=on-failure
+RestartSec=2
 KillMode=mixed
-StandardInput=tty
-TTYPath=/dev/tty1
-TTYReset=yes
-TTYVHangup=yes
+
+# No StandardInput=tty and no TTYPath, on purpose. The X server this starts
+# takes the virtual terminal for itself, and a unit that also held that
+# terminal would leave two owners for one console: the kernel could then no
+# longer switch virtual terminals, so the screen would keep whatever X left on
+# it and no Ctrl+Alt+F key would reach a getty. Owning no terminal is what a
+# display manager does.
 
 [Install]
 Alias=display-manager.service

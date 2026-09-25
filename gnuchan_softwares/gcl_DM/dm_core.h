@@ -16,6 +16,7 @@
 #include <X11/Xlib.h>
 
 #include "dm_module.h"
+#include "dm_sessions.h"
 #include "dm_style.h"
 
 /* The longest user name and password accepted. The password is a fixed buffer
@@ -40,6 +41,7 @@ typedef enum DmFocus {
     DM_FOCUS_USERNAME = 0,
     DM_FOCUS_PASSWORD,
     DM_FOCUS_SIGNIN,
+    DM_FOCUS_SESSION,
     DM_FOCUS_REBOOT,
     DM_FOCUS_SHUTDOWN,
     DM_FOCUS_COUNT,
@@ -49,6 +51,7 @@ typedef enum DmFocus {
 typedef enum DmButton {
     DM_BUTTON_NONE = -1,
     DM_BUTTON_SIGNIN = 0,
+    DM_BUTTON_SESSION,
     DM_BUTTON_REBOOT,
     DM_BUTTON_SHUTDOWN,
 } DmButton;
@@ -111,6 +114,16 @@ struct DmCore {
        greeter can stop drawing and stop reading the keyboard. */
     int starting_session;
 
+    /* --- the sessions this machine offers ---------------------------------
+       Read once at start from /usr/share/xsessions, which is where every
+       desktop on Debian writes one. The user picks one with the box under the
+       sign-in button and that is the command the session module runs. */
+    DmSession sessions[DM_MAX_SESSIONS];
+    int session_count;
+    int session_selected;
+    int session_open;      /* 1 while the list is dropped down */
+    int session_hover;     /* the row the pointer is over, -1 for none */
+
     /* Where the layout put each control, so the input module can hit-test
        against the same rectangles the drawing used. Filled by the login
        module during its layout pass and read back by everything else. */
@@ -119,7 +132,14 @@ struct DmCore {
     } field_box[DM_FIELD_COUNT];
     struct DmRect button_box;
     struct DmRect panel_box;
+    struct DmRect session_box;    /* the closed session selector          */
     struct DmRect power_box[2];   /* power_box[0] reboot, power_box[1] poweroff */
+
+    /* Where a dropped-down session list's rows land. Only meaningful while
+       session_open is set; the input module tests a click against these, and
+       the login module draws them, from the same numbers. */
+    struct DmRect session_row[DM_MAX_SESSIONS];
+    struct DmRect session_list_box;
 };
 
 int  dm_core_init(DmCore *core);
@@ -175,6 +195,15 @@ extern const DmModule dm_input_module;    /* dm_input.c   */
 DmButton dm_login_button_at(DmCore *core, int x, int y);
 int      dm_login_field_at(DmCore *core, int x, int y);
 
+/* Which dropped-down session row a point is on, or -1 when the list is closed
+   or the point is not on a row. */
+int      dm_login_session_row_at(DmCore *core, int x, int y);
+
+/* Put the session rows where the selector's list will be drawn. The login
+   module calls this from its layout, so the rows a click is tested against are
+   the rows that were drawn. */
+void     dm_login_layout_sessions(DmCore *core);
+
 /* dm_draw.c — the three primitives every drawing module uses. */
 void dm_draw_clear(DmCore *core, unsigned long colour);
 void dm_draw_box(DmCore *core, int x, int y, int width, int height,
@@ -187,11 +216,18 @@ int  dm_draw_text_width(XFontStruct *font, const char *text, int length);
    correct, 0 when it is not. */
 int dm_auth_check(const char *username, const char *password);
 
-/* dm_session.c — start the window manager as the given user, and wait for it.
-   The greeter stays alive as the parent so that when the session ends the
-   login screen comes back: the greeter only truly exits when it is asked to.
-   Returns 0 when the session ended and -1 when it could not be started. */
+/* dm_sessions.c — read the sessions installed on this machine. */
+int dm_sessions_scan(DmSession *out, int max);
+int dm_sessions_find(const DmSession *sessions, int count, const char *name);
+
+/* dm_session.c — start the session the user chose, as the given user, and wait
+   for it. The greeter stays alive as the parent so that when the session ends
+   the login screen comes back: the greeter only truly exits when it is asked
+   to. Returns 0 when the session ended and -1 when it could not be started. */
 int dm_session_start(DmCore *core, const char *username);
+
+/* The session the user has chosen, or NULL when the machine has none. */
+const DmSession *dm_session_selected(const DmCore *core);
 
 /* dm_power.c — ask the system to reboot or to power off. Never returns. */
 void dm_power_reboot(void);

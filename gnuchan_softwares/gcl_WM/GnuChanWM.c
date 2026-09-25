@@ -45,9 +45,20 @@ static void handle_signal(int signum) {
    state another sets up; key grabs come last so a key that cannot be bound
    cannot stop the window manager itself from running. */
 static void register_modules(WmCore *core) {
-    wm_register(core, &wm_focus_module);
+    /* Order matters where a module reads state another sets up: the desktop
+       paints the background first, windows are managed on top of it, focus
+       names the current one, and keys come last so a key that cannot be bound
+       cannot stop the window manager itself from running. */
+    wm_register(core, &wm_desktop_module);
     wm_register(core, &wm_manage_module);
+    wm_register(core, &wm_frame_module);
+    wm_register(core, &wm_focus_module);
     wm_register(core, &wm_keys_module);
+    /* Last: it opens the first terminal, and by then the keys are already
+       grabbed and the desktop is already painted, so the window it opens is
+       managed by a session that is completely up rather than one still
+       arranging itself. */
+    wm_register(core, &wm_autostart_module);
 }
 
 /* Send everything the WM prints to the log as well as to stderr. Called

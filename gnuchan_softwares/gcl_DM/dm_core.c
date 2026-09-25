@@ -28,16 +28,25 @@ static int core_x_error(Display *display, XErrorEvent *error) {
     return 0;
 }
 
-/* The pointer over the login screen: a hand in the accent purple on the panel
-   colour, so it is visible on a machine whose only pointer is this one and
-   which mouse theme has never been chosen. */
+/* The pointer over the login screen: the theme's arrow, drawn in the greeter's
+ * own purple rather than whatever the machine's pointer theme happens to be.
+ *
+ * The colour is the point. A greeter that inherited the cursor would show
+ * black on a machine whose pointer theme was never chosen, which on a dark
+ * login screen is a cursor the user cannot find. Recolouring it is what makes
+ * it the same purple as the accent every other control uses, so the pointer
+ * reads as part of the screen instead of something left over from elsewhere.
+ *
+ * The arrow is used rather than a hand: a login screen has text fields to click
+ * into, and the arrow is what a pointer over a field is expected to look like.
+ */
 static Cursor core_make_cursor(DmCore *core) {
-    Cursor cursor = XCreateFontCursor(core->display, XC_hand2);
+    Cursor cursor = XCreateFontCursor(core->display, XC_left_ptr);
     if (cursor == None) {
         return None;
     }
-    XColor foreground;   /* the accent purple */
-    XColor background;   /* the dark panel    */
+    XColor foreground;   /* the accent purple #c77dff */
+    XColor background;   /* the dark panel    #32143f */
     Colormap cmap = DefaultColormap(core->display, core->screen);
 
     if (!XParseColor(core->display, cmap, "#c77dff", &foreground) ||
@@ -87,11 +96,24 @@ int dm_core_init(DmCore *core) {
 
     if (dm_style_load(&core->style, core->display, core->screen) != 0) return -1;
 
+    /* The sessions are read once, here, rather than at every redraw: what the
+       machine offers does not change while the greeter is running, and a
+       directory read per frame would be a file system walk per keystroke.
+       GnuChanWM is put first by the scan, so index 0 is the default. */
+    core->session_count = dm_sessions_scan(core->sessions, DM_MAX_SESSIONS);
+    core->session_selected = core->session_count > 0 ? 0 : -1;
+    core->session_open = 0;
+    core->session_hover = -1;
+
     XSetWindowAttributes attributes;
     memset(&attributes, 0, sizeof(attributes));
     attributes.override_redirect = True;
     attributes.background_pixel = core->style.background;
+    /* PointerMotionMask is what makes the dropped-down session list highlight
+       the row under the pointer: without it the list is a set of names with no
+       sign of which one a click would land on. */
     attributes.event_mask = ExposureMask | KeyPressMask | ButtonPressMask |
+                            PointerMotionMask |
                             StructureNotifyMask | FocusChangeMask;
 
     core->cursor = core_make_cursor(core);
@@ -169,6 +191,12 @@ void dm_core_step(DmCore *core) {
     case ButtonPress:
     case FocusIn:
         dm_core_redraw(core);
+        break;
+    case MotionNotify:
+        /* Only a redraw is needed here, and only if the input module changed
+           which session row is highlighted; it asks for one itself when it
+           does. Redrawing on every motion event would redraw for a pointer
+           that moved a pixel with the list closed. */
         break;
     default:
         break;

@@ -16,6 +16,7 @@
 #include <X11/keysym.h>
 
 #include "wm_core.h"
+#include "wm_frame.h"
 #include "wm_spawn.h"
 
 typedef void (*KeyAction)(WmCore *core);
@@ -34,6 +35,15 @@ static void action_spawn_terminal(WmCore *core) {
     wm_spawn_terminal();
 }
 
+/* Close whatever has the focus. The focused window is a client, so closing it
+   means finding the frame that holds it. */
+static void action_close_focused(WmCore *core) {
+    WmFrame *frame = wm_frame_find(core, core->focused);
+    if (frame) {
+        wm_frame_close(core, frame);
+    }
+}
+
 /* --- the table ------------------------------------------------------------- */
 
 static const KeyBinding BINDINGS[] = {
@@ -42,6 +52,8 @@ static const KeyBinding BINDINGS[] = {
        both are bound to the same action. */
     { Mod1Mask, XK_Return, action_spawn_terminal, "open terminal" },
     { Mod4Mask, XK_Return, action_spawn_terminal, "open terminal" },
+    { Mod1Mask, XK_F4, action_close_focused, "close window" },
+    { Mod4Mask, XK_F4, action_close_focused, "close window" },
 };
 
 #define BINDING_COUNT (sizeof(BINDINGS) / sizeof(BINDINGS[0]))
@@ -107,8 +119,17 @@ static void keys_cleanup(WmCore *core) {
     for (unsigned int i = 0; i < BINDING_COUNT; i++) {
         const KeyBinding *binding = &BINDINGS[i];
         KeyCode code = XKeysymToKeycode(core->display, binding->keysym);
-        if (code != 0) {
-            XUngrabKey(core->display, code, binding->modifiers, core->root);
+        if (code == 0) {
+            continue;
+        }
+        unsigned int combos[] = {
+            binding->modifiers,
+            binding->modifiers | LockMask,
+            binding->modifiers | Mod2Mask,
+            binding->modifiers | LockMask | Mod2Mask,
+        };
+        for (unsigned int j = 0; j < sizeof(combos) / sizeof(combos[0]); j++) {
+            XUngrabKey(core->display, code, combos[j], core->root);
         }
     }
     XSync(core->display, False);

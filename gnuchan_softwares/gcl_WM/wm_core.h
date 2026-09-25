@@ -12,6 +12,8 @@
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include "wm_module.h"
+#include "wm_style.h"
+#include "wm_frame.h"
 
 /* The window state the core selects on the root. */
 #define WM_EVENT_MASK (SubstructureRedirectMask | SubstructureNotifyMask | \
@@ -46,6 +48,32 @@ struct WmCore {
     /* The window that currently has input focus, 0 when none. */
     Window focused;
 
+    /* The picture the whole desktop shares: the palette, the font and the
+       one graphics context everything draws with. Modules never create their
+       own — a second palette is how one desktop starts looking like two. */
+    WmStyle style;
+    GC gc;
+
+    /* The pointer set on the root. Kept so the module that made it can free
+       it; a cursor allocated and forgotten is a leak per session. */
+    Cursor root_cursor;
+
+    /* Every managed window, one frame each. The table lives on the core rather
+       than in a module because three modules need it: manage fills it, focus
+       asks it which client a frame holds, and the title bar's clicks are
+       answered by it. */
+    WmFrame frames[WM_MAX_FRAMES];
+    int frame_count;
+
+    /* Unmap events to accept without treating them as the user hiding a
+       window. Reparenting a mapped client makes the server unmap it, and that
+       one unmap is ours, not the program's. */
+    int ignore_unmaps;
+
+    int width;                /* the desktop's size; the wallpaper         */
+    int height;               /* restarts from these when the screen is    */
+                              /* resized                                   */
+
     WmModuleList modules;
 };
 
@@ -78,5 +106,8 @@ void wm_manage_frame(WmCore *core, Window window);
 extern const WmModule wm_manage_module;   /* wm_manage.c  */
 extern const WmModule wm_focus_module;    /* wm_focus.c   */
 extern const WmModule wm_keys_module;     /* wm_keys.c    */
+extern const WmModule wm_desktop_module;  /* wm_desktop.c */
+extern const WmModule wm_frame_module;    /* wm_frame.c   */
+extern const WmModule wm_autostart_module;/* wm_autostart.c */
 
 #endif /* GNUCHANWM_CORE_H */

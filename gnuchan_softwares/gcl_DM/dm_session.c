@@ -1,15 +1,15 @@
 /*
- * dm_session.c — start the window manager as the user who logged in, and wait
- * for it to finish so the login screen comes back.
+ * dm_session.c — start the session the user chose, as the user who logged in,
+ * and wait for it to finish so the login screen comes back.
  *
  * Three things have to be right or the session starts and is not seen:
  *
  *   1. The X cookie. The greeter connected with root's cookie and the user does
  *      not have it. The cookie is merged into the user's own Xauthority file
- *      before the session starts, so the window manager — connecting as the
- *      user — is allowed in. That file is written by root, so it is then given
- *      to the user: a cookie the user cannot read is the same as no cookie,
- *      and the session dies in the first XOpenDisplay.
+ *      before the session starts, so the session — connecting as the user — is
+ *      allowed in. That file is written by root, so it is then given to the
+ *      user: a cookie the user cannot read is the same as no cookie, and the
+ *      session dies in the first XOpenDisplay.
  *
  *   2. The identity. The child drops to the user's uid and gid.
  *
@@ -19,6 +19,11 @@
  * The greeter's own window is unmapped for the duration: it is drawn
  * override-redirect and full-screen, so if it stayed mapped it would sit on top
  * of the very session it just started.
+ *
+ * What is run is the session the user picked from the list under the sign-in
+ * button, read from /usr/share/xsessions. It is not hard-coded to one window
+ * manager: a machine with several sessions installed offers all of them, and
+ * the one that starts is the one that was chosen.
  */
 #include <errno.h>
 #include <grp.h>
@@ -33,8 +38,37 @@
 
 #include "dm_core.h"
 
-/* The window manager a session runs, found on PATH. */
-static const char *SESSION_COMMAND = "GnuChanWM";
+/* The session the user chose to start, or NULL when this machine has none. */
+static const DmSession *selected_session(DmCore *core) {
+    if (!core || core->session_count <= 0) {
+        return NULL;
+    }
+    if (core->session_selected < 0 || core->session_selected >= core->session_count) {
+        core->session_selected = 0;
+    }
+    return &core->sessions[core->session_selected];
+}
+
+/* Split a session's command line into arguments, in place.
+ *
+ * Exec= is a command line, not a path: "gnome-session --session=gnome" names a
+ * program and its argument, and running the whole string as one name finds
+ * nothing. The split is on spaces only, because a quoting rule would be a
+ * general shell-word parser for a case no session file on Debian actually
+ * contains. The separators are overwritten with terminators. */
+static void split_command(char *line, char *argv[], int max, int *count) {
+    int n = 0;
+    char *p = line;
+    while (*p && n < max - 1) {
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+        argv[n++] = p;
+        while (*p && *p != ' ' && *p != '\t') p++;
+        if (*p) *p++ = '\0';
+    }
+    argv[n] = NULL;
+    *count = n;
+}
 
 /* Where the greeter's own cookie is. libX11 does exactly this when XAUTHORITY
    is unset. */
@@ -110,6 +144,12 @@ int dm_session_start(DmCore *core, const char *username) {
         return -1;
     }
 
+    const DmSession *session = selected_session(core);
+    if (!session || !session->exec[0]) {
+        fprintf(stderr, "gnuchandm: no session is installed to start\n");
+        return -1;
+    }
+
     const char *display = getenv("DISPLAY");
     if (!display || !display[0]) {
         fprintf(stderr, "gnuchandm: DISPLAY is not set\n");
@@ -155,9 +195,16 @@ int dm_session_start(DmCore *core, const char *username) {
             _exit(1);
         }
 
-        execvp(SESSION_COMMAND, (char *const[]){ (char *)SESSION_COMMAND, NULL });
+        char command[DM_SESSION_EXEC];
+        snprintf(command, sizeof(command), "%s", session->exec);
+        char *argv[64];
+        int argc = 0;
+        split_command(command, argv, 64, &argc);
+        if (argc > 0) {
+            execvp(argv[0], argv);
+        }
         fprintf(stderr, "gnuchandm: cannot run %s: %s\n",
-                SESSION_COMMAND, strerror(errno));
+                session->exec, strerror(errno));
         _exit(1);
     }
 
@@ -176,11 +223,11 @@ int dm_session_start(DmCore *core, const char *username) {
         int code = WEXITSTATUS(status);
         if (code != 0) {
             fprintf(stderr, "gnuchandm: %s exited with status %d\n",
-                    SESSION_COMMAND, code);
+                    session->name, code);
         }
     } else if (WIFSIGNALED(status)) {
         fprintf(stderr, "gnuchandm: %s was killed by signal %d\n",
-                SESSION_COMMAND, WTERMSIG(status));
+                session->name, WTERMSIG(status));
     }
 
     /* The session is over: take the screen back and return to the login

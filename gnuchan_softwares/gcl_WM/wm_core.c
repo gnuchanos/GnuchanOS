@@ -44,45 +44,23 @@ int wm_register(WmCore *core, const WmModule *module) {
     return 0;
 }
 
-/* Rebuild _NET_CLIENT_LIST on the root from the query tree. A child is a
-   client when it carries WM_STATE — the property the ICCCM defines for
-   exactly this test. */
+/* Rebuild _NET_CLIENT_LIST on the root.
+ *
+ * The list holds the clients, not the desktop's own frames, and once a client
+ * has been reparented it is no longer a child of the root — it lives inside a
+ * frame. A walk of the query tree would therefore find nothing, so the frame
+ * table is what is asked: it is the only thing that still knows which windows
+ * are clients. A task list or a pager is what reads this property, and an
+ * empty one is a task list that shows nothing. */
 static void core_publish_client_list(WmCore *core) {
-    Window root_return, parent_return;
-    Window *children = NULL;
-    unsigned int count = 0;
-    if (!XQueryTree(core->display, core->root, &root_return, &parent_return,
-                    &children, &count)) {
-        return;
+    Window clients[WM_MAX_FRAMES];
+    int client_count = 0;
+    for (int i = 0; i < core->frame_count && i < WM_MAX_FRAMES; i++) {
+        clients[client_count++] = core->frames[i].client;
     }
-    if (children) {
-        Window *clients = (Window *)malloc(sizeof(Window) * (count ? count : 1));
-        unsigned int client_count = 0;
-        if (clients) {
-            for (unsigned int i = 0; i < count; i++) {
-                Atom actual_type;
-                int actual_format;
-                unsigned long nitems, bytes_after;
-                unsigned char *data = NULL;
-                if (XGetWindowProperty(core->display, children[i], core->wm_state,
-                                       0, 0, False, AnyPropertyType,
-                                       &actual_type, &actual_format, &nitems,
-                                       &bytes_after, &data) == Success) {
-                    if (data) {
-                        XFree(data);
-                    }
-                    if (actual_type != None) {
-                        clients[client_count++] = children[i];
-                    }
-                }
-            }
-            XChangeProperty(core->display, core->root, core->net_client_list,
-                            XA_WINDOW, 32, PropModeReplace,
-                            (unsigned char *)clients, (int)client_count);
-            free(clients);
-        }
-        XFree(children);
-    }
+    XChangeProperty(core->display, core->root, core->net_client_list,
+                    XA_WINDOW, 32, PropModeReplace,
+                    (unsigned char *)clients, client_count);
 }
 
 static void core_publish_supported(WmCore *core) {
@@ -132,6 +110,21 @@ int wm_core_init(WmCore *core) {
     core->screen = DefaultScreen(core->display);
     core->root = RootWindow(core->display, core->screen);
     core->running = 1;
+    core->width = DisplayWidth(core->display, core->screen);
+    core->height = DisplayHeight(core->display, core->screen);
+
+    /* The palette and the font are the desktop's whole appearance, and the
+       one graphics context is what every module draws with. They are made
+       here, once, before any module can ask for them. */
+    if (wm_style_load(&core->style, core->display, core->screen) != 0) {
+        fprintf(stderr, "gnuchanwm: cannot resolve the desktop style\n");
+        return -1;
+    }
+    core->gc = XCreateGC(core->display, core->root, 0, NULL);
+    if (core->gc == NULL) {
+        fprintf(stderr, "gnuchanwm: cannot create a graphics context\n");
+        return -1;
+    }
 
     /* Installed before any request that can fail: from here on an X error is
        a line in the log and nothing more. */
@@ -218,6 +211,11 @@ void wm_core_shutdown(WmCore *core) {
         }
     }
     if (core->display) {
+        if (core->gc != NULL) {
+            XFreeGC(core->display, core->gc);
+            core->gc = NULL;
+        }
+        wm_style_free(&core->style, core->display);
         XCloseDisplay(core->display);
         core->display = NULL;
     }

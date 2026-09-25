@@ -58,7 +58,6 @@ static void attempt_login(DmCore *core) {
         /* Reached when the session has ended — the user logged out. The user
            name is kept, so the keyboard goes straight to the password. */
         core->focus = DM_FOCUS_PASSWORD;
-        dm_form_clear_password(core);
         dm_form_set_message(core, NULL, 0);
         dm_core_redraw(core);
         return;
