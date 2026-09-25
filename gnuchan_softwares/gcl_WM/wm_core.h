@@ -51,6 +51,11 @@ struct WmCore {
 
 int  wm_core_init(WmCore *core);
 
+/* Run every registered module's init, in registration order. Separate from
+   wm_core_init() because a module is registered on the core before the core
+   has a display, and a module's init needs that display to exist. */
+int  wm_core_start(WmCore *core);
+
 /* Read and dispatch exactly one event. Split out of wm_core_run() so the
    caller can stop between events — see GnuChanWM.c. */
 void wm_core_step(WmCore *core);

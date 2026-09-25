@@ -116,3 +116,23 @@ int wm_spawn_terminal(void) {
     char *argv[] = { (char *)terminal, NULL };
     return wm_spawn(terminal, argv);
 }
+
+int wm_spawn_terminal_displaying(const char *path) {
+    const char *terminal = wm_terminal_program();
+    if (!terminal || !path) {
+        return -1;
+    }
+    /* Every terminal worth the name runs "-e <command>". The file is the
+       command's own argument, never part of the shell text, so a path with a
+       space in it is still one file. */
+    char *argv[] = {
+        (char *)terminal,
+        "-e",
+        "sh", "-c",
+        "cat -- \"$1\"; printf '\\n[press Enter to close]\\n'; read _",
+        "sh",
+        (char *)path,
+        NULL,
+    };
+    return wm_spawn(terminal, argv);
+}

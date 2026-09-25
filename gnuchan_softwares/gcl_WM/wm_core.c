@@ -16,6 +16,22 @@ Atom wm_atom(WmCore *core, const char *name) {
     return XInternAtom(core->display, name, False);
 }
 
+/* Xlib's default reaction to any X error — a BadWindow from a window destroyed
+   between two events, a BadAccess from a key another client already owns — is
+   to print one line and call exit(). A window manager meets those races
+   constantly, so it must not: the error is reported and the WM keeps running.
+   Without this, the first lost race kills the session. */
+static int core_x_error(Display *display, XErrorEvent *error) {
+    char text[256];
+    text[0] = '\0';
+    XGetErrorText(display, error->error_code, text, sizeof(text));
+    fprintf(stderr,
+            "gnuchanwm: X error: %s (request %d.%d, resource 0x%lx)\n",
+            text, error->request_code, error->minor_code,
+            (unsigned long)error->resourceid);
+    return 0;
+}
+
 int wm_register(WmCore *core, const WmModule *module) {
     if (core->modules.count >= WM_MAX_MODULES) {
         fprintf(stderr, "gnuchanwm: too many modules (max %d)\n", WM_MAX_MODULES);
@@ -117,6 +133,10 @@ int wm_core_init(WmCore *core) {
     core->root = RootWindow(core->display, core->screen);
     core->running = 1;
 
+    /* Installed before any request that can fail: from here on an X error is
+       a line in the log and nothing more. */
+    XSetErrorHandler(core_x_error);
+
     core->net_supported = wm_atom(core, "_NET_SUPPORTED");
     core->net_supporting_wm_check = wm_atom(core, "_NET_SUPPORTING_WM_CHECK");
     core->net_wm_name = wm_atom(core, "_NET_WM_NAME");
@@ -142,6 +162,14 @@ int wm_core_init(WmCore *core) {
     core_publish_client_list(core);
     XSync(core->display, False);
 
+    return 0;
+}
+
+/* Run every module's init, in the order they were registered. This is a step
+   of its own because the core has to exist before a module can be registered
+   on it, and a module's init needs the display that wm_core_init() opened —
+   so the two cannot be the same call. */
+int wm_core_start(WmCore *core) {
     for (int i = 0; i < core->modules.count; i++) {
         const WmModule *module = core->modules.items[i];
         if (module->init && module->init(core) != 0) {
@@ -149,7 +177,6 @@ int wm_core_init(WmCore *core) {
             return -1;
         }
     }
-
     fprintf(stderr, "gnuchanwm: running with %d module(s)\n", core->modules.count);
     return 0;
 }

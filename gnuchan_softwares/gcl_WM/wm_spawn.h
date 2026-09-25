@@ -14,4 +14,9 @@ int wm_spawn(const char *program, char *const argv[]);
 /* Open the terminal found by wm_terminal_program(). */
 int wm_spawn_terminal(void);
 
+/* Open the terminal showing a file's contents and wait for Enter before it
+   closes. Used to put a start-up log in front of the user when the WM could
+   not start — a display manager leaves no other way to see it. */
+int wm_spawn_terminal_displaying(const char *path);
+
 #endif /* GNUCHANWM_SPAWN_H */
