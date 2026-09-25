@@ -261,11 +261,10 @@ def service_text() -> str:
 Description=GnuChanOS Display Manager
 Documentation=file:{LAUNCHER}
 
-# No Conflicts with a getty and no After on one. The greeter runs on vt7 and the
-# text logins stay on tty1 to tty6, so all six keep working while it is up —
-# Ctrl+Alt+F1 to F6 reach a login, Ctrl+Alt+F7 returns here. Taking tty1 from
-# its getty would remove one of the ways back into a session that cannot start,
-# which is the opposite of what a login screen should do.
+# A display manager and tty1 getty are mutually exclusive on a real Linux boot.
+# If both own the same VT, the X server cannot reclaim the console cleanly and
+# the login screen never becomes the active graphical session.
+Conflicts=getty@tty1.service autovt@tty1.service
 After=systemd-user-sessions.service systemd-udev-settle.service
 Before=display-manager.service
 
@@ -357,7 +356,22 @@ def enable_service() -> None:
     step("Enabling as the display manager")
     systemctl("daemon-reload")
     systemctl("set-default", "graphical.target")
-    systemctl("enable", SERVICE_NAME)
+
+    alias_path = Path("/etc/systemd/system/display-manager.service")
+    if alias_path.exists() or alias_path.is_symlink():
+        alias_path.unlink()
+    try:
+        os.symlink(str(SERVICE_FILE), str(alias_path))
+        detail(f"linked {alias_path} -> {SERVICE_FILE}")
+    except OSError as exc:
+        detail(f"display-manager alias setup skipped: {exc}")
+
+    # The real unit is gnuchandm.service. graphical.target only knows the alias
+    # display-manager.service, so the alias must point at the real service and the
+    # real service must be enabled explicitly.
+    systemctl("enable", "--force", SERVICE_NAME)
+    if alias_path.exists() or alias_path.is_symlink():
+        systemctl("enable", "--force", "display-manager.service")
     systemctl("restart", SERVICE_NAME)
 
 
