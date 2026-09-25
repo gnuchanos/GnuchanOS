@@ -9,8 +9,9 @@
  *
  * Everything here is plain data. The script is read by wm_config_parser.c,
  * walked by wm_config_file.c, and drawn by whichever module owns the thing
- * being described: the bar by wm_bar.c, the palette by wm_style.c through
- * wm_config_apply(). Nothing in this header knows about X.
+ * being described: the bar by wm_desktop.c, the window border by wm_frame.c
+ * through the style wm_config_apply() fills in. Nothing in this header knows
+ * about X.
  */
 #ifndef GNUCHANWM_CONFIG_H
 #define GNUCHANWM_CONFIG_H
@@ -51,8 +52,10 @@ typedef struct WmWidget {
     char font_family[WM_CONFIG_TEXT_LENGTH];
 
     /* WM_WIDGET_CURRENT_LAYOUT: the range of layouts, as written. The desktop
-       has no workspace model yet, so they are drawn as labels with the first
-       one lit — the picture the user wrote, before the thing it describes. */
+       has WM_WORKSPACE_COUNT workspaces (wm_workspace.h) and switches between
+       them, but the widget still draws the whole range as labels rather than
+       marking the one that is current — the picture the user wrote, not yet
+       the state of the desktop. */
     int start_layout;
     int end_layout;
 
@@ -104,8 +107,11 @@ typedef struct WmConfig {
     char cursor_theme[WM_CONFIG_TEXT_LENGTH];
     char cursor_path[WM_CONFIG_TEXT_LENGTH];
 
-    /* The pointer. Parsed and held; the desktop answers its button itself and
-       does not yet read these, so they are the script's record of intent. */
+    /* The pointer. Parsed and held, but no C subsystem applies them: the
+       desktop answers its own right-click with the menu in wm_menu.c, and the
+       rest is left to whatever the programs under the pointer do with the
+       button. They are the script's record of intent until a module reads
+       them. */
     char mouse_left[WM_CONFIG_TEXT_LENGTH];
     char mouse_right[WM_CONFIG_TEXT_LENGTH];
     char mouse_middle[WM_CONFIG_TEXT_LENGTH];
@@ -137,6 +143,15 @@ enum {
    configured. This is what the frame code asks before placing a window, so a
    window does not open underneath the bar. */
 unsigned int wm_config_bar_edges(const WmConfig *config);
+
+/* The rectangle a window may occupy: the whole screen less whatever strip the
+   bar has taken. `x` and `y` are where a window may be put and `width` and
+   `height` how large it may be, both already reduced for a top or bottom bar.
+   Called by the frame code both when a window opens and when one is maximised,
+   so a bar is never covered by the thing it is meant to sit above. */
+void wm_config_workarea(const WmConfig *config, int screen_width,
+                        int screen_height, int *x, int *y,
+                        int *width, int *height);
 
 /* Where the script is looked for: $XDG_CONFIG_HOME/GnuChanWM/GnuChanWM.py, or
    ~/.config/GnuChanWM/GnuChanWM.py. Written into buffer, which is returned. */

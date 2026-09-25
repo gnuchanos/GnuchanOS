@@ -34,6 +34,11 @@ static const char *TERMINAL_CANDIDATES[] = {
     NULL,
 };
 
+/* The terminal the settings script named, if it named one this machine can
+   run. It is a copy rather than a pointer: the config it came from may be
+   replaced by a hot reload, and a pointer into that would dangle. */
+static char preferred_terminal[256] = "";
+
 /* Whether a program can be found on PATH. A name with a slash is used as it
    is, because that is what the caller meant; a bare name is searched for. */
 static int program_exists(const char *name) {
@@ -66,10 +71,29 @@ static int program_exists(const char *name) {
     return 0;
 }
 
+void wm_spawn_set_terminal(const char *program) {
+    preferred_terminal[0] = '\0';
+    if (!program || !program[0]) {
+        return;
+    }
+    if (!program_exists(program)) {
+        fprintf(stderr,
+                "gnuchanwm: config: terminal '%s' is not runnable; "
+                "using the usual candidates\n", program);
+        return;
+    }
+    snprintf(preferred_terminal, sizeof(preferred_terminal), "%s", program);
+}
+
 const char *wm_terminal_program(void) {
-    /* The session's own choice wins. $TERMINAL is the convention every
-       desktop and every terminal-aware tool agrees on, and a user who set it
-       meant it. */
+    /* The settings script's own answer first. A script asks for a terminal
+       for a reason — it is the one installed on that machine, or the one its
+       owner chose — so it is not overridden by a guess about what is usual. */
+    if (preferred_terminal[0]) {
+        return preferred_terminal;
+    }
+    /* Then the environment. $TERMINAL is the convention every desktop and
+       every terminal-aware tool agrees on, and a user who set it meant it. */
     const char *chosen = getenv("TERMINAL");
     if (chosen && chosen[0] && program_exists(chosen)) {
         return chosen;

@@ -1,11 +1,15 @@
 /*
- * wm_style.h — the one place every colour and size of the desktop lives.
+ * wm_style.h — the colours and sizes the desktop falls back to.
  *
- * The desktop has no theming yet and does not need any: this struct is the
- * whole of its appearance, so a future settings file only has to fill it in.
+ * This is the desktop a machine with no settings script gets, and the base
+ * the script's own colours are resolved against: wm_config_apply() replaces
+ * the two window-border entries with whatever gcl_Window named, and everything
+ * else stays as it is written here. So the values below are defaults, not the
+ * whole of the appearance — the script is.
+ *
  * Keeping the palette in one place is also what keeps the window manager and
- * the greeter looking like one system — the accent here is the same #c77dff
- * the greeter draws its focused control in.
+ * the greeter looking like one system: the accent here is the same #c77dff the
+ * greeter draws its focused control in.
  */
 #ifndef GNUCHANWM_STYLE_H
 #define GNUCHANWM_STYLE_H

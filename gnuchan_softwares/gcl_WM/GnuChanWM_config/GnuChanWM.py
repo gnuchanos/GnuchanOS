@@ -55,14 +55,19 @@ gcl_themes.Theme_gtk(
     ThemePath="/usr/share/themes/GnuChanTheme",
 )
 
+# The icon theme is installed by dotfile/ICON_THEME/settings_icons.py under
+# this name; the cursor theme by dotfile/ICON_MOUSE_THEME/settings_mouse_icon.py
+# under this one. They are deliberately different names: both are read from
+# ~/.local/share/icons/<name> and ~/.icons/<name>, so two themes sharing a name
+# would be one directory and the second install would delete the first.
 gcl_themes.Theme_icon(
-    ThemeName="GnuChanIconTheme",
-    ThemePath="/usr/share/icons/GnuChanIconTheme",
+    ThemeName="GnuChanIcon",
+    ThemePath="/usr/share/icons/GnuChanIcon",
 )
 
 gcl_themes.Theme_cursor(
-    ThemeName="GnuChanCursorTheme",
-    ThemePath="/usr/share/icons/GnuChanCursorTheme",
+    ThemeName="GnuChanMouseIcons",
+    ThemePath="/usr/share/icons/GnuChanMouseIcons",
 )
 
 

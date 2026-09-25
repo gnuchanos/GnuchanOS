@@ -15,6 +15,7 @@
 #include "wm_style.h"
 #include "wm_frame.h"
 #include "wm_config.h"
+#include "wm_workspace.h"
 
 /* The window state the core selects on the root. */
 #define WM_EVENT_MASK (SubstructureRedirectMask | SubstructureNotifyMask | \
@@ -84,6 +85,7 @@ struct WmCore {
     int width;                /* the desktop's size; the wallpaper         */
     int height;               /* restarts from these when the screen is    */
                               /* resized                                   */
+    int current_workspace;
 
     WmModuleList modules;
 };
@@ -132,5 +134,6 @@ extern const WmModule wm_autostart_module;/* wm_autostart.c */
 extern const WmModule wm_menu_module;     /* wm_menu.c    */
 extern const WmModule wm_theme_module;    /* wm_theme.c   */
 extern const WmModule wm_config_module;   /* wm_config_file.c */
+extern const WmModule wm_workspace_module;/* wm_workspace.c   */
 
 #endif /* GNUCHANWM_CORE_H */

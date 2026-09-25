@@ -14,6 +14,7 @@
  * no clock and no config still waits forever, which costs nothing.
  */
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,11 +26,24 @@ Atom wm_atom(WmCore *core, const char *name) {
     return XInternAtom(core->display, name, False);
 }
 
+/* Set while the substructure is being claimed. Xlib reports an X error
+   asynchronously, from inside the request that caused it, and there is no
+   return value to test — so the only way to learn that another window manager
+   already owns the display is to notice the error as it arrives. The flag is
+   read once, around the one request that can fail this way. */
+static volatile sig_atomic_t claim_refused = 0;
+
 /* Xlib's default reaction to any X error — a BadWindow from a window destroyed
    between two events, a BadAccess from a key another client already owns — is
    to print one line and call exit(). A window manager meets those races
    constantly, so it must not: the error is reported and the WM keeps running.
-   Without this, the first lost race kills the session. */
+   Without this, the first lost race kills the session.
+ *
+ * The one error that is not survivable is BadAccess on the substructure claim:
+ * it means a window manager is already running on this display, and two
+ * managers fight over every map, configure and unmap until neither works. It
+ * is recorded rather than acted on here, because a handler must not end the
+ * process; wm_core_init() reads the flag and stops. */
 static int core_x_error(Display *display, XErrorEvent *error) {
     char text[256];
     text[0] = '\0';
@@ -38,6 +52,10 @@ static int core_x_error(Display *display, XErrorEvent *error) {
             "gnuchanwm: X error: %s (request %d.%d, resource 0x%lx)\n",
             text, error->request_code, error->minor_code,
             (unsigned long)error->resourceid);
+    if (error->error_code == BadAccess &&
+        error->request_code == X_ChangeWindowAttributes) {
+        claim_refused = 1;
+    }
     return 0;
 }
 
@@ -152,12 +170,26 @@ int wm_core_init(WmCore *core) {
     core->utf8_string = wm_atom(core, "UTF8_STRING");
 
     /* Claim the substructure: from now on the X server routes every map,
-       configure and unmap of a top-level window through us. Selecting it is
-       also how we tell that another WM is not already running — the call
-       fails with BadAccess, which is fatal here because two WMs on one
-       display fight over every window. */
+       configure and unmap of a top-level window through us.
+     *
+     * Selecting it is also how we tell that another WM is not already running.
+     * The server answers with BadAccess and redirects nothing, and because the
+     * reply is asynchronous there is no return value to test: the error
+     * handler above records it in claim_refused as it arrives, and XSync()
+     * is what forces that answer to have come back before the flag is read.
+     * Without this test a second WM would start, find no windows to manage,
+     * and fight the first one for every event — which is worse than not
+     * starting, because it looks like a working session that drops windows. */
+    claim_refused = 0;
     XSelectInput(core->display, core->root, WM_EVENT_MASK);
     XSync(core->display, False);
+
+    if (claim_refused) {
+        fprintf(stderr,
+                "gnuchanwm: another window manager already owns this display; "
+                "not starting a second one.\n");
+        return -1;
+    }
 
     core_create_check_window(core);
     core_publish_supported(core);

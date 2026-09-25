@@ -30,6 +30,7 @@
 
 #include "wm_config_parser.h"
 #include "wm_core.h"
+#include "wm_spawn.h"
 
 /* Values the script named for itself, so a name used as a value can be
    resolved: `super_key1 = "Mod1"` followed by `keys=[super_key1, "return"]`
@@ -447,6 +448,28 @@ static void walk(Script *script, WmConfig *config,
 
 /* --- the public entry points ---------------------------------------------- */
 
+static void bar_default_widget(WmConfig *config, WmWidgetKind kind,
+                               const char *background, const char *foreground)
+{
+    if (config->bar.widget_count >= WM_CONFIG_MAX_WIDGETS) {
+        return;
+    }
+    WmWidget *widget = &config->bar.widgets[config->bar.widget_count++];
+    memset(widget, 0, sizeof(*widget));
+    widget->kind = kind;
+    copy_text(widget->background, sizeof(widget->background), background);
+    copy_text(widget->foreground, sizeof(widget->foreground), foreground);
+    widget->font_size = 12;
+    copy_text(widget->font_family, sizeof(widget->font_family), "monospace");
+
+    if (kind == WM_WIDGET_CURRENT_LAYOUT) {
+        widget->start_layout = 0;
+        widget->end_layout = 5;
+    } else if (kind == WM_WIDGET_CLOCK) {
+        copy_text(widget->format, sizeof(widget->format), "%H:%M");
+    }
+}
+
 void wm_config_defaults(WmConfig *config) {
     if (!config) {
         return;
@@ -463,10 +486,16 @@ void wm_config_defaults(WmConfig *config) {
        machine that never wrote a script gets. */
     config->terminal[0] = '\0';
 
+    /* The three names the installers in dotfile/ actually install under:
+       dotfile/GTK_THEME/theme_install.py writes gnuchanpurple's GTK theme as
+       GnuChanTheme, dotfile/ICON_THEME writes the icon theme as GnuChanIcon,
+       and dotfile/ICON_MOUSE_THEME writes the cursor theme as
+       GnuChanMouseIcons. They are the names wm_theme.c looks for, and a name
+       that does not match is a theme that is installed but never found. */
     copy_text(config->gtk_theme, sizeof(config->gtk_theme), "GnuChanTheme");
-    copy_text(config->icon_theme, sizeof(config->icon_theme), "GnuChanIconTheme");
+    copy_text(config->icon_theme, sizeof(config->icon_theme), "GnuChanIcon");
     copy_text(config->cursor_theme, sizeof(config->cursor_theme),
-              "GnuChanCursorTheme");
+              "GnuChanMouseIcons");
 
     copy_text(config->mouse_left, sizeof(config->mouse_left), "select");
     copy_text(config->mouse_right, sizeof(config->mouse_right), "context_menu");
@@ -485,6 +514,9 @@ void wm_config_defaults(WmConfig *config) {
     copy_text(config->bar.position, sizeof(config->bar.position), "top");
     config->bar.size = 24;
     copy_text(config->bar.background, sizeof(config->bar.background), "#27022b");
+    bar_default_widget(config, WM_WIDGET_CURRENT_LAYOUT, "#53055c", "#f069ff");
+    bar_default_widget(config, WM_WIDGET_EMPTY_SPACE, "#940da3", "#f069ff");
+    bar_default_widget(config, WM_WIDGET_CLOCK, "#53055c", "#f069ff");
 }
 
 char *wm_config_path(char *buffer, unsigned int size) {
@@ -541,12 +573,89 @@ unsigned int wm_config_bar_edges(const WmConfig *config) {
     return 1u << WM_EDGE_TOP;
 }
 
+void wm_config_workarea(const WmConfig *config, int screen_width,
+                        int screen_height, int *x, int *y,
+                        int *width, int *height) {
+    *x = 0;
+    *y = 0;
+    *width = screen_width;
+    *height = screen_height;
+
+    /* A bar that is not present — or is 0 pixels tall, which a hand-written
+       script can ask for — leaves the whole screen to the windows. */
+    if (!config || !config->bar.present || config->bar.size <= 0) {
+        return;
+    }
+
+    int strip = config->bar.size;
+    if (strip >= screen_height) {
+        strip = screen_height > 0 ? screen_height - 1 : 0;
+    }
+    if (strip <= 0) {
+        return;
+    }
+
+    /* The bar is along an edge, so it takes height from the top or the bottom
+       and leaves the width alone. A bottom bar moves the origin up rather than
+       shrinking from the top, which is the whole difference between the two:
+       the window has to start below a top bar and stop above a bottom one. */
+    if (strcmp(config->bar.position, "bottom") == 0) {
+        *height = screen_height - strip;
+    } else {
+        *y = strip;
+        *height = screen_height - strip;
+    }
+}
+
+/* --- reporting what was read ----------------------------------------------
+ *
+ * A script that parsed but asked for nothing visible looks exactly like a
+ * script that never loaded: the only trace either leaves is one line saying a
+ * file was read. The summary below is what tells the two apart. It is written
+ * to the log, which is where a session with no terminal can be read back from.
+ */
+
+static const char *config_bar_edge_name(const WmConfig *config) {
+    if (!config->bar.present) {
+        return "none";
+    }
+    return strcmp(config->bar.position, "bottom") == 0 ? "bottom" : "top";
+}
+
+static void config_report(const WmConfig *config, const char *origin) {
+    fprintf(stderr,
+            "gnuchanwm: config %s: border %s / %s, %d binding(s), "
+            "bar %s %dx%d with %d widget(s), "
+            "terminal '%s'\n",
+            origin,
+            config->active_border[0] ? config->active_border : "(default)",
+            config->inactive_border[0] ? config->inactive_border : "(default)",
+            config->binding_count,
+            config_bar_edge_name(config),
+            config->bar.size,
+            config->bar.present,
+            config->bar.widget_count,
+            config->terminal[0] ? config->terminal : "(from $TERMINAL)");
+    fprintf(stderr,
+            "gnuchanwm: config %s: theme %s, icons %s, cursor %s\n",
+            origin,
+            config->gtk_theme[0] ? config->gtk_theme : "(default)",
+            config->icon_theme[0] ? config->icon_theme : "(default)",
+            config->cursor_theme[0] ? config->cursor_theme : "(default)");
+}
+
 /* --- applying it to the desktop ------------------------------------------- */
 
 void wm_config_apply(WmCore *core) {
     if (!core || !core->display) {
         return;
     }
+
+    /* The script's terminal is published to the spawn module, which Alt+Enter
+       and the first window both go through. A name the machine cannot run is
+       discarded there, so a typo falls back to $TERMINAL rather than leaving
+       the key opening nothing. */
+    wm_spawn_set_terminal(core->config.terminal);
 
     /* The two frame colours are the ones the script sets through gcl_Window;
        the rest of the palette stays what wm_style.c resolved. */
@@ -617,6 +726,7 @@ int wm_config_reload(WmCore *core) {
 
     core->config = fresh;
     wm_config_apply(core);
+    config_report(&core->config, "reloaded");
     script_time = info.st_mtime;
     script_size = info.st_size;
     fprintf(stderr, "gnuchanwm: config reloaded from %s\n", path);
@@ -648,6 +758,7 @@ static int config_init(WmCore *core) {
     }
 
     wm_config_apply(core);
+    config_report(&core->config, "in use");
     return 0;
 }
 

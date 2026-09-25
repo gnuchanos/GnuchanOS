@@ -35,6 +35,7 @@
 
 #include "wm_core.h"
 #include "wm_frame.h"
+#include "wm_workspace.h"
 
 /* --- geometry -------------------------------------------------------------
  * All of it is computed from the client's size, so there is one place that
@@ -398,13 +399,22 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
     frame_apply(core, frame);
 }
 
-/* The area the screen gives a maximised window. Read from the core rather than
-   from the frame, because the frame is what is being changed to match it. */
-static void frame_screen_size(WmCore *core, int *width, int *height) {
-    *width = core->width > 1 ? core->width : DisplayWidth(core->display,
-                                                          core->screen);
-    *height = core->height > 1 ? core->height : DisplayHeight(core->display,
-                                                              core->screen);
+/* The area a maximised window gets: the screen less the bar. Read from the
+   core rather than from the frame, because the frame is what is being changed
+   to match it, and taken through wm_config_workarea() so a maximised window
+   and a newly opened one agree about where the desktop ends. Without this a
+   maximised window covers the bar, and the bar is the one thing on this
+   desktop that has to stay reachable — there is no panel behind it. */
+static void frame_screen_size(WmCore *core, int *x, int *y,
+                              int *width, int *height) {
+    int screen_width = core->width > 1 ? core->width
+                                       : DisplayWidth(core->display,
+                                                      core->screen);
+    int screen_height = core->height > 1 ? core->height
+                                         : DisplayHeight(core->display,
+                                                         core->screen);
+    wm_config_workarea(&core->config, screen_width, screen_height,
+                       x, y, width, height);
 }
 
 void wm_frame_maximize(WmCore *core, WmFrame *frame) {
@@ -425,15 +435,20 @@ void wm_frame_maximize(WmCore *core, WmFrame *frame) {
     frame->restore_width = frame->client_width;
     frame->restore_height = frame->client_height;
 
-    int screen_width = 0;
-    int screen_height = 0;
-    frame_screen_size(core, &screen_width, &screen_height);
+    /* The workarea, not the screen: a maximised window stops at the bar. Its
+       client still has the title bar above it, so the client's height gives
+       back the title bar's room as well. */
+    int area_x = 0;
+    int area_y = 0;
+    int area_width = 0;
+    int area_height = 0;
+    frame_screen_size(core, &area_x, &area_y, &area_width, &area_height);
 
     frame->maximized = 1;
-    frame->x = 0;
-    frame->y = 0;
-    frame->client_width = screen_width - 2 * WM_FRAME_BORDER;
-    frame->client_height = screen_height - WM_TITLE_HEIGHT - WM_FRAME_BORDER;
+    frame->x = area_x;
+    frame->y = area_y;
+    frame->client_width = area_width - 2 * WM_FRAME_BORDER;
+    frame->client_height = area_height - WM_TITLE_HEIGHT - WM_FRAME_BORDER;
     if (frame->client_width < 1) frame->client_width = 1;
     if (frame->client_height < 1) frame->client_height = 1;
 
@@ -465,7 +480,8 @@ static WmFrame *frame_next_visible(WmCore *core, Window client) {
         if (i < 0) {
             i += core->frame_count;
         }
-        if (!core->frames[i].minimized) {
+        if (!core->frames[i].minimized &&
+            core->frames[i].workspace == core->current_workspace) {
             return &core->frames[i];
         }
     }
@@ -499,6 +515,7 @@ void wm_frame_restore(WmCore *core, WmFrame *frame) {
         return;
     }
     frame->minimized = 0;
+    if (frame->workspace != core->current_workspace) { return; }
     XMapRaised(core->display, frame->frame);
 
     /* A window that was put away comes back whole. The frame and the client
@@ -547,15 +564,52 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
     WmFrame *frame = &core->frames[core->frame_count];
     memset(frame, 0, sizeof(*frame));
     frame->client = client;
+    wm_workspace_place(core, frame);
     frame->client_width = attributes.width > 1 ? attributes.width : 80;
     frame->client_height = attributes.height > 1 ? attributes.height : 24;
     frame->x = attributes.x;
     frame->y = attributes.y;
+
+    /* A window is kept clear of the bar and inside the desktop. The screen's
+       top-left corner is not where a window belongs when a bar is along the
+       top: the frame's title bar would open underneath the strip and the window
+       could not be dragged out from under it. Nor should a window open larger
+       than the area it is being put in — a client that asks for the whole
+       screen is asking for something the bar has already taken.
+
+       Only a window that would land outside is moved. A window that fits where
+       it asked to be is left exactly there, because a manager that repositions
+       a window the user's program placed deliberately is a manager that makes
+       every program's own saved geometry meaningless. */
+    int area_x = 0;
+    int area_y = 0;
+    int area_width = 0;
+    int area_height = 0;
+    wm_config_workarea(&core->config, core->width, core->height,
+                       &area_x, &area_y, &area_width, &area_height);
+
+    if (frame->x < area_x) {
+        frame->x = area_x;
+    }
+    if (frame->y < area_y) {
+        frame->y = area_y;
+    }
     if (frame->x < 0) {
         frame->x = 0;
     }
     if (frame->y < 0) {
         frame->y = 0;
+    }
+
+    /* The frame's own chrome is part of what has to fit, so the room left for
+       the client is the area less the title bar and the two side borders. */
+    int room_width = area_width - 2 * WM_FRAME_BORDER;
+    int room_height = area_height - WM_TITLE_HEIGHT - WM_FRAME_BORDER;
+    if (room_width > 1 && frame->client_width > room_width) {
+        frame->client_width = room_width;
+    }
+    if (room_height > 1 && frame->client_height > room_height) {
+        frame->client_height = room_height;
     }
 
     frame->frame = XCreateSimpleWindow(

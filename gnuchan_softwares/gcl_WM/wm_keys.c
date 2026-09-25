@@ -92,7 +92,7 @@ static const KeyBinding BUILT_IN[] = {
 };
 
 #define BUILT_IN_COUNT (sizeof(BUILT_IN) / sizeof(BUILT_IN[0]))
-#define MAX_BINDINGS (WM_CONFIG_MAX_BINDINGS + BUILT_IN_COUNT)
+#define MAX_BINDINGS ((int)(WM_CONFIG_MAX_BINDINGS + BUILT_IN_COUNT))
 
 /* The bindings the session actually has, and how many. Filled at start-up
    from the script when it binds keys, and from the table above when it does

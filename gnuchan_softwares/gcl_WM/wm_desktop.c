@@ -1,22 +1,27 @@
 /*
- * wm_desktop.c — the desktop itself: the background, the bar, and the pointer.
+ * wm_desktop.c — the desktop: the backdrop, the bar, and the pointer.
  *
- * This is the whole desktop a fresh session gets. It paints the backdrop,
- * draws the bar along the edge the config asked for, and gives the root a
- * pointer that can actually be seen.
+ * Two things are drawn here, and on different windows on purpose.
  *
- * The bar is drawn here rather than in a module of its own because it is made
- * of the same thing the background is: paint on the root window. A dock window
- * would have to be raised, kept above clients, and kept out of the client
- * list; the root is already behind everything and is already the surface this
- * module paints. One painter, one surface, no stacking to manage.
+ * The backdrop is painted on the root. The root is behind everything, which is
+ * exactly what a backdrop is, and it needs no window of its own.
  *
- * The widgets on the bar share it by weight: a widget with text asks for the
- * room that text takes, and the flexible ones split whatever is left. That is
- * what puts a clock at the right edge whether the label beside it is two
- * words or twenty.
+ * The bar is not. A bar painted on the root is covered the moment any window
+ * overlaps where it sits — a terminal opened full width hides it, and moving
+ * that terminal away leaves whatever the server had underneath, because the
+ * bar was never a surface of its own to be restored. So the bar is a window:
+ * an override-redirect window along the edge the config asked for. Override-
+ * redirect means the server maps it without asking the manager — which is us —
+ * so it can never be framed or managed by accident, and raising it is a
+ * restack rather than a repaint of something underneath.
+ *
+ * The widgets share the bar by weight: a widget with text asks for the room
+ * that text takes, and the flexibles split whatever is left. That is what puts
+ * a clock at the right edge whether the label beside it is two words or
+ * twenty.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -33,35 +38,204 @@
    repainting anything worth measuring. */
 #define WM_TICK_MS 500
 
-/* A small cursor so the pointer is visible even on a machine whose pointer
-   theme was never chosen. The colours are the desktop's own accent on its own
-   panel colour. */
-static Cursor desktop_cursor(WmCore *core) {
-    Cursor cursor = XCreateFontCursor(core->display, XC_left_ptr);
-    if (cursor == None) {
+/* The bar's window. Module state rather than core state: nothing but this file
+   draws or moves the bar. */
+static Window bar_window = None;
+
+/* --- fonts ---------------------------------------------------------------- */
+
+/* A bar's widget may name a font of its own, so the same bar can hold a big
+   clock and small labels. Loading a font is not free and the bar is repainted
+   every second, so what has been loaded is remembered here and looked up by
+   the spec it was loaded from. */
+typedef struct BarFont {
+    char spec[WM_CONFIG_TEXT_LENGTH + 32];
+    XFontStruct *font;
+} BarFont;
+
+static BarFont bar_fonts[WM_CONFIG_MAX_WIDGETS];
+static int bar_font_count = 0;
+
+static XFontStruct *bar_font_for(WmCore *core, const WmWidget *widget) {
+    /* A widget that named no font uses the desktop's, which is the one font
+       everything else on this desktop is drawn in. */
+    if (!widget->font_family[0] || widget->font_size <= 0) {
+        return core->style.font;
+    }
+
+    char spec[WM_CONFIG_TEXT_LENGTH + 32];
+    snprintf(spec, sizeof(spec), "-*-%s-*-*-*-*-%d-*-*-*-*-*-*-*",
+             widget->font_family, widget->font_size);
+
+    for (int i = 0; i < bar_font_count; i++) {
+        if (strcmp(bar_fonts[i].spec, spec) == 0) {
+            return bar_fonts[i].font;
+        }
+    }
+
+    /* The size-specific spec first, then the family alone, then the desktop's
+       font: a machine that has only one of the three still draws a bar. */
+    XFontStruct *font = XLoadQueryFont(core->display, spec);
+    if (!font) {
+        font = XLoadQueryFont(core->display, widget->font_family);
+    }
+    if (!font) {
+        return core->style.font;
+    }
+
+    if (bar_font_count < WM_CONFIG_MAX_WIDGETS) {
+        snprintf(bar_fonts[bar_font_count].spec,
+                 sizeof(bar_fonts[bar_font_count].spec), "%s", spec);
+        bar_fonts[bar_font_count].font = font;
+        bar_font_count++;
+    }
+    return font;
+}
+
+static void bar_free_fonts(WmCore *core) {
+    for (int i = 0; i < bar_font_count; i++) {
+        if (bar_fonts[i].font) {
+            XFreeFont(core->display, bar_fonts[i].font);
+        }
+    }
+    bar_font_count = 0;
+}
+
+/* --- the pointer ---------------------------------------------------------- */
+
+/* The alien-violet arrow, one string per row: 'X' is a pixel, '.' is not.
+ *
+ * It is drawn here rather than asked for from the pointer theme because the
+ * login screen draws the same shape the same way, and the two have to look
+ * like one system: a session that logs in under one pointer and lands on
+ * another is two desktops, not one. A theme cursor is also the theme's answer
+ * to "what colour is the pointer", which would override the choice — and
+ * XRecolorCursor does nothing to a modern theme's ARGB image anyway, so the
+ * recolor below the old code tried was silently ignored. A shape built at this
+ * level has no theme behind it to disagree with.
+ *
+ * This is the same table as GnuChanDM's dm_core.c, kept in step by hand; the
+ * two binaries share no code, so the shape is the smallest thing that can be
+ * duplicated to make the login screen and the desktop match. */
+static const char *const DESKTOP_CURSOR_ARROW[15] = {
+    "X..............",
+    "XX.............",
+    "X.X............",
+    "X..X...........",
+    "X...X..........",
+    "X....X.........",
+    "X.....X........",
+    "X......X.......",
+    "X.......X......",
+    "X........X.....",
+    "X.....XXXXX....",
+    "X..X...X.......",
+    "X.X.X...X......",
+    "XX...X...X.....",
+    "X.....X...X....",
+};
+
+#define DESKTOP_CURSOR_SIDE 15
+
+/* One 1-bit pixmap holding the arrow. With `grow` set the shape is fattened
+   by a pixel to make the mask: the mask is what the server draws the two
+   colours through, so a mask larger than the source puts the background colour
+   as an outline around every purple pixel — which is what keeps the pointer
+   visible over a light patch as well as a dark one. */
+static Pixmap desktop_cursor_shape(WmCore *core, int grow) {
+    Pixmap pixmap = XCreatePixmap(core->display, core->root,
+                                  DESKTOP_CURSOR_SIDE, DESKTOP_CURSOR_SIDE, 1);
+    if (pixmap == None) {
         return None;
     }
-    XColor foreground;
-    XColor background;
-    Colormap cmap = DefaultColormap(core->display, core->screen);
-    if (!XAllocNamedColor(core->display, cmap, "#c77dff", &foreground, &foreground) ||
-        !XAllocNamedColor(core->display, cmap, "#32143f", &background, &background)) {
-        return cursor;
+    GC gc = XCreateGC(core->display, pixmap, 0, NULL);
+    XSetForeground(core->display, gc, 0);
+    XFillRectangle(core->display, pixmap, gc, 0, 0,
+                   DESKTOP_CURSOR_SIDE, DESKTOP_CURSOR_SIDE);
+    XSetForeground(core->display, gc, 1);
+
+    for (int y = 0; y < DESKTOP_CURSOR_SIDE; y++) {
+        for (int x = 0; x < DESKTOP_CURSOR_SIDE; x++) {
+            int set = DESKTOP_CURSOR_ARROW[y][x] == 'X';
+            if (!set && grow) {
+                for (int dy = -1; dy <= 1 && !set; dy++) {
+                    for (int dx = -1; dx <= 1 && !set; dx++) {
+                        int ny = y + dy;
+                        int nx = x + dx;
+                        if (ny >= 0 && ny < DESKTOP_CURSOR_SIDE &&
+                            nx >= 0 && nx < DESKTOP_CURSOR_SIDE &&
+                            DESKTOP_CURSOR_ARROW[ny][nx] == 'X') {
+                            set = 1;
+                        }
+                    }
+                }
+            }
+            if (set) {
+                XDrawPoint(core->display, pixmap, gc, x, y);
+            }
+        }
     }
-    XRecolorCursor(core->display, cursor, &foreground, &background);
+
+    XFreeGC(core->display, gc);
+    return pixmap;
+}
+
+/* The pointer the desktop draws. It is drawn on the root whatever the config
+   says about a cursor theme: the root is the one surface the pointer sits on
+   with nothing under it, and it is where the login screen was a moment ago, so
+   the two have to agree. A theme cursor here would be the theme's arrow with
+   the theme's colours, which is what the login screen deliberately does not
+   use. Programs are unaffected — they take their cursor from XCURSOR_THEME,
+   which wm_config_apply() still sets.
+
+   XCreatePixmapCursor needs the two colours allocated; a display that refuses
+   them (one with no colour at all) falls back to the font cursor, because a
+   pointer nobody can see is worse than an ugly one. */
+static Cursor desktop_make_cursor(WmCore *core) {
+    Pixmap source = desktop_cursor_shape(core, 0);
+    Pixmap mask = desktop_cursor_shape(core, 1);
+    if (source == None || mask == None) {
+        if (source != None) XFreePixmap(core->display, source);
+        if (mask != None) XFreePixmap(core->display, mask);
+        return XCreateFontCursor(core->display, XC_left_ptr);
+    }
+
+    XColor foreground;   /* the accent purple #c77dff, as the login screen uses */
+    XColor background;   /* the desktop background #1a0b2e                     */
+    Colormap cmap = DefaultColormap(core->display, core->screen);
+    if (!XParseColor(core->display, cmap, "#c77dff", &foreground) ||
+        !XParseColor(core->display, cmap, "#1a0b2e", &background) ||
+        !XAllocColor(core->display, cmap, &foreground) ||
+        !XAllocColor(core->display, cmap, &background)) {
+        XFreePixmap(core->display, source);
+        XFreePixmap(core->display, mask);
+        return XCreateFontCursor(core->display, XC_left_ptr);
+    }
+
+    /* The hotspot is the tip of the arrow, so the point the user aims at is
+       the point that lands. */
+    Cursor cursor = XCreatePixmapCursor(core->display, source, mask,
+                                        &foreground, &background, 0, 0);
+    XFreePixmap(core->display, source);
+    XFreePixmap(core->display, mask);
     return cursor;
 }
 
+/* --- what a widget says --------------------------------------------------- */
+
 /* What a widget shows, in a buffer. This is the one place a widget's kind
-   becomes words, so the layout below never has to know which kind it is
-   looking at — it measures what this produced and draws it. */
+   becomes words, so the layout below never has to know which kind it is looking
+   at — it measures what this produced and draws it. */
 static void bar_widget_label(const WmWidget *widget, char *out,
                              unsigned int size) {
     out[0] = '\0';
     switch (widget->kind) {
     case WM_WIDGET_CURRENT_LAYOUT: {
-        /* The layouts as "0 1 2 3 4 5". The desktop has no workspace model
-           yet, so the range is drawn as the labels the user wrote. */
+        /* The layouts as "0 1 2 3 4 5". The desktop does have workspaces
+           (wm_workspace.c, WM_WORKSPACE_COUNT of them) and switches between
+           them on a key, but this widget does not yet mark which one is
+           current: it draws the range the script wrote. Marking the current
+           one is a change here plus a repaint when the workspace moves. */
         unsigned int used = 0;
         for (int number = widget->start_layout;
              number <= widget->end_layout; number++) {
@@ -81,9 +255,6 @@ static void bar_widget_label(const WmWidget *widget, char *out,
         snprintf(out, size, "%s", widget->text);
         break;
     case WM_WIDGET_CLOCK: {
-        /* A clock with no format still tells the time: an empty format is a
-           widget that was asked for and not configured, not one that should
-           draw nothing. */
         const char *format = widget->format[0] ? widget->format : "%H:%M";
         time_t now = time(NULL);
         struct tm *local = localtime(&now);
@@ -93,38 +264,97 @@ static void bar_widget_label(const WmWidget *widget, char *out,
         break;
     }
     case WM_WIDGET_EMPTY_SPACE:
-        /* Space has no text; its room is the point. */
         break;
     }
 }
 
-/* The bar: the strip, then its widgets, left to right. See the note at the
-   top of the file for why the width is shared rather than each widget placed. */
+/* --- the bar window ------------------------------------------------------- */
+
+/* Put the bar window where the config says it goes, making it the first time.
+   Called at start, on a screen resize and after a reload — so the strip follows
+   the config rather than being fixed at whatever the session started with. */
+static void desktop_configure_bar(WmCore *core) {
+    const WmBar *bar = &core->config.bar;
+
+    if (!bar->present || bar->size <= 0) {
+        if (bar_window != None) {
+            XUnmapWindow(core->display, bar_window);
+        }
+        return;
+    }
+
+    int height = bar->size;
+    int y = strcmp(bar->position, "bottom") == 0 ? core->height - height : 0;
+
+    if (bar_window == None) {
+        XSetWindowAttributes attributes;
+        memset(&attributes, 0, sizeof(attributes));
+        /* Override-redirect: the server maps this window without asking the
+           manager, so the bar can never be framed, focused or managed. */
+        attributes.override_redirect = True;
+        attributes.event_mask = ExposureMask | ButtonPressMask;
+        attributes.background_pixel = BlackPixel(core->display, core->screen);
+        attributes.border_pixel = 0;
+
+        bar_window = XCreateWindow(core->display, core->root,
+                                   0, y,
+                                   (unsigned int)core->width,
+                                   (unsigned int)height,
+                                   0, CopyFromParent, InputOutput,
+                                   CopyFromParent,
+                                   CWOverrideRedirect | CWEventMask |
+                                   CWBackPixel | CWBorderPixel,
+                                   &attributes);
+        if (bar_window == None) {
+            fprintf(stderr, "gnuchanwm: cannot make the bar window\n");
+            return;
+        }
+    } else {
+        XMoveResizeWindow(core->display, bar_window, 0, y,
+                          (unsigned int)core->width, (unsigned int)height);
+    }
+    XMapRaised(core->display, bar_window);
+    XFlush(core->display);
+}
+
+/* Put the bar above everything. A window that was just mapped has been placed
+   on top by the server, so the bar has to be raised again each time — that is
+   the whole difference between a bar and a picture of one. */
+static void desktop_raise_bar(WmCore *core) {
+    if (bar_window != None) {
+        XRaiseWindow(core->display, bar_window);
+        XFlush(core->display);
+    }
+}
+
+/* The bar: the strip, then its widgets, left to right. See the note at the top
+   of the file for why the width is shared rather than each widget placed. */
 static void desktop_bar(WmCore *core) {
+    if (bar_window == None) {
+        return;
+    }
     const WmBar *bar = &core->config.bar;
     if (!bar->present || bar->size <= 0) {
         return;
     }
     int height = bar->size;
-    int strip_y = strcmp(bar->position, "bottom") == 0
-                      ? core->height - height
-                      : 0;
 
     unsigned long strip_colour = wm_style_colour(core->display, core->screen,
                                                  bar->background,
                                                  core->style.panel);
     XSetForeground(core->display, core->gc, strip_colour);
-    XFillRectangle(core->display, core->root, core->gc,
-                   0, strip_y, (unsigned int)core->width,
-                   (unsigned int)height);
+    XFillRectangle(core->display, bar_window, core->gc,
+                   0, 0, (unsigned int)core->width, (unsigned int)height);
 
     if (bar->widget_count == 0) {
+        XFlush(core->display);
         return;
     }
 
-    /* Measure once, then place. A widget's label is produced here and kept,
-       so the measuring and the drawing agree about what is being drawn. */
+    /* Measure once, then place. A widget's label is produced here and kept, so
+       the measuring and the drawing agree about what is being drawn. */
     static char labels[WM_CONFIG_MAX_WIDGETS][WM_CONFIG_TEXT_LENGTH];
+    XFontStruct *fonts[WM_CONFIG_MAX_WIDGETS];
     int widths[WM_CONFIG_MAX_WIDGETS];
     int flexible_count = 0;
     int needed = 0;
@@ -132,11 +362,12 @@ static void desktop_bar(WmCore *core) {
     for (int i = 0; i < bar->widget_count && i < WM_CONFIG_MAX_WIDGETS; i++) {
         const WmWidget *widget = &bar->widgets[i];
         bar_widget_label(widget, labels[i], sizeof(labels[i]));
+        fonts[i] = bar_font_for(core, widget);
         if (widget->kind == WM_WIDGET_EMPTY_SPACE) {
             widths[i] = 0;
             flexible_count++;
         } else {
-            widths[i] = wm_style_text_width(core->style.font, labels[i]) +
+            widths[i] = wm_style_text_width(fonts[i], labels[i]) +
                         2 * WM_BAR_PADDING;
             needed += widths[i];
         }
@@ -160,97 +391,137 @@ static void desktop_bar(WmCore *core) {
                                                    widget->background,
                                                    strip_colour);
         XSetForeground(core->display, core->gc, background);
-        XFillRectangle(core->display, core->root, core->gc,
-                       x, strip_y, (unsigned int)width, (unsigned int)height);
+        XFillRectangle(core->display, bar_window, core->gc,
+                       x, 0, (unsigned int)width, (unsigned int)height);
 
-        if (labels[i][0] && core->style.font) {
+        if (labels[i][0] && fonts[i]) {
             unsigned long foreground =
                 wm_style_colour(core->display, core->screen,
                                 widget->foreground, core->style.text);
-            int baseline = strip_y +
-                           (height + core->style.font->ascent -
-                            core->style.font->descent) / 2;
-            wm_style_text(core->display, core->root, core->gc, core->style.font,
+            int baseline = (height + fonts[i]->ascent - fonts[i]->descent) / 2;
+            wm_style_text(core->display, bar_window, core->gc, fonts[i],
                           x + WM_BAR_PADDING, baseline, labels[i], foreground);
         }
         x += width;
     }
+
+    XFlush(core->display);
 }
 
-/* Paint the background and the bar. Called at start, on every Expose of the
-   root, and on the tick that moves the clock. */
-static void desktop_paint(WmCore *core) {
+/* --- painting ------------------------------------------------------------- */
+
+/* The backdrop. Called at start and on every Expose of the root, so a session
+   that logs in over an old one does not inherit its picture. */
+static void desktop_paint_background(WmCore *core) {
     XSetForeground(core->display, core->gc, core->style.background);
     XFillRectangle(core->display, core->root, core->gc,
                    0, 0,
                    (unsigned int)core->width, (unsigned int)core->height);
-
-    desktop_bar(core);
-
     XFlush(core->display);
 }
+
+/* --- the module ----------------------------------------------------------- */
 
 static int desktop_init(WmCore *core) {
     XSetWindowBackground(core->display, core->root, core->style.background);
     XClearWindow(core->display, core->root);
 
-    Cursor cursor = desktop_cursor(core);
-    if (cursor != None) {
-        XDefineCursor(core->display, core->root, cursor);
-        /* The cursor is part of the desktop, so it is freed with it. */
-        core->root_cursor = cursor;
+    /* The pointer is drawn before anything else, so the first thing the user
+       sees on an empty desktop is the same arrow the login screen showed. */
+    {
+        Cursor cursor = desktop_make_cursor(core);
+        if (cursor != None) {
+            XDefineCursor(core->display, core->root, cursor);
+            core->root_cursor = cursor;
+        }
     }
 
-    desktop_paint(core);
+    desktop_paint_background(core);
+    desktop_configure_bar(core);
+    desktop_bar(core);
     return 0;
 }
 
 static void desktop_event(WmCore *core, XEvent *event) {
-    /* The root gets exposed when a window above it is unmapped — the greeter
-       going away, a full-screen program closing. Repainting then is what
-       keeps the desktop from showing whatever was underneath. */
-    if (event->type == Expose && event->xexpose.window == core->root) {
-        desktop_paint(core);
-    } else if (event->type == ConfigureNotify &&
-               event->xconfigure.window == core->root) {
-        core->width = event->xconfigure.width;
-        core->height = event->xconfigure.height;
-        desktop_paint(core);
+    if (bar_window != None && event->xany.window == bar_window &&
+        event->type == Expose) {
+        desktop_bar(core);
+        return;
+    }
+
+    switch (event->type) {
+    case Expose:
+        if (event->xexpose.window == core->root) {
+            desktop_paint_background(core);
+        }
+        break;
+    case ConfigureNotify:
+        if (event->xconfigure.window == core->root) {
+            core->width = event->xconfigure.width;
+            core->height = event->xconfigure.height;
+            desktop_paint_background(core);
+            desktop_configure_bar(core);
+            desktop_bar(core);
+        }
+        break;
+    case MapNotify:
+        /* A window has just been placed on top of everything. The bar belongs
+           above it, so it is raised again — this is the one event that tells
+           the bar it has been covered. */
+        if (event->xmap.window != bar_window) {
+            desktop_raise_bar(core);
+        }
+        break;
+    default:
+        break;
     }
 }
 
 /* The idle work of the desktop: keep the clock moving and re-read the config
-   script when it is saved. This is what makes the script live — there is no
-   key to press and no session to restart. The bar is repainted whenever
-   anything it shows could have changed, which is every tick that reloaded. */
+   script when it is saved. This is what makes the script live — there is no key
+   to press and no session to restart. */
 static void desktop_tick(WmCore *core) {
     static long long last_stamp = -1;
 
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    long long stamp = (long long)now.tv_sec * 1000 + now.tv_nsec / 1000000;
-
-    int reloaded = wm_config_reload(core);
-    if (reloaded) {
-        desktop_paint(core);
-        last_stamp = stamp;
-        return;
+    if (wm_config_reload(core)) {
+        /* A reload can move the bar or resize it, so everything the config
+           feeds is redone rather than only the paint. The pointer is not one
+           of those things: it is built once at start and the run from the
+           config only says which theme the programs should ask for. */
+        desktop_configure_bar(core);
+        desktop_bar(core);
+        desktop_raise_bar(core);
     }
 
     /* The clock only needs a repaint when the second it shows has changed; a
        tick that redraws an unchanged clock is a wake-up per half second that
        buys nothing. */
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    long long stamp = (long long)now.tv_sec * 1000 + now.tv_nsec / 1000000;
     if (last_stamp < 0) {
         last_stamp = stamp;
-        return;
-    }
-    if (stamp - last_stamp >= 1000) {
+    } else if (stamp - last_stamp >= 1000) {
         last_stamp = stamp;
-        desktop_paint(core);
+        desktop_bar(core);
     }
+
+    /* The bar is put back on top on every tick, not only when it is drawn.
+       A client that raised itself — every terminal does when it opens — is
+       above the bar until the bar is raised again, and a bar behind one
+       window is not a bar. Half a second is short enough that the window
+       under it is redrawn before anyone notices.
+     */
+    desktop_raise_bar(core);
 }
 
 static void desktop_cleanup(WmCore *core) {
+    if (bar_window != None) {
+        XDestroyWindow(core->display, bar_window);
+        bar_window = None;
+    }
+    bar_free_fonts(core);
+
     if (core->root_cursor != None) {
         XUndefineCursor(core->display, core->root);
         XFreeCursor(core->display, core->root_cursor);

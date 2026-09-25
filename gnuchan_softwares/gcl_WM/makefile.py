@@ -40,6 +40,14 @@ BIN_DIR = Path("/usr/local/bin")
 SESSION_DIR = Path("/usr/share/xsessions")
 SESSION_FILE = SESSION_DIR / "gnuchanwm.desktop"
 
+# The settings script, installed into the user's own config directory. The
+# window manager reads it from there, so a machine that never had a script
+# needs one put in place of it — otherwise the desktop falls back to its
+# built-in defaults and looks nothing like what GnuchanOS shipped.
+CONFIG_SOURCE = ROOT / "GnuChanWM_config" / "GnuChanWM.py"
+CONFIG_DIR_NAME = "GnuChanWM"
+CONFIG_FILE_NAME = "GnuChanWM.py"
+
 SOURCES = (
     "wm_core.c",
     "wm_style.c",
@@ -54,12 +62,14 @@ SOURCES = (
     "wm_autostart.c",
     "wm_menu.c",
     "wm_keys.c",
+    "wm_workspace.c",
     "GnuChanWM.c",
 )
 HEADERS = (
     "wm_module.h", "wm_core.h", "wm_style.h", "wm_frame.h", "wm_spawn.h",
     "wm_theme.h",
     "wm_config.h", "wm_config_parser.h",
+    "wm_workspace.h", "wm_desktop.h",
 )
 
 FALLBACK_TERMINAL = "xterm"
@@ -258,6 +268,62 @@ def install(binary: Path) -> None:
     detail(f"installed {SESSION_FILE}")
 
 
+def invoking_user() -> tuple[Path, int, int] | None:
+    """The home and ids of the person who ran sudo, not root.
+
+    The script belongs to the person who logs in, and the window manager reads
+    it from their home. Under sudo, HOME and the ids are root's, so the
+    original user is read back from SUDO_USER — the one piece of the invoking
+    session sudo keeps. Returns None when there is nothing sensible to write
+    to, which is a machine installing without a login user.
+    """
+    name = os.environ.get("SUDO_USER")
+    if not name:
+        return None
+    try:
+        import pwd
+        info = pwd.getpwnam(name)
+        return Path(info.pw_dir), info.pw_uid, info.pw_gid
+    except (ImportError, KeyError):
+        return None
+
+
+def install_config() -> None:
+    """Put the settings script where the window manager will read it.
+
+    An existing script is left exactly as it is. It is the user's file — they
+    may have edited it, and an installer that overwrites it on every run is an
+    installer that silently undoes their work.
+    """
+    if not CONFIG_SOURCE.is_file():
+        return
+    user = invoking_user()
+    if user is None:
+        detail("skipped the config: no login user to install it for")
+        return
+
+    home, uid, gid = user
+    directory = home / ".config" / CONFIG_DIR_NAME
+    target = directory / CONFIG_FILE_NAME
+
+    if target.exists():
+        detail(f"kept the existing {target}")
+        return
+
+    directory.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(CONFIG_SOURCE, target)
+
+    # The file was written by root and has to belong to the user who will read
+    # it, or the window manager opens a file it can see but not change.
+    try:
+        os.chown(directory, uid, gid)
+        os.chown(target, uid, gid)
+    except OSError:
+        pass
+
+    detail(f"installed {target}")
+
+
 def uninstall() -> None:
     step("Uninstalling")
     for target in (BIN_DIR / PROGRAM, SESSION_FILE):
@@ -278,6 +344,7 @@ def install_everything() -> int:
     ensure_terminal()
     binary = build()
     install(binary)
+    install_config()
     note("")
     note("GnuChanWM is installed. It is in the display manager's session menu.")
     return 0

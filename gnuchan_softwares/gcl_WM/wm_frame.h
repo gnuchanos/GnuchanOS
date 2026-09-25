@@ -78,6 +78,7 @@ typedef struct WmFrame {
        an unmapped frame is what that key restores. */
     int minimized;       /* 1 while the frame is put away                    */
     int maximized;       /* 1 while the client fills the screen              */
+    int workspace;       /* which desktop this window is on (wm_workspace.h) */
 
     /* Where the frame was before it was maximised, so the same button puts it
        back. Only meaningful while maximized is set. */
