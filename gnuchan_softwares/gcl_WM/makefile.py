@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
-"""
-GnuChanWM build and install (Debian only).
+# =============================================================================
+# GnuChanWM - build and install everything (Debian)
+# -----------------------------------------------------------------------------
+#     python3 makefile.py
+#
+# Installs the build dependencies, a terminal if the machine has none, builds
+# the window manager, and installs it with a session entry so the display
+# manager offers "GnuChanWM". It needs root and re-runs itself through sudo.
+#
+#     python3 makefile.py build      compile only
+#     python3 makefile.py run        compile and start on the current display
+#     python3 makefile.py uninstall  remove the binary and the session entry
+#
+# Debian only, on purpose.
+#
+# License: GPL3
+# =============================================================================
 
-Usage:
-  python3 makefile.py            # build
-  python3 makefile.py install    # build, then install system-wide
-  python3 makefile.py uninstall  # remove what install put down
-  python3 makefile.py run        # build, then start it on the current display
-
-`install` is what a user runs once: it puts the binary in /usr/local/bin and a
-session entry in /usr/share/xsessions, so the display manager lists "GnuChanWM"
-and the user picks it from the login screen's session menu. That is the whole
-integration — nothing edits anyone's dotfiles.
-
-Debian is the only target. The dependencies are Debian's package names, the
-session directory is Debian's, and there is no attempt to detect another
-distribution.
-
-    apt install build-essential libx11-dev
-"""
 from __future__ import annotations
 
 import os
@@ -35,127 +33,183 @@ except Exception:
     pass
 
 ROOT = Path(__file__).resolve().parent
-#: The sources live beside this script, not in a subdirectory: the project is
-#: small enough that a src/ level would be a level for its own sake.
-SRC = ROOT
 BUILD = ROOT / "build"
 
-#: The binary's name, and so the name of the file in /usr/local/bin.
 PROGRAM = "GnuChanWM"
-
-#: Where `install` puts the binary and the session entry.
 BIN_DIR = Path("/usr/local/bin")
 SESSION_DIR = Path("/usr/share/xsessions")
 SESSION_FILE = SESSION_DIR / "gnuchanwm.desktop"
 
-#: The sources, in the order they are compiled. Each one is a module or the
-#: core; there is no generated file.
-SOURCES = [
+SOURCES = (
     "wm_core.c",
     "wm_manage.c",
     "wm_focus.c",
     "wm_spawn.c",
     "wm_keys.c",
     "GnuChanWM.c",
-]
+)
+HEADERS = ("wm_module.h", "wm_core.h", "wm_spawn.h")
 
-#: What the build needs, as Debian package names. A missing one is named and
-#: the build stops, rather than failing somewhere inside gcc's output.
-APT_PACKAGES = ("build-essential", "libx11-dev")
+FALLBACK_TERMINAL = "xterm"
+TERMINAL_CANDIDATES = (
+    "x-terminal-emulator", "gnome-terminal", "konsole",
+    "xfce4-terminal", "alacritty", "kitty", "xterm",
+)
 
-#: The X libraries the binary links against.
-LIBS = ("-lX11",)
-
-
-def is_linux() -> bool:
-    return platform.system().lower() == "linux"
+ELEVATED_VARIABLE = "GNUCHANWM_ELEVATED"
 
 
-def run(cmd: list[str], cwd: Path | None = None) -> int:
-    print(f"[gcl_wm] {' '.join(str(x) for x in cmd)}", flush=True)
-    return subprocess.run(cmd, cwd=cwd, check=False).returncode
+def step(message: str) -> None:
+    print(f"==> {message}", flush=True)
 
 
-def missing_tools() -> list[str]:
-    """The compilers and tools the build needs that are not on PATH."""
-    return [name for name in ("gcc", "pkg-config") if shutil.which(name) is None]
+def detail(message: str) -> None:
+    print(f"    {message}", flush=True)
+
+
+def note(message: str) -> None:
+    print(message, flush=True)
+
+
+def run(
+    command: list[str],
+    capture: bool = False,
+    environment: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    if capture:
+        return subprocess.run(
+            command, check=False, capture_output=True, text=True, env=environment
+        )
+    return subprocess.run(command, check=False, text=True, env=environment)
+
+
+def apt_environment() -> dict[str, str]:
+    return {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+
+
+def is_root() -> bool:
+    geteuid = getattr(os, "geteuid", None)
+    return bool(geteuid is not None and geteuid() == 0)
+
+
+def ensure_root() -> None:
+    if is_root():
+        return
+    if os.environ.get(ELEVATED_VARIABLE) == "1":
+        raise SystemExit("error: still not root after sudo")
+    sudo = shutil.which("sudo")
+    if sudo is None:
+        raise SystemExit("error: this installs packages and writes /usr; run as root")
+    step("Needs root; re-running through sudo")
+    environment = dict(os.environ)
+    environment[ELEVATED_VARIABLE] = "1"
+    os.execvpe(sudo, [sudo, sys.executable, str(Path(__file__).resolve())], environment)
+
+
+def is_debian() -> bool:
+    return shutil.which("apt-get") is not None
+
+
+def x11_headers_present() -> bool:
+    gcc = shutil.which("gcc")
+    if gcc is None:
+        return False
+    result = subprocess.run(
+        [gcc, "-E", "-xc", "-"],
+        input="#include <X11/Xlib.h>\n",
+        text=True, capture_output=True, check=False,
+    )
+    return result.returncode == 0
+
+
+def program_exists(name: str) -> bool:
+    if "/" in name:
+        return os.access(name, os.X_OK)
+    return shutil.which(name) is not None
+
+
+def apt_install(packages: tuple[str, ...]) -> bool:
+    if not packages:
+        return True
+    run(["apt-get", "update", "-o", "Acquire::Retries=3"],
+        capture=True, environment=apt_environment())
+    command = ["apt-get", "install", "-y", "--no-install-recommends", *packages]
+    detail("running: " + " ".join(command))
+    return run(command, environment=apt_environment()).returncode == 0
+
+
+def ensure_build_dependencies() -> None:
+    needed: list[str] = []
+    if not x11_headers_present():
+        needed.append("libx11-dev")
+    if shutil.which("gcc") is None:
+        needed.append("build-essential")
+    if shutil.which("pkg-config") is None:
+        needed.append("pkg-config")
+    if not needed:
+        return
+    step("Installing the build dependencies")
+    detail("missing: " + ", ".join(needed))
+    if not apt_install(tuple(needed)):
+        raise SystemExit("error: apt-get could not install: " + ", ".join(needed))
+    detail("installed: " + ", ".join(needed))
+
+
+def ensure_terminal() -> None:
+    for name in TERMINAL_CANDIDATES:
+        if program_exists(name):
+            detail(f"terminal: {name}")
+            return
+    step("Installing a terminal")
+    if not apt_install((FALLBACK_TERMINAL,)):
+        raise SystemExit(
+            f"error: no terminal is installed and apt-get could not install "
+            f"{FALLBACK_TERMINAL}"
+        )
+    detail(f"installed {FALLBACK_TERMINAL}")
 
 
 def x11_flags() -> tuple[list[str], list[str]]:
-    """The include and link flags for X11, from pkg-config.
-
-    pkg-config is the authority on where a library's headers are: a machine
-    with X11 in a prefix of its own gets the right -I without anyone guessing.
-    The fallback is Debian's own location and the library name, which is where
-    X11 always is on Debian.
-    """
     pkg_config = shutil.which("pkg-config")
     if pkg_config is not None:
-        cflags = subprocess.run(
-            [pkg_config, "--cflags", "x11"],
-            capture_output=True, text=True, check=False,
-        )
-        libs = subprocess.run(
-            [pkg_config, "--libs", "x11"],
-            capture_output=True, text=True, check=False,
-        )
+        cflags = run([pkg_config, "--cflags", "x11"], capture=True)
+        libs = run([pkg_config, "--libs", "x11"], capture=True)
         if cflags.returncode == 0 and libs.returncode == 0:
             return cflags.stdout.split(), libs.stdout.split()
-    return ["-I/usr/include"], list(LIBS)
+    return ["-I/usr/include"], ["-lX11"]
+
+
+def check_sources() -> None:
+    missing = [name for name in (*SOURCES, *HEADERS) if not (ROOT / name).is_file()]
+    if missing:
+        raise SystemExit("error: missing source files: " + ", ".join(missing))
 
 
 def build() -> Path:
-    """Compile the WM into build/GnuChanWM and return its path."""
-    if not is_linux():
-        raise SystemExit(
-            f"error: GnuChanWM is a Debian X11 window manager; "
-            f"this is {platform.system()}"
-        )
-
-    missing = missing_tools()
-    if missing:
-        raise SystemExit(
-            "error: missing build tools: " + ", ".join(missing)
-            + "\n       install them with: sudo apt install "
-            + " ".join(APT_PACKAGES)
-        )
-
-    missing_sources = [name for name in SOURCES if not (SRC / name).is_file()]
-    if missing_sources:
-        raise SystemExit("error: missing sources: " + ", ".join(missing_sources))
-
+    check_sources()
     BUILD.mkdir(parents=True, exist_ok=True)
     output = BUILD / PROGRAM
 
     cflags, libs = x11_flags()
-
-    cmd = [
+    command = [
         "gcc", "-std=c99", "-Wall", "-Wextra", "-Wno-unused-parameter",
         "-O2", "-D_DEFAULT_SOURCE",
-        "-I", str(SRC),
+        "-I", str(ROOT),
         *cflags,
     ]
-    cmd += [str(SRC / name) for name in SOURCES]
-    cmd += ["-o", str(output)]
-    cmd += libs
-    cmd += ["-lm"]
+    command += [str(ROOT / name) for name in SOURCES]
+    command += ["-o", str(output)]
+    command += libs
+    command += ["-lm"]
 
-    if run(cmd, cwd=ROOT) != 0:
+    step("Building")
+    if run(command, cwd=ROOT).returncode != 0:
         raise SystemExit("error: the build failed")
-
-    print(f"[gcl_wm] built {output}", flush=True)
+    detail(f"built {output}")
     return output
 
 
 def session_entry() -> str:
-    """The .desktop a display manager reads to offer this session.
-
-    Exec starts the WM itself. A session with no panel, no terminal and no
-    desktop is exactly what this is, and the session entry says so by naming
-    the WM and nothing else. The TryExec line is what makes the entry
-    disappear from the menu on a machine where the binary is not installed —
-    a session offered for a program that is not there is a login that fails.
-    """
     return "\n".join([
         "[Desktop Entry]",
         "Name=GnuChanWM",
@@ -168,118 +222,81 @@ def session_entry() -> str:
     ])
 
 
-def ensure_root() -> bool:
-    """Whether this process can write /usr/local/bin and /usr/share/xsessions."""
-    geteuid = getattr(os, "geteuid", None)
-    return bool(geteuid is not None and geteuid() == 0)
-
-
 def install(binary: Path) -> None:
-    """Copy the binary and the session entry into place, as root.
+    step("Installing")
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
-    Everything is written through sudo when this is not already root, because
-    both destinations are root's. The session entry is what makes the WM
-    selectable at the login screen; the binary is what the entry runs.
-    """
-    if ensure_root():
-        # Only root can create /usr/share/xsessions. Without root the file is
-        # written through sudo below, and the directory already exists on any
-        # Debian with a display manager installed.
-        SESSION_DIR.mkdir(parents=True, exist_ok=True)
-    else:
-        print("[gcl_wm] installing to /usr/local and /usr/share needs root; "
-              "using sudo", flush=True)
+    shutil.copyfile(binary, BIN_DIR / PROGRAM)
+    (BIN_DIR / PROGRAM).chmod(0o755)
+    detail(f"installed {BIN_DIR / PROGRAM}")
 
-    def put(source: Path, target: Path, mode: int) -> None:
-        if ensure_root():
-            shutil.copyfile(source, target)
-            target.chmod(mode)
-            print(f"[gcl_wm] installed {target}", flush=True)
-            return
-        sudo = shutil.which("sudo")
-        if sudo is None:
-            raise SystemExit(
-                "error: not root and sudo is not installed; re-run as root"
-            )
-        if run([sudo, "install", "-m", oct(mode)[2:], str(source), str(target)]) != 0:
-            raise SystemExit(f"error: could not install {target}")
-
-    put(binary, BIN_DIR / PROGRAM, 0o755)
-
-    # The session file is written to a temporary name first and moved into
-    # place, so a display manager reading it never sees a half-written file.
     temporary = BUILD / "gnuchanwm.desktop"
     temporary.write_text(session_entry(), encoding="utf-8")
-    put(temporary, SESSION_FILE, 0o644)
-
-    print("", flush=True)
-    print("Installed. Pick 'GnuChanWM' from the session menu on the login", flush=True)
-    print("screen; it starts the window manager with Alt+Enter as the", flush=True)
-    print("terminal shortcut.", flush=True)
+    shutil.move(str(temporary), str(SESSION_FILE))
+    SESSION_FILE.chmod(0o644)
+    detail(f"installed {SESSION_FILE}")
 
 
 def uninstall() -> None:
-    """Remove the binary and the session entry, and nothing else."""
-    targets = (BIN_DIR / PROGRAM, SESSION_FILE)
-
-    def drop(target: Path) -> None:
-        if not target.exists():
-            return
-        if ensure_root():
+    step("Uninstalling")
+    for target in (BIN_DIR / PROGRAM, SESSION_FILE):
+        if target.exists():
             target.unlink()
-            print(f"[gcl_wm] removed {target}", flush=True)
-            return
-        sudo = shutil.which("sudo")
-        if sudo is None:
-            raise SystemExit(
-                "error: not root and sudo is not installed; re-run as root"
-            )
-        run([sudo, "rm", "-f", str(target)])
-
-    for target in targets:
-        drop(target)
-    print("[gcl_wm] removed. The build/ directory and the sources are untouched.",
-          flush=True)
+            detail(f"removed {target}")
 
 
 def run_session(binary: Path) -> int:
-    """Start the WM on the display this shell is on, for a quick test.
-
-    It refuses to start when a window manager is already running, because
-    two of them on one display fight over every window — the X server tells
-    the second one it cannot have the substructure, and this reports that
-    rather than leaving a half-started WM behind.
-    """
     if not os.environ.get("DISPLAY"):
-        raise SystemExit(
-            "error: DISPLAY is not set, so there is no X server to run on"
-        )
-    print("[gcl_wm] starting; quit with the same key you would use for any WM "
-          "(the process ends on SIGTERM)", flush=True)
-    return run([str(binary)], cwd=ROOT)
+        raise SystemExit("error: DISPLAY is not set, so there is no X server to run on")
+    step("Starting on the current display")
+    return run([str(binary)], cwd=ROOT).returncode
+
+
+def install_everything() -> int:
+    ensure_build_dependencies()
+    ensure_terminal()
+    binary = build()
+    install(binary)
+    note("")
+    note("GnuChanWM is installed. It is in the display manager's session menu.")
+    return 0
 
 
 def main() -> int:
-    action = sys.argv[1] if len(sys.argv) > 1 else "build"
+    if platform.system().lower() != "linux":
+        raise SystemExit(
+            f"error: GnuChanWM is a Debian X11 window manager; this is "
+            f"{platform.system()}"
+        )
+    if not is_debian():
+        raise SystemExit(
+            "error: this installs with apt-get and writes Debian's session "
+            "directory; it is Debian-only by design"
+        )
 
-    if action not in ("build", "install", "uninstall", "run"):
+    action = sys.argv[1] if len(sys.argv) > 1 else "install"
+    known = ("install", "build", "run", "uninstall")
+    if action not in known:
         print(f"error: unknown action '{action}'", file=sys.stderr)
-        print("usage: python3 makefile.py [build|install|uninstall|run]",
-              file=sys.stderr)
+        print("usage: python3 makefile.py [" + "|".join(known) + "]", file=sys.stderr)
         return 2
+
+    if action in ("install", "uninstall"):
+        ensure_root()
 
     if action == "uninstall":
         uninstall()
         return 0
 
-    binary = build()
+    if action == "build":
+        binary = build()
+        note(f"Built {binary}.")
+        return 0
 
-    if action == "install":
-        install(binary)
-    elif action == "run":
-        return run_session(binary)
+    if action == "run":
+        return run_session(build())
 
-    return 0
+    return install_everything()
 
 
 if __name__ == "__main__":
