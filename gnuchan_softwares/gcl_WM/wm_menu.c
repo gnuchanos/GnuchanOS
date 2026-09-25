@@ -17,7 +17,13 @@
  * grabbed while it is open, so the click that dismisses it is delivered to the
  * menu rather than to whatever is under it.
  */
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <X11/Xlib.h>
 
@@ -44,6 +50,71 @@ typedef struct MenuTab {
     int count;
 } MenuTab;
 
+/* --- the menu's state ------------------------------------------------------ */
+
+/* One menu exists, so its state lives here rather than on the core: a second
+   open menu is not a thing that can exist, and a field on the core would
+   suggest it could.
+ *
+ * It is declared before the entries because ending the session has to know
+ * which window belongs to this process: the list it kills is everything on the
+ * display, and this manager is on that list. */
+static Window menu_window = None;
+static int menu_open = 0;
+static int menu_tab = 0;
+static int menu_width = 0;
+static int menu_height = 0;
+
+/* What the pointer is on: a tab index, MENU_HOVER_ENTRY + a row, or -1. */
+#define MENU_HOVER_ENTRY 100
+static int menu_hover = -1;
+
+/* Where each tab and each row of the active page sits, filled by menu_layout
+   from the same numbers the drawing uses. */
+static struct { int x, y, width, height; } tab_box[2];
+static struct { int x, y, width, height; } entry_box[MENU_MAX_ENTRIES];
+
+static int inside(int x, int y, int bx, int by, int bw, int bh) {
+    return x >= bx && x < bx + bw && y >= by && y < by + bh;
+}
+
+/* --- running a program and judging it -------------------------------------- */
+
+/* Run a program and wait for it, returning 0 only when it both ran and
+   succeeded.
+ *
+ * The wait and the exit status are the point. A power request is a list of
+ * ways to ask, tried in turn, and each has to be judged before the next is
+ * made. A chain that only moved on when a program was missing would stop at
+ * the first one that exists and refuses — and on a machine where systemctl
+ * exists but has no session to let it through, every later way would be
+ * skipped for the first one's sake.
+ *
+ * The child leads its own process group, so a program that decides to ask a
+ * terminal a question cannot take the menu's own input away from it. */
+static int run_program(char *const argv[]) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        return -1;
+    }
+    if (pid == 0) {
+        setsid();
+        execvp(argv[0], argv);
+        _exit(127);   /* not installed, or cannot be run */
+    }
+
+    int status = 0;
+    pid_t done;
+    do {
+        done = waitpid(pid, &status, 0);
+    } while (done < 0 && errno == EINTR);
+
+    if (done < 0) {
+        return -1;
+    }
+    return (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 0 : -1;
+}
+
 /* --- what the entries do --------------------------------------------------- */
 
 /* Log out: end the session.
@@ -53,12 +124,25 @@ typedef struct MenuTab {
  * stops. Killing is abrupt, but the window manager is what the display manager
  * waits on — the moment this process exits, the greeter comes back. A polite
  * close request to a client that ignores it would leave the user on a dead
- * desktop with no way back to the login screen. */
+ * desktop with no way back to the login screen.
+ *
+ * The menu is this process's own window and is taken down first: the list is
+ * of clients to kill, and the server would otherwise close this connection
+ * partway through the loop, leaving the rest of the session running. */
 static void action_logout(WmCore *core) {
     Window root_return = None;
     Window parent_return = None;
     Window *children = NULL;
     unsigned int count = 0;
+
+    if (menu_window != None) {
+        if (menu_open) {
+            XUngrabPointer(core->display, CurrentTime);
+            menu_open = 0;
+        }
+        XDestroyWindow(core->display, menu_window);
+        menu_window = None;
+    }
 
     if (XQueryTree(core->display, core->root, &root_return, &parent_return,
                    &children, &count)) {
@@ -73,20 +157,74 @@ static void action_logout(WmCore *core) {
     core->running = 0;
 }
 
-/* Reboot and power off go through the service manager rather than straight to
-   /sbin, so a machine's own shutdown policy is honoured. They are spawned, not
-   waited on: the menu must not block while the request is made, and the
-   manager's job is to ask, not to survive the answer. */
+/* Ask the machine to restart or to power off, trying each way a Debian may be
+   set up until one is accepted.
+ *
+ * The first way is sudo, because that is the way that works on a Debian where
+ * the user may restart the machine: reboot and poweroff are root's, and a
+ * session started by the greeter runs outside logind, so the polkit rule that
+ * would let its owner do it is not matched — the plain call is refused, and
+ * that refusal was being thrown away. systemctl and loginctl follow, and the
+ * plain programs last, for a machine with no service manager at all.
+ *
+ * Every way is judged by its exit status before the next is tried: a way that
+ * exists and refuses is not a way that works, and the first form of this
+ * stopped at the first program it found. */
+static int try_power(const char *verb, const char *direct_program) {
+    char *sudo_service[] = { "sudo", "-n", "systemctl", (char *)verb, NULL };
+    if (run_program(sudo_service) == 0) return 0;
+
+    char *sudo_direct[]  = { "sudo", "-n", (char *)direct_program, NULL };
+    if (run_program(sudo_direct) == 0) return 0;
+
+    char *via_service[]  = { "systemctl", (char *)verb, NULL };
+    if (run_program(via_service) == 0) return 0;
+
+    char *via_login[]    = { "loginctl", (char *)verb, NULL };
+    if (run_program(via_login) == 0) return 0;
+
+    char *direct[]       = { (char *)direct_program, NULL };
+    if (run_program(direct) == 0) return 0;
+
+    return -1;
+}
+
+/* The last way, taken only when none of the above were allowed: a terminal,
+   because it is the one place on this desktop where a password can be typed.
+   sudo's own prompt has nowhere to go when sudo is run from a menu, and a
+   request that waits forever for a password nobody can enter is the same as no
+   request at all. The window is opened and the command run inside it, so the
+   prompt lands where it can be answered. */
+static void power_in_terminal(const char *verb) {
+    const char *terminal = wm_terminal_program();
+    if (!terminal) {
+        fprintf(stderr, "gnuchanwm: could not %s: no terminal to ask in\n", verb);
+        return;
+    }
+
+    char command[128];
+    snprintf(command, sizeof(command), "sudo systemctl %s", verb);
+
+    char *modern[] = { (char *)terminal, "-e", "sh", "-c", command, NULL };
+    if (wm_spawn(terminal, modern) == 0) return;
+
+    char *classic[] = { (char *)terminal, "-e", "sudo", "systemctl",
+                        (char *)verb, NULL };
+    wm_spawn(terminal, classic);
+}
+
 static void action_reboot(WmCore *core) {
     (void)core;
-    char *argv[] = { "systemctl", "reboot", NULL };
-    wm_spawn("systemctl", argv);
+    if (try_power("reboot", "/sbin/reboot") != 0) {
+        power_in_terminal("reboot");
+    }
 }
 
 static void action_shutdown(WmCore *core) {
     (void)core;
-    char *argv[] = { "systemctl", "poweroff", NULL };
-    wm_spawn("systemctl", argv);
+    if (try_power("poweroff", "/sbin/poweroff") != 0) {
+        power_in_terminal("poweroff");
+    }
 }
 
 /* --- the table ------------------------------------------------------------- */
@@ -108,42 +246,19 @@ static const MenuTab MENU_TABS[] = {
 
 #define MENU_TAB_COUNT ((int)(sizeof(MENU_TABS) / sizeof(MENU_TABS[0])))
 
-/* --- the menu's state ------------------------------------------------------ */
-
-/* One menu exists, so its state lives here rather than on the core: a second
-   open menu is not a thing that can exist, and a field on the core would
-   suggest it could. */
-static Window menu_window = None;
-static int menu_open = 0;
-static int menu_tab = 0;
-static int menu_width = 0;
-static int menu_height = 0;
-
-/* What the pointer is on: a tab index, MENU_HOVER_ENTRY + a row, or -1. */
-#define MENU_HOVER_ENTRY 100
-static int menu_hover = -1;
-
-static struct { int x, y, width, height; } tab_box[MENU_TAB_COUNT];
-static struct { int x, y, width, height; } entry_box[MENU_MAX_ENTRIES];
-static int body_height = 0;
-
-static int inside(int x, int y, int bx, int by, int bw, int bh) {
-    return x >= bx && x < bx + bw && y >= by && y < by + bh;
-}
-
 /* Lay the menu out for the active tab: where each tab name sits and where the
    body's rows sit. Both the drawing and the hit test answer from these, so a
    click always lands on what was drawn. */
 static void menu_layout(WmCore *core) {
     XFontStruct *font = core->style.font;
-    int inline_x = MENU_PADDING / 2;
+    int inset = MENU_PADDING / 2;
 
     int x = MENU_PADDING;
     for (int i = 0; i < MENU_TAB_COUNT; i++) {
         int width = wm_style_text_width(font, MENU_TABS[i].name)
                   + 2 * MENU_PADDING;
         tab_box[i].x = x;
-        tab_box[i].y = inline_x;
+        tab_box[i].y = inset;
         tab_box[i].width = width;
         tab_box[i].height = MENU_TAB_HEIGHT;
         x += width + MENU_TAB_GAP;
@@ -152,6 +267,7 @@ static void menu_layout(WmCore *core) {
 
     const MenuTab *tab = &MENU_TABS[menu_tab];
     int body_width;
+    int body_height;
     if (tab->count > 0) {
         body_width = 0;
         for (int i = 0; i < tab->count; i++) {
@@ -179,8 +295,8 @@ static void menu_layout(WmCore *core) {
 
     int rows = tab->count > 0 ? tab->count : 1;
     for (int i = 0; i < rows; i++) {
-        entry_box[i].x = inline_x;
-        entry_box[i].y = MENU_TAB_HEIGHT + inline_x + i * MENU_ROW_HEIGHT;
+        entry_box[i].x = inset;
+        entry_box[i].y = MENU_TAB_HEIGHT + inset + i * MENU_ROW_HEIGHT;
         entry_box[i].width = menu_width - MENU_PADDING;
         entry_box[i].height = MENU_ROW_HEIGHT;
     }

@@ -19,6 +19,12 @@
  * a normal window's map would come back to the manager as its own MapRequest
  * and the manager would be talking to itself for ever; an override-redirect
  * window is what the server maps without asking.
+ *
+ * Everything the frame draws goes into an off-screen copy first and is put on
+ * the window in one operation. Drawing straight to the window means the title
+ * bar is cleared, then partly redrawn, then finished — and a window being
+ * dragged or focused is being redrawn many times a second, so that order is
+ * seen as a flicker. See wm_frame.c for what fills the copy.
  */
 #ifndef GNUCHANWM_FRAME_H
 #define GNUCHANWM_FRAME_H
@@ -36,8 +42,19 @@ typedef struct WmCore WmCore;
    bar that is a different height on every window is not one desktop. */
 #define WM_TITLE_HEIGHT 22
 #define WM_FRAME_BORDER 2
-#define WM_CLOSE_SIZE 16
+#define WM_BUTTON_SIZE 16
+#define WM_BUTTON_GAP 6
 #define WM_MAX_FRAMES 128
+
+/* The three buttons, in the order they are drawn from the right edge inwards:
+   close is rightmost, then maximise, then minimise. A count and an order, so
+   the drawing loop, the hit test and the geometry all read the same table. */
+typedef enum WmFrameButton {
+    WM_BUTTON_CLOSE = 0,
+    WM_BUTTON_MAXIMIZE,
+    WM_BUTTON_MINIMIZE,
+    WM_BUTTON_COUNT,
+} WmFrameButton;
 
 /* One managed window, as the desktop holds it. */
 typedef struct WmFrame {
@@ -55,6 +72,24 @@ typedef struct WmFrame {
     int drag_frame_x;    /* where the frame was when the drag began          */
     int drag_frame_y;
 
+    /* The two states the title bar's buttons put a window in. A minimised
+       window is unmapped rather than iconified: there is no task list on this
+       desktop to bring it back from, so the way back is the switcher key, and
+       an unmapped frame is what that key restores. */
+    int minimized;       /* 1 while the frame is put away                    */
+    int maximized;       /* 1 while the client fills the screen              */
+
+    /* Where the frame was before it was maximised, so the same button puts it
+       back. Only meaningful while maximized is set. */
+    int restore_x, restore_y;
+    int restore_width, restore_height;
+
+    /* The off-screen copy every drawing goes into, and the size it currently
+       holds. Redrawing a window many times a second straight to the screen is
+       what flickers; drawing here and copying once is what does not. */
+    Pixmap buffer;
+    int buffer_width, buffer_height;
+
     int has_name;        /* whether the client named itself                  */
     char name[160];
 } WmFrame;
@@ -63,6 +98,11 @@ typedef struct WmFrame {
 
 WmFrame *wm_frame_find(WmCore *core, Window client);
 WmFrame *wm_frame_find_by_frame(WmCore *core, Window frame);
+
+/* The next managed window after the given one, wrapping around, skipping any
+   that are minimised or not viewable. NULL when no window can be switched to.
+   The switcher key is the caller, and it wants exactly this order. */
+WmFrame *wm_frame_next(WmCore *core, Window client);
 
 /* --- the frame ------------------------------------------------------------ */
 
@@ -92,6 +132,22 @@ void wm_frame_destroy(WmCore *core, WmFrame *frame, int client_gone);
    speak the protocol has no way to be asked and is killed, which is what every
    window manager does with one. */
 void wm_frame_close(WmCore *core, WmFrame *frame);
+
+/* Put the frame away, and bring it back. A minimised frame is unmapped; the
+   switcher key restores it, because this desktop has no task list to click it
+   in. */
+void wm_frame_minimize(WmCore *core, WmFrame *frame);
+void wm_frame_restore(WmCore *core, WmFrame *frame);
+
+/* Fill the screen with the client, or put it back where it was. It is the
+   client that is resized, not the frame: a maximised window keeps its title
+   bar, so its buttons stay reachable. */
+void wm_frame_maximize(WmCore *core, WmFrame *frame);
+
+/* Bring a window to the front and give it the keyboard, restoring it first if
+   it was minimised. The switcher key and the focus module both go through this,
+   so it is the one place that says what "go to this window" means. */
+void wm_frame_activate(WmCore *core, WmFrame *frame);
 
 /* Read the client's name again and redraw the bar. */
 void wm_frame_update_name(WmCore *core, WmFrame *frame);

@@ -44,6 +44,24 @@ static void action_close_focused(WmCore *core) {
     }
 }
 
+/* Alt+Tab: go to the next window.
+ *
+ * The window the switch starts from is the focused one, and the switch itself
+ * is wm_frame_activate(), which is also what a click and the focus module use.
+ * So there is one answer to "go to this window" and the key only chooses which
+ * window that is. Minimised windows are restored by the same call, which is
+ * what makes the key the way back from the minimise button.
+ *
+ * Nothing is drawn for the switch: a list of windows on screen needs a grab
+ * and a release to end it, and what a machine with one window open sees is a
+ * pop-up listing one name. The window that arrives is its own announcement. */
+static void action_switch_window(WmCore *core) {
+    WmFrame *next = wm_frame_next(core, core->focused);
+    if (next) {
+        wm_frame_activate(core, next);
+    }
+}
+
 /* --- the table ------------------------------------------------------------- */
 
 static const KeyBinding BINDINGS[] = {
@@ -54,6 +72,8 @@ static const KeyBinding BINDINGS[] = {
     { Mod4Mask, XK_Return, action_spawn_terminal, "open terminal" },
     { Mod1Mask, XK_F4, action_close_focused, "close window" },
     { Mod4Mask, XK_F4, action_close_focused, "close window" },
+    { Mod1Mask, XK_Tab, action_switch_window, "next window" },
+    { Mod4Mask, XK_Tab, action_switch_window, "next window" },
 };
 
 #define BINDING_COUNT (sizeof(BINDINGS) / sizeof(BINDINGS[0]))

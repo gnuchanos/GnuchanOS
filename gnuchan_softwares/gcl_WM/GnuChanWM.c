@@ -45,10 +45,13 @@ static void handle_signal(int signum) {
    state another sets up; key grabs come last so a key that cannot be bound
    cannot stop the window manager itself from running. */
 static void register_modules(WmCore *core) {
-    /* Order matters where a module reads state another sets up: the desktop
-       paints the background first, windows are managed on top of it, focus
-       names the current one, and keys come last so a key that cannot be bound
-       cannot stop the window manager itself from running. */
+    /* Order matters where a module reads state another sets up: the theme is
+       published before anything is drawn or started, so every window that
+       opens afterwards is drawn by a toolkit that already knows the answer;
+       the desktop paints the background next; windows are managed on top of
+       it; focus names the current one; and keys come last so a key that
+       cannot be bound cannot stop the window manager itself from running. */
+    wm_register(core, &wm_theme_module);
     wm_register(core, &wm_desktop_module);
     wm_register(core, &wm_manage_module);
     wm_register(core, &wm_frame_module);
@@ -100,8 +103,12 @@ int main(int argc, char **argv) {
             printf("usage: GnuChanWM [--version] [--help]\n"
                    "\n"
                    "Starts the GnuchanOS window manager. Alt+Enter opens the\n"
-                   "default terminal. It is meant to be started by a display\n"
-                   "manager session, not from inside another session.\n");
+                   "default terminal, Alt+Tab moves to the next window, and\n"
+                   "Alt+F4 closes the focused one. The title bar's buttons\n"
+                   "minimise, maximise and close, and the desktop's own\n"
+                   "button opens the session menu. It is meant to be started\n"
+                   "by a display manager session, not from inside another\n"
+                   "session.\n");
             return 0;
         }
     }

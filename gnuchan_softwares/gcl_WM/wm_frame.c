@@ -4,7 +4,7 @@
  * The shape of a frame is fixed and simple:
  *
  *     +--------------------------------------+
- *     | title             [x]                |  WM_TITLE_HEIGHT
+ *     | title          [-] [ ] [x]           |  WM_TITLE_HEIGHT
  *     +--------------------------------------+
  *     |                                      |
  *     |            the client                |  client_height
@@ -19,6 +19,14 @@
  * and is never told about the bar: reparenting is what makes that work. The
  * program still believes it is a window on the root, because the X server
  * translates its coordinates, and every window manager relies on that.
+ *
+ * Drawing goes into an off-screen copy of the bar and is copied onto the window
+ * in one operation. Drawing straight to the window means the bar is cleared,
+ * then the title is put in, then the buttons and the outline — and while a
+ * window is being dragged or its focus is changing, that whole order is
+ * repeated many times a second. Each repeat is visible as a flicker. One copy
+ * per redraw is what removes it, and a drag does not redraw at all: the window
+ * moves and the picture inside it moves with it.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,13 +48,30 @@ static int frame_height(const WmFrame *frame) {
     return frame->client_height + WM_TITLE_HEIGHT + WM_FRAME_BORDER;
 }
 
-/* Where the close button sits inside the bar. */
-static int close_x(const WmFrame *frame) {
-    return frame_width(frame) - WM_CLOSE_SIZE - 6;
+/* Where a button sits inside the bar. They are laid out from the right edge
+   inwards in the order of WmFrameButton, so close is rightmost — the corner a
+   hand already expects — and every consumer reads the same rule. */
+static int button_x(const WmFrame *frame, WmFrameButton button) {
+    int step = WM_BUTTON_SIZE + WM_BUTTON_GAP;
+    return frame_width(frame) - WM_BUTTON_SIZE - WM_BUTTON_GAP
+           - (int)button * step;
 }
 
-static int close_y(void) {
-    return (WM_TITLE_HEIGHT - WM_CLOSE_SIZE) / 2;
+static int button_y(void) {
+    return (WM_TITLE_HEIGHT - WM_BUTTON_SIZE) / 2;
+}
+
+/* Which button a point on the bar is inside, or WM_BUTTON_COUNT for none. */
+static WmFrameButton button_at(const WmFrame *frame, int x, int y) {
+    for (int i = 0; i < WM_BUTTON_COUNT; i++) {
+        int bx = button_x(frame, (WmFrameButton)i);
+        int by = button_y();
+        if (x >= bx && x < bx + WM_BUTTON_SIZE &&
+            y >= by && y < by + WM_BUTTON_SIZE) {
+            return (WmFrameButton)i;
+        }
+    }
+    return WM_BUTTON_COUNT;
 }
 
 /* --- the table ------------------------------------------------------------ */
@@ -69,6 +94,36 @@ WmFrame *wm_frame_find_by_frame(WmCore *core, Window frame) {
     }
     for (int i = 0; i < core->frame_count; i++) {
         if (core->frames[i].frame == frame) {
+            return &core->frames[i];
+        }
+    }
+    return NULL;
+}
+
+/* The table order is creation order, and a switcher that walked it would jump
+   around as windows are opened and closed. Walking it from the current window
+   forwards is still the honest answer to "what else is there", and it is what
+   the key is bound to. Minimised windows are skipped: they are not on screen,
+   so switching to one would look like switching to nothing. */
+WmFrame *wm_frame_next(WmCore *core, Window client) {
+    if (core->frame_count == 0) {
+        return NULL;
+    }
+
+    int start = -1;
+    for (int i = 0; i < core->frame_count; i++) {
+        if (core->frames[i].client == client) {
+            start = i;
+            break;
+        }
+    }
+
+    for (int step = 1; step <= core->frame_count; step++) {
+        int i = (start + step) % core->frame_count;
+        if (i < 0) {
+            i += core->frame_count;
+        }
+        if (!core->frames[i].minimized) {
             return &core->frames[i];
         }
     }
@@ -155,25 +210,104 @@ static void frame_clip(XFontStruct *font, const char *text, int room,
     snprintf(out, size, "...");
 }
 
+/* The copy the bar is drawn into, made to the frame's current size. A copy of
+   the wrong size is thrown away rather than stretched, because a stretched
+   title bar is a blur, not a title bar. */
+static void frame_ensure_buffer(WmCore *core, WmFrame *frame,
+                                int width, int height) {
+    if (frame->buffer != None &&
+        frame->buffer_width == width && frame->buffer_height == height) {
+        return;
+    }
+    if (frame->buffer != None) {
+        XFreePixmap(core->display, frame->buffer);
+        frame->buffer = None;
+    }
+    frame->buffer = XCreatePixmap(core->display, frame->frame,
+                                  (unsigned int)width, (unsigned int)height,
+                                  (unsigned int)DefaultDepth(core->display,
+                                                             core->screen));
+    frame->buffer_width = width;
+    frame->buffer_height = height;
+}
+
+/* One button's glyph. The three are drawn from the same box so the bar reads
+   as one row of controls rather than three decorations. */
+static void frame_draw_button(WmCore *core, Drawable target, int x, int y,
+                              WmFrameButton button, int maximized) {
+    Display *display = core->display;
+    const WmStyle *style = &core->style;
+    int inset = 4;
+
+    XSetForeground(display, core->gc, style->field);
+    XFillRectangle(display, target, core->gc, x, y,
+                   WM_BUTTON_SIZE, WM_BUTTON_SIZE);
+    XSetForeground(display, core->gc, style->accent);
+    XDrawRectangle(display, target, core->gc, x, y,
+                   WM_BUTTON_SIZE - 1, WM_BUTTON_SIZE - 1);
+
+    switch (button) {
+    case WM_BUTTON_CLOSE:
+        XDrawLine(display, target, core->gc,
+                  x + inset, y + inset,
+                  x + WM_BUTTON_SIZE - inset, y + WM_BUTTON_SIZE - inset);
+        XDrawLine(display, target, core->gc,
+                  x + WM_BUTTON_SIZE - inset, y + inset,
+                  x + inset, y + WM_BUTTON_SIZE - inset);
+        break;
+
+    case WM_BUTTON_MAXIMIZE:
+        /* One box while the window is not maximised, two while it is: the glyph
+           says what the button will do, which is put it back. */
+        XDrawRectangle(display, target, core->gc,
+                       x + inset, y + inset,
+                       WM_BUTTON_SIZE - 2 * inset, WM_BUTTON_SIZE - 2 * inset);
+        if (maximized) {
+            XDrawRectangle(display, target, core->gc,
+                           x + inset + 2, y + inset - 2,
+                           WM_BUTTON_SIZE - 2 * inset, WM_BUTTON_SIZE - 2 * inset);
+        }
+        break;
+
+    case WM_BUTTON_MINIMIZE:
+        XDrawLine(display, target, core->gc,
+                  x + inset, y + WM_BUTTON_SIZE - inset,
+                  x + WM_BUTTON_SIZE - inset, y + WM_BUTTON_SIZE - inset);
+        break;
+
+    default:
+        break;
+    }
+}
+
 void wm_frame_draw(WmCore *core, WmFrame *frame) {
+    if (frame->minimized || frame->frame == None) {
+        return;
+    }
+
     Display *display = core->display;
     const WmStyle *style = &core->style;
     int width = frame_width(frame);
     int height = frame_height(frame);
     int focused = (core->focused == frame->client);
 
-    /* The bar, and the line under it that says which window is active. */
+    frame_ensure_buffer(core, frame, width, height);
+    Drawable target = frame->buffer != None ? frame->buffer : frame->frame;
+
+    /* The bar. */
     XSetForeground(display, core->gc, style->panel);
-    XFillRectangle(display, frame->frame, core->gc, 0, 0,
+    XFillRectangle(display, target, core->gc, 0, 0,
                    (unsigned int)width, WM_TITLE_HEIGHT);
+
+    /* The line under it that says which window is active. */
     XSetForeground(display, core->gc,
                    focused ? style->accent : style->accent_dim);
-    XFillRectangle(display, frame->frame, core->gc, 0, WM_TITLE_HEIGHT - 2,
+    XFillRectangle(display, target, core->gc, 0, WM_TITLE_HEIGHT - 2,
                    (unsigned int)width, 2);
 
-    /* The title. */
+    /* The title, given the room the buttons leave. */
     int padding = 8;
-    int room = close_x(frame) - padding - 8;
+    int room = button_x(frame, WM_BUTTON_MINIMIZE) - padding - 8;
     if (room < 12) {
         room = 12;
     }
@@ -182,29 +316,27 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
     int ascent = style->font ? style->font->ascent : 8;
     int descent = style->font ? style->font->descent : 2;
     int baseline = (WM_TITLE_HEIGHT + ascent - descent) / 2;
-    wm_style_text(display, frame->frame, core->gc, style->font, padding,
+    wm_style_text(display, target, core->gc, style->font, padding,
                   baseline, label, style->text);
 
-    /* The close button: a box with a cross in it. */
-    int cx = close_x(frame);
-    int cy = close_y();
-    XSetForeground(display, core->gc, style->field);
-    XFillRectangle(display, frame->frame, core->gc, cx, cy,
-                   WM_CLOSE_SIZE, WM_CLOSE_SIZE);
-    XSetForeground(display, core->gc, style->accent);
-    XDrawRectangle(display, frame->frame, core->gc, cx, cy,
-                   WM_CLOSE_SIZE - 1, WM_CLOSE_SIZE - 1);
-    XDrawLine(display, frame->frame, core->gc,
-              cx + 5, cy + 5, cx + WM_CLOSE_SIZE - 5, cy + WM_CLOSE_SIZE - 5);
-    XDrawLine(display, frame->frame, core->gc,
-              cx + WM_CLOSE_SIZE - 5, cy + 5, cx + 5, cy + WM_CLOSE_SIZE - 5);
+    /* The buttons. */
+    for (int i = 0; i < WM_BUTTON_COUNT; i++) {
+        frame_draw_button(core, target, button_x(frame, (WmFrameButton)i),
+                          button_y(), (WmFrameButton)i, frame->maximized);
+    }
 
     /* The outline around the whole frame, in the focus colour. */
     XSetForeground(display, core->gc,
                    focused ? style->border : style->border_unfocused);
-    XDrawRectangle(display, frame->frame, core->gc, 0, 0,
+    XDrawRectangle(display, target, core->gc, 0, 0,
                    (unsigned int)(width - 1), (unsigned int)(height - 1));
 
+    /* Onto the screen in one operation, which is the whole point of the
+       copy above. */
+    if (target != frame->frame) {
+        XCopyArea(display, frame->buffer, frame->frame, core->gc,
+                  0, 0, (unsigned int)width, (unsigned int)height, 0, 0);
+    }
     XFlush(display);
 }
 
@@ -255,13 +387,11 @@ void wm_frame_move(WmCore *core, WmFrame *frame, int x, int y) {
     frame->x = x;
     frame->y = y;
 
-    /* Clear the old pixels before the frame is moved and redraw immediately.
-       During a drag, the server can expose the title bar around the old and new
-       positions; without clearing the stale area first, the bar briefly shows a
-       stale outline or half-painted strip. */
-    XClearArea(core->display, frame->frame, 0, 0, 0, 0, False);
+    /* The window is moved and nothing is redrawn. The bar's picture is inside
+       the window and moves with it, so the pixels are already right — and
+       clearing or repainting them here is what used to flash on every motion
+       event of a drag. */
     XMoveWindow(core->display, frame->frame, x, y);
-    wm_frame_draw(core, frame);
     XFlush(core->display);
 }
 
@@ -281,20 +411,94 @@ void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
     frame_notify_configure(core, frame);
 }
 
-void wm_frame_sync(WmCore *core, WmFrame *frame) {
-    XWindowAttributes attributes;
-    if (!XGetWindowAttributes(core->display, frame->client, &attributes)) {
+/* The area the screen gives a maximised window. Read from the core rather than
+   from the frame, because the frame is what is being changed to match it. */
+static void frame_screen_size(WmCore *core, int *width, int *height) {
+    *width = core->width > 1 ? core->width : DisplayWidth(core->display,
+                                                          core->screen);
+    *height = core->height > 1 ? core->height : DisplayHeight(core->display,
+                                                              core->screen);
+}
+
+void wm_frame_maximize(WmCore *core, WmFrame *frame) {
+    if (frame->maximized) {
+        /* The same button puts it back where it was. */
+        frame->maximized = 0;
+        frame->x = frame->restore_x;
+        frame->y = frame->restore_y;
+        frame->client_width = frame->restore_width;
+        frame->client_height = frame->restore_height;
+        frame_apply(core, frame);
+        frame_notify_configure(core, frame);
         return;
     }
-    /* The client moved or resized itself. Its position is meaningless inside a
-       frame — the bar lives above it — so only the size is taken, and the
-       position is put back to where the frame wants it. */
-    if (attributes.width != frame->client_width ||
-        attributes.height != frame->client_height) {
-        frame->client_width = attributes.width;
-        frame->client_height = attributes.height;
-    }
+
+    frame->restore_x = frame->x;
+    frame->restore_y = frame->y;
+    frame->restore_width = frame->client_width;
+    frame->restore_height = frame->client_height;
+
+    int screen_width = 0;
+    int screen_height = 0;
+    frame_screen_size(core, &screen_width, &screen_height);
+
+    frame->maximized = 1;
+    frame->x = 0;
+    frame->y = 0;
+    frame->client_width = screen_width - 2 * WM_FRAME_BORDER;
+    frame->client_height = screen_height - WM_TITLE_HEIGHT - WM_FRAME_BORDER;
+    if (frame->client_width < 1) frame->client_width = 1;
+    if (frame->client_height < 1) frame->client_height = 1;
+
     frame_apply(core, frame);
+    frame_notify_configure(core, frame);
+    wm_frame_raise(core, frame);
+    wm_focus_set(core, frame->client);
+}
+
+void wm_frame_minimize(WmCore *core, WmFrame *frame) {
+    if (frame->minimized) {
+        return;
+    }
+    frame->minimized = 1;
+    XUnmapWindow(core->display, frame->frame);
+
+    /* The keyboard cannot stay on a window that is not on the screen. It goes
+       to the next one, which is what the switcher key would have given, so a
+       minimised window never leaves the desktop with no focus at all. */
+    if (core->focused == frame->client) {
+        core->focused = 0;
+        WmFrame *next = wm_frame_next(core, frame->client);
+        if (next) {
+            wm_frame_activate(core, next);
+        } else {
+            XSetInputFocus(core->display, core->root, RevertToPointerRoot,
+                           CurrentTime);
+        }
+    }
+    XFlush(core->display);
+}
+
+void wm_frame_restore(WmCore *core, WmFrame *frame) {
+    if (!frame->minimized) {
+        return;
+    }
+    frame->minimized = 0;
+    XMapRaised(core->display, frame->frame);
+
+    /* A window that was put away comes back whole. The frame and the client
+       inside it are both mapped by the server with one call, but the bar's
+       picture is the manager's, so it is drawn again. */
+    wm_frame_draw(core, frame);
+    XFlush(core->display);
+}
+
+void wm_frame_activate(WmCore *core, WmFrame *frame) {
+    if (frame->minimized) {
+        wm_frame_restore(core, frame);
+    }
+    wm_frame_raise(core, frame);
+    wm_focus_set(core, frame->client);
 }
 
 /* --- creating and destroying ---------------------------------------------- */
@@ -345,9 +549,15 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
        ever. An override-redirect window is what the server maps without
        asking, which is exactly what the manager's own chrome has to be. */
     XSetWindowAttributes override_attributes;
+    memset(&override_attributes, 0, sizeof(override_attributes));
     override_attributes.override_redirect = True;
+    /* The bar is not cleared between redraws: every pixel of it is painted in
+       wm_frame_draw, into the copy, before the copy is put up. Letting the
+       server clear it first would defeat that and bring the flicker back. */
+    override_attributes.bit_gravity = NorthWestGravity;
     XChangeWindowAttributes(core->display, frame->frame,
-                            CWOverrideRedirect, &override_attributes);
+                            CWOverrideRedirect | CWBitGravity,
+                            &override_attributes);
 
     /* The bar is drawn on the frame, so the frame is what is clicked, dragged
        and exposed. It also watches for the pointer entering it, because moving
@@ -403,6 +613,10 @@ void wm_frame_destroy(WmCore *core, WmFrame *frame, int client_gone) {
         XRemoveFromSaveSet(core->display, frame->client);
         XReparentWindow(core->display, frame->client, core->root,
                         frame->x, frame->y);
+    }
+    if (frame->buffer != None) {
+        XFreePixmap(core->display, frame->buffer);
+        frame->buffer = None;
     }
     if (frame->frame != None) {
         XDestroyWindow(core->display, frame->frame);
@@ -490,14 +704,14 @@ static void frame_event(WmCore *core, XEvent *event) {
         if (!frame) {
             break;
         }
-        int cx = close_x(frame);
-        int cy = close_y();
-        int on_close = event->xbutton.x >= cx &&
-                       event->xbutton.x < cx + WM_CLOSE_SIZE &&
-                       event->xbutton.y >= cy &&
-                       event->xbutton.y < cy + WM_CLOSE_SIZE;
-        if (on_close) {
+        WmFrameButton button = button_at(frame, event->xbutton.x,
+                                         event->xbutton.y);
+        if (button == WM_BUTTON_CLOSE) {
             wm_frame_close(core, frame);
+        } else if (button == WM_BUTTON_MAXIMIZE) {
+            wm_frame_maximize(core, frame);
+        } else if (button == WM_BUTTON_MINIMIZE) {
+            wm_frame_minimize(core, frame);
         } else if (event->xbutton.y < WM_TITLE_HEIGHT) {
             frame_begin_drag(core, frame, &event->xbutton);
         }
@@ -528,6 +742,23 @@ static void frame_event(WmCore *core, XEvent *event) {
         }
         break;
     }
+    case ConfigureNotify: {
+        /* The screen changed size. A maximised window was fitted to the old
+           size, so it is fitted again: leaving it is a window that no longer
+           fills the screen it is on. */
+        if (event->xconfigure.window == core->root) {
+            core->width = event->xconfigure.width;
+            core->height = event->xconfigure.height;
+            for (int i = 0; i < core->frame_count; i++) {
+                WmFrame *frame = &core->frames[i];
+                if (frame->maximized && !frame->minimized) {
+                    frame->maximized = 0;   /* so maximize() fits it again */
+                    wm_frame_maximize(core, frame);
+                }
+            }
+        }
+        break;
+    }
     default:
         break;
     }
@@ -539,3 +770,18 @@ const WmModule wm_frame_module = {
     .event = frame_event,
     .cleanup = NULL,
 };
+/* A client that moved or resized itself. Its position is meaningless inside a
+   frame — the bar lives above it — so only the size is taken, and the position
+   is put back to where the frame wants it. */
+void wm_frame_sync(WmCore *core, WmFrame *frame) {
+    XWindowAttributes attributes;
+    if (!XGetWindowAttributes(core->display, frame->client, &attributes)) {
+        return;
+    }
+    if (attributes.width != frame->client_width ||
+        attributes.height != frame->client_height) {
+        frame->client_width = attributes.width;
+        frame->client_height = attributes.height;
+    }
+    frame_apply(core, frame);
+}
