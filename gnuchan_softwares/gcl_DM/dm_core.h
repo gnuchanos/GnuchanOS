@@ -23,12 +23,27 @@
 #define DM_MAX_USERNAME 256
 #define DM_MAX_PASSWORD 256
 
-/* Which control has the keyboard. Tab moves between them. */
+/* The form's two text fields. The values are also the indices into field_box,
+   so the layout and the input module agree on them without a table. */
 typedef enum DmField {
     DM_FIELD_USERNAME = 0,
     DM_FIELD_PASSWORD,
     DM_FIELD_COUNT,
 } DmField;
+
+/* Every control the keyboard can be on: the two fields first, then the
+   buttons. Tab walks this list, so on a machine with no pointer the sign-in
+   and the power buttons are still reachable. The two field values are
+   deliberately equal to DM_FIELD_USERNAME/DM_FIELD_PASSWORD, so a focus
+   value 0 or 1 can index field_box directly. */
+typedef enum DmFocus {
+    DM_FOCUS_USERNAME = 0,
+    DM_FOCUS_PASSWORD,
+    DM_FOCUS_SIGNIN,
+    DM_FOCUS_REBOOT,
+    DM_FOCUS_SHUTDOWN,
+    DM_FOCUS_COUNT,
+} DmFocus;
 
 /* Every clickable thing on the screen, for hit-testing a click. */
 typedef enum DmButton {
@@ -61,6 +76,15 @@ struct DmCore {
     Window window;
     GC gc;
 
+    /* Everything is drawn into this off-screen copy and then put on the
+       window in one operation. Drawing straight to the window clears it and
+       redraws it, which is what makes it flicker while a key is held and
+       repeating. */
+    Pixmap buffer;
+
+    /* The pointer shown over the login screen. */
+    Cursor cursor;
+
     int width;                /* the window's width and height; the greeter  */
     int height;               /* redraws from these, so a resize just works */
 
@@ -73,7 +97,7 @@ struct DmCore {
     char password[DM_MAX_PASSWORD];
     int  username_length;
     int  password_length;
-    DmField focused;
+    DmFocus focus;
 
     /* A message under the fields: an error after a failed login, or the host
        name when there is nothing to report. Empty means show nothing. */
@@ -121,8 +145,15 @@ void dm_form_type(DmCore *core, char character);
 /* Remove the last character of the focused field, if any. */
 void dm_form_backspace(DmCore *core);
 
-/* Move the keyboard to the next field, wrapping around. */
-void dm_form_next_field(DmCore *core);
+/* Move the keyboard to the next control, wrapping around. The controls are
+   the two fields and then the buttons, so tab reaches the sign-in and power
+   buttons — which, on a machine with no pointer, is the only way to reach
+   them. Both return the control that now has focus. */
+DmFocus dm_form_focus_next(DmCore *core);
+DmFocus dm_form_focus_prev(DmCore *core);
+
+/* Whether a focus target is one of the text fields rather than a button. */
+int dm_focus_is_field(DmFocus focus);
 
 /* Put a message under the fields and redraw. An empty message clears it. */
 void dm_form_set_message(DmCore *core, const char *message, int is_error);

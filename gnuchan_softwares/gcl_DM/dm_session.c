@@ -7,8 +7,9 @@
  *   1. The X cookie. The greeter connected with root's cookie and the user does
  *      not have it. The cookie is merged into the user's own Xauthority file
  *      before the session starts, so the window manager — connecting as the
- *      user — is allowed in. This is the step usually missing when a greeter
- *      leaves a session that starts and shows nothing.
+ *      user — is allowed in. That file is written by root, so it is then given
+ *      to the user: a cookie the user cannot read is the same as no cookie,
+ *      and the session dies in the first XOpenDisplay.
  *
  *   2. The identity. The child drops to the user's uid and gid.
  *
@@ -25,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -47,10 +49,17 @@ static const char *greeter_auth_file(void) {
     return path;
 }
 
-/* Merge the greeter's cookie into the user's file. `xauth merge` copies every
-   cookie the greeter holds, which is exactly the set the user needs, and
-   leaves the user's other entries alone. */
-static void copy_x_cookie(const char *home, const char *display) {
+/* Merge the greeter's cookie into the user's file, then hand the file to the
+   user. `xauth merge` copies every cookie the greeter holds, which is exactly
+   the set the user needs, and leaves the user's other entries alone.
+ *
+ * The chown is the part that matters: xauth ran as root, so the file it wrote
+ * is root's, and a cookie the user may not read is a cookie the user does not
+ * have. Without this the session starts, cannot open the display, and exits
+ * immediately — which looks like a black screen and then the login screen
+ * again. */
+static void install_x_cookie(const struct passwd *user, const char *home,
+                             const char *display) {
     if (!display || !display[0]) return;
 
     char auth_path[4096];
@@ -68,6 +77,13 @@ static void copy_x_cookie(const char *home, const char *display) {
         int status = 0;
         while (waitpid(pid, &status, 0) < 0 && errno == EINTR) { /* retry */ }
     }
+
+    /* Give the file to the user, and nobody else. */
+    if (chown(auth_path, user->pw_uid, user->pw_gid) != 0) {
+        fprintf(stderr, "gnuchandm: cannot give %s to %s: %s\n",
+                auth_path, user->pw_name, strerror(errno));
+    }
+    chmod(auth_path, S_IRUSR | S_IWUSR);
 }
 
 static void set_session_environment(const struct passwd *user, const char *home,
@@ -89,16 +105,22 @@ static void set_session_environment(const struct passwd *user, const char *home,
 
 int dm_session_start(DmCore *core, const char *username) {
     struct passwd *user = getpwnam(username);
-    if (!user) return -1;
+    if (!user) {
+        fprintf(stderr, "gnuchandm: no such user: %s\n", username);
+        return -1;
+    }
 
     const char *display = getenv("DISPLAY");
-    if (!display || !display[0]) return -1;
+    if (!display || !display[0]) {
+        fprintf(stderr, "gnuchandm: DISPLAY is not set\n");
+        return -1;
+    }
 
     const char *home = user->pw_dir && user->pw_dir[0] ? user->pw_dir : "/";
     char auth_path[4096];
     snprintf(auth_path, sizeof(auth_path), "%s/.Xauthority", home);
 
-    copy_x_cookie(home, display);
+    install_x_cookie(user, home, display);
 
     /* Nothing the greeter draws from here on belongs on the screen: it is
        handing the display over. */
@@ -147,10 +169,24 @@ int dm_session_start(DmCore *core, const char *username) {
         if (errno != EINTR) break;
     }
 
+    /* Say how the session ended: a session that dies in a second is the
+       difference between "the user logged out" and "the session never
+       started", and the log is the only place to tell them apart. */
+    if (WIFEXITED(status)) {
+        int code = WEXITSTATUS(status);
+        if (code != 0) {
+            fprintf(stderr, "gnuchandm: %s exited with status %d\n",
+                    SESSION_COMMAND, code);
+        }
+    } else if (WIFSIGNALED(status)) {
+        fprintf(stderr, "gnuchandm: %s was killed by signal %d\n",
+                SESSION_COMMAND, WTERMSIG(status));
+    }
+
     /* The session is over: take the screen back and return to the login
        screen with the user name kept, so logging back in is one field. */
     core->starting_session = 0;
-    core->focused = DM_FIELD_PASSWORD;
+    core->focus = DM_FOCUS_PASSWORD;
     XMapRaised(core->display, core->window);
     XSetInputFocus(core->display, core->window, RevertToPointerRoot, CurrentTime);
     XSync(core->display, False);

@@ -4,6 +4,10 @@
  * This is the only module that decides where anything is. It computes the
  * rectangles into the core, and both draws them and answers hit-tests from the
  * same numbers — so a click always lands on what the user saw.
+ *
+ * The keyboard focus is drawn, not just held: the field or button that has it
+ * is drawn in the accent colour. On a machine with no pointer that outline is
+ * the only thing telling the user where the next keystroke will land.
  */
 #include <stdio.h>
 #include <string.h>
@@ -16,6 +20,10 @@ static void screen_title(char *out, size_t size) {
     if (gethostname(host, sizeof(host)) != 0) host[0] = '\0';
     host[sizeof(host) - 1] = '\0';
     snprintf(out, size, "%s", host[0] ? host : "GnuChanOS");
+}
+
+static int signin_ready(const DmCore *core) {
+    return core->username_length > 0 && core->password_length > 0;
 }
 
 static void layout(DmCore *core) {
@@ -53,15 +61,23 @@ static void layout(DmCore *core) {
     core->button_box.width = field_width;
     core->button_box.height = s->button_height;
 
+    /* The power buttons sit on one row at the bottom, side by side and
+       centred, so they are reachable by Tab without a pointer. */
     int bar_y = core->height - s->button_height - s->margin;
     if (bar_y < panel_y + panel_height + s->gap) bar_y = panel_y + panel_height + s->gap;
-    core->power_box[0].x = s->margin;
+    int power_width = 150;
+    int power_gap = s->gap * 4;
+    int pair_width = power_width * 2 + power_gap;
+    int pair_x = (core->width - pair_width) / 2;
+    if (pair_x < s->margin) pair_x = s->margin;
+
+    core->power_box[0].x = pair_x;
     core->power_box[0].y = bar_y;
-    core->power_box[0].width = 140;
+    core->power_box[0].width = power_width;
     core->power_box[0].height = s->button_height;
-    core->power_box[1].x = core->width - s->margin - 140;
+    core->power_box[1].x = pair_x + power_width + power_gap;
     core->power_box[1].y = bar_y;
-    core->power_box[1].width = 140;
+    core->power_box[1].width = power_width;
     core->power_box[1].height = s->button_height;
 
     core->panel_box.x = panel_x;
@@ -83,14 +99,15 @@ static void box_text_centred(DmCore *core, int x, int y, int width, int height,
 static void draw_field(DmCore *core, DmField field, const char *label,
                        const char *value, int length, int secret) {
     const DmStyle *s = &core->style;
+    int focused = (core->focus == (DmFocus)field);
     int x = core->field_box[field].x;
     int y = core->field_box[field].y;
     int w = core->field_box[field].width;
     int h = core->field_box[field].height;
 
-    unsigned long fill = (core->focused == field) ? s->field_focus : s->field;
-    unsigned long edge = (core->focused == field) ? s->accent : s->panel_edge;
-    dm_draw_box(core, x, y, w, h, fill, edge, 1);
+    unsigned long fill = focused ? s->field_focus : s->field;
+    unsigned long edge = focused ? s->accent : s->panel_edge;
+    dm_draw_box(core, x, y, w, h, fill, edge, focused ? 2 : 1);
 
     int padding = 10;
     int ascent = s->font_field ? s->font_field->ascent : 8;
@@ -118,10 +135,17 @@ static void draw_field(DmCore *core, DmField field, const char *label,
     dm_draw_text(core, value_x, baseline, value, s->font_field, s->text);
 }
 
+/* A button's fill says two things at once: whether the keyboard is on it, and
+   — for sign in — whether there is anything to submit. A focused button is
+   always drawn bright, because a selected control the user cannot see is a
+   control they cannot use. */
 static void draw_button(DmCore *core, int x, int y, int w, int h,
-                        const char *label, unsigned long fill) {
+                        const char *label, int focused, int enabled) {
     const DmStyle *s = &core->style;
-    dm_draw_box(core, x, y, w, h, fill, s->panel_edge, 1);
+    unsigned long fill = (focused || enabled) ? s->accent : s->accent_dim;
+    unsigned long edge = focused ? s->text : s->panel_edge;
+
+    dm_draw_box(core, x, y, w, h, fill, edge, focused ? 2 : 1);
     box_text_centred(core, x, y, w, h, label, s->font_label, s->text);
 }
 
@@ -143,10 +167,9 @@ static void login_draw(DmCore *core) {
     draw_field(core, DM_FIELD_USERNAME, "user", core->username, core->username_length, 0);
     draw_field(core, DM_FIELD_PASSWORD, "pass", core->password, core->password_length, 1);
 
-    unsigned long signin =
-        (core->username_length > 0 && core->password_length > 0) ? s->accent : s->accent_dim;
     draw_button(core, core->button_box.x, core->button_box.y,
-                core->button_box.width, core->button_box.height, "sign in", signin);
+                core->button_box.width, core->button_box.height, "sign in",
+                core->focus == DM_FOCUS_SIGNIN, signin_ready(core));
 
     int message_y = core->button_box.y + core->button_box.height + s->gap;
     if (core->message[0]) {
@@ -155,12 +178,20 @@ static void login_draw(DmCore *core) {
         dm_draw_text(core, (core->width - w) / 2, message_y + ascent,
                      core->message, s->font_label,
                      core->message_is_error ? s->danger : s->text_muted);
+    } else {
+        const char *hint = "Tab moves, Enter selects";
+        int w = dm_draw_text_width(s->font_label, hint, (int)strlen(hint));
+        int ascent = s->font_label ? s->font_label->ascent : 8;
+        dm_draw_text(core, (core->width - w) / 2, message_y + ascent,
+                     hint, s->font_label, s->text_muted);
     }
 
     draw_button(core, core->power_box[0].x, core->power_box[0].y,
-                core->power_box[0].width, core->power_box[0].height, "reboot", s->panel);
+                core->power_box[0].width, core->power_box[0].height, "reboot",
+                core->focus == DM_FOCUS_REBOOT, 0);
     draw_button(core, core->power_box[1].x, core->power_box[1].y,
-                core->power_box[1].width, core->power_box[1].height, "shut down", s->panel);
+                core->power_box[1].width, core->power_box[1].height, "shut down",
+                core->focus == DM_FOCUS_SHUTDOWN, 0);
 }
 
 static int inside(int x, int y, int bx, int by, int bw, int bh) {

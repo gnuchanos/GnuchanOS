@@ -55,8 +55,9 @@ static void attempt_login(DmCore *core) {
         if (dm_session_start(core, core->username) != 0) {
             dm_form_set_message(core, "could not start the session", 1);
         }
-        /* Reached when the session has ended — the user logged out. */
-        core->focused = DM_FIELD_PASSWORD;
+        /* Reached when the session has ended — the user logged out. The user
+           name is kept, so the keyboard goes straight to the password. */
+        core->focus = DM_FOCUS_PASSWORD;
         dm_form_clear_password(core);
         dm_form_set_message(core, NULL, 0);
         dm_core_redraw(core);
@@ -65,7 +66,7 @@ static void attempt_login(DmCore *core) {
 
     dm_form_clear_password(core);
     dm_form_set_message(core, "wrong user name or password", 1);
-    core->focused = DM_FIELD_PASSWORD;
+    core->focus = DM_FOCUS_PASSWORD;
 }
 
 /* Act on what the input module asked for, at the top of the loop — never inside
