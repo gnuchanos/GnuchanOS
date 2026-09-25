@@ -54,6 +54,11 @@ static void register_modules(WmCore *core) {
     wm_register(core, &wm_frame_module);
     wm_register(core, &wm_focus_module);
     wm_register(core, &wm_keys_module);
+    /* The menu takes the desktop's own button, so it comes after the desktop
+       has claimed the root and before the first terminal is opened: the menu
+       is part of the desktop a user lands on, and a session whose first
+       terminal is still starting should still answer a right click. */
+    wm_register(core, &wm_menu_module);
     /* Last: it opens the first terminal, and by then the keys are already
        grabbed and the desktop is already painted, so the window it opens is
        managed by a session that is completely up rather than one still

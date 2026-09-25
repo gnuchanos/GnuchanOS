@@ -49,6 +49,7 @@ SOURCES = (
     "wm_focus.c",
     "wm_spawn.c",
     "wm_autostart.c",
+    "wm_menu.c",
     "wm_keys.c",
     "GnuChanWM.c",
 )

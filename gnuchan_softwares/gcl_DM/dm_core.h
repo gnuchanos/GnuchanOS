@@ -154,6 +154,15 @@ void dm_core_redraw(DmCore *core);
 
 void dm_core_shutdown(DmCore *core);
 
+/* Put the screen back the way a login screen needs it.
+ *
+ * The screensaver's timer and the monitor's power saving belong to the X
+ * server, not to a session: a session that turned them on leaves them on. This
+ * turns both off and wakes the monitor, so the login screen that comes back
+ * after a logout is one the user can actually see — without it the greeter
+ * draws itself onto a dark monitor and the user waits for something to happen. */
+void dm_core_wake_screen(DmCore *core);
+
 /* Register a module. Call between dm_core_init() and dm_core_start(). */
 int  dm_register(DmCore *core, const DmModule *module);
 

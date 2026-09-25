@@ -234,8 +234,19 @@ int dm_session_start(DmCore *core, const char *username) {
        screen with the user name kept, so logging back in is one field. */
     core->starting_session = 0;
     core->focus = DM_FOCUS_PASSWORD;
+
+    /* The desktop the user just left had its own ideas about the screen: a
+       screensaver it armed, a monitor it powered down, a resolution it set.
+       None of that is undone by the session exiting, because it is X server
+       state and the server outlives the client. It is undone here, before the
+       greeter draws itself, or the login screen comes back onto a monitor the
+       session switched off — which is the black screen between a logout and
+       the greeter reappearing. */
+    dm_core_wake_screen(core);
+
     XMapRaised(core->display, core->window);
     XSetInputFocus(core->display, core->window, RevertToPointerRoot, CurrentTime);
     XSync(core->display, False);
+    dm_core_redraw(core);
     return 0;
 }

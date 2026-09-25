@@ -10,9 +10,13 @@
  * here rather than a field of the core: a second core would share it, and a
  * second core is not a thing that can exist.
  */
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <X11/cursorfont.h>
 
@@ -28,35 +32,107 @@ static int core_x_error(Display *display, XErrorEvent *error) {
     return 0;
 }
 
-/* The pointer over the login screen: the theme's arrow, drawn in the greeter's
- * own purple rather than whatever the machine's pointer theme happens to be.
+/* The arrow, one string per row: 'X' is a pixel of the arrow, '.' is not.
  *
- * The colour is the point. A greeter that inherited the cursor would show
- * black on a machine whose pointer theme was never chosen, which on a dark
- * login screen is a cursor the user cannot find. Recolouring it is what makes
- * it the same purple as the accent every other control uses, so the pointer
- * reads as part of the screen instead of something left over from elsewhere.
- *
- * The arrow is used rather than a hand: a login screen has text fields to click
- * into, and the arrow is what a pointer over a field is expected to look like.
- */
-static Cursor core_make_cursor(DmCore *core) {
-    Cursor cursor = XCreateFontCursor(core->display, XC_left_ptr);
-    if (cursor == None) {
+ * The shape is written out here rather than asked for from the font, because
+ * the font's cursor is a name the pointer theme answers — and a theme is free
+ * to ignore the colour it is given. Every modern theme draws its cursors as
+ * ARGB images, and XRecolorCursor does nothing to an image, which is exactly
+ * why recolouring the font cursor left the pointer the theme's own colour. A
+ * shape made at this level has no theme behind it to disagree. */
+static const char *const CURSOR_ARROW[15] = {
+    "X..............",
+    "XX.............",
+    "X.X............",
+    "X..X...........",
+    "X...X..........",
+    "X....X.........",
+    "X.....X........",
+    "X......X.......",
+    "X.......X......",
+    "X........X.....",
+    "X.....XXXXX....",
+    "X..X...X.......",
+    "X.X.X...X......",
+    "XX...X...X.....",
+    "X.....X...X....",
+};
+
+#define CURSOR_SIDE 15
+
+/* One 1-bit pixmap holding the arrow. With `grow` set the shape is fattened by
+   a pixel to make the mask: the mask is what the server draws the two colours
+   through, so a mask larger than the source puts the background colour as an
+   outline around every purple pixel — which is what keeps the pointer visible
+   over a light patch as well as a dark one. */
+static Pixmap core_cursor_shape(DmCore *core, int grow) {
+    Pixmap pixmap = XCreatePixmap(core->display, core->root,
+                                  CURSOR_SIDE, CURSOR_SIDE, 1);
+    if (pixmap == None) {
         return None;
     }
-    XColor foreground;   /* the accent purple #c77dff */
-    XColor background;   /* the dark panel    #32143f */
-    Colormap cmap = DefaultColormap(core->display, core->screen);
+    GC gc = XCreateGC(core->display, pixmap, 0, NULL);
+    XSetForeground(core->display, gc, 0);
+    XFillRectangle(core->display, pixmap, gc, 0, 0, CURSOR_SIDE, CURSOR_SIDE);
+    XSetForeground(core->display, gc, 1);
 
-    if (!XParseColor(core->display, cmap, "#c77dff", &foreground) ||
-        !XParseColor(core->display, cmap, "#32143f", &background) ||
-        !XAllocColor(core->display, cmap, &foreground) ||
-        !XAllocColor(core->display, cmap, &background)) {
-        return cursor;   /* the server's own colours are better than none */
+    for (int y = 0; y < CURSOR_SIDE; y++) {
+        for (int x = 0; x < CURSOR_SIDE; x++) {
+            int set = CURSOR_ARROW[y][x] == 'X';
+            if (!set && grow) {
+                for (int dy = -1; dy <= 1 && !set; dy++) {
+                    for (int dx = -1; dx <= 1 && !set; dx++) {
+                        int ny = y + dy;
+                        int nx = x + dx;
+                        if (ny >= 0 && ny < CURSOR_SIDE &&
+                            nx >= 0 && nx < CURSOR_SIDE &&
+                            CURSOR_ARROW[ny][nx] == 'X') {
+                            set = 1;
+                        }
+                    }
+                }
+            }
+            if (set) {
+                XDrawPoint(core->display, pixmap, gc, x, y);
+            }
+        }
     }
 
-    XRecolorCursor(core->display, cursor, &foreground, &background);
+    XFreeGC(core->display, gc);
+    return pixmap;
+}
+
+/* The pointer over the login screen: the arrow above, in the greeter's own
+   purple on its own background. Built from a bitmap so the colour is the
+   greeter's rather than the pointer theme's, which is what makes it read as
+   part of this screen instead of something left over from the machine. */
+static Cursor core_make_cursor(DmCore *core) {
+    Pixmap source = core_cursor_shape(core, 0);
+    Pixmap mask = core_cursor_shape(core, 1);
+    if (source == None || mask == None) {
+        if (source != None) XFreePixmap(core->display, source);
+        if (mask != None) XFreePixmap(core->display, mask);
+        return XCreateFontCursor(core->display, XC_left_ptr);
+    }
+
+    XColor foreground;   /* the accent purple #c77dff */
+    XColor background;   /* the login background #1a0b2e */
+    Colormap cmap = DefaultColormap(core->display, core->screen);
+    if (!XParseColor(core->display, cmap, "#c77dff", &foreground) ||
+        !XParseColor(core->display, cmap, "#1a0b2e", &background) ||
+        !XAllocColor(core->display, cmap, &foreground) ||
+        !XAllocColor(core->display, cmap, &background)) {
+        XFreePixmap(core->display, source);
+        XFreePixmap(core->display, mask);
+        return XCreateFontCursor(core->display, XC_left_ptr);
+    }
+
+    /* The hotspot is the tip of the arrow, so the point the user aims at is
+       the point that lands. */
+    Cursor cursor = XCreatePixmapCursor(core->display, source, mask,
+                                        &foreground, &background, 0, 0);
+    XFreePixmap(core->display, source);
+    XFreePixmap(core->display, mask);
     return cursor;
 }
 
@@ -141,6 +217,10 @@ int dm_core_init(DmCore *core) {
     XMapRaised(core->display, core->window);
     XSetInputFocus(core->display, core->window, RevertToPointerRoot, CurrentTime);
     XSync(core->display, False);
+
+    /* A login screen should not blank while it waits: the machine has only
+       just booted and nobody has touched the pointer yet. */
+    dm_core_wake_screen(core);
     return 0;
 }
 
@@ -171,6 +251,51 @@ void dm_core_redraw(DmCore *core) {
     XCopyArea(core->display, core->buffer, core->window, core->gc,
               0, 0, (unsigned int)core->width, (unsigned int)core->height, 0, 0);
     XFlush(core->display);
+}
+
+/* Run a program and wait for it, for the screen commands below. Best-effort:
+   a machine without xset still gets the Xlib half of dm_core_wake_screen,
+   which is most of the fix, and a screen that could not be woken is not a
+   reason to stop the greeter from running. */
+static void core_run(const char *program, char *const argv[]) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        execvp(program, argv);
+        _exit(127);
+    }
+    if (pid > 0) {
+        int status = 0;
+        while (waitpid(pid, &status, 0) < 0 && errno == EINTR) { /* retry */ }
+    }
+}
+
+void dm_core_wake_screen(DmCore *core) {
+    if (!core->display) {
+        return;
+    }
+
+    /* The screensaver is the server's own idea of "the user has stopped
+       typing", and it outlives a session: a desktop that armed it leaves it
+       armed, so the login screen that comes back is blanked on the same timer.
+       Zero disarms it; the reset call wakes it if it is already blanked. */
+    XSetScreenSaver(core->display, 0, 0, DontPreferBlanking, DontAllowExposures);
+    XForceScreenSaver(core->display, ScreenSaverReset);
+
+    /* The monitor itself is the other half. A session that powered it down
+       leaves the X server holding it down, and a login screen drawn into a
+       monitor that is off looks exactly like a greeter that never started.
+       This is the DPMS extension, which Xlib does not expose, so it is asked
+       for through xset — the one program on every Debian that speaks to it. */
+    char *screensaver_off[] = { "xset", "s", "off", NULL };
+    char *screensaver_reset[] = { "xset", "s", "reset", NULL };
+    char *dpms_on[] = { "xset", "-dpms", NULL };
+    char *dpms_force[] = { "xset", "dpms", "force", "on", NULL };
+    core_run("xset", screensaver_off);
+    core_run("xset", screensaver_reset);
+    core_run("xset", dpms_on);
+    core_run("xset", dpms_force);
+
+    XSync(core->display, False);
 }
 
 void dm_core_step(DmCore *core) {

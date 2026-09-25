@@ -109,5 +109,6 @@ extern const WmModule wm_keys_module;     /* wm_keys.c    */
 extern const WmModule wm_desktop_module;  /* wm_desktop.c */
 extern const WmModule wm_frame_module;    /* wm_frame.c   */
 extern const WmModule wm_autostart_module;/* wm_autostart.c */
+extern const WmModule wm_menu_module;     /* wm_menu.c    */
 
 #endif /* GNUCHANWM_CORE_H */
