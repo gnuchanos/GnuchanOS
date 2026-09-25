@@ -234,8 +234,9 @@ else
     # X is put on vt7 explicitly. Debian runs text logins on tty1 to tty6 and
     # keeps vt7 for X, so Ctrl+Alt+F1 to F6 always reach a login and
     # Ctrl+Alt+F7 comes back to the greeter. Every display manager uses this
-    # same terminal for the same reason: it is the one no getty holds.
-    /usr/bin/Xorg "$DISPLAY" vt7 -nolisten tcp -auth "$AUTH" -noreset \\\\
+    # same terminal for the same reason: it is the one no getty holds.    # A service that starts X while the console is still on tty1 will flash a
+    # white line and then drop back out, so we switch VT to 7 before starting X.
+    chvt 7 >/dev/null 2>&1 || true    /usr/bin/Xorg "$DISPLAY" vt7 -nolisten tcp -auth "$AUTH" -noreset \\\\
         >>"$LOG" 2>&1 &
     Xorg_pid=$!
 
