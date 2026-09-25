@@ -1,5 +1,3 @@
-from gcl_DM import gcl_BAR, gcl_Widgets, gcl_themes, gcl_key, gcl_keys, gcl_mouse, gcl_touchpad, gcl_Window
-
 # path ~/.config/GnuChanWM/GnuChanWM.py
 
 
@@ -54,17 +52,17 @@ gcl_BAR.call(
 # system theme, icon theme, cursor theme
 gcl_themes.Theme_gtk(
     ThemeName="GnuChanTheme",
-    ThemePath="" # D:\GnuchanOS\dotfile\GTK_THEME bunun kuruldugu yer
+    ThemePath="/usr/share/themes/GnuChanTheme",
 )
 
 gcl_themes.Theme_icon(
     ThemeName="GnuChanIconTheme",
-    ThemePath="" # D:\GnuchanOS\dotfile\ICON_THEME bunun kuruldugu yer
+    ThemePath="/usr/share/icons/GnuChanIconTheme",
 )
 
 gcl_themes.Theme_cursor(
     ThemeName="GnuChanCursorTheme",
-    ThemePath="" # D:\GnuchanOS\dotfile\CURSOR_THEME bunun kuruldugu yer
+    ThemePath="/usr/share/icons/GnuChanCursorTheme",
 )
 
 

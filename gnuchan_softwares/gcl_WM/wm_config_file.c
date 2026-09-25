@@ -1,352 +1,451 @@
 /*
- * wm_config_file.c — load the user's settings and keep them hot-reloadable.
+ * wm_config_file.c — turn the settings script into the desktop.
+ *
+ * The parser in wm_config_parser.c reads the script; this file is the part
+ * that knows what it read. It walks the statements the parser produced and
+ * gives each one its meaning:
+ *
+ *     gcl_Window.set_active_window_border_color("#c369ff")
+ *         -> the focused frame's colour
+ *     gcl_BAR.call(Position=..., Widgets=[gcl_Widgets.Clock(...)])
+ *         -> the bar, and the widgets on it
+ *     gcl_keys.all = [gcl_key.MultiKey(keys=[...], action=...)]
+ *         -> the key table
+ *
+ * It also owns the two things that make the script live rather than a
+ * start-up file: the name it is looked for under, and the reload that notices
+ * it changed. Reload is by modification time, checked on the loop's idle
+ * tick, so saving the script is enough — no key to press, no session to
+ * restart.
  */
-#include <ctype.h>
-#include <errno.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
+#include <X11/Xlib.h>
 #include <X11/keysym.h>
 
+#include "wm_config_parser.h"
 #include "wm_core.h"
-#include "wm_config.h"
-#include "wm_style.h"
 
-#define WM_CONFIG_PATH_SIZE 4096
+/* Values the script named for itself, so a name used as a value can be
+   resolved: `super_key1 = "Mod1"` followed by `keys=[super_key1, "return"]`
+   is the script naming its own value, and reading it means remembering what
+   was assigned. */
+typedef struct ScriptVariable {
+    char name[WM_CONFIG_TEXT_LENGTH];
+    char text[WM_CONFIG_TEXT_LENGTH];
+} ScriptVariable;
 
-static void copy_string(char *dst, unsigned int size, const char *src) {
-    if (!dst || size == 0) {
+#define WM_CONFIG_MAX_VARIABLES 64
+
+typedef struct Script {
+    ScriptVariable variables[WM_CONFIG_MAX_VARIABLES];
+    int variable_count;
+} Script;
+
+/* --- small helpers -------------------------------------------------------- */
+
+static void copy_text(char *destination, unsigned int size, const char *source) {
+    if (!destination || size == 0) {
         return;
     }
-    if (!src) {
-        dst[0] = '\0';
+    if (!source) {
+        destination[0] = '\0';
         return;
     }
-    snprintf(dst, size, "%s", src);
+    snprintf(destination, size, "%s", source);
 }
 
-static int is_true_string(const char *value) {
+/* A value as text, with variables resolved. An unresolved name is kept as
+   itself, which is what makes a command like "xterm" written unquoted still
+   work. */
+static void value_text(const Script *script, const WmValue *value,
+                       char *out, unsigned int size) {
     if (!value) {
-        return 0;
+        wm_config_value_text(NULL, out, size);
+        return;
     }
-    return strcmp(value, "true") == 0 || strcmp(value, "yes") == 0 ||
-           strcmp(value, "on") == 0 || strcmp(value, "1") == 0;
+    if (value->kind == WM_VALUE_NAME && script) {
+        for (int i = 0; i < script->variable_count; i++) {
+            if (strcmp(script->variables[i].name, value->text) == 0) {
+                copy_text(out, size, script->variables[i].text);
+                return;
+            }
+        }
+    }
+    wm_config_value_text(value, out, size);
 }
 
-static char *trim_in_place(char *text) {
-    if (!text) {
-        return text;
+/* --- widgets -------------------------------------------------------------- */
+
+/* One widget out of a gcl_Widgets.X(...) call. The widget's kind is the call's
+   own name, which is how the script spells it: the parser keeps
+   "gcl_Widgets.Clock" whole and this reads the part after the dot. */
+static int widget_from_call(const Script *script, const WmStatement *call,
+                            WmWidget *widget) {
+    const char *dot = strrchr(call->target, '.');
+    const char *kind_name = dot ? dot + 1 : call->target;
+
+    memset(widget, 0, sizeof(*widget));
+    if (strcmp(kind_name, "CurrentLayout") == 0) {
+        widget->kind = WM_WIDGET_CURRENT_LAYOUT;
+    } else if (strcmp(kind_name, "GroupBox") == 0) {
+        widget->kind = WM_WIDGET_GROUP_BOX;
+    } else if (strcmp(kind_name, "EmptySpace") == 0) {
+        widget->kind = WM_WIDGET_EMPTY_SPACE;
+    } else if (strcmp(kind_name, "TextBox") == 0) {
+        widget->kind = WM_WIDGET_TEXT_BOX;
+    } else if (strcmp(kind_name, "Clock") == 0) {
+        widget->kind = WM_WIDGET_CLOCK;
+    } else {
+        /* A widget this build does not draw. Reported, not fatal: the rest of
+           the bar still appears, which is the difference between a missing
+           widget and a missing bar. */
+        fprintf(stderr, "gnuchanwm: config: widget '%s' is not known\n",
+                kind_name);
+        return -1;
     }
-    while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n') {
-        text++;
-    }
-    if (text == NULL) {
-        return text;
-    }
-    char *end = text + strlen(text);
-    while (end > text && (end[-1] == ' ' || end[-1] == '\t' ||
-                          end[-1] == '\r' || end[-1] == '\n')) {
-        end--;
-    }
-    *end = '\0';
-    return text;
+
+    const WmValue *argument;
+    char text[WM_CONFIG_TEXT_LENGTH];
+
+    argument = wm_config_argument(call, "BackgroundColor");
+    value_text(script, argument, text, sizeof(text));
+    copy_text(widget->background, sizeof(widget->background), text);
+
+    argument = wm_config_argument(call, "ForegroundColor");
+    value_text(script, argument, text, sizeof(text));
+    copy_text(widget->foreground, sizeof(widget->foreground), text);
+
+    argument = wm_config_argument(call, "FontFamily");
+    value_text(script, argument, text, sizeof(text));
+    copy_text(widget->font_family, sizeof(widget->font_family), text);
+
+    widget->font_size = wm_config_value_number(
+        wm_config_argument(call, "FontSize"), 12);
+    /* A bar's script writes "start_layout" in one widget and nothing in the
+       others; a widget that says nothing keeps the range of one layout, which
+       draws a single number rather than nothing. */
+    widget->start_layout = wm_config_value_number(
+        wm_config_argument(call, "start_layout"), 0);
+    widget->end_layout = wm_config_value_number(
+        wm_config_argument(call, "end_layout"), widget->start_layout);
+
+    argument = wm_config_argument(call, "symbol");
+    value_text(script, argument, text, sizeof(text));
+    copy_text(widget->symbol, sizeof(widget->symbol), text);
+
+    argument = wm_config_argument(call, "text");
+    value_text(script, argument, text, sizeof(text));
+    copy_text(widget->text, sizeof(widget->text), text);
+
+    argument = wm_config_argument(call, "format");
+    value_text(script, argument, text, sizeof(text));
+    copy_text(widget->format, sizeof(widget->format), text);
+
+    return 0;
 }
 
-static void extract_quoted_value(const char *text, const char *key,
-                                 char *out, unsigned int len) {
-    if (!out || len == 0) {
+/* The widgets of a bar, out of the Widgets list: a list of widget calls. */
+static void set_bar_widgets(const Script *script, WmBar *bar,
+                            const WmValue *widgets) {
+    if (!widgets || widgets->kind != WM_VALUE_LIST) {
         return;
     }
-    out[0] = '\0';
-    if (!text || !key) {
-        return;
+    for (int i = 0; i < widgets->item_count; i++) {
+        const WmValue *item = &widgets->items[i];
+        if (item->kind != WM_VALUE_CALL || !item->call) {
+            continue;
+        }
+        if (bar->widget_count >= WM_CONFIG_MAX_WIDGETS) {
+            fprintf(stderr, "gnuchanwm: config: too many widgets, one ignored\n");
+            break;
+        }
+        if (widget_from_call(script, item->call,
+                             &bar->widgets[bar->widget_count]) == 0) {
+            bar->widget_count++;
+        }
     }
-    const char *slot = strstr(text, key);
-    if (!slot) {
-        return;
-    }
-    slot += strlen(key);
-    while (*slot == ' ' || *slot == '\t' || *slot == '=') {
-        slot++;
-    }
-    if (*slot != '"') {
-        return;
-    }
-    slot++;
-    unsigned int i = 0;
-    while (*slot && *slot != '"' && i + 1 < len) {
-        out[i++] = *slot++;
-    }
-    out[i] = '\0';
 }
 
-static void extract_number_value(const char *text, const char *key, int *out) {
-    if (!out) {
-        return;
+/* gcl_BAR.call(Position=..., Size=..., BackgroundColor=..., Widgets=[...]) */
+static void set_bar(const Script *script, WmConfig *config,
+                    const WmStatement *statement) {
+    WmBar *bar = &config->bar;
+    char text[WM_CONFIG_TEXT_LENGTH];
+
+    bar->present = 1;
+
+    value_text(script, wm_config_argument(statement, "Position"),
+               text, sizeof(text));
+    if (text[0]) {
+        copy_text(bar->position, sizeof(bar->position), text);
     }
-    *out = 0;
-    if (!text || !key) {
-        return;
+
+    bar->size = wm_config_value_number(wm_config_argument(statement, "Size"),
+                                       bar->size);
+    if (bar->size <= 0) {
+        bar->size = 24;
     }
-    const char *slot = strstr(text, key);
-    if (!slot) {
-        return;
+
+    value_text(script, wm_config_argument(statement, "BackgroundColor"),
+               text, sizeof(text));
+    if (text[0]) {
+        copy_text(bar->background, sizeof(bar->background), text);
     }
-    slot += strlen(key);
-    while (*slot == ' ' || *slot == '\t' || *slot == '=') {
-        slot++;
-    }
-    *out = atoi(slot);
+
+    value_text(script, wm_config_argument(statement, "BackgroundImage"),
+               text, sizeof(text));
+    copy_text(bar->background_image, sizeof(bar->background_image), text);
+
+    set_bar_widgets(script, bar, wm_config_argument(statement, "Widgets"));
 }
 
-static int extract_json_string_value(const char *json, const char *key,
-                                     char *out, unsigned int len) {
-    if (!json || !key || !out || len == 0) {
-        return 0;
-    }
-    out[0] = '\0';
+/* --- the other statements ------------------------------------------------- */
 
-    const char *slot = strstr(json, key);
-    if (!slot) {
-        return 0;
+static void set_border_colours(WmConfig *config, const WmStatement *statement) {
+    /* The script passes the colour as the only argument, so it is positional:
+       set_active_window_border_color("#c369ff"). */
+    const WmValue *colour = wm_config_argument(statement, "color");
+    if (!colour && statement->arg_count > 0) {
+        colour = &statement->args[0].value;
     }
-    const char *colon = strchr(slot, ':');
-    if (!colon) {
-        return 0;
+    if (!colour) {
+        return;
     }
-    const char *cur = colon + 1;
-    while (*cur == ' ' || *cur == '\t' || *cur == '\n' || *cur == '\r') {
-        cur++;
+    char text[WM_CONFIG_TEXT_LENGTH];
+    wm_config_value_text(colour, text, sizeof(text));
+
+    if (strcmp(statement->target,
+               "gcl_Window.set_active_window_border_color") == 0) {
+        copy_text(config->active_border, sizeof(config->active_border), text);
+    } else if (strcmp(statement->target,
+                      "gcl_Window.set_inactive_window_border_color") == 0) {
+        copy_text(config->inactive_border, sizeof(config->inactive_border), text);
     }
-    if (*cur != '"') {
-        return 0;
-    }
-    cur++;
-    unsigned int i = 0;
-    while (*cur && *cur != '"' && i + 1 < len) {
-        out[i++] = *cur++;
-    }
-    out[i] = '\0';
-    return 1;
 }
 
-static int extract_json_bool_value(const char *json, const char *key, int *out) {
-    if (!json || !key || !out) {
-        return 0;
+/* gcl_themes.Theme_gtk(ThemeName=..., ThemePath=...) and its two siblings. */
+static void set_theme(WmConfig *config, const WmStatement *statement) {
+    char name[WM_CONFIG_TEXT_LENGTH];
+    char path[WM_CONFIG_TEXT_LENGTH];
+    wm_config_value_text(wm_config_argument(statement, "ThemeName"),
+                         name, sizeof(name));
+    wm_config_value_text(wm_config_argument(statement, "ThemePath"),
+                         path, sizeof(path));
+
+    if (strcmp(statement->target, "gcl_themes.Theme_gtk") == 0) {
+        copy_text(config->gtk_theme, sizeof(config->gtk_theme), name);
+        copy_text(config->gtk_path, sizeof(config->gtk_path), path);
+    } else if (strcmp(statement->target, "gcl_themes.Theme_icon") == 0) {
+        copy_text(config->icon_theme, sizeof(config->icon_theme), name);
+        copy_text(config->icon_path, sizeof(config->icon_path), path);
+    } else if (strcmp(statement->target, "gcl_themes.Theme_cursor") == 0) {
+        copy_text(config->cursor_theme, sizeof(config->cursor_theme), name);
+        copy_text(config->cursor_path, sizeof(config->cursor_path), path);
     }
-    *out = 0;
-    const char *slot = strstr(json, key);
-    if (!slot) {
-        return 0;
+}
+
+/* gcl_mouse.MouseBehavior(LeftClick=..., ...) */
+static void set_mouse(WmConfig *config, const WmStatement *statement) {
+    char text[WM_CONFIG_TEXT_LENGTH];
+    struct {
+        const char *argument;
+        char *destination;
+        unsigned int size;
+    } fields[] = {
+        { "LeftClick",   config->mouse_left,        sizeof(config->mouse_left) },
+        { "RightClick",  config->mouse_right,       sizeof(config->mouse_right) },
+        { "MiddleClick", config->mouse_middle,      sizeof(config->mouse_middle) },
+        { "ScrollUp",    config->mouse_scroll_up,   sizeof(config->mouse_scroll_up) },
+        { "ScrollDown",  config->mouse_scroll_down, sizeof(config->mouse_scroll_down) },
+    };
+    for (unsigned int i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
+        const WmValue *argument =
+            wm_config_argument(statement, fields[i].argument);
+        if (!argument) {
+            continue;
+        }
+        wm_config_value_text(argument, text, sizeof(text));
+        copy_text(fields[i].destination, fields[i].size, text);
     }
-    const char *colon = strchr(slot, ':');
-    if (!colon) {
-        return 0;
+}
+
+/* gcl_touchpad.TouchpadBehavior(TapToClick=True, ...) */
+static void set_touchpad(WmConfig *config, const WmStatement *statement) {
+    const struct {
+        const char *argument;
+        int *destination;
+        int fallback;
+    } fields[] = {
+        { "TapToClick",       &config->touchpad_tap_to_click,       1 },
+        { "TwoFingerScroll",  &config->touchpad_two_finger_scroll,  1 },
+        { "ThreeFingerSwipe", &config->touchpad_three_finger_swipe, 0 },
+        { "FourFingerSwipe",  &config->touchpad_four_finger_swipe,  0 },
+    };
+    for (unsigned int i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
+        const WmValue *argument =
+            wm_config_argument(statement, fields[i].argument);
+        if (argument) {
+            *fields[i].destination =
+                wm_config_value_bool(argument, fields[i].fallback);
+        }
     }
-    const char *cur = colon + 1;
-    while (*cur == ' ' || *cur == '\t' || *cur == '\n' || *cur == '\r') {
-        cur++;
+}
+
+/* --- key bindings --------------------------------------------------------- */
+
+/* The modifier a name stands for. The script writes its keys as names —
+   super_key1, and super_key1 = "Mod1" — so this is where "Mod1" becomes
+   Mod1Mask. */
+static unsigned int modifier_of(const Script *script, const char *written) {
+    char resolved[WM_CONFIG_TEXT_LENGTH];
+    copy_text(resolved, sizeof(resolved), written);
+    for (int i = 0; i < script->variable_count; i++) {
+        if (strcmp(script->variables[i].name, written) == 0) {
+            copy_text(resolved, sizeof(resolved), script->variables[i].text);
+            break;
+        }
     }
-    if (strncmp(cur, "true", 4) == 0) {
-        *out = 1;
-        return 1;
+
+    if (strcmp(resolved, "Mod1") == 0 || strcmp(resolved, "mod1") == 0 ||
+        strcmp(resolved, "alt") == 0 || strcmp(resolved, "Alt") == 0) {
+        return Mod1Mask;
     }
-    if (strncmp(cur, "false", 5) == 0) {
-        *out = 0;
-        return 1;
+    if (strcmp(resolved, "Mod2") == 0 || strcmp(resolved, "mod2") == 0) {
+        return Mod2Mask;
+    }
+    if (strcmp(resolved, "Mod3") == 0 || strcmp(resolved, "mod3") == 0) {
+        return Mod3Mask;
+    }
+    if (strcmp(resolved, "Mod4") == 0 || strcmp(resolved, "mod4") == 0 ||
+        strcmp(resolved, "super") == 0) {
+        return Mod4Mask;
+    }
+    if (strcmp(resolved, "Control") == 0 || strcmp(resolved, "ctrl") == 0) {
+        return ControlMask;
+    }
+    if (strcmp(resolved, "Shift") == 0 || strcmp(resolved, "shift") == 0) {
+        return ShiftMask;
     }
     return 0;
 }
 
-static void extract_bool_value(const char *text, const char *key, int *out) {
-    if (!out) {
+/* gcl_key.MultiKey(keys=[super_key1, "return"], action="...") — one binding.
+ *
+ * Every entry in the list but the last is a modifier; the last is the key.
+ * That is how the script spells it, and it is why the list is walked from the
+ * left rather than the key being picked out of the middle. */
+static void add_binding(const Script *script, WmConfig *config,
+                        const WmStatement *statement) {
+    if (config->binding_count >= WM_CONFIG_MAX_BINDINGS) {
+        fprintf(stderr, "gnuchanwm: config: too many key bindings, one ignored\n");
         return;
     }
-    *out = 0;
-    if (!text || !key) {
+    const WmValue *keys = wm_config_argument(statement, "keys");
+    if (!keys || keys->kind != WM_VALUE_LIST || keys->item_count == 0) {
         return;
     }
-    const char *slot = strstr(text, key);
-    if (!slot) {
+
+    unsigned int modifiers = 0;
+    for (int i = 0; i < keys->item_count - 1; i++) {
+        char written[WM_CONFIG_TEXT_LENGTH];
+        wm_config_value_text(&keys->items[i], written, sizeof(written));
+        modifiers |= modifier_of(script, written);
+    }
+    if (modifiers == 0) {
         return;
     }
-    slot += strlen(key);
-    while (*slot == ' ' || *slot == '\t' || *slot == '=') {
-        slot++;
+
+    char key[WM_CONFIG_TEXT_LENGTH];
+    wm_config_value_text(&keys->items[keys->item_count - 1], key, sizeof(key));
+    if (!key[0]) {
+        return;
     }
-    char value[64];
-    unsigned int i = 0;
-    while (*slot && *slot != ',' && *slot != ')' && *slot != '\n' && *slot != '\r' &&
-           i + 1 < sizeof(value)) {
-        value[i++] = *slot++;
-    }
-    value[i] = '\0';
-    *out = is_true_string(trim_in_place(value));
+
+    char action[WM_CONFIG_TEXT_LENGTH];
+    value_text(script, wm_config_argument(statement, "action"),
+               action, sizeof(action));
+
+    WmBinding *binding = &config->bindings[config->binding_count++];
+    memset(binding, 0, sizeof(*binding));
+    binding->modifiers = modifiers;
+    copy_text(binding->key, sizeof(binding->key), key);
+    copy_text(binding->action, sizeof(binding->action), action);
 }
 
-static int load_runtime_state_snapshot(WmConfig *config, const char *config_path) {
-    if (!config || !config_path || !config_path[0]) {
-        return -1;
+/* gcl_keys.all = [gcl_key.MultiKey(...), ...] — the whole key table. */
+static void add_bindings_from_list(const Script *script, WmConfig *config,
+                                   const WmValue *list) {
+    if (!list || list->kind != WM_VALUE_LIST) {
+        return;
     }
-
-    char state_path[WM_CONFIG_PATH_SIZE];
-    snprintf(state_path, sizeof(state_path), "%s", config_path);
-    char *dot = strrchr(state_path, '.');
-    if (dot) {
-        *dot = '\0';
+    for (int i = 0; i < list->item_count; i++) {
+        const WmValue *item = &list->items[i];
+        if (item->kind == WM_VALUE_CALL && item->call) {
+            add_binding(script, config, item->call);
+        }
     }
-    snprintf(state_path + strlen(state_path), sizeof(state_path) - strlen(state_path),
-             ".state.json");
-
-    FILE *file = fopen(state_path, "rb");
-    if (!file) {
-        return -1;
-    }
-
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fclose(file);
-        return -1;
-    }
-    long len = ftell(file);
-    if (len < 0) {
-        fclose(file);
-        return -1;
-    }
-    rewind(file);
-
-    char *json = (char *)malloc((size_t)len + 1);
-    if (!json) {
-        fclose(file);
-        return -1;
-    }
-    size_t read = fread(json, 1, (size_t)len, file);
-    json[read] = '\0';
-    fclose(file);
-
-    extract_json_string_value(json, "\"wm.active_border\"", config->active_border,
-                              sizeof(config->active_border));
-    extract_json_string_value(json, "\"wm.inactive_border\"", config->inactive_border,
-                              sizeof(config->inactive_border));
-    extract_json_string_value(json, "\"wm.bar\"", config->bar_position,
-                              sizeof(config->bar_position));
-    extract_json_string_value(json, "\"wm.theme.gtk\"", config->gtk_theme,
-                              sizeof(config->gtk_theme));
-    extract_json_string_value(json, "\"wm.theme.icon\"", config->icon_theme,
-                              sizeof(config->icon_theme));
-    extract_json_string_value(json, "\"wm.theme.cursor\"", config->cursor_theme,
-                              sizeof(config->cursor_theme));
-
-    /* bar->position and bar->background are nested JSON, so the loader reads the
-       direct snapshot from the Python bridge before the generic text scan runs. */
-    char nested_bar[4096];
-    nested_bar[0] = '\0';
-    extract_json_string_value(json, "\"Position\"", nested_bar, sizeof(nested_bar));
-    if (nested_bar[0]) {
-        copy_string(config->bar_position, sizeof(config->bar_position), nested_bar);
-    }
-    nested_bar[0] = '\0';
-    extract_json_string_value(json, "\"BackgroundColor\"", nested_bar, sizeof(nested_bar));
-    if (nested_bar[0]) {
-        copy_string(config->bar_background, sizeof(config->bar_background), nested_bar);
-    }
-    nested_bar[0] = '\0';
-    extract_json_string_value(json, "\"BackgroundImage\"", nested_bar, sizeof(nested_bar));
-    if (nested_bar[0]) {
-        copy_string(config->bar_background_image, sizeof(config->bar_background_image), nested_bar);
-    }
-
-    int tap_to_click = 0;
-    if (extract_json_bool_value(json, "\"TapToClick\"", &tap_to_click)) {
-        config->touchpad_tap_to_click = tap_to_click;
-    }
-    int two_finger_scroll = 0;
-    if (extract_json_bool_value(json, "\"TwoFingerScroll\"", &two_finger_scroll)) {
-        config->touchpad_two_finger_scroll = two_finger_scroll;
-    }
-
-    free(json);
-    return 0;
 }
 
-static int apply_python_script(WmConfig *config, const char *path) {
-    FILE *file = fopen(path, "r");
-    if (!file) {
-        return -1;
+/* A name given a value, remembered so a later statement can use it: the script
+   assigns super_key1 = "Mod1" and then writes keys=[super_key1, ...]. */
+static void remember_assignment(Script *script, const WmStatement *statement) {
+    if (script->variable_count >= WM_CONFIG_MAX_VARIABLES) {
+        return;
     }
+    ScriptVariable *variable = &script->variables[script->variable_count++];
+    memset(variable, 0, sizeof(*variable));
+    copy_text(variable->name, sizeof(variable->name), statement->target);
+    wm_config_value_text(&statement->value, variable->text,
+                         sizeof(variable->text));
+}
 
-    char line[8192];
-    while (fgets(line, sizeof(line), file)) {
-        char *text = trim_in_place(line);
-        if (text[0] == '\0' || text[0] == '#') {
+/* --- walking the script --------------------------------------------------- */
+
+static void walk(Script *script, WmConfig *config,
+                 const WmStatement *statements, int count) {
+    for (int i = 0; i < count; i++) {
+        const WmStatement *statement = &statements[i];
+        if (statement->target[0] == '\0') {
             continue;
         }
 
-        extract_quoted_value(text, "gcl_Window.set_active_window_border_color(",
-                             config->active_border, sizeof(config->active_border));
-        extract_quoted_value(text, "gcl_Window.set_inactive_window_border_color(",
-                             config->inactive_border, sizeof(config->inactive_border));
-
-        if (strstr(text, "default_terminal") != NULL) {
-            extract_quoted_value(text, "default_terminal = ", config->terminal,
-                                 sizeof(config->terminal));
+        if (statement->kind == WM_STMT_ASSIGN) {
+            if (strcmp(statement->target, "default_terminal") == 0) {
+                wm_config_value_text(&statement->value, config->terminal,
+                                     sizeof(config->terminal));
+            } else if (strcmp(statement->target, "gcl_keys.all") == 0) {
+                add_bindings_from_list(script, config, &statement->value);
+            }
+            remember_assignment(script, statement);
+            continue;
         }
 
-        if (strstr(text, "gcl_BAR.call") != NULL) {
-            extract_quoted_value(text, "Position=", config->bar_position,
-                                 sizeof(config->bar_position));
-            extract_quoted_value(text, "BackgroundColor=", config->bar_background,
-                                 sizeof(config->bar_background));
-            extract_quoted_value(text, "BackgroundImage=", config->bar_background_image,
-                                 sizeof(config->bar_background_image));
-            extract_number_value(text, "Size=", &config->bar_size);
+        if (strcmp(statement->target, "gcl_BAR.call") == 0) {
+            set_bar(script, config, statement);
+        } else if (strncmp(statement->target, "gcl_Window.", 11) == 0) {
+            set_border_colours(config, statement);
+        } else if (strncmp(statement->target, "gcl_themes.", 11) == 0) {
+            set_theme(config, statement);
+        } else if (strcmp(statement->target, "gcl_mouse.MouseBehavior") == 0) {
+            set_mouse(config, statement);
+        } else if (strcmp(statement->target,
+                          "gcl_touchpad.TouchpadBehavior") == 0) {
+            set_touchpad(config, statement);
         }
-
-        if (strstr(text, "gcl_themes.Theme_gtk") != NULL) {
-            extract_quoted_value(text, "ThemeName=", config->gtk_theme,
-                                 sizeof(config->gtk_theme));
-            extract_quoted_value(text, "ThemePath=", config->gtk_path,
-                                 sizeof(config->gtk_path));
-        }
-        if (strstr(text, "gcl_themes.Theme_icon") != NULL) {
-            extract_quoted_value(text, "ThemeName=", config->icon_theme,
-                                 sizeof(config->icon_theme));
-            extract_quoted_value(text, "ThemePath=", config->icon_path,
-                                 sizeof(config->icon_path));
-        }
-        if (strstr(text, "gcl_themes.Theme_cursor") != NULL) {
-            extract_quoted_value(text, "ThemeName=", config->cursor_theme,
-                                 sizeof(config->cursor_theme));
-            extract_quoted_value(text, "ThemePath=", config->cursor_path,
-                                 sizeof(config->cursor_path));
-        }
-
-        if (strstr(text, "gcl_mouse.MouseBehavior") != NULL) {
-            extract_quoted_value(text, "LeftClick=", config->mouse_left,
-                                 sizeof(config->mouse_left));
-            extract_quoted_value(text, "RightClick=", config->mouse_right,
-                                 sizeof(config->mouse_right));
-            extract_quoted_value(text, "MiddleClick=", config->mouse_middle,
-                                 sizeof(config->mouse_middle));
-            extract_quoted_value(text, "ScrollUp=", config->mouse_scroll_up,
-                                 sizeof(config->mouse_scroll_up));
-            extract_quoted_value(text, "ScrollDown=", config->mouse_scroll_down,
-                                 sizeof(config->mouse_scroll_down));
-        }
-
-        if (strstr(text, "gcl_touchpad.TouchpadBehavior") != NULL) {
-            extract_bool_value(text, "TapToClick=", &config->touchpad_tap_to_click);
-            extract_bool_value(text, "TwoFingerScroll=", &config->touchpad_two_finger_scroll);
-            extract_bool_value(text, "ThreeFingerSwipe=", &config->touchpad_three_finger_swipe);
-            extract_bool_value(text, "FourFingerSwipe=", &config->touchpad_four_finger_swipe);
-        }
+        /* Every other call is something this build does not act on. It is not
+           reported: the config is shared with a runtime that gives those calls
+           their meaning, and calling them unknown would make a valid file look
+           broken. */
     }
-
-    fclose(file);
-    return 0;
 }
+
+/* --- the public entry points ---------------------------------------------- */
 
 void wm_config_defaults(WmConfig *config) {
     if (!config) {
@@ -354,43 +453,38 @@ void wm_config_defaults(WmConfig *config) {
     }
     memset(config, 0, sizeof(*config));
 
-    copy_string(config->background, sizeof(config->background), "#1a0b2e");
-    copy_string(config->panel, sizeof(config->panel), "#32143f");
-    copy_string(config->panel_edge, sizeof(config->panel_edge), "#7b2cbf");
-    copy_string(config->field, sizeof(config->field), "#241033");
-    copy_string(config->text, sizeof(config->text), "#e0c3fc");
-    copy_string(config->text_muted, sizeof(config->text_muted), "#9d7bba");
-    copy_string(config->accent, sizeof(config->accent), "#c77dff");
-    copy_string(config->accent_dim, sizeof(config->accent_dim), "#7b2cbf");
-    copy_string(config->active_border, sizeof(config->active_border), "#c77dff");
-    copy_string(config->inactive_border, sizeof(config->inactive_border), "#32143f");
+    /* The colours wm_style.c falls back to, so a session with no script is the
+       desktop the code was written against. */
+    copy_text(config->active_border, sizeof(config->active_border), "#c77dff");
+    copy_text(config->inactive_border, sizeof(config->inactive_border), "#32143f");
     config->border_width = 2;
 
-    copy_string(config->terminal, sizeof(config->terminal), "xterm");
-    config->binding_count = 0;
+    /* Empty: "look at $TERMINAL, then at the usual terminals", which is what a
+       machine that never wrote a script gets. */
+    config->terminal[0] = '\0';
 
-    copy_string(config->gtk_theme, sizeof(config->gtk_theme), "GnuChanTheme");
-    copy_string(config->icon_theme, sizeof(config->icon_theme), "GnuChanIconTheme");
-    copy_string(config->cursor_theme, sizeof(config->cursor_theme), "GnuChanCursorTheme");
-    config->gtk_path[0] = '\0';
-    config->icon_path[0] = '\0';
-    config->cursor_path[0] = '\0';
+    copy_text(config->gtk_theme, sizeof(config->gtk_theme), "GnuChanTheme");
+    copy_text(config->icon_theme, sizeof(config->icon_theme), "GnuChanIconTheme");
+    copy_text(config->cursor_theme, sizeof(config->cursor_theme),
+              "GnuChanCursorTheme");
 
-    copy_string(config->mouse_left, sizeof(config->mouse_left), "select");
-    copy_string(config->mouse_right, sizeof(config->mouse_right), "context_menu");
-    copy_string(config->mouse_middle, sizeof(config->mouse_middle), "paste");
-    copy_string(config->mouse_scroll_up, sizeof(config->mouse_scroll_up), "scroll_up");
-    copy_string(config->mouse_scroll_down, sizeof(config->mouse_scroll_down), "scroll_down");
+    copy_text(config->mouse_left, sizeof(config->mouse_left), "select");
+    copy_text(config->mouse_right, sizeof(config->mouse_right), "context_menu");
+    copy_text(config->mouse_middle, sizeof(config->mouse_middle), "paste");
+    copy_text(config->mouse_scroll_up, sizeof(config->mouse_scroll_up),
+              "scroll_up");
+    copy_text(config->mouse_scroll_down, sizeof(config->mouse_scroll_down),
+              "scroll_down");
 
     config->touchpad_tap_to_click = 1;
     config->touchpad_two_finger_scroll = 1;
-    config->touchpad_three_finger_swipe = 0;
-    config->touchpad_four_finger_swipe = 0;
 
-    copy_string(config->bar_position, sizeof(config->bar_position), "top");
-    config->bar_size = 24;
-    copy_string(config->bar_background, sizeof(config->bar_background), "#27022b");
-    config->bar_background_image[0] = '\0';
+    /* The bar the shipped script asks for, so a machine with no script still
+       has a bar rather than an empty edge. */
+    config->bar.present = 1;
+    copy_text(config->bar.position, sizeof(config->bar.position), "top");
+    config->bar.size = 24;
+    copy_text(config->bar.background, sizeof(config->bar.background), "#27022b");
 }
 
 char *wm_config_path(char *buffer, unsigned int size) {
@@ -399,77 +493,81 @@ char *wm_config_path(char *buffer, unsigned int size) {
     }
     const char *xdg = getenv("XDG_CONFIG_HOME");
     const char *home = getenv("HOME");
-
     if (xdg && xdg[0]) {
         snprintf(buffer, size, "%s/GnuChanWM/GnuChanWM.py", xdg);
-        return buffer;
-    }
-    if (home && home[0]) {
+    } else if (home && home[0]) {
         snprintf(buffer, size, "%s/.config/GnuChanWM/GnuChanWM.py", home);
-        return buffer;
+    } else {
+        buffer[0] = '\0';
     }
-
-    buffer[0] = '\0';
     return buffer;
 }
 
 int wm_config_load(WmConfig *config, const char *path) {
-    if (!config) {
+    if (!config || !path || !path[0]) {
+        return -1;
+    }
+    WmStatement *statements = NULL;
+    int count = 0;
+    if (wm_config_parse_file(path, &statements, &count) != 0) {
         return -1;
     }
 
-    char resolved[WM_CONFIG_PATH_SIZE];
-    const char *source = path;
-    if (!source || source[0] == '\0') {
-        wm_config_path(resolved, sizeof(resolved));
-        source = resolved;
-    }
-    if (!source || source[0] == '\0') {
-        return -1;
-    }
+    /* The script is read into a copy first, then swapped in. A script that
+       fails to parse leaves the desktop it already had, which is the whole
+       reason the read is a separate step: a half-applied config is a desktop
+       nobody asked for. */
+    WmConfig parsed = *config;
+    parsed.bar.widget_count = 0;
+    parsed.binding_count = 0;
 
-    FILE *probe = fopen(source, "r");
-    if (!probe) {
-        return -1;
-    }
-    fclose(probe);
+    Script script;
+    memset(&script, 0, sizeof(script));
+    walk(&script, &parsed, statements, count);
 
-    if (apply_python_script(config, source) != 0) {
-        return -1;
-    }
-    if (load_runtime_state_snapshot(config, source) == 0) {
-        return 0;
-    }
+    wm_config_statements_free(statements, count);
+
+    *config = parsed;
     return 0;
 }
+
+unsigned int wm_config_bar_edges(const WmConfig *config) {
+    if (!config || !config->bar.present) {
+        return 0;
+    }
+    if (strcmp(config->bar.position, "bottom") == 0) {
+        return 1u << WM_EDGE_BOTTOM;
+    }
+    return 1u << WM_EDGE_TOP;
+}
+
+/* --- applying it to the desktop ------------------------------------------- */
 
 void wm_config_apply(WmCore *core) {
     if (!core || !core->display) {
         return;
     }
 
-    core->style.background = wm_style_colour(core->display, core->screen,
-                                             core->config.background, BlackPixel(core->display, core->screen));
-    core->style.panel = wm_style_colour(core->display, core->screen,
-                                        core->config.panel, BlackPixel(core->display, core->screen));
-    core->style.panel_edge = wm_style_colour(core->display, core->screen,
-                                             core->config.panel_edge, WhitePixel(core->display, core->screen));
-    core->style.field = wm_style_colour(core->display, core->screen,
-                                        core->config.field, BlackPixel(core->display, core->screen));
-    core->style.text = wm_style_colour(core->display, core->screen,
-                                       core->config.text, WhitePixel(core->display, core->screen));
-    core->style.text_muted = wm_style_colour(core->display, core->screen,
-                                            core->config.text_muted, WhitePixel(core->display, core->screen));
-    core->style.accent = wm_style_colour(core->display, core->screen,
-                                         core->config.accent, WhitePixel(core->display, core->screen));
-    core->style.accent_dim = wm_style_colour(core->display, core->screen,
-                                             core->config.accent_dim, WhitePixel(core->display, core->screen));
-    core->style.border = wm_style_colour(core->display, core->screen,
-                                         core->config.active_border, WhitePixel(core->display, core->screen));
-    core->style.border_unfocused = wm_style_colour(core->display, core->screen,
-                                                  core->config.inactive_border, BlackPixel(core->display, core->screen));
-    core->style.border_width = core->config.border_width > 0 ? core->config.border_width : 2;
+    /* The two frame colours are the ones the script sets through gcl_Window;
+       the rest of the palette stays what wm_style.c resolved. */
+    if (core->config.active_border[0]) {
+        core->style.border = wm_style_colour(core->display, core->screen,
+                                             core->config.active_border,
+                                             core->style.border);
+    }
+    if (core->config.inactive_border[0]) {
+        core->style.border_unfocused =
+            wm_style_colour(core->display, core->screen,
+                            core->config.inactive_border,
+                            core->style.border_unfocused);
+    }
+    if (core->config.border_width > 0) {
+        core->style.border_width = core->config.border_width;
+    }
 
+    /* The theme names are published to the environment the session starts its
+       programs from, so a program that reads GTK_THEME sees the same answer a
+       toolkit would be given by the theme module. */
     if (core->config.gtk_theme[0]) {
         setenv("GTK_THEME", core->config.gtk_theme, 1);
     }
@@ -478,21 +576,54 @@ void wm_config_apply(WmCore *core) {
     }
 }
 
-static int execute_python_config(const char *path) {
-    if (!path || !path[0]) {
-        return -1;
+/* --- hot reload ----------------------------------------------------------- */
+
+/* When the script was last read, so the tick can tell "unchanged" from
+   "written since". Two saves can share a second, so the size is kept beside
+   the time; the pair changes whenever a person saves a change. */
+static time_t script_time = 0;
+static off_t script_size = -1;
+
+int wm_config_reload(WmCore *core) {
+    if (!core) {
+        return 0;
+    }
+    char path[WM_CONFIG_TEXT_LENGTH * 4];
+    wm_config_path(path, sizeof(path));
+    if (!path[0]) {
+        return 0;
     }
 
-    char command[WM_CONFIG_PATH_SIZE * 2];
-    snprintf(command, sizeof(command), "gcl -pyrun \"%s\" >/dev/null 2>&1", path);
-    int rc = system(command);
-    if (rc != 0) {
-        fprintf(stderr, "gnuchanwm: python config failed for %s (rc=%d)\n", path, rc);
-        return -1;
+    struct stat info;
+    if (stat(path, &info) != 0) {
+        return 0;
     }
-    fprintf(stderr, "gnuchanwm: python config executed from %s\n", path);
-    return 0;
+    if (info.st_mtime == script_time && info.st_size == script_size) {
+        return 0;
+    }
+
+    WmConfig fresh = core->config;
+    if (wm_config_load(&fresh, path) != 0) {
+        /* The script was saved mid-edit or with a mistake in it. The desktop
+           keeps what it had and the change waits for the next save, which is
+           what makes editing a script safe to do while it is running. The
+           stamp is still recorded, so the same broken file is not re-read on
+           every tick. */
+        fprintf(stderr, "gnuchanwm: config not reloaded; it could not be read\n");
+        script_time = info.st_mtime;
+        script_size = info.st_size;
+        return 0;
+    }
+
+    core->config = fresh;
+    wm_config_apply(core);
+    script_time = info.st_mtime;
+    script_size = info.st_size;
+    fprintf(stderr, "gnuchanwm: config reloaded from %s\n", path);
+    return 1;
 }
+
+/* --- the module ----------------------------------------------------------- */
 
 static int config_init(WmCore *core) {
     if (!core) {
@@ -500,46 +631,31 @@ static int config_init(WmCore *core) {
     }
     wm_config_defaults(&core->config);
 
-    char path[WM_CONFIG_PATH_SIZE];
+    char path[WM_CONFIG_TEXT_LENGTH * 4];
     wm_config_path(path, sizeof(path));
-    if (path[0]) {
-        if (execute_python_config(path) != 0) {
-            fprintf(stderr, "gnuchanwm: config not applied from %s; defaults in use\n", path);
-        }
+
+    struct stat info;
+    int have_script = path[0] && stat(path, &info) == 0;
+    if (have_script && wm_config_load(&core->config, path) == 0) {
+        script_time = info.st_mtime;
+        script_size = info.st_size;
+        fprintf(stderr, "gnuchanwm: config read from %s\n", path);
+    } else {
+        /* No script is not a failure: it is a machine that never wrote one,
+           and it gets the built-in desktop — including the built-in bar. */
+        fprintf(stderr, "gnuchanwm: no config at %s; using the defaults\n",
+                path[0] ? path : "(no home directory)");
     }
 
     wm_config_apply(core);
     return 0;
 }
 
-static void config_cleanup(WmCore *core) {
-    (void)core;
-}
-
 const WmModule wm_config_module = {
     .name = "config",
     .init = config_init,
     .event = NULL,
-    .cleanup = config_cleanup,
+    .tick = NULL,
+    .interval_ms = 0,
+    .cleanup = NULL,
 };
-
-int wm_config_reload(WmCore *core) {
-    if (!core) {
-        return -1;
-    }
-
-    char path[WM_CONFIG_PATH_SIZE];
-    wm_config_path(path, sizeof(path));
-    if (!path[0]) {
-        fprintf(stderr, "gnuchanwm: no config path available for reload\n");
-        return -1;
-    }
-
-    if (execute_python_config(path) == 0) {
-        fprintf(stderr, "gnuchanwm: config reloaded from %s\n", path);
-        return 0;
-    }
-
-    fprintf(stderr, "gnuchanwm: config reload failed; defaults restored\n");
-    return -1;
-}

@@ -5,10 +5,19 @@
  * resolves the atoms once, initialises every registered module, then reads
  * events from the X server and hands each one to every module in turn.
  * Everything a user would call "the window manager" lives in the modules.
+ *
+ * The loop is not a plain XNextEvent, because two things a desktop needs are
+ * not events: a clock has to move, and a settings file has to be noticed when
+ * it is saved. So the core waits on the X connection with a timeout — the
+ * shortest one any module asked for — and calls the modules' tick callbacks
+ * whenever it wakes, whether that was an event or the timeout. A session with
+ * no clock and no config still waits forever, which costs nothing.
  */
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 
 #include "wm_core.h"
 
@@ -174,27 +183,106 @@ int wm_core_start(WmCore *core) {
     return 0;
 }
 
-/* Read and dispatch exactly one event. The loop is built on this rather than
-   containing the blocking call itself, because the caller has to be able to
-   stop between events — a signal interrupts XNextEvent, and the flag it sets
-   is only visible once this function returns. */
-void wm_core_step(WmCore *core) {
-    XEvent event;
-    XNextEvent(core->display, &event);
+/* The shortest interval any module asked for, in milliseconds, or -1 when no
+   module wants time. The caller waits that long before giving up on the
+   display, which is what lets a clock move on an idle session. */
+static int core_tick_interval(WmCore *core) {
+    int shortest = -1;
+    for (int i = 0; i < core->modules.count; i++) {
+        const WmModule *module = core->modules.items[i];
+        if (!module->tick || module->interval_ms <= 0) {
+            continue;
+        }
+        int interval = module->interval_ms;
+        if (interval > WM_MAX_TICK_MS) {
+            interval = WM_MAX_TICK_MS;
+        }
+        if (shortest < 0 || interval < shortest) {
+            shortest = interval;
+        }
+    }
+    return shortest;
+}
 
+static void core_call_ticks(WmCore *core) {
+    for (int i = 0; i < core->modules.count; i++) {
+        const WmModule *module = core->modules.items[i];
+        if (module->tick) {
+            module->tick(core);
+        }
+    }
+}
+
+static void core_dispatch(WmCore *core, XEvent *event) {
     /* A window that was just mapped, unmapped or destroyed changes the client
        list, so it is republished before the modules see it. */
-    if (event.type == MapNotify || event.type == UnmapNotify ||
-        event.type == DestroyNotify) {
+    if (event->type == MapNotify || event->type == UnmapNotify ||
+        event->type == DestroyNotify) {
         core_publish_client_list(core);
     }
 
     for (int i = 0; i < core->modules.count; i++) {
         const WmModule *module = core->modules.items[i];
         if (module->event) {
-            module->event(core, &event);
+            module->event(core, event);
         }
     }
+}
+
+/* Read and dispatch exactly one event, after waiting for the modules that
+   asked for time.
+ *
+ * The wait is a select() on the X connection rather than a blocking
+ * XNextEvent, and the difference is the whole reason this is not one line: a
+ * clock that only moved when a window was clicked would not be a clock. The
+ * callbacks run after the wait, not before, so an event that arrives while
+ * the display is quiet is dispatched as soon as it does rather than after the
+ * next tick.
+ *
+ * A signal interrupts the wait — that is how the loop is asked to stop — and
+ * the interrupted wait is treated as a plain timeout: the flag the handler
+ * set is read by the caller, and ticks get one more chance to run cleanly. */
+void wm_core_step(WmCore *core) {
+    int interval = core_tick_interval(core);
+
+    int fd = ConnectionNumber(core->display);
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(fd, &readable);
+
+    struct timeval timeout;
+    struct timeval *wait = NULL;
+    if (interval >= 0) {
+        timeout.tv_sec = interval / 1000;
+        timeout.tv_usec = (interval % 1000) * 1000;
+        wait = &timeout;
+    }
+
+    while (XPending(core->display) == 0) {
+        int ready = select(fd + 1, &readable, NULL, NULL, wait);
+        if (ready > 0) {
+            break;
+        }
+        if (ready < 0 && errno == EINTR) {
+            break;
+        }
+        if (ready == 0) {
+            /* The display was quiet for as long as the shortest interval
+               allowed: this is the tick. */
+            core_call_ticks(core);
+            if (!core->running) {
+                return;
+            }
+        }
+    }
+
+    if (XPending(core->display) == 0) {
+        return;
+    }
+
+    XEvent event;
+    XNextEvent(core->display, &event);
+    core_dispatch(core, &event);
 }
 
 void wm_core_run(WmCore *core) {
