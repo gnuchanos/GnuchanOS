@@ -26,11 +26,19 @@ Atom wm_atom(WmCore *core, const char *name) {
     return XInternAtom(core->display, name, False);
 }
 
-/* Set while the substructure is being claimed. Xlib reports an X error
-   asynchronously, from inside the request that caused it, and there is no
-   return value to test — so the only way to learn that another window manager
-   already owns the display is to notice the error as it arrives. The flag is
-   read once, around the one request that can fail this way. */
+/* Set while the substructure is being claimed, and the answer found while it
+   was open.
+ *
+ * Xlib reports an X error asynchronously, from inside the request that caused
+ * it, and XSelectInput has no return value to test — so the only way to learn
+ * that another window manager already owns the display is to notice the error
+ * as it arrives. The window is the test: claim_open is raised for exactly the
+ * one request that can fail this way and lowered again before anything else
+ * runs, so a BadAccess seen inside it is that request's and nothing else's.
+ * Testing the request code instead would mean naming an X protocol constant
+ * that Xlib does not expose, and a key grab refused later in the session — a
+ * BadAccess of its own — must not be mistaken for this one. */
+static volatile sig_atomic_t claim_open = 0;
 static volatile sig_atomic_t claim_refused = 0;
 
 /* Xlib's default reaction to any X error — a BadWindow from a window destroyed
@@ -52,8 +60,7 @@ static int core_x_error(Display *display, XErrorEvent *error) {
             "gnuchanwm: X error: %s (request %d.%d, resource 0x%lx)\n",
             text, error->request_code, error->minor_code,
             (unsigned long)error->resourceid);
-    if (error->error_code == BadAccess &&
-        error->request_code == X_ChangeWindowAttributes) {
+    if (error->error_code == BadAccess && claim_open) {
         claim_refused = 1;
     }
     return 0;
@@ -181,8 +188,10 @@ int wm_core_init(WmCore *core) {
      * and fight the first one for every event — which is worse than not
      * starting, because it looks like a working session that drops windows. */
     claim_refused = 0;
+    claim_open = 1;
     XSelectInput(core->display, core->root, WM_EVENT_MASK);
     XSync(core->display, False);
+    claim_open = 0;
 
     if (claim_refused) {
         fprintf(stderr,
