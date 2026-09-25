@@ -75,12 +75,14 @@ def run(
     command: list[str],
     capture: bool = False,
     environment: dict[str, str] | None = None,
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     if capture:
         return subprocess.run(
-            command, check=False, capture_output=True, text=True, env=environment
+            command, check=False, capture_output=True, text=True,
+            env=environment, cwd=cwd,
         )
-    return subprocess.run(command, check=False, text=True, env=environment)
+    return subprocess.run(command, check=False, text=True, env=environment, cwd=cwd)
 
 
 def apt_environment() -> dict[str, str]:
