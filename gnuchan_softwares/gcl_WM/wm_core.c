@@ -124,6 +124,7 @@ int wm_core_init(WmCore *core) {
     core->net_client_list = wm_atom(core, "_NET_CLIENT_LIST");
     core->net_wm_window_type = wm_atom(core, "_NET_WM_WINDOW_TYPE");
     core->net_wm_window_type_dock = wm_atom(core, "_NET_WM_WINDOW_TYPE_DOCK");
+    core->wm_state = wm_atom(core, "WM_STATE");
     core->wm_protocols = wm_atom(core, "WM_PROTOCOLS");
     core->wm_delete_window = wm_atom(core, "WM_DELETE_WINDOW");
     core->utf8_string = wm_atom(core, "UTF8_STRING");

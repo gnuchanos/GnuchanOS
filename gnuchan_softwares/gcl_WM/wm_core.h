@@ -10,6 +10,7 @@
 #define GNUCHANWM_CORE_H
 
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 #include "wm_module.h"
 
 /* The window state the core selects on the root. */
@@ -35,6 +36,7 @@ struct WmCore {
     Atom net_client_list;
     Atom net_wm_window_type;
     Atom net_wm_window_type_dock;
+    Atom wm_state;
     Atom wm_protocols;
     Atom wm_delete_window;
     Atom utf8_string;
