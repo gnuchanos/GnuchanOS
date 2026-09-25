@@ -254,7 +254,14 @@ static void frame_apply(WmCore *core, WmFrame *frame) {
 void wm_frame_move(WmCore *core, WmFrame *frame, int x, int y) {
     frame->x = x;
     frame->y = y;
+
+    /* Clear the old pixels before the frame is moved and redraw immediately.
+       During a drag, the server can expose the title bar around the old and new
+       positions; without clearing the stale area first, the bar briefly shows a
+       stale outline or half-painted strip. */
+    XClearArea(core->display, frame->frame, 0, 0, 0, 0, False);
     XMoveWindow(core->display, frame->frame, x, y);
+    wm_frame_draw(core, frame);
     XFlush(core->display);
 }
 
