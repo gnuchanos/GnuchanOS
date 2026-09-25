@@ -100,11 +100,14 @@ WmFrame *wm_frame_find_by_frame(WmCore *core, Window frame) {
     return NULL;
 }
 
-/* The table order is creation order, and a switcher that walked it would jump
-   around as windows are opened and closed. Walking it from the current window
-   forwards is still the honest answer to "what else is there", and it is what
-   the key is bound to. Minimised windows are skipped: they are not on screen,
-   so switching to one would look like switching to nothing. */
+/* The next window after the given one, wrapping around, walking the whole
+   table.
+ *
+ * A minimised window is part of the ring and is returned like any other; the
+ * caller restores it. That is the point of the switcher key on a desktop with
+ * no task list — it is the only way back from the minimise button — and
+ * skipping minimised windows made the key able to put a window away and never
+ * to bring it back, which is the one thing it is for. */
 WmFrame *wm_frame_next(WmCore *core, Window client) {
     if (core->frame_count == 0) {
         return NULL;
@@ -118,16 +121,11 @@ WmFrame *wm_frame_next(WmCore *core, Window client) {
         }
     }
 
-    for (int step = 1; step <= core->frame_count; step++) {
-        int i = (start + step) % core->frame_count;
-        if (i < 0) {
-            i += core->frame_count;
-        }
-        if (!core->frames[i].minimized) {
-            return &core->frames[i];
-        }
+    int i = (start + 1) % core->frame_count;
+    if (i < 0) {
+        i += core->frame_count;
     }
-    return NULL;
+    return &core->frames[i];
 }
 
 /* --- naming --------------------------------------------------------------- */
@@ -265,7 +263,8 @@ static void frame_draw_button(WmCore *core, Drawable target, int x, int y,
         if (maximized) {
             XDrawRectangle(display, target, core->gc,
                            x + inset + 2, y + inset - 2,
-                           WM_BUTTON_SIZE - 2 * inset, WM_BUTTON_SIZE - 2 * inset);
+                           WM_BUTTON_SIZE - 2 * inset,
+                           WM_BUTTON_SIZE - 2 * inset);
         }
         break;
 
@@ -411,6 +410,22 @@ void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
     frame_notify_configure(core, frame);
 }
 
+/* A client that moved or resized itself. Its position is meaningless inside a
+   frame — the bar lives above it — so only the size is taken, and the position
+   is put back to where the frame wants it. */
+void wm_frame_sync(WmCore *core, WmFrame *frame) {
+    XWindowAttributes attributes;
+    if (!XGetWindowAttributes(core->display, frame->client, &attributes)) {
+        return;
+    }
+    if (attributes.width != frame->client_width ||
+        attributes.height != frame->client_height) {
+        frame->client_width = attributes.width;
+        frame->client_height = attributes.height;
+    }
+    frame_apply(core, frame);
+}
+
 /* The area the screen gives a maximised window. Read from the core rather than
    from the frame, because the frame is what is being changed to match it. */
 static void frame_screen_size(WmCore *core, int *width, int *height) {
@@ -456,6 +471,35 @@ void wm_frame_maximize(WmCore *core, WmFrame *frame) {
     wm_focus_set(core, frame->client);
 }
 
+/* The next window that is still on screen, after the given one and wrapping
+   around.
+ *
+ * This is not wm_frame_next(): that one walks every window, minimised ones
+ * included, because the switcher has to be able to reach them. Here the window
+ * the keyboard is on is being taken away, so the focus has to land on
+ * something the user can see — and walking on to the window just put away
+ * would make the minimise button undo itself. */
+static WmFrame *frame_next_visible(WmCore *core, Window client) {
+    int start = -1;
+    for (int i = 0; i < core->frame_count; i++) {
+        if (core->frames[i].client == client) {
+            start = i;
+            break;
+        }
+    }
+
+    for (int step = 1; step <= core->frame_count; step++) {
+        int i = (start + step) % core->frame_count;
+        if (i < 0) {
+            i += core->frame_count;
+        }
+        if (!core->frames[i].minimized) {
+            return &core->frames[i];
+        }
+    }
+    return NULL;
+}
+
 void wm_frame_minimize(WmCore *core, WmFrame *frame) {
     if (frame->minimized) {
         return;
@@ -463,12 +507,11 @@ void wm_frame_minimize(WmCore *core, WmFrame *frame) {
     frame->minimized = 1;
     XUnmapWindow(core->display, frame->frame);
 
-    /* The keyboard cannot stay on a window that is not on the screen. It goes
-       to the next one, which is what the switcher key would have given, so a
-       minimised window never leaves the desktop with no focus at all. */
+    /* The keyboard cannot stay on a window that is not on the screen, so it
+       goes to one that still is. */
     if (core->focused == frame->client) {
         core->focused = 0;
-        WmFrame *next = wm_frame_next(core, frame->client);
+        WmFrame *next = frame_next_visible(core, frame->client);
         if (next) {
             wm_frame_activate(core, next);
         } else {
@@ -496,6 +539,15 @@ void wm_frame_restore(WmCore *core, WmFrame *frame) {
 void wm_frame_activate(WmCore *core, WmFrame *frame) {
     if (frame->minimized) {
         wm_frame_restore(core, frame);
+
+        /* The map has to have reached the server before the keyboard can be
+           given to the window. Every focus decision is made through
+           XGetWindowAttributes, and that reports a window as not viewable
+           until the server has processed the map request — so without this
+           wait a restored window comes back without the focus, which is what
+           made the switcher look like it did nothing to a window that had
+           been minimised. */
+        XSync(core->display, False);
     }
     wm_frame_raise(core, frame);
     wm_focus_set(core, frame->client);
@@ -668,6 +720,56 @@ void wm_frame_close(WmCore *core, WmFrame *frame) {
     XFlush(core->display);
 }
 
+/* --- the double click ------------------------------------------------------
+ *
+ * Two presses close together in time and place are a double click, and X has
+ * no event for one: it reports every press the same way. Nor is the interval
+ * the desktop is configured with readable from Xlib — it lives in XSETTINGS —
+ * so it is a constant here, at the value every desktop uses by default. The
+ * window must not have moved between the presses either: a press that dragged
+ * the window is not the first half of a double click. */
+#define WM_DOUBLE_CLICK_MS 400
+#define WM_DOUBLE_CLICK_SLOP 6
+
+static Window click_client = None;
+static Time click_time = 0;
+static int click_x = 0;
+static int click_y = 0;
+static int click_frame_x = 0;
+static int click_frame_y = 0;
+
+static void click_forget(void) {
+    click_client = None;
+    click_time = 0;
+}
+
+static void click_remember(WmFrame *frame, XButtonEvent *press) {
+    click_client = frame->client;
+    click_time = press->time;
+    click_x = press->x;
+    click_y = press->y;
+    click_frame_x = frame->x;
+    click_frame_y = frame->y;
+}
+
+static int frame_is_double_click(WmFrame *frame, XButtonEvent *press) {
+    if (click_client != frame->client || click_time == 0) {
+        return 0;
+    }
+    if (press->time < click_time ||
+        press->time - click_time > WM_DOUBLE_CLICK_MS) {
+        return 0;
+    }
+    if (frame->x != click_frame_x || frame->y != click_frame_y) {
+        return 0;
+    }
+    int dx = press->x - click_x;
+    int dy = press->y - click_y;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    return dx <= WM_DOUBLE_CLICK_SLOP && dy <= WM_DOUBLE_CLICK_SLOP;
+}
+
 /* --- the module: the bar's clicks, drags and exposures -------------------- */
 
 static void frame_begin_drag(WmCore *core, WmFrame *frame, XButtonEvent *press) {
@@ -713,7 +815,16 @@ static void frame_event(WmCore *core, XEvent *event) {
         } else if (button == WM_BUTTON_MINIMIZE) {
             wm_frame_minimize(core, frame);
         } else if (event->xbutton.y < WM_TITLE_HEIGHT) {
-            frame_begin_drag(core, frame, &event->xbutton);
+            /* One click on the bar starts a drag; two fill the screen or put
+               it back. Every desktop fills the screen on a double click, and
+               the box is a small target to ask a hand to find. */
+            if (frame_is_double_click(frame, &event->xbutton)) {
+                click_forget();
+                wm_frame_maximize(core, frame);
+            } else {
+                click_remember(frame, &event->xbutton);
+                frame_begin_drag(core, frame, &event->xbutton);
+            }
         }
         break;
     }
@@ -770,18 +881,3 @@ const WmModule wm_frame_module = {
     .event = frame_event,
     .cleanup = NULL,
 };
-/* A client that moved or resized itself. Its position is meaningless inside a
-   frame — the bar lives above it — so only the size is taken, and the position
-   is put back to where the frame wants it. */
-void wm_frame_sync(WmCore *core, WmFrame *frame) {
-    XWindowAttributes attributes;
-    if (!XGetWindowAttributes(core->display, frame->client, &attributes)) {
-        return;
-    }
-    if (attributes.width != frame->client_width ||
-        attributes.height != frame->client_height) {
-        frame->client_width = attributes.width;
-        frame->client_height = attributes.height;
-    }
-    frame_apply(core, frame);
-}

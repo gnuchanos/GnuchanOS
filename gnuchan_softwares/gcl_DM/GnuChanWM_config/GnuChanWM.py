@@ -1,4 +1,7 @@
-from gcl_DM import gcl_BAR, gcl_Widgets, gcl_themes, gcl_key, gcl_keys, gcl_mouse, gcl_touchpad
+from gcl_DM import gcl_BAR, gcl_Widgets, gcl_themes, gcl_key, gcl_keys, gcl_mouse, gcl_touchpad, gcl_Window
+
+gcl_Window.set_active_window_border_color("#c369ff")
+gcl_Window.set_inactive_window_border_color("#280440")
 
 # can be call multiple bar but for now it's just one bar
 gcl_BAR.call(
