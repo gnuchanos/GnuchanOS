@@ -209,13 +209,50 @@ def launcher_text() -> str:
 # Written by GnuChanDM's makefile; edits here are overwritten on reinstall.
 set -e
 
-DISPLAY="${{DISPLAY:-:0}}"
+# The display this launcher owns is a constant, and it is deliberately not read
+# from the environment.
+#
+# It used to be `DISPLAY="${DISPLAY:-:0}"`, which is wrong in exactly the case
+# this script runs in. A display manager is often started from something that
+# already has a DISPLAY — a shell, a session, another greeter being replaced —
+# and inheriting that number makes the launcher start a *second* X server on a
+# *second* display number and a second virtual terminal. The console is then
+# switched to one server's VT while the greeter connects to the other's: the
+# screen goes black, the greeter draws onto a display nobody is looking at, and
+# the next attempt does it again. Xorg.1.log is what that looks like from the
+# server's side — a greeter's server logged as display :1 on "VT number 8",
+# with vt7 already taken.
+#
+# A display manager owns :0. That is the number the session entries, the
+# cookie, and every client expect, and it is not a value to inherit.
+DISPLAY=:0
 RUNDIR=/run/gnuchandm
 AUTH="$RUNDIR/auth"
 LOG=/tmp/gnuchandm-session.log
 
 mkdir -p "$RUNDIR"
 chmod 700 "$RUNDIR"
+
+# The greeter's own key file is named before anything talks to the display.
+#
+# This has to come first, and it is the whole reason it is not where the
+# export used to be. X was started with -auth "$AUTH", so a client that has
+# not been told about that file cannot authenticate: every check below that
+# asks the server a question — is a server already up, has the one just
+# started finished starting — would be refused, answer "no", and the launcher
+# would take the wrong branch. A reuse check that always says "no server" is a
+# launcher that tries to start a second X on a display already in use, and a
+# readiness check that always says "not ready" is a launcher that waits out
+# its whole timeout and then starts the greeter anyway, twenty seconds of a
+# black screen after every boot.
+#
+# XAUTHORITY is also what the greeter passes on to the session it starts, so
+# naming it here is what makes the whole chain use one key file.
+if [ ! -f "$AUTH" ]; then
+    touch "$AUTH"
+    chmod 600 "$AUTH"
+fi
+export XAUTHORITY="$AUTH"
 
 # If a server is already answering on this display, reuse it. The greeter is
 # restarted without the server being torn down, and starting a second X on a
@@ -224,24 +261,27 @@ chmod 700 "$RUNDIR"
 if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
     echo "gnuchandm: reusing the X server already on $DISPLAY"
 else
-    rm -f "$AUTH"
-    touch "$AUTH"
+    # A fresh key for a fresh server. The old file is emptied rather than
+    # removed: a server from a previous run may still be holding it open, and
+    # replacing the file under a running X is how a launcher ends up with two
+    # cookies for one display and a greeter that cannot tell which is right.
+    : > "$AUTH"
     chmod 600 "$AUTH"
 
     mcookie=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -tx1 | tr -d ' \\n')
     xauth -f "$AUTH" add "$DISPLAY" . "$mcookie"
 
-    # X is put on vt7 explicitly. Debian runs text logins on tty1 to tty6 and
-    # keeps vt7 for X, so Ctrl+Alt+F1 to F6 always reach a login and
-    # Ctrl+Alt+F7 comes back to the greeter. Every display manager uses this
-    # same terminal for the same reason: it is the one no getty holds.
+    # X is asked for vt7. Debian runs text logins on tty1 to tty6 and keeps vt7
+    # for X, so Ctrl+Alt+F1 to F6 always reach a login and Ctrl+Alt+F7 comes
+    # back to the greeter. Every display manager uses this same terminal for the
+    # same reason: it is the one no getty holds.
     #
-    # A service that starts X while the console is still on tty1 will flash a
-    # white line and then drop back out, so the VT is switched to 7 first. The
-    # switch is best-effort: a machine whose console is already elsewhere still
-    # gets its X server, because chvt failing is not a reason to have no login.
-    chvt 7 >/dev/null 2>&1 || true
-
+    # It is a request, not a guarantee. If vt7 is taken — by a server from a
+    # previous run, by a rival display manager that has not been masked — Xorg
+    # takes the next free VT and says so in its log, while the console stays
+    # wherever it was. So the console is not switched here at all: it is
+    # switched below, to the terminal the server reports it actually used.
+    #
     # One line, one command. Split across a continuation the trailing redirect
     # would belong to a command of its own: X would start without its log and,
     # worse, without the & that puts it in the background, which leaves the
@@ -249,17 +289,45 @@ else
     /usr/bin/Xorg "$DISPLAY" vt7 -nolisten tcp -auth "$AUTH" -noreset >>"$LOG" 2>&1 &
     Xorg_pid=$!
 
-    for _ in $(seq 1 100); do
-        if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then break; fi
+    # Wait for the server to answer, not merely to be running. A server that
+    # has forked but not yet finished initialising accepts the connection and
+    # then fails the handshake, so "the process is alive" is not "the display
+    # is usable" — the greeter would be started against a server that is still
+    # setting itself up and would exit on its first request.
+    ready=0
+    for _ in $(seq 1 150); do
+        if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
+            ready=1
+            break
+        fi
         if ! kill -0 "$Xorg_pid" 2>/dev/null; then
             echo "gnuchandm: the X server exited; see $LOG" >&2
             exit 1
         fi
         sleep 0.2
     done
+
+    # Out of time with the server still running: say so rather than starting a
+    # greeter that will fail its first request. The next attempt starts from a
+    # clean display, which is the only way a stuck server is recoverable.
+    if [ "$ready" -ne 1 ]; then
+        echo "gnuchandm: the X server on $DISPLAY never became ready" >&2
+        kill "$Xorg_pid" 2>/dev/null || true
+        exit 1
+    fi
+
+    # The console is put on the terminal the server actually took, read back
+    # from what it wrote when it started. This is what makes the greeter land
+    # on the screen the user is looking at: the server may have been given vt7
+    # and used vt8, and switching to the number that was asked for instead of
+    # the number that was granted leaves the screen showing one X server while
+    # the greeter draws on another — the black flash this replaced.
+    server_vt=$(sed -n 's/.*using VT number \\([0-9][0-9]*\\).*/\\1/p' "$LOG" | tail -n 1)
+    if [ -n "$server_vt" ]; then
+        chvt "$server_vt" >/dev/null 2>&1 || true
+    fi
 fi
 
-export XAUTHORITY="$AUTH"
 export DISPLAY
 exec {BIN_DIR / PROGRAM}
 """

@@ -11,6 +11,7 @@
  * second core is not a thing that can exist.
  */
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -162,6 +163,37 @@ int dm_core_init(DmCore *core) {
     }
 
     XSetErrorHandler(core_x_error);
+
+    /* Keep the greeter's connection out of every program it starts.
+     *
+     * Xlib opens the server's socket without close-on-exec set, so a forked
+     * child inherits the descriptor and, once exec'd, holds the connection to
+     * the X server open for as long as it lives. This greeter forks three
+     * kinds of child: xauth (to install the session's cookie), xset (to wake
+     * the screen), and the session itself. None of them closes the display,
+     * and the session in particular is meant to own a connection of its own
+     * under the user's own cookie.
+     *
+     * The consequence is that the root window keeps a client that is not the
+     * greeter: everything the session's window manager claims — the
+     * substructure redirect above all — stays claimed by a connection whose
+     * owner is a process the greeter no longer tracks, and the server does not
+     * release the claim until every process holding that descriptor is gone.
+     * A window manager started on such a display is refused with BadAccess,
+     * exits at once, and the greeter comes back — which is a session that
+     * starts, goes black and returns to the login screen, over and over.
+     *
+     * Setting the flag once, here, is what makes the connection end when this
+     * process does. It also means the session's own children — a terminal, a
+     * browser — cannot hold the greeter's connection open past the greeter's
+     * exit and keep a dead display manager's claims alive. */
+    {
+        int fd = ConnectionNumber(core->display);
+        int flags = fcntl(fd, F_GETFD);
+        if (flags >= 0) {
+            fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+        }
+    }
 
     core->screen = DefaultScreen(core->display);
     core->root = RootWindow(core->display, core->screen);
