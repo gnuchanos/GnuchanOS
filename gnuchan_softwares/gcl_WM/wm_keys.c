@@ -32,6 +32,7 @@
 #include "wm_frame.h"
 #include "wm_spawn.h"
 #include "wm_config.h"
+#include "wm_workspace.h"
 
 typedef void (*KeyAction)(WmCore *core);
 
@@ -72,6 +73,64 @@ static void action_switch_window(WmCore *core) {
 static void action_reload_config(WmCore *core) {
     if (wm_config_reload(core) == 0) {
         fprintf(stderr, "gnuchanwm: hot reload applied\n");
+    }
+}
+
+/* --- switching workspace --------------------------------------------------
+ *
+ * Super+1 is the first workspace, Super+2 the second, and so on up to whatever
+ * number the script named — see wm_workspace_count(), which reads it from the
+ * layout widget the bar draws. There are no bindings past that number, so a
+ * session with four workspaces has no Super+5 to press rather than a key that
+ * does nothing.
+ *
+ * They are built in rather than written in the script because the number of
+ * them is the script's already: binding them there too would be the same
+ * number written twice, and the two would drift. What the script decides is
+ * how many there are; this decides what reaching them looks like.
+ *
+ * Each number needs its own function, because a key action takes no argument —
+ * the grabbed key is a function pointer and nothing else. That is what the
+ * table below is: one function per workspace, and MOD4+1..N pointed at them. */
+#define WM_WORKSPACE_KEY_MAX 12
+
+static void action_workspace_0(WmCore *core) { wm_workspace_switch(core, 0); }
+static void action_workspace_1(WmCore *core) { wm_workspace_switch(core, 1); }
+static void action_workspace_2(WmCore *core) { wm_workspace_switch(core, 2); }
+static void action_workspace_3(WmCore *core) { wm_workspace_switch(core, 3); }
+static void action_workspace_4(WmCore *core) { wm_workspace_switch(core, 4); }
+static void action_workspace_5(WmCore *core) { wm_workspace_switch(core, 5); }
+static void action_workspace_6(WmCore *core) { wm_workspace_switch(core, 6); }
+static void action_workspace_7(WmCore *core) { wm_workspace_switch(core, 7); }
+static void action_workspace_8(WmCore *core) { wm_workspace_switch(core, 8); }
+static void action_workspace_9(WmCore *core) { wm_workspace_switch(core, 9); }
+static void action_workspace_10(WmCore *core) { wm_workspace_switch(core, 10); }
+static void action_workspace_11(WmCore *core) { wm_workspace_switch(core, 11); }
+
+static const KeyAction WORKSPACE_ACTIONS[WM_WORKSPACE_KEY_MAX] = {
+    action_workspace_0,  action_workspace_1,  action_workspace_2,
+    action_workspace_3,  action_workspace_4,  action_workspace_5,
+    action_workspace_6,  action_workspace_7,  action_workspace_8,
+    action_workspace_9,  action_workspace_10, action_workspace_11,
+};
+
+/* The keysym for the number key that reaches a workspace: Super+1 is XK_1,
+   which is the row above the letters, exactly as a desktop spells it. */
+static KeySym workspace_keysym(int workspace) {
+    switch (workspace) {
+    case 0:  return XK_1;
+    case 1:  return XK_2;
+    case 2:  return XK_3;
+    case 3:  return XK_4;
+    case 4:  return XK_5;
+    case 5:  return XK_6;
+    case 6:  return XK_7;
+    case 7:  return XK_8;
+    case 8:  return XK_9;
+    case 9:  return XK_0;
+    case 10: return XK_minus;
+    case 11: return XK_equal;
+    default: return NoSymbol;
     }
 }
 
@@ -180,6 +239,39 @@ static int keys_init(WmCore *core) {
         }
     } else {
         bindings[binding_count++] = BUILT_IN[BUILT_IN_COUNT - 1];
+    }
+
+    /* Super+1..N, one per workspace the script asked for. They are added after
+       the script's own bindings so a script that bound Super+1 to something
+       else keeps it: the script's table is what a person wrote, and it wins
+       over a built-in convenience. What this guarantees is that a workspace
+       is always reachable, which is the floor a session needs — and the count
+       comes from the config, so a session with four numbers has four keys and
+       not six. */
+    int workspace_count = wm_workspace_count(core);
+    for (int i = 0; i < workspace_count && i < WM_WORKSPACE_KEY_MAX; i++) {
+        if (binding_count >= MAX_BINDINGS) {
+            break;
+        }
+        KeySym keysym = workspace_keysym(i);
+        if (keysym == NoSymbol) {
+            break;
+        }
+        int taken = 0;
+        for (int j = 0; j < binding_count; j++) {
+            if (bindings[j].keysym == keysym &&
+                bindings[j].modifiers == Mod4Mask) {
+                taken = 1;
+                break;
+            }
+        }
+        if (taken) {
+            continue;
+        }
+        bindings[binding_count].modifiers = Mod4Mask;
+        bindings[binding_count].keysym = keysym;
+        bindings[binding_count].action = WORKSPACE_ACTIONS[i];
+        binding_count++;
     }
 
     for (int i = 0; i < binding_count; i++) {

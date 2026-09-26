@@ -1,8 +1,8 @@
 # path ~/.config/GnuChanWM/GnuChanWM.py
 
 
-gcl_Window.set_active_window_border_color("#c369ff")
-gcl_Window.set_inactive_window_border_color("#280440")
+gcl_Window.set_active_window_border_color("#d400ff")
+gcl_Window.set_inactive_window_border_color("#450552")
 
 # can be call multiple bar but for now it's just one bar
 gcl_BAR.call(
@@ -11,6 +11,13 @@ gcl_BAR.call(
     BackgroundColor="#27022b",
     BackgroundImage="BG.png", # if this place is empty, it will use BackgroundColor
     Widgets=[
+        # The workspaces, drawn as this range with the current one lit.
+        #
+        # This is the one place the number of workspaces is decided: the
+        # highest number written here is the last workspace there is, and the
+        # WM binds its switch keys from it. end_layout=5 means six workspaces
+        # reached by Super+1 .. Super+6; write end_layout=3 and there are four,
+        # with no Super+5 left over. Nothing else has to be kept in step.
         gcl_Widgets.CurrentLayout(
             start_layout=0,
             end_layout=5,
@@ -24,7 +31,7 @@ gcl_BAR.call(
             ForegroundColor="#f069ff",
             FontSize=12,
             FontFamily="monospace",
-            symbol="", # symbol size just fontsize
+            symbol="[]", # symbol size just fontsize
         ),
         gcl_Widgets.EmptySpace(
             BackgroundColor="#940da3",

@@ -100,13 +100,38 @@ WmFrame *wm_focus_previous(WmCore *core) {
 }
 
 /* The window that should actually take keyboard focus for one that was entered
-   or clicked: the client, when the window is a frame. */
+   or clicked, or None when the window has no keyboard to take.
+ *
+ * Three things arrive here and only two of them are windows the keyboard
+ * belongs on:
+ *
+ *   a client        itself                  the keyboard goes there
+ *   a frame         the client inside it    the title bar is the manager's own
+ *                                           window and has no input of its own
+ *   the root        itself                  no window is focused
+ *   anything else   None                    the bar, the menu, a dock
+ *
+ * The last case is the one that matters. The bar and the menu are the
+ * manager's own override-redirect windows and they sit above the windows, so
+ * moving the pointer onto the bar and off it again is a stream of EnterNotify
+ * events naming a window that is not a client. Focusing one would send the
+ * keyboard to a window with nothing to type into — and because every focus
+ * change redraws the frame that lost it, each pass over the bar repainted
+ * whatever window was underneath, which is what made a window that nobody was
+ * touching flicker. Returning None drops those events instead: they are the
+ * manager's own chrome and the focus simply does not move. */
 static Window focus_target(WmCore *core, Window window) {
     WmFrame *frame = wm_frame_find_by_frame(core, window);
     if (frame) {
         return frame->client;
     }
-    return window;
+    if (wm_frame_find(core, window)) {
+        return window;
+    }
+    if (window == core->root) {
+        return window;
+    }
+    return None;
 }
 
 void wm_focus_set(WmCore *core, Window window) {

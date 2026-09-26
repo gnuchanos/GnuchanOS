@@ -559,6 +559,32 @@ int wm_config_load(WmConfig *config, const char *path) {
 
     wm_config_statements_free(statements, count);
 
+    /* How many workspaces the session has is read from the layout widget that
+       draws them: a script asking for start_layout=0, end_layout=5 is asking
+       for six, and that is the number the switcher keys are bound from and the
+       number the bar hints at. It is taken from what the script asked for
+       rather than fixed here, so "the last one the config names" is the rule
+       the two places follow and not a constant that has to be kept in step. */
+    parsed.workspace_count = 0;
+    for (int i = 0; i < parsed.bar.widget_count; i++) {
+        const WmWidget *widget = &parsed.bar.widgets[i];
+        if (widget->kind != WM_WIDGET_CURRENT_LAYOUT) {
+            continue;
+        }
+        int highest = widget->end_layout;
+        if (widget->start_layout > highest) {
+            highest = widget->start_layout;
+        }
+        int count = highest + 1;
+        if (count > parsed.workspace_count) {
+            parsed.workspace_count = count;
+        }
+    }
+    if (parsed.workspace_count < 1) {
+        /* A bar with no layout widget still has a desktop to put windows on. */
+        parsed.workspace_count = 1;
+    }
+
     *config = parsed;
     return 0;
 }
@@ -625,7 +651,7 @@ static const char *config_bar_edge_name(const WmConfig *config) {
 static void config_report(const WmConfig *config, const char *origin) {
     fprintf(stderr,
             "gnuchanwm: config %s: border %s / %s, %d binding(s), "
-            "bar %s %dx%d with %d widget(s), "
+            "bar %s %dx%d with %d widget(s), %d workspace(s), "
             "terminal '%s'\n",
             origin,
             config->active_border[0] ? config->active_border : "(default)",
@@ -635,6 +661,7 @@ static void config_report(const WmConfig *config, const char *origin) {
             config->bar.size,
             config->bar.present,
             config->bar.widget_count,
+            config->workspace_count,
             config->terminal[0] ? config->terminal : "(from $TERMINAL)");
     fprintf(stderr,
             "gnuchanwm: config %s: theme %s, icons %s, cursor %s\n",

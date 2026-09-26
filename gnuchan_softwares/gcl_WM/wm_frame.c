@@ -26,7 +26,7 @@
  * window is being dragged or its focus is changing, that whole order is
  * repeated many times a second. Each repeat is visible as a flicker. One copy
  * per redraw is what removes it, and a drag does not redraw at all: the window
- * moves and the picture inside it moves with it.
+ * moves and the picture inside it moves with it. 
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +34,7 @@
 #include <unistd.h>
 
 #include "wm_core.h"
+#include "wm_desktop.h"
 #include "wm_frame.h"
 #include "wm_workspace.h"
 
@@ -369,7 +370,50 @@ void wm_frame_move(WmCore *core, WmFrame *frame, int x, int y) {
 
 void wm_frame_raise(WmCore *core, WmFrame *frame) {
     XRaiseWindow(core->display, frame->frame);
+    /* The bar is a sibling of the frame on the root, so raising the frame has
+       just put it above the bar. Putting the bar back is this module's job
+       because this is the moment it happened, and it is what lets the bar stay
+       on top without a timer that restacked the desktop several times a second
+       — a restack under the pointer also fires Enter and Leave events for
+       whatever the pointer is over, and those redraw title bars, which is what
+       made a still window flicker. */
+    wm_desktop_raise_bar(core);
     XFlush(core->display);
+}
+
+/* Keep a frame inside the workarea while it is being dragged.
+ *
+ * The bar is a window of its own and is kept above the windows, so a frame
+ * dragged under it would have its title bar hidden behind something the user
+ * cannot move — and the title bar is the only part of a frame that can be
+ * grabbed, so the window could not be got back. The workarea is the screen
+ * less that strip, so clamping to it is what keeps every reachable window
+ * reachable.
+ *
+ * Only the top and the bottom are clamped. Moving a window off the left or
+ * right edge is how a window is parked half out of the way, and the bar takes
+ * nothing from those edges, so there is nothing there to hide behind. */
+static int frame_clamp_y(WmCore *core, const WmFrame *frame, int y) {
+    int area_x = 0;
+    int area_y = 0;
+    int area_width = 0;
+    int area_height = 0;
+    wm_config_workarea(&core->config, core->width, core->height,
+                       &area_x, &area_y, &area_width, &area_height);
+
+    if (y < area_y) {
+        y = area_y;
+    }
+    /* The bottom edge is the workarea's, less the frame's own height: the
+       workarea says where the desktop ends, and a frame is inside it. */
+    int lowest = area_y + area_height - frame_height(frame);
+    if (lowest < area_y) {
+        lowest = area_y;
+    }
+    if (y > lowest) {
+        y = lowest;
+    }
+    return y;
 }
 
 void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
@@ -385,15 +429,27 @@ void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
 
 /* A client that moved or resized itself. Its position is meaningless inside a
    frame — the bar lives above it — so only the size is taken, and the position
-   is put back to where the frame wants it. */
+   is put back to where the frame wants it.
+ *
+ * Nothing is redrawn when nothing changed. This is called from every
+ * ConfigureNotify the client sends, and the server sends one for reasons that
+ * are not a resize — a restack above it, for instance — so repainting
+ * unconditionally here is a title bar that repaints whenever anything in the
+ * stack moves. The size is the only thing this frame takes from the client,
+ * so the size differing is the whole test. */
 void wm_frame_sync(WmCore *core, WmFrame *frame) {
     XWindowAttributes attributes;
     if (!XGetWindowAttributes(core->display, frame->client, &attributes)) {
         return;
     }
-    if (attributes.width != frame->client_width ||
-        attributes.height != frame->client_height) {
+    if (attributes.width == frame->client_width &&
+        attributes.height == frame->client_height) {
+        return;
+    }
+    if (attributes.width > 1) {
         frame->client_width = attributes.width;
+    }
+    if (attributes.height > 1) {
         frame->client_height = attributes.height;
     }
     frame_apply(core, frame);
@@ -672,6 +728,41 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
     XGrabButton(core->display, Button1, AnyModifier, client, False,
                 ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
 
+    /* Alt+left and Alt+right are the manager's — move and resize — and they
+       need grabs of their own on the program's window, because without one the
+       press goes straight to the program and the manager never hears it.
+     *
+     * The grab is taken for the modifier combination and not for the button
+     * alone, which is what keeps the plain click on the program: a passive
+     * grab only activates when exactly its modifiers are down, so a Button1
+     * press with no Alt held does not match this grab and falls through to the
+     * any-modifier one above. Where both could match, the press is handled the
+     * same way either way — the handler tests the modifiers itself — so it does
+     * not matter which of the two the server picks.
+     *
+     * The event mask is not just the press. Once a passive button grab has
+     * activated, its event mask is what is reported for the whole grab, and
+     * the grab lasts until the button comes back up. So asking for motion and
+     * release here is what makes the window follow the pointer: without them
+     * the grab exists but delivers nothing after the first press, and the
+     * window only moves as far as the first motion event before the pointer
+     * leaves it.
+     *
+     * Every lock combination is grabbed beside the bare one, so a session with
+     * CapsLock or NumLock on still moves windows. */
+    for (unsigned int locks = 0; locks < 4; locks++) {
+        unsigned int modifiers = Mod1Mask;
+        if (locks & 1) modifiers |= LockMask;
+        if (locks & 2) modifiers |= Mod2Mask;
+
+        XGrabButton(core->display, Button1, modifiers, client, False,
+                    ButtonPressMask | PointerMotionMask | ButtonReleaseMask,
+                    GrabModeSync, GrabModeAsync, None, None);
+        XGrabButton(core->display, Button3, modifiers, client, False,
+                    ButtonPressMask | PointerMotionMask | ButtonReleaseMask,
+                    GrabModeSync, GrabModeAsync, None, None);
+    }
+
     /* A safety net: if this window manager dies, the X server puts the client
        back on the root instead of leaving it inside a window nobody owns. */
     XAddToSaveSet(core->display, client);
@@ -821,6 +912,21 @@ static int frame_is_double_click(WmFrame *frame, XButtonEvent *press) {
 
 /* --- the module: the bar's clicks, drags and exposures -------------------- */
 
+/* The frame a press or motion names.
+ *
+ * It can name two different windows. A grab this module took on the frame
+ * reports the frame; a grab it took on the client — the Alt+move and Alt+resize
+ * ones — reports the client, because that is the window the grab is on. Both
+ * are the same window from the user's side, so both are resolved here and
+ * nothing below has to know which grab answered. */
+static WmFrame *frame_for_event(WmCore *core, Window window) {
+    WmFrame *frame = wm_frame_find_by_frame(core, window);
+    if (!frame) {
+        frame = wm_frame_find(core, window);
+    }
+    return frame;
+}
+
 static void frame_begin_drag(WmCore *core, WmFrame *frame, XButtonEvent *press) {
     frame->dragging = 1;
     frame->drag_pointer_x = press->x_root;
@@ -845,9 +951,196 @@ static void frame_end_drag(WmCore *core, WmFrame *frame) {
     XFlush(core->display);
 }
 
+/* --- resizing --------------------------------------------------------------
+ *
+ * Alt+right-button resizes, and which sides move is decided by where the press
+ * landed rather than by which key was held: a press near an edge takes that
+ * edge, a press near a corner takes both, and a press in the body takes the
+ * bottom and the right — the diagonal a hand pulls when it wants something
+ * bigger. One mechanism, three ways of aiming it. */
+
+/* Which sides a press at this point takes. The point is in the frame's own
+   coordinates: the press may have arrived on the frame or on the client inside
+   it, and the caller puts it into the same space either way, so the borders
+   that can be grabbed are in one place. */
+static int resize_edges_at(const WmFrame *frame, int x, int y) {
+    int width = frame_width(frame);
+    int height = frame_height(frame);
+    int edges = 0;
+
+    if (x <= WM_RESIZE_GRAB) {
+        edges |= WM_RESIZE_LEFT;
+    } else if (x >= width - WM_RESIZE_GRAB) {
+        edges |= WM_RESIZE_RIGHT;
+    }
+    if (y <= WM_RESIZE_GRAB) {
+        edges |= WM_RESIZE_TOP;
+    } else if (y >= height - WM_RESIZE_GRAB) {
+        edges |= WM_RESIZE_BOTTOM;
+    }
+
+    if (edges == 0) {
+        edges = WM_RESIZE_BOTTOM | WM_RESIZE_RIGHT;
+    }
+    return edges;
+}
+
+static void frame_begin_resize(WmCore *core, WmFrame *frame,
+                               XButtonEvent *press) {
+    frame->resizing = 1;
+    frame->resize_edges = resize_edges_at(frame,
+                                          press->x_root - frame->x,
+                                          press->y_root - frame->y);
+    frame->resize_pointer_x = press->x_root;
+    frame->resize_pointer_y = press->y_root;
+    frame->resize_x = frame->x;
+    frame->resize_y = frame->y;
+    frame->resize_width = frame->client_width;
+    frame->resize_height = frame->client_height;
+
+    /* A resize is measured from where it began, not from the last motion, so
+       the numbers above are the ones every later motion is applied to. That is
+       what makes a drag that is taken back undo itself exactly. */
+    XGrabPointer(core->display, frame->frame, False,
+                 PointerMotionMask | ButtonReleaseMask,
+                 GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+    XFlush(core->display);
+}
+
+/* One motion of a resize, from the pointer's absolute place. */
+static void frame_resize_drag(WmCore *core, WmFrame *frame,
+                              int pointer_x, int pointer_y) {
+    int dx = pointer_x - frame->resize_pointer_x;
+    int dy = pointer_y - frame->resize_pointer_y;
+
+    int x = frame->resize_x;
+    int y = frame->resize_y;
+    int width = frame->resize_width;
+    int height = frame->resize_height;
+
+    /* A side that is moving takes its share of the motion; the opposite side
+       stays where it was. A left or top edge therefore moves the frame's
+       origin as well as its size, which is the whole difference between
+       growing a window and growing it outwards. */
+    if (frame->resize_edges & WM_RESIZE_LEFT) {
+        int wanted = frame->resize_width - dx;
+        if (wanted < WM_RESIZE_MIN_WIDTH) {
+            dx = frame->resize_width - WM_RESIZE_MIN_WIDTH;
+            wanted = WM_RESIZE_MIN_WIDTH;
+        }
+        x = frame->resize_x + dx;
+        width = wanted;
+    } else if (frame->resize_edges & WM_RESIZE_RIGHT) {
+        width = frame->resize_width + dx;
+        if (width < WM_RESIZE_MIN_WIDTH) {
+            width = WM_RESIZE_MIN_WIDTH;
+        }
+    }
+
+    if (frame->resize_edges & WM_RESIZE_TOP) {
+        int wanted = frame->resize_height - dy;
+        if (wanted < WM_RESIZE_MIN_HEIGHT) {
+            dy = frame->resize_height - WM_RESIZE_MIN_HEIGHT;
+            wanted = WM_RESIZE_MIN_HEIGHT;
+        }
+        y = frame->resize_y + dy;
+        height = wanted;
+    } else if (frame->resize_edges & WM_RESIZE_BOTTOM) {
+        height = frame->resize_height + dy;
+        if (height < WM_RESIZE_MIN_HEIGHT) {
+            height = WM_RESIZE_MIN_HEIGHT;
+        }
+    }
+
+    /* A left or top edge dragged past the bar would push the frame under it,
+       and the frame is the only part of a window the hand can take hold of. It
+       is stopped at the workarea instead, and the size gives rather than the
+       origin — so the opposite edge stays exactly where the user left it. */
+    int area_x = 0;
+    int area_y = 0;
+    int area_width = 0;
+    int area_height = 0;
+    wm_config_workarea(&core->config, core->width, core->height,
+                       &area_x, &area_y, &area_width, &area_height);
+
+    if (x < area_x) {
+        width -= area_x - x;
+        x = area_x;
+        if (width < WM_RESIZE_MIN_WIDTH) {
+            width = WM_RESIZE_MIN_WIDTH;
+        }
+    }
+    if (y < area_y) {
+        height -= area_y - y;
+        y = area_y;
+        if (height < WM_RESIZE_MIN_HEIGHT) {
+            height = WM_RESIZE_MIN_HEIGHT;
+        }
+    }
+
+    frame->x = x;
+    frame->y = y;
+    frame->client_width = width;
+    frame->client_height = height;
+    frame_apply(core, frame);
+    frame_notify_configure(core, frame);
+}
+
+static void frame_end_resize(WmCore *core, WmFrame *frame) {
+    frame->resizing = 0;
+    XUngrabPointer(core->display, CurrentTime);
+    XFlush(core->display);
+}
+
 static void frame_event(WmCore *core, XEvent *event) {
     switch (event->type) {
     case ButtonPress: {
+        /* Alt+button is the manager's own, wherever it landed. The press may
+           have arrived on the frame — the title bar and the border, which are
+           the manager's own window — or on the client inside it, which the
+           passive grabs route here. Both are resolved to the same frame so the
+           two halves of a window behave the same way. */
+        if ((event->xbutton.state & Mod1Mask) &&
+            (event->xbutton.button == Button1 ||
+             event->xbutton.button == Button3)) {
+            int on_client = 0;
+            WmFrame *frame = wm_frame_find(core, event->xbutton.window);
+            if (frame) {
+                on_client = 1;
+            } else {
+                frame = wm_frame_find_by_frame(core, event->xbutton.window);
+            }
+            if (!frame) {
+                break;
+            }
+
+            wm_frame_activate(core, frame);
+
+            /* A frame that is maximised is put back before it is moved or
+               resized: dragging a full-screen window is almost always meant as
+               "take it out of full screen", and a resize of one has nothing to
+               grab because its edges are the screen's. */
+            if (frame->maximized) {
+                wm_frame_maximize(core, frame);
+            }
+
+            /* The press on the client is held by a synchronous passive grab;
+               releasing it without replaying is what makes the press the
+               manager's rather than the program's. The frame's own window has
+               no such grab, so nothing has to be released there. */
+            if (on_client) {
+                XAllowEvents(core->display, AsyncPointer, event->xbutton.time);
+            }
+
+            if (event->xbutton.button == Button1) {
+                frame_begin_drag(core, frame, &event->xbutton);
+            } else {
+                frame_begin_resize(core, frame, &event->xbutton);
+            }
+            XFlush(core->display);
+            break;
+        }
+
         if (event->xbutton.button != Button1) {
             break;
         }
@@ -892,20 +1185,33 @@ static void frame_event(WmCore *core, XEvent *event) {
         break;
     }
     case MotionNotify: {
-        WmFrame *frame = wm_frame_find_by_frame(core, event->xmotion.window);
-        if (frame && frame->dragging) {
+        /* The window named here is whichever grab is reporting: the frame for a
+           title-bar drag, the client for an Alt+move or Alt+resize. Both are
+           resolved to the same frame, so the two paths are one. */
+        WmFrame *frame = frame_for_event(core, event->xmotion.window);
+        if (!frame) {
+            break;
+        }
+        if (frame->dragging) {
             int x = frame->drag_frame_x +
                     (event->xmotion.x_root - frame->drag_pointer_x);
             int y = frame->drag_frame_y +
                     (event->xmotion.y_root - frame->drag_pointer_y);
-            wm_frame_move(core, frame, x, y);
+            /* The frame is kept clear of the bar at both edges, so a window
+               can always be put somewhere it can be grabbed again. */
+            wm_frame_move(core, frame, x, frame_clamp_y(core, frame, y));
+        } else if (frame->resizing) {
+            frame_resize_drag(core, frame,
+                              event->xmotion.x_root, event->xmotion.y_root);
         }
         break;
     }
     case ButtonRelease: {
-        WmFrame *frame = wm_frame_find_by_frame(core, event->xbutton.window);
+        WmFrame *frame = frame_for_event(core, event->xbutton.window);
         if (frame && frame->dragging) {
             frame_end_drag(core, frame);
+        } else if (frame && frame->resizing) {
+            frame_end_resize(core, frame);
         }
         break;
     }

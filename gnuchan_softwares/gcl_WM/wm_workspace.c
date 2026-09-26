@@ -15,14 +15,34 @@
  * to look at both before mapping a frame. That is what wm_workspace_apply is
  * for: it is the one place that decides whether a frame should be on screen,
  * and both callers go through it rather than each deciding for themselves.
+ *
+ * How many there are comes from the script — see wm_workspace_count below —
+ * and not from a constant here, so the number of keys the switcher grabs and
+ * the number of labels the bar draws are decided in the one place a person
+ * writes them down.
  */
 #include <stdio.h>
 
 #include <X11/Xlib.h>
 
 #include "wm_core.h"
+#include "wm_desktop.h"
 #include "wm_frame.h"
 #include "wm_workspace.h"
+
+int wm_workspace_count(const WmCore *core) {
+    if (!core) {
+        return 1;
+    }
+    int count = core->config.workspace_count;
+    if (count < 1) {
+        count = 1;
+    }
+    if (count > WM_WORKSPACE_MAX) {
+        count = WM_WORKSPACE_MAX;
+    }
+    return count;
+}
 
 void wm_workspace_apply(WmCore *core) {
     for (int i = 0; i < core->frame_count; i++) {
@@ -51,7 +71,7 @@ void wm_workspace_apply(WmCore *core) {
 }
 
 void wm_workspace_switch(WmCore *core, int workspace) {
-    if (workspace < 0 || workspace >= WM_WORKSPACE_COUNT) {
+    if (workspace < 0 || workspace >= wm_workspace_count(core)) {
         return;
     }
     if (workspace == core->current_workspace) {
@@ -90,7 +110,13 @@ void wm_workspace_switch(WmCore *core, int workspace) {
 
     wm_workspace_apply(core);
 
-    fprintf(stderr, "gnuchanwm: workspace %d\n", workspace);
+    /* The layout widget draws the workspaces and says which one is current, so
+       a switch makes it wrong until it is drawn again. It is drawn here rather
+       than on a timer because this is the one moment the answer changes. */
+    wm_desktop_repaint(core);
+
+    fprintf(stderr, "gnuchanwm: workspace %d of %d\n",
+            workspace, wm_workspace_count(core));
 }
 
 void wm_workspace_place(WmCore *core, struct WmFrame *frame) {

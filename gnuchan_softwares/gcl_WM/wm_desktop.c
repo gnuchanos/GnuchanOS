@@ -29,6 +29,7 @@
 #include <X11/cursorfont.h>
 
 #include "wm_core.h"
+#include "wm_workspace.h"
 
 /* The room a widget's text gets on either side of it. */
 #define WM_BAR_PADDING 8
@@ -41,6 +42,11 @@
 /* The bar's window. Module state rather than core state: nothing but this file
    draws or moves the bar. */
 static Window bar_window = None;
+
+/* Declared ahead of the public entry points, which are written next to the
+   raise they pair with rather than next to the drawing they call. */
+static void desktop_configure_bar(WmCore *core);
+static void desktop_bar(WmCore *core);
 
 /* --- fonts ---------------------------------------------------------------- */
 
@@ -223,6 +229,43 @@ static Cursor desktop_make_cursor(WmCore *core) {
 
 /* --- what a widget says --------------------------------------------------- */
 
+/* Room for one workspace number as text. It is wide enough for any int the
+   format could be given rather than only for the twelve workspaces a session
+   may ask for, so the compiler has no reason to warn about a truncation the
+   code cannot actually reach. */
+#define WM_LAYOUT_CELL_LENGTH 16
+
+/* The cells of a layout widget, one per workspace, and the number each cell
+   stands for.
+ *
+ * A layout widget is not one label like the others: it is a row of numbers,
+ * and the one that is current has to look different from the rest. A single
+ * string cannot be given two colours, so the widget is broken into one label
+ * per workspace here and each is drawn in its own cell — see the drawing loop
+ * for what the current one is drawn in.
+ *
+ * The range is the widget's own start..end, less anything past the number of
+ * workspaces the session actually has, which is read from the script. A
+ * script drawing 0..5 on a session with six workspaces gets six cells; the
+ * same script on a session that named four gets four, and the bar does not
+ * offer a workspace the key cannot reach. */
+static int bar_layout_cells(WmCore *core, const WmWidget *widget,
+                            char cells[][WM_LAYOUT_CELL_LENGTH],
+                            int *numbers, int max) {
+    int available = wm_workspace_count(core);
+    int written = 0;
+    for (int number = widget->start_layout;
+         number <= widget->end_layout && written < max; number++) {
+        if (number < 0 || number >= available) {
+            continue;
+        }
+        snprintf(cells[written], WM_LAYOUT_CELL_LENGTH, "%d", number);
+        numbers[written] = number;
+        written++;
+    }
+    return written;
+}
+
 /* What a widget shows, in a buffer. This is the one place a widget's kind
    becomes words, so the layout below never has to know which kind it is looking
    at — it measures what this produced and draws it. */
@@ -230,24 +273,10 @@ static void bar_widget_label(const WmWidget *widget, char *out,
                              unsigned int size) {
     out[0] = '\0';
     switch (widget->kind) {
-    case WM_WIDGET_CURRENT_LAYOUT: {
-        /* The layouts as "0 1 2 3 4 5". The desktop does have workspaces
-           (wm_workspace.c, WM_WORKSPACE_COUNT of them) and switches between
-           them on a key, but this widget does not yet mark which one is
-           current: it draws the range the script wrote. Marking the current
-           one is a change here plus a repaint when the workspace moves. */
-        unsigned int used = 0;
-        for (int number = widget->start_layout;
-             number <= widget->end_layout; number++) {
-            int written = snprintf(out + used, size - used, "%s%d",
-                                   used ? " " : "", number);
-            if (written < 0 || (unsigned int)written >= size - used) {
-                break;
-            }
-            used += (unsigned int)written;
-        }
+    case WM_WIDGET_CURRENT_LAYOUT:
+        /* Drawn cell by cell rather than from this buffer, so that the current
+           workspace can be drawn unlike the rest. See bar_layout_cells(). */
         break;
-    }
     case WM_WIDGET_GROUP_BOX:
         snprintf(out, size, "%s", widget->symbol);
         break;
@@ -317,14 +346,26 @@ static void desktop_configure_bar(WmCore *core) {
     XFlush(core->display);
 }
 
-/* Put the bar above everything. A window that was just mapped has been placed
-   on top by the server, so the bar has to be raised again each time — that is
-   the whole difference between a bar and a picture of one. */
-static void desktop_raise_bar(WmCore *core) {
+/* Put the bar above everything.
+ *
+ * Called at the moments a window can have got above it — a window was raised,
+ * or one was just mapped — and not on a timer. A bar that re-raised itself
+ * several times a second was restacking the whole desktop every half second,
+ * which is invisible while nothing is happening and is not while a window is
+ * being dragged: every restack makes the window underneath repaint, and a
+ * repaint on a timer looks like a flicker that nothing is causing. */
+void wm_desktop_raise_bar(WmCore *core) {
     if (bar_window != None) {
         XRaiseWindow(core->display, bar_window);
         XFlush(core->display);
     }
+}
+
+/* Draw the bar again. See the header for why this is not simply bar(). */
+void wm_desktop_repaint(WmCore *core) {
+    desktop_configure_bar(core);
+    desktop_bar(core);
+    wm_desktop_raise_bar(core);
 }
 
 /* The bar: the strip, then its widgets, left to right. See the note at the top
@@ -352,8 +393,18 @@ static void desktop_bar(WmCore *core) {
     }
 
     /* Measure once, then place. A widget's label is produced here and kept, so
-       the measuring and the drawing agree about what is being drawn. */
+       the measuring and the drawing agree about what is being drawn.
+     *
+     * A layout widget is the exception: its label is empty because it is not
+       one string but a row of numbers, and the current one is drawn unlike the
+       rest. Its cells are worked out here instead, and its width is the room
+       they take — so the measuring still happens in one place, and the drawing
+       loop below only has to draw what was measured. */
     static char labels[WM_CONFIG_MAX_WIDGETS][WM_CONFIG_TEXT_LENGTH];
+    static char layout_cells[WM_CONFIG_MAX_WIDGETS][WM_WORKSPACE_MAX]
+                            [WM_LAYOUT_CELL_LENGTH];
+    static int layout_numbers[WM_CONFIG_MAX_WIDGETS][WM_WORKSPACE_MAX];
+    int layout_cell_count[WM_CONFIG_MAX_WIDGETS];
     XFontStruct *fonts[WM_CONFIG_MAX_WIDGETS];
     int widths[WM_CONFIG_MAX_WIDGETS];
     int flexible_count = 0;
@@ -361,11 +412,28 @@ static void desktop_bar(WmCore *core) {
 
     for (int i = 0; i < bar->widget_count && i < WM_CONFIG_MAX_WIDGETS; i++) {
         const WmWidget *widget = &bar->widgets[i];
+        layout_cell_count[i] = 0;
         bar_widget_label(widget, labels[i], sizeof(labels[i]));
         fonts[i] = bar_font_for(core, widget);
         if (widget->kind == WM_WIDGET_EMPTY_SPACE) {
             widths[i] = 0;
             flexible_count++;
+        } else if (widget->kind == WM_WIDGET_CURRENT_LAYOUT) {
+            layout_cell_count[i] = bar_layout_cells(
+                core, widget, layout_cells[i], layout_numbers[i],
+                WM_WORKSPACE_MAX);
+            /* The widest cell, so every number gets the same room and the row
+               does not shift when the current one changes from "9" to "10". */
+            int cell = 0;
+            for (int c = 0; c < layout_cell_count[i]; c++) {
+                int width = wm_style_text_width(fonts[i], layout_cells[i][c]);
+                if (width > cell) {
+                    cell = width;
+                }
+            }
+            widths[i] = cell == 0 ? 0
+                                  : layout_cell_count[i] * (cell + WM_BAR_PADDING);
+            needed += widths[i];
         } else {
             widths[i] = wm_style_text_width(fonts[i], labels[i]) +
                         2 * WM_BAR_PADDING;
@@ -394,7 +462,38 @@ static void desktop_bar(WmCore *core) {
         XFillRectangle(core->display, bar_window, core->gc,
                        x, 0, (unsigned int)width, (unsigned int)height);
 
-        if (labels[i][0] && fonts[i]) {
+        if (widget->kind == WM_WIDGET_CURRENT_LAYOUT && fonts[i]) {
+            /* One number per cell, and the current workspace drawn in the
+               accent so the bar says where the user is. Everything else on the
+               bar is drawn in the widget's own foreground; the current cell is
+               the one exception, which is the whole reason layout is drawn
+               here rather than as one label with the others. */
+            unsigned long foreground =
+                wm_style_colour(core->display, core->screen,
+                                widget->foreground, core->style.text);
+            unsigned long active =
+                wm_style_colour(core->display, core->screen,
+                                core->config.active_border,
+                                core->style.accent);
+            int cell = 0;
+            for (int c = 0; c < layout_cell_count[i]; c++) {
+                int room = wm_style_text_width(fonts[i], layout_cells[i][c]);
+                if (room > cell) {
+                    cell = room;
+                }
+            }
+            int baseline =
+                (height + fonts[i]->ascent - fonts[i]->descent) / 2;
+            int cursor = x;
+            for (int c = 0; c < layout_cell_count[i]; c++) {
+                int current = layout_numbers[i][c] == core->current_workspace;
+                wm_style_text(core->display, bar_window, core->gc, fonts[i],
+                              cursor + WM_BAR_PADDING / 2, baseline,
+                              layout_cells[i][c],
+                              current ? active : foreground);
+                cursor += cell + WM_BAR_PADDING;
+            }
+        } else if (labels[i][0] && fonts[i]) {
             unsigned long foreground =
                 wm_style_colour(core->display, core->screen,
                                 widget->foreground, core->style.text);
@@ -469,7 +568,7 @@ static void desktop_event(WmCore *core, XEvent *event) {
            above it, so it is raised again — this is the one event that tells
            the bar it has been covered. */
         if (event->xmap.window != bar_window) {
-            desktop_raise_bar(core);
+            wm_desktop_raise_bar(core);
         }
         break;
     default:
@@ -488,9 +587,7 @@ static void desktop_tick(WmCore *core) {
            feeds is redone rather than only the paint. The pointer is not one
            of those things: it is built once at start and the run from the
            config only says which theme the programs should ask for. */
-        desktop_configure_bar(core);
-        desktop_bar(core);
-        desktop_raise_bar(core);
+        wm_desktop_repaint(core);
     }
 
     /* The clock only needs a repaint when the second it shows has changed; a
@@ -506,13 +603,11 @@ static void desktop_tick(WmCore *core) {
         desktop_bar(core);
     }
 
-    /* The bar is put back on top on every tick, not only when it is drawn.
-       A client that raised itself — every terminal does when it opens — is
-       above the bar until the bar is raised again, and a bar behind one
-       window is not a bar. Half a second is short enough that the window
-       under it is redrawn before anyone notices.
-     */
-    desktop_raise_bar(core);
+    /* Nothing is raised here on purpose. The bar only has to go back on top
+       when something has been put above it, and that is a moment — a window
+       raised or mapped — not an interval. Raising it here as well would
+       restack the desktop every half second for no reason, and each restack
+       is a repaint of whatever is under the bar. */
 }
 
 static void desktop_cleanup(WmCore *core) {

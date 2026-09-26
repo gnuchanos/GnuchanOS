@@ -51,11 +51,10 @@ typedef struct WmWidget {
     int  font_size;
     char font_family[WM_CONFIG_TEXT_LENGTH];
 
-    /* WM_WIDGET_CURRENT_LAYOUT: the range of layouts, as written. The desktop
-       has WM_WORKSPACE_COUNT workspaces (wm_workspace.h) and switches between
-       them, but the widget still draws the whole range as labels rather than
-       marking the one that is current — the picture the user wrote, not yet
-       the state of the desktop. */
+    /* WM_WIDGET_CURRENT_LAYOUT: the range of workspaces, as written. The
+       highest number any layout widget names is what decides how many
+       workspaces the session has (see WmConfig.workspace_count), and the bar
+       draws the range with the current one lit. */
     int start_layout;
     int end_layout;
 
@@ -95,6 +94,13 @@ typedef struct WmConfig {
     /* What Alt+Enter opens. Empty means "look at $TERMINAL, then at the usual
        terminals", which is what a machine with no config gets. */
     char terminal[WM_CONFIG_TEXT_LENGTH];
+
+    /* How many workspaces the desktop has. It is the config's number and not a
+       constant, because the keys that switch between them are written from it:
+       a session with four workspaces has Super+1..4 bound and no Super+5, and
+       the bar draws four numbers rather than six. Zero means "whatever the
+       layout widget asked for", so a config that draws 0..5 gets six. */
+    int workspace_count;
 
     WmBinding bindings[WM_CONFIG_MAX_BINDINGS];
     int binding_count;

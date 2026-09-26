@@ -6,10 +6,11 @@
  * a window belongs to one, and switching is mapping the set that belongs to the
  * new one and unmapping the rest.
  *
- * The count is fixed by the layout widget the script draws: it shows the
- * layouts 0..5, so there are six. A config that drew a different range would
- * want a different count, which is why the number lives here as one constant
- * rather than being spelled out wherever it is used.
+ * How many workspaces there are is the script's number, not this file's: the
+ * script draws them with a layout widget, so the range it drew is the answer,
+ * and a line of its own may name a different one. WM_WORKSPACE_MAX below is
+ * only the ceiling — the most a session may ask for — because the frame table
+ * has to have a bound and a number written by hand can be anything.
  */
 #ifndef GNUCHANWM_WORKSPACE_H
 #define GNUCHANWM_WORKSPACE_H
@@ -21,8 +22,15 @@
 typedef struct WmCore WmCore;
 struct WmFrame;
 
-/* The number of workspaces the desktop has. */
-#define WM_WORKSPACE_COUNT 6
+/* The most workspaces a session may ask for. A script that draws more than
+   this has the extra ones ignored, which is the price of the frame table
+   being an array rather than a list. */
+#define WM_WORKSPACE_MAX 12
+
+/* How many workspaces this session actually has, from the script. Falls back
+   to one when the script named none, because a desktop with no workspaces
+   cannot place a window on one. */
+int wm_workspace_count(const WmCore *core);
 
 /* Make one workspace the current one: show the windows that belong to it, hide
    the rest, and move the keyboard off a window that is no longer on screen. */

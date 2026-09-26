@@ -56,6 +56,28 @@ typedef enum WmFrameButton {
     WM_BUTTON_COUNT,
 } WmFrameButton;
 
+/* Which sides a held Alt+right-button moves. Bits rather than values, because
+   a press near a corner is two of them at once and a drag from one has to move
+   both. A press that is near no side gets the bottom and the right, which is
+   the direction a hand drags when it wants a window bigger. */
+enum {
+    WM_RESIZE_LEFT   = 1 << 0,
+    WM_RESIZE_RIGHT  = 1 << 1,
+    WM_RESIZE_TOP    = 1 << 2,
+    WM_RESIZE_BOTTOM = 1 << 3,
+};
+
+/* How close to a side a press has to be to take that side rather than the
+   window's body. The frame's own border is 2 pixels, which is far too thin to
+   aim at; this is the invisible band every window manager gives a resize. */
+#define WM_RESIZE_GRAB 6
+
+/* The smallest a client may be dragged to. A window smaller than this is a
+   title bar with nothing under it: the three buttons are 16 pixels each and
+   would be wider than the window they sit on. */
+#define WM_RESIZE_MIN_WIDTH 64
+#define WM_RESIZE_MIN_HEIGHT 48
+
 /* One managed window, as the desktop holds it. */
 typedef struct WmFrame {
     Window frame;        /* the manager's window: moved, drawn, dragged      */
@@ -66,11 +88,23 @@ typedef struct WmFrame {
     int client_width;    /* the client's size, which the frame wraps         */
     int client_height;
 
-    int dragging;        /* 1 while the title bar is held                    */
+    int dragging;        /* 1 while the title bar or body is held            */
     int drag_pointer_x;  /* where the pointer was when the drag began        */
     int drag_pointer_y;
     int drag_frame_x;    /* where the frame was when the drag began          */
     int drag_frame_y;
+
+    /* The same four things for a resize: which sides are moving, where the
+       pointer was when it began, and the frame's own numbers at that moment.
+       A resize is measured from where it began rather than from the last
+       motion, so a drag that is taken back undoes itself exactly instead of
+       accumulating rounding. */
+    int resizing;        /* 1 while Alt+right-button is held                 */
+    int resize_edges;    /* which sides move; WM_RESIZE_* bits               */
+    int resize_pointer_x;
+    int resize_pointer_y;
+    int resize_x, resize_y;
+    int resize_width, resize_height;
 
     /* The two states the title bar's buttons put a window in. A minimised
        window is unmapped rather than iconified: there is no task list on this
