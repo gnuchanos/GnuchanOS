@@ -195,13 +195,24 @@ def ensure_terminal() -> None:
 
 
 def x11_flags() -> tuple[list[str], list[str]]:
+    """The compiler and linker flags for the X libraries the WM uses.
+
+    x11 is needed for everything and xft for the text, and the two are asked
+    for together because Xft's own header includes freetype's: pkg-config is
+    what knows where that lives, and a machine whose freetype is somewhere
+    unusual is exactly the case these flags exist for. The fallback names the
+    two libraries and freetype's include directory directly, for a machine with
+    no pkg-config, and is right on every Debian where the development packages
+    are installed.
+    """
     pkg_config = shutil.which("pkg-config")
     if pkg_config is not None:
-        cflags = run([pkg_config, "--cflags", "x11"], capture=True)
-        libs = run([pkg_config, "--libs", "x11"], capture=True)
+        cflags = run([pkg_config, "--cflags", "x11", "xft"], capture=True)
+        libs = run([pkg_config, "--libs", "x11", "xft"], capture=True)
         if cflags.returncode == 0 and libs.returncode == 0:
             return cflags.stdout.split(), libs.stdout.split()
-    return ["-I/usr/include"], ["-lX11"]
+    return (["-I/usr/include", "-I/usr/include/freetype2"],
+            ["-lX11", "-lXft"])
 
 
 def check_sources() -> None:

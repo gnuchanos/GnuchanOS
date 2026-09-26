@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include <X11/Xlib.h>
+#include <X11/keysym.h>
 
 #include "wm_core.h"
 #include "wm_spawn.h"
@@ -138,6 +139,7 @@ static void action_logout(WmCore *core) {
     if (menu_window != None) {
         if (menu_open) {
             XUngrabPointer(core->display, CurrentTime);
+            XUngrabKeyboard(core->display, CurrentTime);
             menu_open = 0;
         }
         XDestroyWindow(core->display, menu_window);
@@ -250,12 +252,12 @@ static const MenuTab MENU_TABS[] = {
    body's rows sit. Both the drawing and the hit test answer from these, so a
    click always lands on what was drawn. */
 static void menu_layout(WmCore *core) {
-    XFontStruct *font = core->style.font;
+    XftFont *font = core->style.font;
     int inset = MENU_PADDING / 2;
 
     int x = MENU_PADDING;
     for (int i = 0; i < MENU_TAB_COUNT; i++) {
-        int width = wm_style_text_width(font, MENU_TABS[i].name)
+        int width = wm_style_text_width(core->display, font, MENU_TABS[i].name)
                   + 2 * MENU_PADDING;
         tab_box[i].x = x;
         tab_box[i].y = inset;
@@ -271,7 +273,8 @@ static void menu_layout(WmCore *core) {
     if (tab->count > 0) {
         body_width = 0;
         for (int i = 0; i < tab->count; i++) {
-            int width = wm_style_text_width(font, tab->entries[i].label)
+            int width = wm_style_text_width(core->display, font,
+                                            tab->entries[i].label)
                       + 3 * MENU_PADDING;
             if (width > body_width) {
                 body_width = width;
@@ -279,7 +282,8 @@ static void menu_layout(WmCore *core) {
         }
         body_height = tab->count * MENU_ROW_HEIGHT;
     } else {
-        body_width = wm_style_text_width(font, "(nothing here yet)")
+        body_width = wm_style_text_width(core->display, font,
+                                         "(nothing here yet)")
                    + 3 * MENU_PADDING;
         body_height = MENU_ROW_HEIGHT;
     }
@@ -308,7 +312,7 @@ static void menu_draw(WmCore *core) {
     }
     Display *display = core->display;
     GC gc = core->gc;
-    XFontStruct *font = core->style.font;
+    XftFont *font = core->style.font;
     int ascent = font ? font->ascent : 8;
     int descent = font ? font->descent : 2;
 
@@ -332,7 +336,7 @@ static void menu_draw(WmCore *core) {
         }
         int baseline = tab_box[i].y
                      + (tab_box[i].height + ascent - descent) / 2;
-        wm_style_text(display, menu_window, gc, font,
+        wm_style_text(display, core->screen, menu_window, font,
                       tab_box[i].x + MENU_PADDING, baseline, MENU_TABS[i].name,
                       active ? core->style.text : core->style.text_muted);
     }
@@ -341,7 +345,7 @@ static void menu_draw(WmCore *core) {
     if (tab->count == 0) {
         int baseline = entry_box[0].y
                      + (entry_box[0].height + ascent - descent) / 2;
-        wm_style_text(display, menu_window, gc, font,
+        wm_style_text(display, core->screen, menu_window, font,
                       entry_box[0].x + MENU_PADDING, baseline,
                       "(nothing here yet)", core->style.text_muted);
     } else {
@@ -356,7 +360,7 @@ static void menu_draw(WmCore *core) {
             }
             int baseline = entry_box[i].y
                          + (entry_box[i].height + ascent - descent) / 2;
-            wm_style_text(display, menu_window, gc, font,
+            wm_style_text(display, core->screen, menu_window, font,
                           entry_box[i].x + MENU_PADDING, baseline,
                           tab->entries[i].label,
                           hovered ? core->style.text : core->style.text_muted);
@@ -388,6 +392,7 @@ static void menu_close(WmCore *core) {
         return;
     }
     XUngrabPointer(core->display, CurrentTime);
+    XUngrabKeyboard(core->display, CurrentTime);
     XUnmapWindow(core->display, menu_window);
     XFlush(core->display);
     menu_open = 0;
@@ -437,6 +442,14 @@ static void menu_open_at(WmCore *core, int root_x, int root_y) {
                               ButtonPressMask | PointerMotionMask,
                               GrabModeAsync, GrabModeAsync,
                               None, None, CurrentTime);
+    /* The keyboard as well, so Escape can close it. A menu that can only be
+       dismissed by clicking somewhere feels stuck — and the click that
+       dismisses it may be the one the user did not mean to make. Escape is
+       what a hand reaches for, so the keyboard is held for as long as the
+       menu is up. A grab that fails is not fatal: the menu still works, and
+       Escape is then simply nobody's key rather than the menu's. */
+    XGrabKeyboard(core->display, menu_window, False,
+                  GrabModeAsync, GrabModeAsync, CurrentTime);
     menu_open = 1;
     menu_hover = -1;
     menu_draw(core);
@@ -486,7 +499,7 @@ static int menu_init(WmCore *core) {
     memset(&attributes, 0, sizeof(attributes));
     attributes.override_redirect = True;
     attributes.background_pixel = core->style.panel;
-    attributes.event_mask = ExposureMask | ButtonPressMask |
+    attributes.event_mask = ExposureMask | ButtonPressMask | KeyPressMask |
                             PointerMotionMask | LeaveWindowMask;
 
     menu_window = XCreateWindow(core->display, core->root,
@@ -525,12 +538,30 @@ static void menu_event(WmCore *core, XEvent *event) {
             break;
         }
         /* Whichever button the script said opens the menu — by default the
-           right one. Reading it from the config is what makes
-           RightClick="context_menu" mean something: a script that writes
-           "paste" there gets a paste and no menu. */
-        if (wm_config_mouse_action(&core->config,
+           right one — and only on the desktop itself.
+         *
+         * The window test is not decoration. A press on a frame or on a
+           program's own pixels is reported here as well, because the root is
+           what a redirected press belongs to; without the test a right click
+           anywhere opened the desktop's menu, which is a menu that belongs to
+           the desktop appearing over a window that has one of its own. On a
+           window the button is left alone, which is what lets the program
+           under the pointer answer it. */
+        if (event->xbutton.window == core->root &&
+            wm_config_mouse_action(&core->config,
                                    event->xbutton.button) == WM_MOUSE_MENU) {
             menu_open_at(core, event->xbutton.x_root, event->xbutton.y_root);
+        }
+        break;
+
+    case KeyPress:
+        /* Escape takes it down. The keyboard is grabbed for exactly this, so
+           the key is the menu's only while the menu is up; any other key is
+           ignored rather than acted on, because a menu is not a text field and
+           swallowing keys it does not use would make it a keyboard trap. */
+        if (menu_open &&
+            XLookupKeysym(&event->xkey, 0) == XK_Escape) {
+            menu_close(core);
         }
         break;
 
@@ -565,6 +596,7 @@ static void menu_event(WmCore *core, XEvent *event) {
 static void menu_cleanup(WmCore *core) {
     if (menu_open) {
         XUngrabPointer(core->display, CurrentTime);
+        XUngrabKeyboard(core->display, CurrentTime);
         menu_open = 0;
     }
     if (menu_window != None) {

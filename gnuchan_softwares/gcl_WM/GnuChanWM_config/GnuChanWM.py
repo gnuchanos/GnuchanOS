@@ -19,22 +19,22 @@ gcl_BAR.call(
             ForegroundColor="#f069ff",
             FontSize=12,
             FontFamily="monospace",
+            symbol=" [●] "
         ),
         gcl_Widgets.EmptySpace(
             BackgroundColor="#940da3",
-            Expanding=False
+            Expanding=False,
+            Horizontal=1
         ),
         gcl_Widgets.GroupBox(
             BackgroundColor="#53055c",
             ForegroundColor="#f069ff",
             FontSize=12,
             FontFamily="monospace",
-            symbol="[]", # symbol size just fontsize
         ),
         gcl_Widgets.EmptySpace(
             BackgroundColor="#940da3",
             Expanding=True,
-            Horizontal=1
         ),
         gcl_Widgets.TextBox(
             text="No Gnu No Life",
@@ -46,7 +46,6 @@ gcl_BAR.call(
         gcl_Widgets.EmptySpace(
             BackgroundColor="#940da3",
             Expanding=True,
-            Horizontal=1
         ),
         gcl_Widgets.Clock(
             format="%Y-%m-%d %H:%M:%S",

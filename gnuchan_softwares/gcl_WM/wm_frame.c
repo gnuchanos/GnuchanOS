@@ -159,22 +159,32 @@ void wm_frame_update_name(WmCore *core, WmFrame *frame) {
 
 /* Shorten text until it fits, ending it with an ellipsis. A window title can
    be any length and a bar is a fixed width, so the title has to give. */
-static void frame_clip(XFontStruct *font, const char *text, int room,
-                       char *out, unsigned int size) {
+static void frame_clip(Display *display, XftFont *font, const char *text,
+                       int room, char *out, unsigned int size) {
     out[0] = '\0';
-    if (!font || !text || room <= 0) {
+    if (!display || !font || !text || room <= 0) {
         return;
     }
-    if (XTextWidth(font, text, (int)strlen(text)) <= room) {
+    if (wm_style_text_width(display, font, text) <= room) {
         snprintf(out, size, "%s", text);
         return;
     }
+    /* Cut at character boundaries but measure whole characters: a UTF-8 string
+       cut mid-character is an invalid sequence, and Xft draws its pieces as
+       nothing at all. Walking back a byte at a time and measuring what is left
+       stops at the first attempt that fits, and the extra bytes of a character
+       are skipped rather than counted — see the continuation test below. */
     size_t length = strlen(text);
     while (length > 0) {
         length--;
+        /* A continuation byte (10xxxxxx) is the middle of a character, so it is
+           not a place a string may end. */
+        if (((unsigned char)text[length] & 0xc0) == 0x80) {
+            continue;
+        }
         char attempt[192];
         snprintf(attempt, sizeof(attempt), "%.*s...", (int)length, text);
-        if (XTextWidth(font, attempt, (int)strlen(attempt)) <= room) {
+        if (wm_style_text_width(display, font, attempt) <= room) {
             snprintf(out, size, "%s", attempt);
             return;
         }
@@ -285,11 +295,11 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
         room = 12;
     }
     char label[192];
-    frame_clip(style->font, frame->name, room, label, sizeof(label));
+    frame_clip(display, style->font, frame->name, room, label, sizeof(label));
     int ascent = style->font ? style->font->ascent : 8;
     int descent = style->font ? style->font->descent : 2;
     int baseline = (WM_TITLE_HEIGHT + ascent - descent) / 2;
-    wm_style_text(display, target, core->gc, style->font, padding,
+    wm_style_text(display, core->screen, target, style->font, padding,
                   baseline, label, style->text);
 
     /* The buttons. */

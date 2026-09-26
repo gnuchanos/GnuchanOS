@@ -56,21 +56,26 @@ static void desktop_bar(WmCore *core);
    the spec it was loaded from. */
 typedef struct BarFont {
     char spec[WM_CONFIG_TEXT_LENGTH + 32];
-    XFontStruct *font;
+    XftFont *font;
 } BarFont;
 
 static BarFont bar_fonts[WM_CONFIG_MAX_WIDGETS];
 static int bar_font_count = 0;
 
-static XFontStruct *bar_font_for(WmCore *core, const WmWidget *widget) {
+static XftFont *bar_font_for(WmCore *core, const WmWidget *widget) {
     /* A widget that named no font uses the desktop's, which is the one font
        everything else on this desktop is drawn in. */
     if (!widget->font_family[0] || widget->font_size <= 0) {
         return core->style.font;
     }
 
+    /* Xft names a font as a list of properties, not as an XLFD pattern: the
+       family is the part before the first colon and everything after it is a
+       property, so a family with a space in it needs no escaping and a size is
+       written as pixelsize rather than as a field in a dash-separated string.
+       pixelsize rather than size because the bar is measured in pixels. */
     char spec[WM_CONFIG_TEXT_LENGTH + 32];
-    snprintf(spec, sizeof(spec), "-*-%s-*-*-*-*-%d-*-*-*-*-*-*-*",
+    snprintf(spec, sizeof(spec), "%s:pixelsize=%d",
              widget->font_family, widget->font_size);
 
     for (int i = 0; i < bar_font_count; i++) {
@@ -79,11 +84,13 @@ static XFontStruct *bar_font_for(WmCore *core, const WmWidget *widget) {
         }
     }
 
-    /* The size-specific spec first, then the family alone, then the desktop's
-       font: a machine that has only one of the three still draws a bar. */
-    XFontStruct *font = XLoadQueryFont(core->display, spec);
+    /* The size-specific name first, then the family alone, then the desktop's
+       font: a machine that has the family but not at that size still draws a
+       bar, and one with neither draws it in the desktop's font. */
+    XftFont *font = wm_style_open_font(core->display, core->screen, spec);
     if (!font) {
-        font = XLoadQueryFont(core->display, widget->font_family);
+        font = wm_style_open_font(core->display, core->screen,
+                                  widget->font_family);
     }
     if (!font) {
         return core->style.font;
@@ -101,7 +108,7 @@ static XFontStruct *bar_font_for(WmCore *core, const WmWidget *widget) {
 static void bar_free_fonts(WmCore *core) {
     for (int i = 0; i < bar_font_count; i++) {
         if (bar_fonts[i].font) {
-            XFreeFont(core->display, bar_fonts[i].font);
+            XftFontClose(core->display, bar_fonts[i].font);
         }
     }
     bar_font_count = 0;
@@ -319,11 +326,14 @@ static Cursor desktop_make_cursor(WmCore *core) {
 
 /* --- what a widget says --------------------------------------------------- */
 
-/* Room for one workspace number as text. It is wide enough for any int the
-   format could be given rather than only for the twelve workspaces a session
-   may ask for, so the compiler has no reason to warn about a truncation the
-   code cannot actually reach. */
+/* Room for one workspace cell. It holds either a number or the symbol the
+   widget names, so it is as wide as the wider of the two things a cell can
+   be — a widget's symbol is the config's own string and can be anything. */
 #define WM_LAYOUT_CELL_LENGTH 16
+
+/* The room a group box takes. It is a separator and has no text of its own,
+   so its width is a constant rather than a measurement. */
+#define WM_BAR_SEPARATOR_WIDTH 16
 
 /* The cells of a layout widget, one per workspace, and the number each cell
    stands for.
@@ -349,7 +359,20 @@ static int bar_layout_cells(WmCore *core, const WmWidget *widget,
         if (number < 0 || number >= available) {
             continue;
         }
-        snprintf(cells[written], WM_LAYOUT_CELL_LENGTH, "%d", number);
+        /* What a cell shows: the widget's symbol when it named one, and the
+           workspace number when it did not. A symbol is what a desktop with
+           its own furniture wants — dots, squares, anything that reads as a
+           row of places rather than a row of numbers — and an empty symbol
+           means "number them", which is what every other bar does.
+
+           A cell is not always one character: a symbol like " [●] " is a
+           whole cell with its own spacing, which is why this is a string. */
+        if (widget->symbol[0]) {
+            snprintf(cells[written], WM_LAYOUT_CELL_LENGTH, "%s",
+                     widget->symbol);
+        } else {
+            snprintf(cells[written], WM_LAYOUT_CELL_LENGTH, "%d", number);
+        }
         numbers[written] = number;
         written++;
     }
@@ -368,7 +391,11 @@ static void bar_widget_label(const WmWidget *widget, char *out,
            workspace can be drawn unlike the rest. See bar_layout_cells(). */
         break;
     case WM_WIDGET_GROUP_BOX:
-        snprintf(out, size, "%s", widget->symbol);
+        /* A separator, and deliberately wordless: it is drawn as a line, so
+           there is no text here to measure or to draw. This is where the
+           symbol used to be written, which put a character on the bar that
+           the widget had no business owning — and one the bar's font may have
+           no glyph for, which is how a separator came out as two boxes. */
         break;
     case WM_WIDGET_TEXT_BOX:
         snprintf(out, size, "%s", widget->text);
@@ -504,7 +531,7 @@ static void desktop_bar(WmCore *core) {
                             [WM_LAYOUT_CELL_LENGTH];
     static int layout_numbers[WM_CONFIG_MAX_WIDGETS][WM_WORKSPACE_MAX];
     int layout_cell_count[WM_CONFIG_MAX_WIDGETS];
-    XFontStruct *fonts[WM_CONFIG_MAX_WIDGETS];
+    XftFont *fonts[WM_CONFIG_MAX_WIDGETS];
     int widths[WM_CONFIG_MAX_WIDGETS];
     int flexible_count = 0;
     int needed = 0;
@@ -527,6 +554,11 @@ static void desktop_bar(WmCore *core) {
                 widths[i] = widget->horizontal;
                 needed += widths[i];
             }
+        } else if (widget->kind == WM_WIDGET_GROUP_BOX) {
+            /* A separator asks for its own fixed room; there is no text to
+               measure. */
+            widths[i] = WM_BAR_SEPARATOR_WIDTH;
+            needed += widths[i];
         } else if (widget->kind == WM_WIDGET_CURRENT_LAYOUT) {
             layout_cell_count[i] = bar_layout_cells(
                 core, widget, layout_cells[i], layout_numbers[i],
@@ -535,7 +567,8 @@ static void desktop_bar(WmCore *core) {
                does not shift when the current one changes from "9" to "10". */
             int cell = 0;
             for (int c = 0; c < layout_cell_count[i]; c++) {
-                int width = wm_style_text_width(fonts[i], layout_cells[i][c]);
+                int width = wm_style_text_width(core->display, fonts[i],
+                                                layout_cells[i][c]);
                 if (width > cell) {
                     cell = width;
                 }
@@ -544,7 +577,8 @@ static void desktop_bar(WmCore *core) {
                                   : layout_cell_count[i] * (cell + WM_BAR_PADDING);
             needed += widths[i];
         } else {
-            widths[i] = wm_style_text_width(fonts[i], labels[i]) +
+            widths[i] = wm_style_text_width(core->display, fonts[i],
+                                            labels[i]) +
                         2 * WM_BAR_PADDING;
             needed += widths[i];
         }
@@ -585,7 +619,8 @@ static void desktop_bar(WmCore *core) {
                 bar_colour(core, core->config.active_border, core->style.accent);
             int cell = 0;
             for (int c = 0; c < layout_cell_count[i]; c++) {
-                int room = wm_style_text_width(fonts[i], layout_cells[i][c]);
+                int room = wm_style_text_width(core->display, fonts[i],
+                                               layout_cells[i][c]);
                 if (room > cell) {
                     cell = room;
                 }
@@ -595,17 +630,28 @@ static void desktop_bar(WmCore *core) {
             int cursor = x;
             for (int c = 0; c < layout_cell_count[i]; c++) {
                 int current = layout_numbers[i][c] == core->current_workspace;
-                wm_style_text(core->display, canvas, core->gc, fonts[i],
+                wm_style_text(core->display, core->screen, canvas, fonts[i],
                               cursor + WM_BAR_PADDING / 2, baseline,
                               layout_cells[i][c],
                               current ? active : foreground);
                 cursor += cell + WM_BAR_PADDING;
             }
+        } else if (widget->kind == WM_WIDGET_GROUP_BOX) {
+            /* The separator: one vertical line down the middle of its box,
+               drawn rather than typed. A line is the one thing a font cannot
+               get wrong, which is the whole reason the symbol is gone. */
+            unsigned long foreground = bar_colour(core, widget->foreground,
+                                                  core->style.text_muted);
+            int line_x = x + width / 2;
+            XSetForeground(core->display, core->gc, foreground);
+            XDrawLine(core->display, canvas, core->gc,
+                      line_x, WM_BAR_PADDING / 2,
+                      line_x, height - WM_BAR_PADDING / 2);
         } else if (labels[i][0] && fonts[i]) {
             unsigned long foreground = bar_colour(core, widget->foreground,
                                                   core->style.text);
             int baseline = (height + fonts[i]->ascent - fonts[i]->descent) / 2;
-            wm_style_text(core->display, canvas, core->gc, fonts[i],
+            wm_style_text(core->display, core->screen, canvas, fonts[i],
                           x + WM_BAR_PADDING, baseline, labels[i], foreground);
         }
         x += width;

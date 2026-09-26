@@ -39,45 +39,86 @@ int wm_style_load(WmStyle *style, Display *display, int screen) {
     style->border_width = 2;
 
     /* A missing font is not fatal: the server always has at least one, and a
-       desktop in a font nobody chose is better than no desktop. */
+       desktop in a font nobody chose is better than no desktop. The names are
+       Xft names, not XLFD patterns: Xft opens a font by family and size and
+       substitutes one that has the glyphs, which is the whole point of drawing
+       through it rather than through the server's 8-bit cells. */
     const char *candidates[] = {
-        "-*-fixed-medium-r-normal--14-*-*-*-*-*-*-*",
-        "-*-helvetica-medium-r-normal--14-*-*-*-*-*-*-*",
-        "fixed",
+        "monospace:pixelsize=13",
+        "fixed:pixelsize=13",
+        "sans:pixelsize=13",
         NULL,
     };
     style->font = NULL;
     for (int i = 0; candidates[i]; i++) {
-        style->font = XLoadQueryFont(display, candidates[i]);
+        style->font = XftFontOpenName(display, screen, candidates[i]);
         if (style->font) break;
     }
     if (!style->font) {
-        style->font = XLoadQueryFont(display, "fixed");
+        style->font = XftFontOpenName(display, screen, "fixed");
     }
     return 0;
 }
 
 void wm_style_free(WmStyle *style, Display *display) {
     if (style->font) {
-        XFreeFont(display, style->font);
+        XftFontClose(display, style->font);
         style->font = NULL;
     }
 }
 
-int wm_style_text_width(XFontStruct *font, const char *text) {
-    if (!font || !text) {
-        return 0;
+XftFont *wm_style_open_font(Display *display, int screen, const char *spec) {
+    if (!spec || !*spec) {
+        return NULL;
     }
-    return XTextWidth(font, text, (int)strlen(text));
+    return XftFontOpenName(display, screen, spec);
 }
 
-void wm_style_text(Display *display, Drawable drawable, GC gc,
-                   XFontStruct *font, int x, int baseline,
-                   const char *text, unsigned long colour) {
-    if (!text || !font) {
+int wm_style_text_width(Display *display, XftFont *font, const char *text) {
+    if (!display || !font || !text) {
+        return 0;
+    }
+    XGlyphInfo extents;
+    XftTextExtentsUtf8(display, font, (const FcChar8 *)text,
+                       (int)strlen(text), &extents);
+    return (int)extents.xOff;
+}
+
+void wm_style_text(Display *display, int screen, Drawable target, XftFont *font,
+                   int x, int baseline, const char *text, unsigned long colour) {
+    if (!display || !font || !text || !*text) {
         return;
     }
-    XSetFont(display, gc, font->fid);
-    XSetForeground(display, gc, colour);
-    XDrawString(display, drawable, gc, x, baseline, text, (int)strlen(text));
+
+    Colormap cmap = DefaultColormap(display, screen);
+    Visual *visual = DefaultVisual(display, screen);
+
+    /* The palette is allocated as XLIB colours, because that is what a
+       Colormap knows; Xft draws through a render colour, so the pixel has to
+       be asked which red, green and blue it stands for before it can be
+       drawn. The colour is allocated per call and released before returning,
+       because it is the caller's pixel and not ours to keep. */
+    XColor xcolor;
+    xcolor.pixel = colour;
+    XQueryColor(display, cmap, &xcolor);
+
+    XRenderColor render;
+    render.red = xcolor.red;
+    render.green = xcolor.green;
+    render.blue = xcolor.blue;
+    render.alpha = 0xffff;
+
+    XftColor xft_colour;
+    if (!XftColorAllocValue(display, visual, cmap, &render, &xft_colour)) {
+        return;
+    }
+
+    XftDraw *draw = XftDrawCreate(display, target, visual, cmap);
+    if (draw) {
+        XftDrawStringUtf8(draw, &xft_colour, font, x, baseline,
+                          (const FcChar8 *)text, (int)strlen(text));
+        XftDrawDestroy(draw);
+    }
+
+    XftColorFree(display, visual, cmap, &xft_colour);
 }
