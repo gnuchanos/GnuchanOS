@@ -123,11 +123,21 @@ static void icon_scale(WmCore *core, WmFrame *frame, const unsigned long *cards,
         return;
     }
 
-    GC gc = XCreateGC(core->display, frame->icon_mask, 0, NULL);
-    XSetForeground(core->display, gc, 0);
-    XFillRectangle(core->display, frame->icon_mask, gc, 0, 0,
+    /* Two graphics contexts, one per drawable.
+     *
+     * The mask is one bit deep and the colours are as deep as the screen, and
+     * a GC carries the depth of the drawable it was made on. Using one GC for
+     * both — which this did — is a PolyPoint with a colour the mask cannot
+     * hold onto a window whose depth is not the GC's, and the server answers
+     * every one of those with BadMatch: one error per pixel of every icon on
+     * the bar, and the icon itself never drawn. */
+    GC mask_gc = XCreateGC(core->display, frame->icon_mask, 0, NULL);
+    XSetForeground(core->display, mask_gc, 0);
+    XFillRectangle(core->display, frame->icon_mask, mask_gc, 0, 0,
                    (unsigned int)side, (unsigned int)side);
-    XSetForeground(core->display, gc, 1);
+    XSetForeground(core->display, mask_gc, 1);
+
+    GC gc = XCreateGC(core->display, frame->icon_source, 0, NULL);
 
     for (int y = 0; y < side; y++) {
         unsigned long sy =
@@ -164,11 +174,12 @@ static void icon_scale(WmCore *core, WmFrame *frame, const unsigned long *cards,
             }
             XSetForeground(core->display, gc, pixel);
             XDrawPoint(core->display, frame->icon_source, gc, x, y);
-            XDrawPoint(core->display, frame->icon_mask, gc, x, y);
+            XDrawPoint(core->display, frame->icon_mask, mask_gc, x, y);
         }
     }
 
     XFreeGC(core->display, gc);
+    XFreeGC(core->display, mask_gc);
     free(seen_key);
     free(seen_pixel);
 }

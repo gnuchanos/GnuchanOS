@@ -22,6 +22,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <X11/Xutil.h>
+
 #include "wm_core.h"
 #include "wm_image.h"
 #include "wm_png.h"
@@ -111,6 +113,65 @@ static unsigned long image_pixel(WmCore *core, unsigned int red,
     return colour.pixel;
 }
 
+/* Where a channel's bits begin in a visual's mask. A TrueColor visual stores a
+   pixel as the three channels packed into its own fields, and its masks say
+   where each field is: this is the shift to that field's first bit. */
+static unsigned int image_mask_shift(unsigned long mask) {
+    unsigned int shift = 0;
+    if (mask == 0) {
+        return 0;
+    }
+    while ((mask & 1ul) == 0) {
+        mask >>= 1;
+        shift++;
+    }
+    return shift;
+}
+
+/* How wide a channel is: the run of set bits in its mask. */
+static unsigned int image_mask_bits(unsigned long mask) {
+    unsigned int bits = 0;
+    mask >>= image_mask_shift(mask);
+    while (mask & 1ul) {
+        bits++;
+        mask >>= 1;
+    }
+    return bits;
+}
+
+/* One 8-bit colour as the pixel the server stores for it.
+ *
+ * This is what makes a picture the size of the screen possible at all. Asking
+ * the server for a pixel — XAllocColor — is a round trip, and a picture has as
+ * many pixels as the screen; the reader that used to do this for every pixel
+ * spent minutes on a single wallpaper. On a TrueColor visual there is nothing
+ * to ask the server: the colour is the three bytes packed into the visual's
+ * own fields, which is a few shifts and no traffic at all. Only a palette
+ * display has to allocate, and this desktop is never one. */
+static unsigned long image_pixel_for(WmCore *core, Visual *visual,
+                                     unsigned int red, unsigned int green,
+                                     unsigned int blue) {
+    if (visual && visual->class == TrueColor) {
+        unsigned int red_bits   = image_mask_bits(visual->red_mask);
+        unsigned int green_bits = image_mask_bits(visual->green_mask);
+        unsigned int blue_bits  = image_mask_bits(visual->blue_mask);
+
+        /* A channel narrower than eight bits has to be cut down; a wider one
+           is left-aligned by the shift and needs no more. */
+        unsigned long packed = 0;
+        packed |= (unsigned long)(red_bits >= 8 ? red : red >> (8 - red_bits))
+                  << image_mask_shift(visual->red_mask);
+        packed |= (unsigned long)(green_bits >= 8
+                                      ? green : green >> (8 - green_bits))
+                  << image_mask_shift(visual->green_mask);
+        packed |= (unsigned long)(blue_bits >= 8
+                                      ? blue : blue >> (8 - blue_bits))
+                  << image_mask_shift(visual->blue_mask);
+        return packed;
+    }
+    return image_pixel(core, red, green, blue);
+}
+
 /* Turn the decoded pixels into a colour pixmap and a mask, at the given size.
  *
  * The source is read at (x * source_width / width, y * source_height / height)
@@ -124,75 +185,145 @@ static unsigned long image_pixel(WmCore *core, unsigned int red,
 static void image_prepare(WmCore *core, WmImage *image,
                           const unsigned int *pixels, int source_width,
                           int source_height, int width, int height) {
+    if (width <= 0 || height <= 0 || source_width <= 0 || source_height <= 0) {
+        return;
+    }
     int depth = DefaultDepth(core->display, core->screen);
-    image->pixmap = XCreatePixmap(core->display, core->root,
-                                  (unsigned int)width, (unsigned int)height,
-                                  (unsigned int)depth);
-    image->mask = XCreatePixmap(core->display, core->root,
-                                (unsigned int)width, (unsigned int)height, 1);
-    if (image->pixmap == None || image->mask == None) {
-        wm_image_free(core, image);
+    Visual *visual = DefaultVisual(core->display, core->screen);
+
+    /* The colour copy is built here, in memory, and put on the server in one
+       request.
+     *
+     * It used to be drawn a pixel at a time with XDrawPoint, and for the
+       desktop wallpaper — a picture as tall as the screen — that is over a
+       million requests, and a walk of the colour table for every one of them.
+       Nothing is on the screen until it finishes, and the server is busy
+       servicing the flood while it runs, which is what left a session black
+       while its desktop was being built. One XPutImage of an image this side
+       has built is the same pixels in one round trip.
+     *
+     * XPutPixel is used rather than writing bytes into the buffer directly, so
+       the byte order and the row padding are Xlib's answer rather than this
+       file's guess at the server's format. */
+    XImage *colour = XCreateImage(core->display, visual, (unsigned int)depth,
+                                  ZPixmap, 0, NULL, (unsigned int)width,
+                                  (unsigned int)height, 32, 0);
+    if (!colour) {
         return;
     }
 
-    /* The mask starts empty and is drawn into; the colour pixmap is filled by
-       drawing one point per pixel, because a plain pixmap has no other way to
-       take a colour that was not known when it was made. */
-    GC mask_gc = XCreateGC(core->display, image->mask, 0, NULL);
-    XSetForeground(core->display, mask_gc, 0);
-    XFillRectangle(core->display, image->mask, mask_gc, 0, 0,
-                   (unsigned int)width, (unsigned int)height);
-    XSetForeground(core->display, mask_gc, 1);
+    /* The pixel buffer itself, when XCreateImage did not make one.
+     *
+     * Whether it does is a detail of the Xlib build: the image structure is
+     * always made, but `data` is only allocated when this build of Xlib
+     * chooses to. XPutPixel writes through that pointer, so a NULL one is a
+     * write to nothing and the process dies on the first pixel of the first
+     * picture — which is exactly where the desktop wallpaper is built. Sizing
+     * it from the image's own bytes_per_line rather than from a guess keeps
+     * the layout Xlib's answer. */
+    if (!colour->data) {
+        colour->data = calloc((size_t)colour->bytes_per_line *
+                                  (size_t)colour->height, 1);
+        if (!colour->data) {
+            XDestroyImage(colour);
+            return;
+        }
+    }
 
-    GC gc = XCreateGC(core->display, image->pixmap, 0, NULL);
-
-    /* A small cache, keyed by the packed RGB, so a flat or few-coloured
-       picture allocates each of its colours once. */
-    unsigned long seen_key[1024];
-    unsigned long seen_pixel[1024];
-    int seen_count = 0;
+    /* The mask is one bit per pixel, packed the way a bitmap is: rows padded
+       out to the server's own bitmap unit, the first pixel of a row in the
+       first bit of that row, in the order the server reads bits — which is
+       taken from the server rather than assumed. A pixel that is not solid is
+       left clear, so a transparent part of the picture shows what is
+       underneath instead of a rectangle of whatever the file held there. */
+    int bitmap_unit = BitmapUnit(core->display);
+    if (bitmap_unit <= 0) {
+        bitmap_unit = 32;
+    }
+    int mask_stride =
+        ((width + bitmap_unit - 1) / bitmap_unit) * (bitmap_unit / 8);
+    unsigned char *mask_bits =
+        calloc((size_t)mask_stride * (size_t)height, 1);
+    if (!mask_bits) {
+        XDestroyImage(colour);
+        return;
+    }
+    int mask_lsb_first = BitmapBitOrder(core->display) != MSBFirst;
 
     for (int y = 0; y < height; y++) {
         int sy = y * source_height / height;
+        const unsigned int *source_row = pixels + (long)sy * source_width;
+        unsigned char *mask_row = mask_bits + (long)y * mask_stride;
+
         for (int x = 0; x < width; x++) {
             int sx = x * source_width / width;
-            unsigned int argb = pixels[(long)sy * source_width + sx];
+            unsigned int argb = source_row[sx];
             unsigned int alpha = (argb >> 24) & 0xff;
             if (alpha < 0x20) {
                 continue;
             }
-            unsigned int red   = (argb >> 16) & 0xff;
-            unsigned int green = (argb >> 8) & 0xff;
-            unsigned int blue  = argb & 0xff;
-
-            unsigned int key = (red << 16) | (green << 8) | blue;
-            unsigned long pixel = 0;
-            int found = 0;
-            for (int i = 0; i < seen_count; i++) {
-                if (seen_key[i] == key) {
-                    pixel = seen_pixel[i];
-                    found = 1;
-                    break;
-                }
-            }
-            if (!found) {
-                pixel = image_pixel(core, red, green, blue);
-                if (seen_count < 1024) {
-                    seen_key[seen_count] = key;
-                    seen_pixel[seen_count] = pixel;
-                    seen_count++;
-                }
-            }
-
-            XSetForeground(core->display, gc, pixel);
-            XDrawPoint(core->display, image->pixmap, gc, x, y);
-            XDrawPoint(core->display, image->mask, mask_gc, x, y);
+            XPutPixel(colour, x, y,
+                      image_pixel_for(core, visual,
+                                      (argb >> 16) & 0xff,
+                                      (argb >> 8) & 0xff,
+                                      argb & 0xff));
+            mask_row[x >> 3] |=
+                (unsigned char)(mask_lsb_first ? (1u << (x & 7))
+                                               : (1u << (7 - (x & 7))));
         }
     }
 
+    Pixmap colour_pixmap = XCreatePixmap(core->display, core->root,
+                                         (unsigned int)width,
+                                         (unsigned int)height,
+                                         (unsigned int)depth);
+    Pixmap mask_pixmap = XCreatePixmap(core->display, core->root,
+                                       (unsigned int)width,
+                                       (unsigned int)height, 1);
+
+    /* The mask image reads the buffer this file made, and the buffer is
+       detached from it before the image is destroyed so that it is freed
+       once, here, rather than twice. */
+    XImage *mask = NULL;
+    if (colour_pixmap != None && mask_pixmap != None) {
+        mask = XCreateImage(core->display, visual, 1, XYBitmap, 0,
+                            (char *)mask_bits, (unsigned int)width,
+                            (unsigned int)height, bitmap_unit, mask_stride);
+    }
+
+    if (colour_pixmap == None || mask_pixmap == None || !mask) {
+        if (colour_pixmap != None) {
+            XFreePixmap(core->display, colour_pixmap);
+        }
+        if (mask_pixmap != None) {
+            XFreePixmap(core->display, mask_pixmap);
+        }
+        if (mask) {
+            mask->data = NULL;
+            XDestroyImage(mask);
+        }
+        free(mask_bits);
+        XDestroyImage(colour);
+        return;
+    }
+
+    GC gc = XCreateGC(core->display, colour_pixmap, 0, NULL);
+    XPutImage(core->display, colour_pixmap, gc, colour, 0, 0, 0, 0,
+              (unsigned int)width, (unsigned int)height);
     XFreeGC(core->display, gc);
+
+    GC mask_gc = XCreateGC(core->display, mask_pixmap, 0, NULL);
+    XPutImage(core->display, mask_pixmap, mask_gc, mask, 0, 0, 0, 0,
+              (unsigned int)width, (unsigned int)height);
     XFreeGC(core->display, mask_gc);
 
+    mask->data = NULL;   /* the buffer is freed here, not by the image */
+    XDestroyImage(mask);
+    free(mask_bits);
+    XDestroyImage(colour);   /* frees the pixel buffer XCreateImage made */
+
+    image->pixmap = colour_pixmap;
+    image->mask = mask_pixmap;
     image->width = width;
     image->height = height;
     image->ok = 1;
