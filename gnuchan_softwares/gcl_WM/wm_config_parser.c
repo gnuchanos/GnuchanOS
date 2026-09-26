@@ -150,6 +150,20 @@ static void parser_advance(Parser *parser) {
             }
             c++;
         }
+        /* A fractional part, so that a script's own float — the compositor's
+           opacity=0.5, the animation's duration=0.3 — is read as the number it
+           is rather than stopping at the dot and leaving the rest of the call
+           unreadable. The whole text is kept; a caller that wants the integer
+           asks for one, and atoi stops at the dot on its own. Without this,
+           the dot began a dotted name and every call holding a float failed to
+           close, which took the whole file down with it. */
+        if (*c == '.' && isdigit((unsigned char)c[1])) {
+            parser->text[i++] = *c++;
+            while (isdigit((unsigned char)*c) && i + 1 < sizeof(parser->text)) {
+                parser->text[i++] = *c;
+                c++;
+            }
+        }
         parser->text[i] = '\0';
         parser->kind = TOKEN_NUMBER;
         parser->cursor = c;

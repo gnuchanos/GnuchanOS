@@ -141,6 +141,15 @@ static int widget_from_call(const Script *script, const WmStatement *call,
     widget->end_layout = wm_config_value_number(
         wm_config_argument(call, "end_layout"), widget->start_layout);
 
+    /* The room between two workspace cells. Zero means "not written", and the
+       bar then uses its own default spacing — a script that never mentions Gap
+       keeps the bar it always had instead of getting a row of cells that touch
+       each other. A negative or zero value written on purpose is treated the
+       same way, because a cell with no gap is unreadable and nobody asks for
+       it deliberately. */
+    widget->gap = wm_config_value_number(
+        wm_config_argument(call, "Gap"), 0);
+
     argument = wm_config_argument(call, "symbol");
     value_text(script, argument, text, sizeof(text));
     copy_text(widget->symbol, sizeof(widget->symbol), text);
@@ -464,15 +473,57 @@ static void add_binding(const Script *script, WmConfig *config,
         return;
     }
 
+    /* The action, as the script writes it: a call into the runtime.
+     *
+     *   action=gcl_spawn.RunProgram(command=default_terminal)
+     *   action=gcl_window.Close()
+     *
+     * A call is not a string, so it is not flattened into one. The call's own
+     * name is what identifies it — "gcl_spawn.RunProgram" — and its arguments
+     * are read as arguments: `command` is resolved through the script's own
+     * variables, so `command=default_terminal` becomes the terminal the script
+     * named rather than the word "default_terminal". The window manager then
+     * looks the name up and runs it with the command it was given; see
+     * wm_keys.c's action_for().
+     *
+     * The bare-string form — action="gcl_window.Close()" — is still read, so a
+     * script written before actions were calls keeps working. A string has no
+     * arguments, so its command is left empty and the window manager falls
+     * back to the terminal the script configured. */
+    const WmValue *action_value = wm_config_argument(statement, "action");
     char action[WM_CONFIG_TEXT_LENGTH];
-    value_text(script, wm_config_argument(statement, "action"),
-               action, sizeof(action));
+    action[0] = '\0';
+
+    char command[WM_CONFIG_TEXT_LENGTH];
+    command[0] = '\0';
+
+    if (action_value && action_value->kind == WM_VALUE_CALL &&
+        action_value->call) {
+        const WmStatement *call = action_value->call;
+        copy_text(action, sizeof(action), call->target);
+
+        /* The program a RunProgram names. It is the call's own argument, read
+           through value_text so a name the script assigned resolves: the
+           shipped script writes command=default_terminal and means the xterm
+           it set above. */
+        value_text(script, wm_config_argument(call, "command"),
+                   command, sizeof(command));
+        /* A first argument written without a name is the program too:
+           RunProgram("xterm"). */
+        if (!command[0] && call->arg_count > 0 &&
+            call->args[0].name[0] == '\0') {
+            value_text(script, &call->args[0].value, command, sizeof(command));
+        }
+    } else {
+        value_text(script, action_value, action, sizeof(action));
+    }
 
     WmBinding *binding = &config->bindings[config->binding_count++];
     memset(binding, 0, sizeof(*binding));
     binding->modifiers = modifiers;
     copy_text(binding->key, sizeof(binding->key), key);
     copy_text(binding->action, sizeof(binding->action), action);
+    copy_text(binding->command, sizeof(binding->command), command);
 }
 
 /* gcl_keys.all = [gcl_key.MultiKey(...), ...] — the whole key table. */

@@ -1,4 +1,5 @@
 import os
+from re import purge
 
 
 
@@ -31,8 +32,13 @@ if __name__ == "__main__":
     os.system("sudo apt clean")
 
 
-
-
+    os.system("sudo apt purge xfce4 xfce4-* xfconf libxfce4* thunar -y")
+    os.system("sudo apt autoremove --purge -y")
+    os.system("sudo apt purge lightdm -y")
+    os.system("sudo apt autoremove --purge -y")
+    os.system("sudo apt purge lightdm-gtk-greeter -y")
+    os.system("sudo apt purgefirefox-esr -y")
+    os.system("sudo apt clean")
 
 
 

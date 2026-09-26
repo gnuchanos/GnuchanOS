@@ -10,20 +10,26 @@
  *
  *     gcl_keys.all = [
  *         gcl_key.MultiKey(keys=[super_key1, "return"],
- *                          action="gcl_spawn.RunProgram(command=default_terminal)"),
+ *                          action=gcl_spawn.RunProgram(command=default_terminal)),
+ *         gcl_key.MultiKey(keys=[super_key1, "F4"],
+ *                          action=gcl_window.Close()),
  *     ]
  *
- * The config module parses that into config->bindings, resolving the modifier
- * names the script uses (super_key1) into the masks X wants. This file gives
- * each binding's action its meaning: the action is a string from the script,
- * and a string is not something a window manager can call, so it is matched
- * against the handful of things the WM itself does.
+ * The action is a call, not a string. The config module parses the script,
+ * resolves the modifier names the script uses (super_key1) into the masks X
+ * wants, and writes each binding's action as the call's own name —
+ * "gcl_spawn.RunProgram" — with the call's `command` argument resolved beside
+ * it. This file gives that name its meaning: the leaf after the dot is matched
+ * whole against the handful of things the WM itself does, and the command is
+ * passed to the action so `command=default_terminal` opens the terminal the
+ * script named rather than a name it guessed.
  *
  * When the script binds nothing — a machine with no config — the built-in
  * table below is used instead, so a fresh session still has Alt+Enter.
  */
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 
 #include <X11/keysym.h>
@@ -35,24 +41,40 @@
 #include "wm_config.h"
 #include "wm_workspace.h"
 
-typedef void (*KeyAction)(WmCore *core);
+/* An action, and the command the binding gave it. Most actions ignore the
+   command — Close closes the focused window whatever it was told — and the one
+   that uses it, spawn, runs it. Passing it here rather than reading a global
+   is what makes the table a table of calls rather than a table of names. */
+typedef void (*KeyAction)(WmCore *core, const char *command);
 
 typedef struct KeyBinding {
     unsigned int modifiers;
     KeySym keysym;
     KeyAction action;
+    char command[WM_CONFIG_TEXT_LENGTH];
 } KeyBinding;
 
 /* --- the actions a key can be bound to ------------------------------------- */
 
-static void action_spawn_terminal(WmCore *core) {
+/* Open a terminal. The command the binding named is used when it has one —
+   `RunProgram(command=default_terminal)` becomes the xterm the script set
+   above — and the session's configured terminal is used when it does not, so
+   a binding written without a program still opens something. */
+static void action_spawn_terminal(WmCore *core, const char *command) {
     (void)core;
+    if (command && command[0]) {
+        char *const argv[] = { (char *)command, NULL };
+        if (wm_spawn(command, argv) == 0) {
+            return;
+        }
+    }
     wm_spawn_terminal();
 }
 
 /* Close whatever has the focus. The focused window is a client, so closing it
    means finding the frame that holds it. */
-static void action_close_focused(WmCore *core) {
+static void action_close_focused(WmCore *core, const char *command) {
+    (void)command;
     WmFrame *frame = wm_frame_find(core, core->focused);
     if (frame) {
         wm_frame_close(core, frame);
@@ -64,7 +86,8 @@ static void action_close_focused(WmCore *core) {
  * The target is the most recently used window, not the next one in the frame
  * table: that is what every desktop's switcher means, and it is what makes one
  * press undo one move — pressing it twice goes there and back. */
-static void action_switch_window(WmCore *core) {
+static void action_switch_window(WmCore *core, const char *command) {
+    (void)command;
     WmFrame *previous = wm_focus_previous(core);
     if (previous) {
         wm_frame_activate(core, previous);
@@ -81,7 +104,8 @@ static void action_switch_window(WmCore *core) {
  * geometry, which the reload already put right through wm_config_apply. A
  * script that could not be read does not change the desktop: wm_config_apply is
  * not reached, and the reason is put in a window by the config module. */
-static void action_reload_config(WmCore *core) {
+static void action_reload_config(WmCore *core, const char *command) {
+    (void)command;
     if (wm_config_reload_forced(core)) {
         /* wm_config_apply() already put every frame's border right and drew it
            again; the bar is the one thing it does not reach, because the bar
@@ -104,23 +128,24 @@ static void action_reload_config(WmCore *core) {
  * number written twice, and the two would drift. What the script decides is
  * how many there are; this decides what reaching them looks like.
  *
- * Each number needs its own function, because a key action takes no argument —
- * the grabbed key is a function pointer and nothing else. That is what the
- * table below is: one function per workspace, and MOD4+1..N pointed at them. */
+ * Each number needs its own function, because a key action takes no workspace
+ * argument — the grabbed key is a function pointer and nothing else. That is
+ * what the table below is: one function per workspace, and MOD4+1..N pointed
+ * at them. */
 #define WM_WORKSPACE_KEY_MAX 12
 
-static void action_workspace_0(WmCore *core) { wm_workspace_switch(core, 0); }
-static void action_workspace_1(WmCore *core) { wm_workspace_switch(core, 1); }
-static void action_workspace_2(WmCore *core) { wm_workspace_switch(core, 2); }
-static void action_workspace_3(WmCore *core) { wm_workspace_switch(core, 3); }
-static void action_workspace_4(WmCore *core) { wm_workspace_switch(core, 4); }
-static void action_workspace_5(WmCore *core) { wm_workspace_switch(core, 5); }
-static void action_workspace_6(WmCore *core) { wm_workspace_switch(core, 6); }
-static void action_workspace_7(WmCore *core) { wm_workspace_switch(core, 7); }
-static void action_workspace_8(WmCore *core) { wm_workspace_switch(core, 8); }
-static void action_workspace_9(WmCore *core) { wm_workspace_switch(core, 9); }
-static void action_workspace_10(WmCore *core) { wm_workspace_switch(core, 10); }
-static void action_workspace_11(WmCore *core) { wm_workspace_switch(core, 11); }
+static void action_workspace_0(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 0); }
+static void action_workspace_1(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 1); }
+static void action_workspace_2(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 2); }
+static void action_workspace_3(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 3); }
+static void action_workspace_4(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 4); }
+static void action_workspace_5(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 5); }
+static void action_workspace_6(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 6); }
+static void action_workspace_7(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 7); }
+static void action_workspace_8(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 8); }
+static void action_workspace_9(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 9); }
+static void action_workspace_10(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 10); }
+static void action_workspace_11(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 11); }
 
 static const KeyAction WORKSPACE_ACTIONS[WM_WORKSPACE_KEY_MAX] = {
     action_workspace_0,  action_workspace_1,  action_workspace_2,
@@ -156,13 +181,13 @@ static KeySym workspace_keysym(int workspace) {
    Ctrl+Alt+R reloads the script by hand — the key that exists for a machine
    whose config the automatic reload could not read. */
 static const KeyBinding BUILT_IN[] = {
-    { Mod1Mask, XK_Return, action_spawn_terminal },
-    { Mod4Mask, XK_Return, action_spawn_terminal },
-    { Mod1Mask, XK_F4,     action_close_focused },
-    { Mod4Mask, XK_F4,     action_close_focused },
-    { Mod1Mask, XK_Tab,    action_switch_window },
-    { Mod4Mask, XK_Tab,    action_switch_window },
-    { ControlMask | Mod1Mask, XK_r, action_reload_config },
+    { Mod1Mask, XK_Return, action_spawn_terminal, "" },
+    { Mod4Mask, XK_Return, action_spawn_terminal, "" },
+    { Mod1Mask, XK_F4,     action_close_focused,  "" },
+    { Mod4Mask, XK_F4,     action_close_focused,  "" },
+    { Mod1Mask, XK_Tab,    action_switch_window,  "" },
+    { Mod4Mask, XK_Tab,    action_switch_window,  "" },
+    { ControlMask | Mod1Mask, XK_r, action_reload_config, "" },
 };
 
 #define BUILT_IN_COUNT (sizeof(BUILT_IN) / sizeof(BUILT_IN[0]))
@@ -174,26 +199,34 @@ static const KeyBinding BUILT_IN[] = {
 static KeyBinding bindings[MAX_BINDINGS];
 static int binding_count = 0;
 
-/* Which of the WM's own actions a written action names. The script writes
-   actions as calls into a runtime the desktop shares; this is the small set
-   of them this window manager can answer itself. Anything else is reported
-   when the key is pressed rather than silently doing nothing. */
+/* Which of the WM's own actions a written action names. The script writes the
+   action as a call — `gcl_spawn.RunProgram`, `gcl_window.Close`,
+   `gcl_window.Switch` — and the config module keeps the call's own name. What
+   tells the actions apart is the word after the last dot, compared whole:
+   matching a substring would make `gcl_compositor.Reboot` fire reboot and a
+   name that merely contains "close" fire close. The comparison is
+   case-insensitive because a person writes Close and may write close. */
 static KeyAction action_for(const char *written) {
     if (!written || !written[0]) {
         return NULL;
     }
-    if (strstr(written, "RunProgram") || strstr(written, "spawn") ||
-        strstr(written, "terminal") || strstr(written, "Terminal")) {
+    const char *dot = strrchr(written, '.');
+    const char *leaf = dot ? dot + 1 : written;
+
+    if (strcasecmp(leaf, "RunProgram") == 0 ||
+        strcasecmp(leaf, "Spawn") == 0 ||
+        strcasecmp(leaf, "OpenTerminal") == 0) {
         return action_spawn_terminal;
     }
-    if (strstr(written, "close") || strstr(written, "Close")) {
+    if (strcasecmp(leaf, "Close") == 0) {
         return action_close_focused;
     }
-    if (strstr(written, "switch") || strstr(written, "Switch") ||
-        strstr(written, "focus_previous") || strstr(written, "next_window")) {
+    if (strcasecmp(leaf, "Switch") == 0 ||
+        strcasecmp(leaf, "NextWindow") == 0 ||
+        strcasecmp(leaf, "FocusPrevious") == 0) {
         return action_switch_window;
     }
-    if (strstr(written, "reload") || strstr(written, "Reload")) {
+    if (strcasecmp(leaf, "Reload") == 0) {
         return action_reload_config;
     }
     return NULL;
@@ -212,7 +245,12 @@ static int add_config_binding(const WmBinding *binding) {
     }
 
     KeySym keysym = XStringToKeysym(binding->key);
-    if (keysym == NoSymbol && binding->key[0]) { char cap[WM_CONFIG_TEXT_LENGTH]; snprintf(cap, sizeof(cap), "%s", binding->key); cap[0] = (char)toupper((unsigned char)cap[0]); keysym = XStringToKeysym(cap); }
+    if (keysym == NoSymbol && binding->key[0]) {
+        char cap[WM_CONFIG_TEXT_LENGTH];
+        snprintf(cap, sizeof(cap), "%s", binding->key);
+        cap[0] = (char)toupper((unsigned char)cap[0]);
+        keysym = XStringToKeysym(cap);
+    }
     if (keysym == NoSymbol) {
         fprintf(stderr, "gnuchanwm: config: unknown key '%s'\n", binding->key);
         return -1;
@@ -228,9 +266,15 @@ static int add_config_binding(const WmBinding *binding) {
         return -1;
     }
 
-    bindings[binding_count].modifiers = binding->modifiers;
-    bindings[binding_count].keysym = keysym;
-    bindings[binding_count].action = action;
+    KeyBinding *entry = &bindings[binding_count];
+    memset(entry, 0, sizeof(*entry));
+    entry->modifiers = binding->modifiers;
+    entry->keysym = keysym;
+    entry->action = action;
+    /* The command the action was given, if it named one. It is what makes
+       `RunProgram(command=default_terminal)` open the terminal the script
+       configured rather than whatever the session's default happens to be. */
+    snprintf(entry->command, sizeof(entry->command), "%s", binding->command);
     binding_count++;
     return 0;
 }
@@ -286,6 +330,7 @@ static int keys_init(WmCore *core) {
         bindings[binding_count].modifiers = Mod4Mask;
         bindings[binding_count].keysym = keysym;
         bindings[binding_count].action = WORKSPACE_ACTIONS[i];
+        bindings[binding_count].command[0] = '\0';
         binding_count++;
     }
 
@@ -312,14 +357,16 @@ static int keys_init(WmCore *core) {
     return 0;
 }
 
-/* Find the action for a pressed key, or NULL. The lock modifiers are masked
-   off because the grab was taken with them included. */
-static KeyAction keys_lookup(WmCore *core, XKeyEvent *event) {
+/* The binding a pressed key names, or NULL. The lock modifiers are masked off
+   because the grab was taken with them included. The whole binding is returned
+   rather than just its action, because the action is called with the command
+   the binding was written with. */
+static const KeyBinding *keys_lookup(WmCore *core, XKeyEvent *event) {
     KeySym keysym = XLookupKeysym(event, 0);
     unsigned int state = event->state & ~(LockMask | Mod2Mask);
     for (int i = 0; i < binding_count; i++) {
         if (bindings[i].keysym == keysym && bindings[i].modifiers == state) {
-            return bindings[i].action;
+            return &bindings[i];
         }
     }
     (void)core;
@@ -330,9 +377,9 @@ static void keys_event(WmCore *core, XEvent *event) {
     if (event->type != KeyPress) {
         return;
     }
-    KeyAction action = keys_lookup(core, &event->xkey);
-    if (action) {
-        action(core);
+    const KeyBinding *binding = keys_lookup(core, &event->xkey);
+    if (binding && binding->action) {
+        binding->action(core, binding->command);
     }
 }
 

@@ -56,6 +56,20 @@ typedef struct WmCore WmCore;
 #define WM_BUTTON_GAP 6
 #define WM_MAX_FRAMES 128
 
+/* The side of the square a window's icon is drawn at on the bar. It has to
+   fit inside the bar with a margin; the bar's own height decides the room. */
+#define WM_ICON_SIZE 16
+
+/* The biggest side of an icon kept from _NET_WM_ICON. A client may publish a
+   256x256 image; the strip wants the largest one still no bigger than a bar
+   icon, because an icon scaled down a little reads as the program and one
+   thrown away reads as nothing. */
+#define WM_ICON_MAX_SIDE 64
+
+/* The most 32-bit cards read from _NET_WM_ICON, a ceiling so a broken client
+   cannot ask the manager to allocate without bound. */
+#define WM_ICON_MAX_CARDS (256 * 1024)
+
 /* The three buttons, in the order they are drawn from the right edge inwards:
    close is rightmost, then maximise, then minimise. A count and an order, so
    the drawing loop, the hit test and the geometry all read the same table. */
@@ -145,6 +159,18 @@ typedef struct WmFrame {
 
     int has_name;        /* whether the client named itself                  */
     char name[160];
+
+    /* The window's icon, read from _NET_WM_ICON and kept as a colour pixmap
+       plus a 1-bit mask, so it can be put on the bar over any background
+       rather than carrying its own rectangle of colour. icon_tried is what
+       keeps a client that published no icon from being asked again on every
+       repaint; icon_side is the side both pixmaps were made at, and icon_ok is
+       set once they hold something worth drawing. */
+    Pixmap icon_source;
+    Pixmap icon_mask;
+    int icon_side;
+    int icon_tried;
+    int icon_ok;
 } WmFrame;
 
 /* --- the table ------------------------------------------------------------ */
@@ -199,6 +225,22 @@ void wm_frame_activate(WmCore *core, WmFrame *frame);
 
 /* Read the client's name again and redraw the bar. */
 void wm_frame_update_name(WmCore *core, WmFrame *frame);
+
+/* --- the window's icon (wm_icon.c) ---------------------------------------- */
+
+/* Read the client's icon from _NET_WM_ICON and keep it. Called when the frame
+   is made; a client with no icon is asked once and not again. */
+void wm_frame_read_icon(WmCore *core, WmFrame *frame);
+
+/* Drop whatever icon a frame holds. Called when the frame is destroyed and,
+   through wm_frame_read_icon, before a new one is read. */
+void wm_frame_free_icon(WmCore *core, WmFrame *frame);
+
+/* Put the frame's icon on a drawable at (x, y), sized to `side` pixels.
+   Returns 1 when something was drawn and 0 when the client has no icon, so
+   the caller can fall back to something of its own. */
+int wm_frame_draw_icon(WmCore *core, WmFrame *frame, Drawable target,
+                       int x, int y, int side);
 
 /* Bring the frame back in step with a client that moved or resized itself.
    Called when the server reports the client changed. */

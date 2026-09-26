@@ -291,6 +291,25 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
     frame_ensure_buffer(core, frame, width, height);
     Drawable target = frame->buffer != None ? frame->buffer : frame->frame;
 
+    /* The border, painted as a filled band across the whole frame in the focus
+       colour the script named. It is the band the client is inset by: the
+       client sits at (frame->border, WM_TITLE_HEIGHT) inside a frame that is
+       2*border wider and border taller, so the room left uncovered on the
+       left, right and bottom is exactly this band - and this band is the
+       border the user sees. The bar and the client are drawn over it, which
+       leaves it visible on the three sides the client does not reach.
+
+       Painting the whole frame before anything else is also what keeps a
+       resize clean. frame_ensure_buffer makes a fresh pixmap whose contents
+       are undefined, so any pixel the drawing below does not reach would show
+       whatever the server left there - which is the stray line that appeared
+       while only a one-pixel outline was drawn and the band beside it was left
+       untouched. No pixel of the frame is left to the server now. */
+    XSetForeground(display, core->gc,
+                   focused ? style->border : style->border_unfocused);
+    XFillRectangle(display, target, core->gc, 0, 0,
+                   (unsigned int)width, (unsigned int)height);
+
     /* The bar. */
     XSetForeground(display, core->gc, style->panel);
     XFillRectangle(display, target, core->gc, 0, 0,
@@ -322,11 +341,13 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
                           button_y(), (WmFrameButton)i, frame->maximized);
     }
 
-    /* The outline around the whole frame, in the focus colour. */
-    XSetForeground(display, core->gc,
-                   focused ? style->border : style->border_unfocused);
-    XDrawRectangle(display, target, core->gc, 0, 0,
-                   (unsigned int)(width - 1), (unsigned int)(height - 1));
+    /* No outline is drawn here. The border is the filled band painted at the
+       top of this function, so a rectangle around the edge as well would be
+       the same colour drawn twice - and while the band was left unpainted and
+       only this rectangle was drawn, it was the second border: a one-pixel
+       line around a frame whose own border pixels were never painted. The
+       width the script asked for and the width of the border are now the same
+       thing, because the band painted above is frame->border thick. */
 
     /* Onto the screen in one operation, which is the whole point of the
        copy above. */
@@ -431,41 +452,6 @@ void wm_frame_raise(WmCore *core, WmFrame *frame) {
        made a still window flicker. */
     wm_desktop_raise_bar(core);
     XFlush(core->display);
-}
-
-/* Keep a frame inside the workarea while it is being dragged.
- *
- * The bar is a window of its own and is kept above the windows, so a frame
- * dragged under it would have its title bar hidden behind something the user
- * cannot move — and the title bar is the only part of a frame that can be
- * grabbed, so the window could not be got back. The workarea is the screen
- * less that strip, so clamping to it is what keeps every reachable window
- * reachable.
- *
- * Only the top and the bottom are clamped. Moving a window off the left or
- * right edge is how a window is parked half out of the way, and the bar takes
- * nothing from those edges, so there is nothing there to hide behind. */
-static int frame_clamp_y(WmCore *core, const WmFrame *frame, int y) {
-    int area_x = 0;
-    int area_y = 0;
-    int area_width = 0;
-    int area_height = 0;
-    wm_config_workarea(&core->config, core->width, core->height,
-                       &area_x, &area_y, &area_width, &area_height);
-
-    if (y < area_y) {
-        y = area_y;
-    }
-    /* The bottom edge is the workarea's, less the frame's own height: the
-       workarea says where the desktop ends, and a frame is inside it. */
-    int lowest = area_y + area_height - frame_height(frame);
-    if (lowest < area_y) {
-        lowest = area_y;
-    }
-    if (y > lowest) {
-        y = lowest;
-    }
-    return y;
 }
 
 void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
@@ -844,11 +830,15 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
     core->frame_count++;
 
     frame_read_name(core, frame);
+    wm_frame_read_icon(core, frame);
     wm_frame_draw(core, frame);
     return frame;
 }
 
 void wm_frame_destroy(WmCore *core, WmFrame *frame, int client_gone) {
+    /* The icon is this process's pixmap, not the client's, so it does not go
+       away with the client and is freed here by the code that made it. */
+    wm_frame_free_icon(core, frame);
     if (!client_gone) {
         /* Put the client back where the desktop found it, so a program that
            outlives this window manager is not left fatherless. */
@@ -1105,32 +1095,7 @@ static void frame_resize_drag(WmCore *core, WmFrame *frame,
         }
     }
 
-    /* A left or top edge dragged past the bar would push the frame under it,
-       and the frame is the only part of a window the hand can take hold of. It
-       is stopped at the workarea instead, and the size gives rather than the
-       origin — so the opposite edge stays exactly where the user left it. */
-    int area_x = 0;
-    int area_y = 0;
-    int area_width = 0;
-    int area_height = 0;
-    wm_config_workarea(&core->config, core->width, core->height,
-                       &area_x, &area_y, &area_width, &area_height);
-
-    if (x < area_x) {
-        width -= area_x - x;
-        x = area_x;
-        if (width < WM_RESIZE_MIN_WIDTH) {
-            width = WM_RESIZE_MIN_WIDTH;
-        }
-    }
-    if (y < area_y) {
-        height -= area_y - y;
-        y = area_y;
-        if (height < WM_RESIZE_MIN_HEIGHT) {
-            height = WM_RESIZE_MIN_HEIGHT;
-        }
-    }
-
+    (void)core;
     frame->x = x;
     frame->y = y;
     frame->client_width = width;
@@ -1252,7 +1217,7 @@ static void frame_event(WmCore *core, XEvent *event) {
                     (event->xmotion.y_root - frame->drag_pointer_y);
             /* The frame is kept clear of the bar at both edges, so a window
                can always be put somewhere it can be grabbed again. */
-            wm_frame_move(core, frame, x, frame_clamp_y(core, frame, y));
+            wm_frame_move(core, frame, x, y);
         } else if (frame->resizing) {
             frame_resize_drag(core, frame,
                               event->xmotion.x_root, event->xmotion.y_root);

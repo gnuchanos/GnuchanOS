@@ -58,6 +58,13 @@ typedef struct WmWidget {
     int start_layout;
     int end_layout;
 
+    /* WM_WIDGET_CURRENT_LAYOUT: the room between two workspace cells, as
+       written through Gap. Zero or less means "not set", and the bar uses its
+       own default spacing — the value every other widget is laid out with — so
+       a script that never mentions Gap gets the bar it always had rather than
+       a row of cells with no room between them. */
+    int gap;
+
     /* WM_WIDGET_EMPTY_SPACE: what the space is for.
      *
      * Expanding (the default) means "take a share of whatever room the fixed
@@ -76,6 +83,14 @@ typedef struct WmWidget {
     char symbol[WM_CONFIG_TEXT_LENGTH];   /* WM_WIDGET_GROUP_BOX */
     char text[WM_CONFIG_TEXT_LENGTH];     /* WM_WIDGET_TEXT_BOX  */
     char format[WM_CONFIG_TEXT_LENGTH];   /* WM_WIDGET_CLOCK     */
+
+    /* WM_WIDGET_GROUP_BOX: the mark drawn between two open windows' icons,
+       and the colour to draw it in. `Seperator="|"` puts the character between
+       every pair of icons; an empty separator draws nothing, which is what a
+       bar that wants the icons hard against each other asks for. The colour is
+       the widget's own foreground when the script named none. */
+    char separator[WM_CONFIG_TEXT_LENGTH];
+    char separator_color[WM_CONFIG_TEXT_LENGTH];
 } WmWidget;
 
 /* The bar. A config may omit it; `present` is then 0 and no bar is drawn. */
@@ -142,7 +157,12 @@ typedef enum WmMouseAction {
 typedef struct WmBinding {
     unsigned int modifiers;                  /* Mod1Mask, ControlMask, ... */
     char key[WM_CONFIG_TEXT_LENGTH];         /* an X keysym name           */
-    char action[WM_CONFIG_TEXT_LENGTH];      /* the GCL action to run      */
+    char action[WM_CONFIG_TEXT_LENGTH];      /* the GCL call's own name    */
+    /* The program a RunProgram call names, resolved. Empty when the action
+       takes no program — Close, Switch — and when the action was written as a
+       bare string, in which case the window manager falls back to the
+       terminal the script configured. */
+    char command[WM_CONFIG_TEXT_LENGTH];
 } WmBinding;
 
 typedef struct WmConfig {

@@ -4,13 +4,16 @@
  * A window manager with no panel and no taskbar has exactly one place the user
  * can point at that is not a window: the desktop itself. This is what the
  * desktop's own button does — it opens a menu of the things that belong to the
- * session rather than to a window: its settings, and ending it.
+ * session rather than to a window: ending it, one way to restart and one to
+ * power off.
  *
- * The menu has tabs, because "settings" and "system" are different kinds of
- * decision — one changes how the session runs, the other ends it — and one
- * flat list of both would put "shutdown" a careless click away from
- * "wallpaper". A tab is a name in the row at the top; the body shows the
- * entries of the active one. The table is data: adding a page is adding a row.
+ * There is one page, and it is the system's. A settings page used to sit
+ * beside it as an empty placeholder, and it is gone: the desktop is configured
+ * by the script alone. GnuChanWM.py is the one place a setting is changed, and
+ * a second place that edited the same values would be a second source of truth
+ * to keep in step. A page row is therefore only drawn when there is more than
+ * one page to choose between; with one page the menu opens straight onto its
+ * entries. The table is still data: adding a page is adding a row.
  *
  * It is drawn into its own override-redirect window so this manager does not
  * frame it — a menu with a title bar is not a menu — and the pointer is
@@ -237,16 +240,25 @@ static const MenuEntry SYSTEM_ENTRIES[] = {
     { "reboot",   action_reboot   },
 };
 
+/* One page, and it is the system's. see the note at the top of the file for
+   why there is no settings page beside it. */
 static const MenuTab MENU_TABS[] = {
-    /* The settings page is deliberately empty: it is where the settings will
-       go, and a page that exists and says so is more honest than one that is
-       silently missing. */
-    { "settings", NULL, 0 },
     { "system",   SYSTEM_ENTRIES,
       (int)(sizeof(SYSTEM_ENTRIES) / sizeof(SYSTEM_ENTRIES[0])) },
 };
 
 #define MENU_TAB_COUNT ((int)(sizeof(MENU_TABS) / sizeof(MENU_TABS[0])))
+
+/* The height of the row of page names.
+ *
+ * A row of one name is a label for a choice that cannot be made, so with a
+ * single page the row is not drawn: the menu opens straight onto its entries
+ * and the space the row would take goes to the body. Every part that has to
+ * know — the layout, the drawing and the hit test — asks here, so the three
+ * cannot disagree about whether the row is there. */
+static int menu_tab_bar_height(void) {
+    return MENU_TAB_COUNT > 1 ? MENU_TAB_HEIGHT : 0;
+}
 
 /* Lay the menu out for the active tab: where each tab name sits and where the
    body's rows sit. Both the drawing and the hit test answer from these, so a
@@ -254,9 +266,19 @@ static const MenuTab MENU_TABS[] = {
 static void menu_layout(WmCore *core) {
     XftFont *font = core->style.font;
     int inset = MENU_PADDING / 2;
+    int tab_bar_height = menu_tab_bar_height();
 
     int x = MENU_PADDING;
     for (int i = 0; i < MENU_TAB_COUNT; i++) {
+        if (tab_bar_height == 0) {
+            /* No row is drawn, so no box is laid out: a box of zero size is
+               what the hit test reads as "not a tab". */
+            tab_box[i].x = 0;
+            tab_box[i].y = 0;
+            tab_box[i].width = 0;
+            tab_box[i].height = 0;
+            continue;
+        }
         int width = wm_style_text_width(core->display, font, MENU_TABS[i].name)
                   + 2 * MENU_PADDING;
         tab_box[i].x = x;
@@ -295,12 +317,15 @@ static void menu_layout(WmCore *core) {
     if (menu_width < MENU_MIN_WIDTH) {
         menu_width = MENU_MIN_WIDTH;
     }
-    menu_height = MENU_TAB_HEIGHT + MENU_PADDING + body_height + MENU_PADDING;
+    /* The body starts below the row of names, and the row is only there when
+       there is more than one page: tab_bar_height is 0 for a single page, so
+       the entries sit against the top edge and the menu is that much shorter. */
+    menu_height = tab_bar_height + MENU_PADDING + body_height + MENU_PADDING;
 
     int rows = tab->count > 0 ? tab->count : 1;
     for (int i = 0; i < rows; i++) {
         entry_box[i].x = inset;
-        entry_box[i].y = MENU_TAB_HEIGHT + inset + i * MENU_ROW_HEIGHT;
+        entry_box[i].y = tab_bar_height + inset + i * MENU_ROW_HEIGHT;
         entry_box[i].width = menu_width - MENU_PADDING;
         entry_box[i].height = MENU_ROW_HEIGHT;
     }
@@ -320,25 +345,31 @@ static void menu_draw(WmCore *core) {
     XFillRectangle(display, menu_window, gc, 0, 0,
                    (unsigned int)menu_width, (unsigned int)menu_height);
 
-    /* The tabs. The active one carries the accent and the hovered one the
-       raised colour, so which page is showing and which page a click would
-       open are two different pictures. */
-    for (int i = 0; i < MENU_TAB_COUNT; i++) {
-        int active = (i == menu_tab);
-        int hovered = (menu_hover == i);
-        if (active || hovered) {
-            XSetForeground(display, gc,
-                           active ? core->style.accent : core->style.field);
-            XFillRectangle(display, menu_window, gc,
-                           tab_box[i].x, tab_box[i].y,
-                           (unsigned int)tab_box[i].width,
-                           (unsigned int)tab_box[i].height);
+    /* The tabs, when there is more than one page to name. The active one
+       carries the accent and the hovered one the raised colour, so which page
+       is showing and which page a click would open are two different pictures.
+       With a single page there is no row of names: tab_box is zero-sized for
+       that case, and the loop would draw the one name against the top-left
+       corner, over the entries it is supposed to sit above. */
+    if (menu_tab_bar_height() > 0) {
+        for (int i = 0; i < MENU_TAB_COUNT; i++) {
+            int active = (i == menu_tab);
+            int hovered = (menu_hover == i);
+            if (active || hovered) {
+                XSetForeground(display, gc,
+                               active ? core->style.accent : core->style.field);
+                XFillRectangle(display, menu_window, gc,
+                               tab_box[i].x, tab_box[i].y,
+                               (unsigned int)tab_box[i].width,
+                               (unsigned int)tab_box[i].height);
+            }
+            int baseline = tab_box[i].y
+                         + (tab_box[i].height + ascent - descent) / 2;
+            wm_style_text(display, core->screen, menu_window, font,
+                          tab_box[i].x + MENU_PADDING, baseline,
+                          MENU_TABS[i].name,
+                          active ? core->style.text : core->style.text_muted);
         }
-        int baseline = tab_box[i].y
-                     + (tab_box[i].height + ascent - descent) / 2;
-        wm_style_text(display, core->screen, menu_window, font,
-                      tab_box[i].x + MENU_PADDING, baseline, MENU_TABS[i].name,
-                      active ? core->style.text : core->style.text_muted);
     }
 
     const MenuTab *tab = &MENU_TABS[menu_tab];
