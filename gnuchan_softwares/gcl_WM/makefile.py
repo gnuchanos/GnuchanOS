@@ -135,16 +135,36 @@ def is_debian() -> bool:
     return shutil.which("apt-get") is not None
 
 
-def x11_headers_present() -> bool:
+def header_present(header: str, extra_includes: tuple[str, ...] = ()) -> bool:
+    """Whether gcc can preprocess a header, which is how a machine is asked
+    whether a development package is installed.
+
+    The check is a real compile of a one-line translation unit rather than a
+    test for a file on disk, because where a distribution keeps a header is
+    not fixed and what matters is whether the compiler the build will use can
+    find it. Xft pulls freetype in through its own header, so the freetype
+    include directory is passed for it: the header is present exactly when
+    both packages are.
+    """
     gcc = shutil.which("gcc")
     if gcc is None:
         return False
+    command = [gcc, "-E", "-xc", "-"]
+    for path in extra_includes:
+        command += ["-I", path]
     result = subprocess.run(
-        [gcc, "-E", "-xc", "-"],
-        input="#include <X11/Xlib.h>\n",
+        command, input=f"#include <{header}>\n",
         text=True, capture_output=True, check=False,
     )
     return result.returncode == 0
+
+
+def x11_headers_present() -> bool:
+    return header_present("X11/Xlib.h")
+
+
+def xft_headers_present() -> bool:
+    return header_present("X11/Xft/Xft.h", ("/usr/include/freetype2",))
 
 
 def program_exists(name: str) -> bool:
@@ -167,6 +187,11 @@ def ensure_build_dependencies() -> None:
     needed: list[str] = []
     if not x11_headers_present():
         needed.append("libx11-dev")
+    # Xft is what the text is drawn with, and its header is in a package of
+    # its own that libx11-dev does not pull in. freetype and fontconfig, which
+    # Xft's own header includes, come with it as dependencies.
+    if not xft_headers_present():
+        needed.append("libxft-dev")
     if shutil.which("gcc") is None:
         needed.append("build-essential")
     if shutil.which("pkg-config") is None:
