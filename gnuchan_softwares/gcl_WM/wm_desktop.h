@@ -13,6 +13,11 @@
 #ifndef GNUCHANWM_DESKTOP_H
 #define GNUCHANWM_DESKTOP_H
 
+/* Window is named in the declarations below, so the type has to be known:
+   Xlib defines it as an unsigned long, and a caller that has the header and
+   not the definition would be a caller with an implicit declaration. */
+#include <X11/Xlib.h>
+
 /* WmCore is pointed at, never inspected here; its struct lives in wm_core.h,
    which includes this file's. */
 typedef struct WmCore WmCore;
@@ -31,5 +36,10 @@ void wm_desktop_repaint(WmCore *core);
  * what a bar that re-raised itself on a tick used to do, and what made a
  * window appear to flicker while nothing was touching it. */
 void wm_desktop_raise_bar(WmCore *core);
+
+/* The bar's own window, or None when the session has no bar. The menu's logout
+   walk needs it because the bar is a window this process owns, and killing a
+   window this process owns closes its connection to the server. */
+Window wm_desktop_bar_window(void);
 
 #endif /* GNUCHANWM_DESKTOP_H */

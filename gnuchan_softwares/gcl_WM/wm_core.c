@@ -14,6 +14,7 @@
  * no clock and no config still waits forever, which costs nothing.
  */
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -132,6 +133,29 @@ static Window core_create_check_window(WmCore *core) {
     return check;
 }
 
+/* Keep the X connection out of every program this session starts.
+ *
+ * Xlib opens the server's socket without close-on-exec set, so a forked child
+ * inherits the descriptor and, once it has exec'd, holds the connection open
+ * for as long as it runs. That is not one leaked descriptor: the X server ties
+ * a client — and everything the client has claimed, the substructure redirect
+ * a window manager holds among it — to the connection, and the connection
+ * stays alive while any process has the descriptor. A window manager that
+ * exits while a program it started is still running therefore leaves the
+ * redirect claimed by a client that no longer exists, and the next session's
+ * window manager is refused with BadAccess and quits at once. From the user's
+ * side that is a session that starts, goes black and lands back on the login
+ * screen — once per attempt. Setting the flag once, here, is what makes the
+ * connection end when this process does. */
+static void core_close_display_on_exec(WmCore *core) {
+    int fd = ConnectionNumber(core->display);
+    int flags = fcntl(fd, F_GETFD);
+    if (flags < 0) {
+        return;
+    }
+    fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+}
+
 int wm_core_init(WmCore *core) {
     memset(core, 0, sizeof(*core));
 
@@ -143,6 +167,7 @@ int wm_core_init(WmCore *core) {
 
     core->screen = DefaultScreen(core->display);
     core->root = RootWindow(core->display, core->screen);
+    core_close_display_on_exec(core);
     core->running = 1;
     core->width = DisplayWidth(core->display, core->screen);
     core->height = DisplayHeight(core->display, core->screen);
@@ -152,11 +177,15 @@ int wm_core_init(WmCore *core) {
        here, once, before any module can ask for them. */
     if (wm_style_load(&core->style, core->display, core->screen) != 0) {
         fprintf(stderr, "gnuchanwm: cannot resolve the desktop style\n");
+        XCloseDisplay(core->display);
+        core->display = NULL;
         return -1;
     }
     core->gc = XCreateGC(core->display, core->root, 0, NULL);
     if (core->gc == NULL) {
         fprintf(stderr, "gnuchanwm: cannot create a graphics context\n");
+        XCloseDisplay(core->display);
+        core->display = NULL;
         return -1;
     }
 
@@ -197,10 +226,12 @@ int wm_core_init(WmCore *core) {
         fprintf(stderr,
                 "gnuchanwm: another window manager already owns this display; "
                 "not starting a second one.\n");
+        XCloseDisplay(core->display);
+        core->display = NULL;
         return -1;
     }
 
-    core_create_check_window(core);
+    core->check_window = core_create_check_window(core);
     core_publish_supported(core);
     core_publish_client_list(core);
     XSync(core->display, False);
@@ -281,39 +312,53 @@ static void core_dispatch(WmCore *core, XEvent *event) {
  * next tick.
  *
  * A signal interrupts the wait — that is how the loop is asked to stop — and
- * the interrupted wait is treated as a plain timeout: the flag the handler
- * set is read by the caller, and ticks get one more chance to run cleanly. */
+ * the interrupted wait ends the step: the flag the handler set is read by the
+ * caller, which is what lets the session close its display cleanly rather than
+ * mid-tick. Every other failure of the wait ends it too, for the same reason a
+ * failure is not a reason to ask again: a loop that retried would be a loop
+ * that spins. */
 void wm_core_step(WmCore *core) {
     int interval = core_tick_interval(core);
 
     int fd = ConnectionNumber(core->display);
-    fd_set readable;
-    FD_ZERO(&readable);
-    FD_SET(fd, &readable);
-
-    struct timeval timeout;
-    struct timeval *wait = NULL;
-    if (interval >= 0) {
-        timeout.tv_sec = interval / 1000;
-        timeout.tv_usec = (interval % 1000) * 1000;
-        wait = &timeout;
-    }
 
     while (XPending(core->display) == 0) {
+        /* The set and the timeout are built again on every pass, because
+           select() writes to both of them: it clears the bit of every
+           descriptor that was not ready and leaves whatever time it did not
+           use in the timeout. Waiting again with what it left behind would ask
+           about no descriptor at all, so the wait would return at once — and
+           every later pass would be a pass of a loop that never blocks. An
+           idle session would then spin one core of the machine for as long as
+           nothing happened, which is what made a still desktop crawl. */
+        fd_set readable;
+        FD_ZERO(&readable);
+        FD_SET(fd, &readable);
+
+        struct timeval timeout;
+        struct timeval *wait = NULL;
+        if (interval >= 0) {
+            timeout.tv_sec = interval / 1000;
+            timeout.tv_usec = (interval % 1000) * 1000;
+            wait = &timeout;
+        }
+
         int ready = select(fd + 1, &readable, NULL, NULL, wait);
         if (ready > 0) {
             break;
         }
-        if (ready < 0 && errno == EINTR) {
+        if (ready < 0) {
+            /* A signal interrupting the wait is how the loop is asked to
+               stop, and any other failure is not something to wait on again:
+               either way the wait ends and the loop goes back to reading the
+               display instead of asking about it in a spin. */
             break;
         }
-        if (ready == 0) {
-            /* The display was quiet for as long as the shortest interval
-               allowed: this is the tick. */
-            core_call_ticks(core);
-            if (!core->running) {
-                return;
-            }
+        /* The display was quiet for as long as the shortest interval allowed:
+           this is the tick. */
+        core_call_ticks(core);
+        if (!core->running) {
+            return;
         }
     }
 
@@ -343,6 +388,10 @@ void wm_core_shutdown(WmCore *core) {
         if (core->gc != NULL) {
             XFreeGC(core->display, core->gc);
             core->gc = NULL;
+        }
+        if (core->check_window != None) {
+            XDestroyWindow(core->display, core->check_window);
+            core->check_window = None;
         }
         wm_style_free(&core->style, core->display);
         XCloseDisplay(core->display);

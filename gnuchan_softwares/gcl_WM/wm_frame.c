@@ -1110,6 +1110,27 @@ static void frame_end_resize(WmCore *core, WmFrame *frame) {
     XFlush(core->display);
 }
 
+/* Answer the synchronous grab a press may have arrived under.
+ *
+ * The passive grabs this module takes on a client are GrabModeSync: the
+ * server holds the pointer until the manager answers with XAllowEvents. A
+ * path that decides the press is not for it and returns without answering
+ * leaves the device held, and the freeze is the server's rather than this
+ * window's — so the whole display stops responding, which from the user's
+ * side is a session that has gone dead.
+ *
+ * Only a window this module manages can have one of those grabs on it, and
+ * the grab reports the client it was taken on, so that is the test. A press
+ * that arrived on the frame itself, on the bar or on the root was not grabbed
+ * and is left alone: sending an XAllowEvents for a grab that is not active is
+ * a no-op at best and is what makes the difference between answering a grab
+ * and guessing at one. */
+static void frame_allow_sync_grab(WmCore *core, XButtonEvent *press) {
+    if (wm_frame_find(core, press->window)) {
+        XAllowEvents(core->display, AsyncPointer, press->time);
+    }
+}
+
 static void frame_event(WmCore *core, XEvent *event) {
     switch (event->type) {
     case ButtonPress: {
@@ -1129,6 +1150,10 @@ static void frame_event(WmCore *core, XEvent *event) {
                 frame = wm_frame_find_by_frame(core, event->xbutton.window);
             }
             if (!frame) {
+                /* Neither a managed client nor one of this manager's frames,
+                   but the grab was taken on a client and the press still has
+                   to be answered or the pointer stays frozen. */
+                frame_allow_sync_grab(core, &event->xbutton);
                 break;
             }
 
@@ -1160,6 +1185,9 @@ static void frame_event(WmCore *core, XEvent *event) {
         }
 
         if (event->xbutton.button != Button1) {
+            /* Not a button this manager acts on. A grab may still be holding
+               the pointer, so it is released before the press is dropped. */
+            frame_allow_sync_grab(core, &event->xbutton);
             break;
         }
         /* A press the passive grab took on a program's own window. The click
@@ -1178,6 +1206,7 @@ static void frame_event(WmCore *core, XEvent *event) {
 
         WmFrame *frame = wm_frame_find_by_frame(core, event->xbutton.window);
         if (!frame) {
+            frame_allow_sync_grab(core, &event->xbutton);
             break;
         }
         WmFrameButton button = button_at(frame, event->xbutton.x,

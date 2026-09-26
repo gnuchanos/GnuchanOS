@@ -32,6 +32,7 @@
 #include <X11/keysym.h>
 
 #include "wm_core.h"
+#include "wm_desktop.h"
 #include "wm_spawn.h"
 
 /* The distances the drawing is built from, so nothing has to be restated in
@@ -133,6 +134,37 @@ static int run_program(char *const argv[]) {
  * The menu is this process's own window and is taken down first: the list is
  * of clients to kill, and the server would otherwise close this connection
  * partway through the loop, leaving the rest of the session running. */
+/* Whether a window on the root belongs to this manager rather than to a
+ * program.
+ *
+ * This test is what makes the walk below able to finish. XKillClient on a
+ * window this client owns does not merely close that window: it closes this
+ * client's connection to the server, which is what the protocol says killing a
+ * resource's owner means. The root's children include the manager's frames,
+ * its bar, its check window and its config-message window — so without this
+ * test the very first child killed is the manager's own, the connection goes
+ * down mid-loop, and every kill still queued behind it is discarded with it.
+ * The session then does not end at all: the programs stay up and the menu is
+ * gone, with nothing on the screen to say why.
+ *
+ * A frame is recognised by the table rather than by asking the server, because
+ * the table is the manager's own record of what it made. The rest are the
+ * single windows the manager keeps: the bar, the advertisement window and the
+ * message window. */
+static int window_belongs_to_manager(WmCore *core, Window window) {
+    if (window == core->check_window ||
+        window == wm_desktop_bar_window() ||
+        window == wm_config_error_window()) {
+        return 1;
+    }
+    for (int i = 0; i < core->frame_count; i++) {
+        if (core->frames[i].frame == window) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void action_logout(WmCore *core) {
     Window root_return = None;
     Window parent_return = None;
@@ -151,7 +183,12 @@ static void action_logout(WmCore *core) {
 
     if (XQueryTree(core->display, core->root, &root_return, &parent_return,
                    &children, &count)) {
+        /* Every kill is queued before anything is flushed, and the manager's
+           own windows are skipped: see window_belongs_to_manager(). */
         for (unsigned int i = 0; i < count; i++) {
+            if (window_belongs_to_manager(core, children[i])) {
+                continue;
+            }
             XKillClient(core->display, children[i]);
         }
         if (children) {

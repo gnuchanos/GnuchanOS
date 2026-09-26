@@ -86,6 +86,37 @@ static void value_text(const Script *script, const WmValue *value,
     wm_config_value_text(value, out, size);
 }
 
+/* The first of several argument names a call actually passed.
+ *
+ * One setting is spelled two ways in practice: the group box's separator is
+ * `Seperator` in the shipped script — the way the person who wrote it spells
+ * the word — and `Separator` for anyone who spells it correctly. Reading only
+ * one of them silently drops the other, so a reader that has more than one
+ * name for the same argument asks for them in turn. */
+static const WmValue *first_argument(const WmStatement *call,
+                                     const char *const *names, int name_count) {
+    for (int i = 0; i < name_count; i++) {
+        const WmValue *value = wm_config_argument(call, names[i]);
+        if (value) {
+            return value;
+        }
+    }
+    return NULL;
+}
+
+static const char *const SEPARATOR_NAMES[] = {
+    "Seperator", "Separator", "seperator", "separator",
+};
+#define SEPARATOR_NAME_COUNT \
+    ((int)(sizeof(SEPARATOR_NAMES) / sizeof(SEPARATOR_NAMES[0])))
+
+static const char *const SEPARATOR_COLOUR_NAMES[] = {
+    "SeperatorColor", "SeparatorColor",
+    "SeperatorColour", "SeparatorColour",
+};
+#define SEPARATOR_COLOUR_NAME_COUNT \
+    ((int)(sizeof(SEPARATOR_COLOUR_NAMES) / sizeof(SEPARATOR_COLOUR_NAMES[0])))
+
 /* --- widgets -------------------------------------------------------------- */
 
 /* One widget out of a gcl_Widgets.X(...) call. The widget's kind is the call's
@@ -141,6 +172,27 @@ static int widget_from_call(const Script *script, const WmStatement *call,
     widget->end_layout = wm_config_value_number(
         wm_config_argument(call, "end_layout"), widget->start_layout);
 
+    /* Held inside the number of workspaces a session may have. The bar draws
+       one cell per workspace that exists, and the session's count is derived
+       from these two numbers — so a script that wrote a range wider than the
+       ceiling, or one that ended at the largest number an int can hold, would
+       have that arithmetic overflow before anything was drawn. Clamping at the
+       one place the range is read keeps every later use of it in range, and a
+       range wider than the ceiling is a range a session could never show
+       anyway. */
+    if (widget->start_layout < 0) {
+        widget->start_layout = 0;
+    }
+    if (widget->start_layout > WM_WORKSPACE_MAX - 1) {
+        widget->start_layout = WM_WORKSPACE_MAX - 1;
+    }
+    if (widget->end_layout < widget->start_layout) {
+        widget->end_layout = widget->start_layout;
+    }
+    if (widget->end_layout > WM_WORKSPACE_MAX - 1) {
+        widget->end_layout = WM_WORKSPACE_MAX - 1;
+    }
+
     /* The room between two workspace cells. Zero means "not written", and the
        bar then uses its own default spacing — a script that never mentions Gap
        keeps the bar it always had instead of getting a row of cells that touch
@@ -161,6 +213,23 @@ static int widget_from_call(const Script *script, const WmStatement *call,
     argument = wm_config_argument(call, "format");
     value_text(script, argument, text, sizeof(text));
     copy_text(widget->format, sizeof(widget->format), text);
+
+    /* The group box's separator, and the colour it is drawn in.
+     *
+     * The mark between two open windows' icons never appeared whatever the
+     * script said: the reader asked for `Separator` while the shipped script
+     * writes `Seperator`, so the field the drawing code checks was never
+     * filled in and the box drew the icons hard against each other. Both
+     * spellings are read now. An unnamed colour is left as an empty string,
+     * which the drawing code already reads as "the widget's own foreground". */
+    argument = first_argument(call, SEPARATOR_NAMES, SEPARATOR_NAME_COUNT);
+    value_text(script, argument, text, sizeof(text));
+    copy_text(widget->separator, sizeof(widget->separator), text);
+
+    argument = first_argument(call, SEPARATOR_COLOUR_NAMES,
+                              SEPARATOR_COLOUR_NAME_COUNT);
+    value_text(script, argument, text, sizeof(text));
+    copy_text(widget->separator_color, sizeof(widget->separator_color), text);
 
     /* An EmptySpace grows by default: that is what makes a bar of "layout,
        space, clock" put the clock at the right edge without anyone saying
@@ -804,8 +873,11 @@ int wm_config_load(WmConfig *config, const char *path) {
                 highest = top;
             }
         }
-        if (highest >= 0) {
+        if (highest >= 0 && highest < WM_WORKSPACE_MAX) {
             parsed.workspace_count = highest + 1;
+        }
+        if (highest >= WM_WORKSPACE_MAX) {
+            parsed.workspace_count = WM_WORKSPACE_MAX;
         }
     }
     if (parsed.workspace_count < 1) {
@@ -995,6 +1067,14 @@ void wm_config_apply(WmCore *core) {
 #define WM_ERROR_LINE_HEIGHT   22
 
 static Window error_window = None;
+
+/* The message window, or None when no message is up. Read by the menu's logout
+   walk, which has to leave the windows this manager owns alone: killing one
+   closes this manager's own connection, and the kills queued behind it are
+   discarded with it. */
+Window wm_config_error_window(void) {
+    return error_window;
+}
 static char error_title[WM_CONFIG_TEXT_LENGTH];
 static char error_first[WM_CONFIG_TEXT_LENGTH * 2];
 /* Room for "in " and a path: the path buffer the reload builds is four text

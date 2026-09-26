@@ -438,6 +438,15 @@ static int bar_layout_cells(WmCore *core, const WmWidget *widget,
                             int *numbers, int max) {
     int available = wm_workspace_count(core);
     int written = 0;
+    /* The walk counts up to the widget's own end_layout, so it is only as
+       bounded as that number is. The reader clamps the range, and this is the
+       second bound that keeps the loop's own promise true on its own terms:
+       one cell per workspace there can be, and no more, whatever the range
+       says. A start above the end is a range with nothing in it rather than a
+       loop that never runs its body. */
+    if (widget->start_layout > widget->end_layout) {
+        return 0;
+    }
     for (int number = widget->start_layout;
          number <= widget->end_layout && written < max; number++) {
         if (number < 0 || number >= available) {
@@ -588,6 +597,11 @@ void wm_desktop_raise_bar(WmCore *core) {
         XRaiseWindow(core->display, bar_window);
         XFlush(core->display);
     }
+}
+
+/* The bar's own window, or None. See the header for who asks and why. */
+Window wm_desktop_bar_window(void) {
+    return bar_window;
 }
 
 /* Draw the bar again. See the header for why this is not simply bar(). */

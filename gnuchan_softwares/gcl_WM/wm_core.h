@@ -45,6 +45,14 @@ struct WmCore {
     Atom wm_delete_window;
     Atom utf8_string;
 
+    /* The window that advertises this manager through
+       _NET_SUPPORTING_WM_CHECK. Kept because it is one of the manager's own
+       windows, and something has to be able to tell: the menu's logout walk
+       must leave it alone, and it is taken down when the session ends. Killing
+       a window this process owns closes this process's own connection to the
+       server, which is the whole reason the walk has to know. */
+    Window check_window;
+
     int running;
 
     /* The window that currently has input focus, 0 when none. */
@@ -142,6 +150,12 @@ extern const WmModule wm_input_module;    /* wm_input.c   */
    to a button rather than something the menu module can only do to itself. */
 void wm_menu_open(WmCore *core, int root_x, int root_y);
 int  wm_menu_is_open(void);
+
+/* wm_config_file.c — the window a config mistake is shown in, or None when
+   none is up. Read by the menu's logout walk, which must skip the windows
+   this manager owns: killing one of them closes this manager's own
+   connection, and every kill queued after it is then discarded. */
+Window wm_config_error_window(void);
 
 /* wm_input.c — push the touchpad settings into the running X server again.
    Called when the settings script is reloaded, so a changed TapToClick takes

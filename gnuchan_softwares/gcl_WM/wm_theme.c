@@ -30,6 +30,8 @@
  * that is not installed draws every window in the toolkit's built-in grey,
  * which looks less like a theme was chosen and more like one was lost.
  */
+#include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +39,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "wm_core.h"
@@ -312,6 +315,54 @@ static void publish_to_resource_manager(WmCore *core, const char *cursor_theme,
     free(existing);
 }
 
+/* How long a helper this module starts is given before it is stopped, and how
+   often it is asked whether it is done.
+ *
+ * Everything in this file runs inside a module's init, so it runs before the
+ * event loop exists and before a single pixel is drawn: a helper that never
+ * exits therefore holds the whole session at a blank screen, with no way from
+ * the outside to tell a session that is stuck from one that failed. xrdb reads
+ * a settings file, so it either finishes in a moment or is not going to, and
+ * waiting for ever on it is waiting for ever on the session's own start.
+ *
+ * The wait polls rather than blocking, because the wait has to be able to end:
+ * a blocking waitpid has no answer for "the child never returns". Any failure
+ * but an interruption ends it, ECHILD included — a child already reaped is not
+ * the child being waited for, and looping on that would spin for ever. */
+#define THEME_HELPER_TIMEOUT_MS 3000
+#define THEME_HELPER_POLL_MS 20
+
+static int theme_wait_for_child(pid_t pid, int *status_out) {
+    int waited = 0;
+    for (;;) {
+        pid_t done = waitpid(pid, status_out, WNOHANG);
+        if (done == pid) {
+            return 0;
+        }
+        if (done < 0 && errno != EINTR) {
+            return -1;
+        }
+        if (waited >= THEME_HELPER_TIMEOUT_MS) {
+            /* Stopped and reaped: a helper that will not finish must not
+               become a zombie the session carries for the rest of its life. */
+            kill(pid, SIGKILL);
+            while (waitpid(pid, status_out, 0) < 0 && errno == EINTR) {
+                /* Retry, so the kill is accounted for. */
+            }
+            fprintf(stderr,
+                    "gnuchanwm: a helper did not finish within %d ms and was "
+                    "stopped; the session continued without it\n",
+                    THEME_HELPER_TIMEOUT_MS);
+            return -1;
+        }
+        struct timespec pause;
+        pause.tv_sec = 0;
+        pause.tv_nsec = (long)THEME_HELPER_POLL_MS * 1000000L;
+        nanosleep(&pause, NULL);
+        waited += THEME_HELPER_POLL_MS;
+    }
+}
+
 /* Load the user's own resource file into the running server.
  *
  * ~/.Xresources is where a person's terminal settings live, and the login
@@ -356,9 +407,8 @@ static void load_user_resources(void) {
     }
 
     int status = 0;
-    while (waitpid(pid, &status, 0) < 0) {
-        /* A signal before the child finished is not a reason to leave it
-           unreaped; the loop retries the wait. */
+    if (theme_wait_for_child(pid, &status) != 0) {
+        return;
     }
     if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
         fprintf(stderr, "gnuchanwm: loaded %s with xrdb\n", path);
