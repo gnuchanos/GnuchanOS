@@ -26,6 +26,22 @@
 
 #include "wm_module.h"
 
+/* WmCore is pointed at, never inspected here; its struct lives in wm_core.h. */
+typedef struct WmCore WmCore;
+
+/* Publish the session's theme and cursor: write the GTK settings files, put
+   the cursor's name and size in the resource manager, link a theme the script
+   named from the path it named, and put the names into the environment every
+   program this session starts inherits.
+
+   It is the module's init and it is also what a config reload calls, because
+   the names it publishes come from the settings script: a reload that changed
+   gcl_themes.Theme_gtk(...) has to reach the same places the first run did, or
+   a theme edited in the script would apply only to the windows opened after
+   the reload. Running it twice is harmless: every file it writes is written
+   again with the same answer. */
+void wm_theme_apply(WmCore *core);
+
 /* The module publishes the session's theme and cursor. */
 extern const WmModule wm_theme_module;
 

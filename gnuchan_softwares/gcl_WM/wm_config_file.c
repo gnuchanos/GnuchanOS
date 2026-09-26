@@ -35,6 +35,7 @@
 #include "wm_core.h"
 #include "wm_frame.h"
 #include "wm_spawn.h"
+#include "wm_theme.h"
 
 /* Values the script named for itself, so a name used as a value can be
    resolved: `super_key1 = "Mod1"` followed by `keys=[super_key1, "return"]`
@@ -872,15 +873,14 @@ void wm_config_apply(WmCore *core) {
        the moment the script is read. */
     wm_frame_draw_all(core);
 
-    /* The theme names are published to the environment the session starts its
-       programs from, so a program that reads GTK_THEME sees the same answer a
-       toolkit would be given by the theme module. */
-    if (core->config.gtk_theme[0]) {
-        setenv("GTK_THEME", core->config.gtk_theme, 1);
-    }
-    if (core->config.cursor_theme[0]) {
-        setenv("XCURSOR_THEME", core->config.cursor_theme, 1);
-    }
+    /* The theme names are published the same three ways the first run published
+       them: the GTK settings files, the resource manager where the cursor is
+       named, and the environment. This is not only setenv: a reload that
+       changed gcl_themes.Theme_icon(...) has to reach ~/.config/gtk-3.0, and a
+       reload that changed the cursor has to reach Xcursor.theme, or half the
+       desktop keeps the theme the session started with. wm_theme_apply() is
+       the whole of that, and it is the same call the module's init makes. */
+    wm_theme_apply(core);
 
     /* The touchpad settings are pushed into the running X server again when
        they change. wm_input.c applies them at start, but a script whose

@@ -167,6 +167,17 @@ def xft_headers_present() -> bool:
     return header_present("X11/Xft/Xft.h", ("/usr/include/freetype2",))
 
 
+def xcursor_headers_present() -> bool:
+    """Whether libXcursor's header is here.
+
+    It is what loads a theme's cursor by name, which is the one thing plain X
+    cannot do: the core protocol's cursors are the server's own shapes and know
+    nothing about a theme. Without it the desktop falls back to drawing its own
+    pointer, which is why it is a dependency of the build and not optional.
+    """
+    return header_present("X11/Xcursor/Xcursor.h")
+
+
 def program_exists(name: str) -> bool:
     if "/" in name:
         return os.access(name, os.X_OK)
@@ -192,6 +203,10 @@ def ensure_build_dependencies() -> None:
     # Xft's own header includes, come with it as dependencies.
     if not xft_headers_present():
         needed.append("libxft-dev")
+    # Xcursor is what a theme's cursor is loaded through. Its header is in a
+    # package of its own; libx11-dev does not pull it in.
+    if not xcursor_headers_present():
+        needed.append("libxcursor-dev")
     if shutil.which("gcc") is None:
         needed.append("build-essential")
     if shutil.which("pkg-config") is None:
@@ -232,12 +247,14 @@ def x11_flags() -> tuple[list[str], list[str]]:
     """
     pkg_config = shutil.which("pkg-config")
     if pkg_config is not None:
-        cflags = run([pkg_config, "--cflags", "x11", "xft"], capture=True)
-        libs = run([pkg_config, "--libs", "x11", "xft"], capture=True)
+        cflags = run([pkg_config, "--cflags", "x11", "xft", "xcursor"],
+                     capture=True)
+        libs = run([pkg_config, "--libs", "x11", "xft", "xcursor"],
+                   capture=True)
         if cflags.returncode == 0 and libs.returncode == 0:
             return cflags.stdout.split(), libs.stdout.split()
     return (["-I/usr/include", "-I/usr/include/freetype2"],
-            ["-lX11", "-lXft"])
+            ["-lX11", "-lXft", "-lXcursor"])
 
 
 def check_sources() -> None:

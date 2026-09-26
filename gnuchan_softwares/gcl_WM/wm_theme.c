@@ -396,7 +396,10 @@ static void write_gtk_settings(const char *home, const char *version,
 
 /* --- the module ----------------------------------------------------------- */
 
-static int theme_init(WmCore *core) {
+void wm_theme_apply(WmCore *core) {
+    if (!core) {
+        return;
+    }
     WmConfig *config = &core->config;
 
     /* A theme the script named but the system does not have is linked in from
@@ -449,6 +452,14 @@ static int theme_init(WmCore *core) {
     fprintf(stderr,
             "gnuchanwm: theme %s, icons %s, cursor %s (%d)\n",
             gtk_theme, icon_theme, cursor_theme, cursor_size);
+}
+
+/* The module's init is the first apply. A later apply is a reload asking for
+   the same work again, which is why the body is a function of its own: the
+   reload has to reach the GTK settings files and the resource manager, not
+   only the environment the first run also set. */
+static int theme_init(WmCore *core) {
+    wm_theme_apply(core);
     return 0;
 }
 

@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include <X11/cursorfont.h>
+#include <X11/Xcursor/Xcursor.h>
 
 #include "wm_core.h"
 #include "wm_workspace.h"
@@ -283,18 +284,39 @@ static Pixmap desktop_cursor_shape(WmCore *core, int grow) {
     return pixmap;
 }
 
-/* The pointer the desktop draws. It is drawn on the root whatever the config
-   says about a cursor theme: the root is the one surface the pointer sits on
-   with nothing under it, and it is where the login screen was a moment ago, so
-   the two have to agree. A theme cursor here would be the theme's arrow with
-   the theme's colours, which is what the login screen deliberately does not
-   use. Programs are unaffected — they take their cursor from XCURSOR_THEME,
-   which wm_config_apply() still sets.
+/* The pointer, asked for from the cursor theme the settings script named.
+ *
+ * The root cursor used to be the drawn arrow below and nothing else, on the
+ * reasoning that the login screen drew the same shape so the two matched. That
+ * left the theme cursor invisible on the one surface the user sees it on most:
+ * gcl_themes.Theme_cursor(...) set XCURSOR_THEME and every program honoured
+ * it, but the desktop kept drawing its own arrow, so a cursor theme was chosen
+ * and the pointer over the desktop never changed.
+ *
+ * XcursorLibraryLoadCursor is what loads a theme's cursor by name — plain X
+ * cannot, because the core protocol's cursors are the server's own shapes and
+ * know nothing about a theme. It reads XCURSOR_THEME and XCURSOR_SIZE from the
+ * environment, which wm_theme_apply() has already set, so asking for the
+ * ordinary arrow here is asking for the theme's arrow. None is returned when
+ * the theme or the shape is not there, and the caller then falls back to the
+ * drawn arrow, so a machine with no cursor theme still gets a visible pointer. */
+static Cursor desktop_theme_cursor(WmCore *core) {
+    /* "default" is the name a theme is expected to answer with its ordinary
+       arrow: it is the name every toolkit asks for when it is told nothing
+       else, and the one a cursor theme is required to provide. "left_ptr" is
+       the freedesktop spelling of the same thing and is asked for second. */
+    Cursor cursor = XcursorLibraryLoadCursor(core->display, "default");
+    if (cursor == None) {
+        cursor = XcursorLibraryLoadCursor(core->display, "left_ptr");
+    }
+    return cursor;
+}
 
-   XCreatePixmapCursor needs the two colours allocated; a display that refuses
-   them (one with no colour at all) falls back to the font cursor, because a
-   pointer nobody can see is worse than an ugly one. */
-static Cursor desktop_make_cursor(WmCore *core) {
+/* The pointer the desktop draws when no theme answers. XCreatePixmapCursor
+   needs the two colours allocated; a display that refuses them (one with no
+   colour at all) falls back to the font cursor, because a pointer nobody can
+   see is worse than an ugly one. */
+static Cursor desktop_draw_cursor(WmCore *core) {
     Pixmap source = desktop_cursor_shape(core, 0);
     Pixmap mask = desktop_cursor_shape(core, 1);
     if (source == None || mask == None) {
@@ -322,6 +344,18 @@ static Cursor desktop_make_cursor(WmCore *core) {
     XFreePixmap(core->display, source);
     XFreePixmap(core->display, mask);
     return cursor;
+}
+
+/* The pointer set on the root: the theme's if it has one, and the drawn arrow
+   if it does not. The theme is asked for first because a cursor theme the
+   settings script named is the theme the user asked for, and a drawn arrow
+   over everything else would be the one place it did not apply. */
+static Cursor desktop_make_cursor(WmCore *core) {
+    Cursor from_theme = desktop_theme_cursor(core);
+    if (from_theme != None) {
+        return from_theme;
+    }
+    return desktop_draw_cursor(core);
 }
 
 /* --- what a widget says --------------------------------------------------- */
