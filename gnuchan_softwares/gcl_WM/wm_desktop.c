@@ -734,19 +734,19 @@ static void desktop_event(WmCore *core, XEvent *event) {
     }
 }
 
-/* The idle work of the desktop: keep the clock moving and re-read the config
-   script when it is saved. This is what makes the script live — there is no key
-   to press and no session to restart. */
+/* The idle work of the desktop: keep the clock moving.
+ *
+ * The config is deliberately not looked at here. Reloading is the reload key's
+ * job and only its job — a person presses Ctrl+Alt+R when they want the script
+ * read again, and the desktop does not watch the file behind their back. The
+ * two things a watch would have to get right, a change noticed the instant it
+ * is saved and a mistake never applied half-read, are what the key gives
+ * instead: one press reads the file, applies it whole or not at all, and puts
+ * a mistake in a window rather than in a log nobody is reading. A tick that
+ * re-read the file several times a second bought nothing but a stat() every
+ * half second for a file that almost never changes. */
 static void desktop_tick(WmCore *core) {
     static long long last_stamp = -1;
-
-    if (wm_config_reload(core)) {
-        /* A reload can move the bar or resize it, so everything the config
-           feeds is redone rather than only the paint. The pointer is not one
-           of those things: it is built once at start and the run from the
-           config only says which theme the programs should ask for. */
-        wm_desktop_repaint(core);
-    }
 
     /* The clock only needs a repaint when the second it shows has changed; a
        tick that redraws an unchanged clock is a wake-up per half second that

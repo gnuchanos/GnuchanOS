@@ -29,6 +29,7 @@
 #include <X11/keysym.h>
 
 #include "wm_core.h"
+#include "wm_desktop.h"
 #include "wm_frame.h"
 #include "wm_spawn.h"
 #include "wm_config.h"
@@ -70,9 +71,23 @@ static void action_switch_window(WmCore *core) {
     }
 }
 
+/* Ctrl+Alt+R: read the settings script again, whatever it looks like on disk.
+ *
+ * This is the by-hand path, and it is deliberately not the same as the idle
+ * tick's: the tick skips a file that has not changed, and a person who pressed
+ * the key is asking to see it applied now. So the read is forced, and the two
+ * things the config feeds that the config module cannot reach itself are redone
+ * with it — the bar, which is drawn by the desktop module, and every frame's
+ * geometry, which the reload already put right through wm_config_apply. A
+ * script that could not be read does not change the desktop: wm_config_apply is
+ * not reached, and the reason is put in a window by the config module. */
 static void action_reload_config(WmCore *core) {
-    if (wm_config_reload(core) == 0) {
-        fprintf(stderr, "gnuchanwm: hot reload applied\n");
+    if (wm_config_reload_forced(core)) {
+        /* wm_config_apply() already put every frame's border right and drew it
+           again; the bar is the one thing it does not reach, because the bar
+           belongs to the desktop module. So only the bar is repainted here. */
+        wm_desktop_repaint(core);
+        fprintf(stderr, "gnuchanwm: hot reload applied (Ctrl+Alt+R)\n");
     }
 }
 

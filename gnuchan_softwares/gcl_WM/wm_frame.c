@@ -43,11 +43,25 @@
  * decides what a frame looks like and every other function asks it. */
 
 static int frame_width(const WmFrame *frame) {
-    return frame->client_width + 2 * WM_FRAME_BORDER;
+    return frame->client_width + 2 * frame->border;
 }
 
 static int frame_height(const WmFrame *frame) {
-    return frame->client_height + WM_TITLE_HEIGHT + WM_FRAME_BORDER;
+    return frame->client_height + WM_TITLE_HEIGHT + frame->border;
+}
+
+/* The border width the desktop's style asks for, held inside what may be
+   drawn. It is the one place the clamping happens, so a frame made now and a
+   frame adjusted after a reload get the same answer. */
+static int style_border_width(const WmCore *core) {
+    int width = core->style.border_width;
+    if (width < 1) {
+        width = WM_FRAME_BORDER;
+    }
+    if (width > WM_FRAME_BORDER_MAX) {
+        width = WM_FRAME_BORDER_MAX;
+    }
+    return width;
 }
 
 /* Where a button sits inside the bar. They are laid out from the right edge
@@ -342,7 +356,7 @@ static void frame_notify_configure(WmCore *core, WmFrame *frame) {
     event.xconfigure.display = core->display;
     event.xconfigure.event = frame->client;
     event.xconfigure.window = frame->client;
-    event.xconfigure.x = WM_FRAME_BORDER;
+    event.xconfigure.x = frame->border;
     event.xconfigure.y = WM_TITLE_HEIGHT;
     event.xconfigure.width = frame->client_width;
     event.xconfigure.height = frame->client_height;
@@ -360,10 +374,38 @@ static void frame_apply(WmCore *core, WmFrame *frame) {
                       (unsigned int)frame_width(frame),
                       (unsigned int)frame_height(frame));
     XMoveResizeWindow(core->display, frame->client,
-                      WM_FRAME_BORDER, WM_TITLE_HEIGHT,
+                      frame->border, WM_TITLE_HEIGHT,
                       (unsigned int)frame->client_width,
                       (unsigned int)frame->client_height);
     wm_frame_draw(core, frame);
+}
+
+/* Put every open frame's border at the width the desktop's style now says.
+ *
+ * A script that changed set_window_border_width() has changed a number the
+ * geometry of every frame is computed from, so each frame is told the new
+ * width and put back together: the frame window is resized, the client inside
+ * it is moved, and the border is drawn again. Frames that are not open are
+ * skipped, and a screen with none is a no-op. */
+void wm_frame_apply_border(WmCore *core) {
+    int width = style_border_width(core);
+    core->style.border_width = width;
+
+    for (int i = 0; i < core->frame_count; i++) {
+        WmFrame *frame = &core->frames[i];
+        if (frame->border == width) {
+            continue;
+        }
+        frame->border = width;
+        /* A frame that is put away has no pixels to rearrange; it is given
+           the new width and drawn when it comes back. */
+        if (frame->minimized) {
+            continue;
+        }
+        frame_apply(core, frame);
+        frame_notify_configure(core, frame);
+    }
+    XFlush(core->display);
 }
 
 void wm_frame_move(WmCore *core, WmFrame *frame, int x, int y) {
@@ -513,8 +555,8 @@ void wm_frame_maximize(WmCore *core, WmFrame *frame) {
     frame->maximized = 1;
     frame->x = area_x;
     frame->y = area_y;
-    frame->client_width = area_width - 2 * WM_FRAME_BORDER;
-    frame->client_height = area_height - WM_TITLE_HEIGHT - WM_FRAME_BORDER;
+    frame->client_width = area_width - 2 * frame->border;
+    frame->client_height = area_height - WM_TITLE_HEIGHT - frame->border;
     if (frame->client_width < 1) frame->client_width = 1;
     if (frame->client_height < 1) frame->client_height = 1;
 
@@ -635,6 +677,7 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
     frame->client_height = attributes.height > 1 ? attributes.height : 24;
     frame->x = attributes.x;
     frame->y = attributes.y;
+    frame->border = style_border_width(core);
 
     /* A window is kept clear of the bar and inside the desktop. The screen's
        top-left corner is not where a window belongs when a bar is along the
@@ -669,8 +712,8 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
 
     /* The frame's own chrome is part of what has to fit, so the room left for
        the client is the area less the title bar and the two side borders. */
-    int room_width = area_width - 2 * WM_FRAME_BORDER;
-    int room_height = area_height - WM_TITLE_HEIGHT - WM_FRAME_BORDER;
+    int room_width = area_width - 2 * frame->border;
+    int room_height = area_height - WM_TITLE_HEIGHT - frame->border;
     if (room_width > 1 && frame->client_width > room_width) {
         frame->client_width = room_width;
     }
@@ -794,7 +837,7 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
 
     XSetWindowBorderWidth(core->display, client, 0);
     XReparentWindow(core->display, client, frame->frame,
-                    WM_FRAME_BORDER, WM_TITLE_HEIGHT);
+                    frame->border, WM_TITLE_HEIGHT);
     XMapWindow(core->display, client);
     XMapWindow(core->display, frame->frame);
 

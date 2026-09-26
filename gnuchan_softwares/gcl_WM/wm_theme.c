@@ -35,6 +35,8 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 #include "wm_core.h"
@@ -189,22 +191,178 @@ static int choose_cursor_size(void) {
     return CURSOR_SIZE_DEFAULT;
 }
 
-/* Write the X resource manager. Each setting is one line of "name:\tvalue",
-   which is what every reader of this property expects. */
+/* The keys this module owns in the resource manager. Everything else in the
+   property is somebody else's — xterm's faceName, Xft's rendering, whatever a
+   login script put there with xrdb — and must survive a write from here. */
+static const char *const MANAGED_RESOURCE_KEYS[] = {
+    "Xcursor.theme",
+    "Xcursor.size",
+    "Xft.dpi",
+};
+#define MANAGED_RESOURCE_KEY_COUNT \
+    ((int)(sizeof(MANAGED_RESOURCE_KEYS) / sizeof(MANAGED_RESOURCE_KEYS[0])))
+
+/* Whether a line of an X resource file sets one of the keys managed here, so
+   the old value of it can be dropped before the new one is added. */
+static int resource_line_is_managed(const char *line, unsigned int length) {
+    for (int i = 0; i < MANAGED_RESOURCE_KEY_COUNT; i++) {
+        size_t key_length = strlen(MANAGED_RESOURCE_KEYS[i]);
+        if (length < key_length) {
+            continue;
+        }
+        if (strncmp(line, MANAGED_RESOURCE_KEYS[i], key_length) == 0) {
+            unsigned int after = (unsigned int)key_length;
+            if (after < length &&
+                (line[after] == ':' || line[after] == '\t' ||
+                 line[after] == ' ' || line[after] == '=')) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* Read the resource manager property as it stands, into a freshly allocated
+   string. NULL when the property is unset, which is a display where nothing
+   has run xrdb yet. */
+static char *read_resource_manager(WmCore *core, Atom resources_atom) {
+    Atom actual_type = None;
+    int actual_format = 0;
+    unsigned long items = 0;
+    unsigned long after = 0;
+    unsigned char *data = NULL;
+    if (XGetWindowProperty(core->display, core->root, resources_atom,
+                           0, 256 * 1024, False, XA_STRING, &actual_type,
+                           &actual_format, &items, &after, &data) != Success) {
+        return NULL;
+    }
+    if (!data) {
+        return NULL;
+    }
+    if (actual_type != XA_STRING || actual_format != 8 || items == 0) {
+        XFree(data);
+        return NULL;
+    }
+    char *text = malloc(items + 1);
+    if (text) {
+        memcpy(text, data, items);
+        text[items] = '\0';
+    }
+    XFree(data);
+    return text;
+}
+
+/* Write the resource manager, keeping what is already in it.
+ *
+ * This used to replace the whole property, and that is what broke xterm: the
+ * terminal's own resources are loaded into this same property by `xrdb -merge
+ * ~/.Xresources`, so writing the three lines below erased every one of them —
+ * the font, the colours, the scrollbar — and a terminal opened afterwards came
+ * up as the stripped default the reset reports. The property is a shared file
+ * of settings, not this module's private state, so it is merged: the lines
+ * that set a key owned here are dropped and the new ones appended, and every
+ * other line is left exactly as it was. */
 static void publish_to_resource_manager(WmCore *core, const char *cursor_theme,
                                         int cursor_size) {
-    char resources[1024];
-    snprintf(resources, sizeof(resources),
+    char ours[256];
+    snprintf(ours, sizeof(ours),
              "Xcursor.theme:\t%s\n"
              "Xcursor.size:\t%d\n"
              "Xft.dpi:\t96\n",
              cursor_theme, cursor_size);
 
     Atom resources_atom = wm_atom(core, "RESOURCE_MANAGER");
+    char *existing = read_resource_manager(core, resources_atom);
+
+    /* Room for what was there plus what is added. */
+    size_t existing_length = existing ? strlen(existing) : 0;
+    char *merged = malloc(existing_length + sizeof(ours) + 1);
+    if (!merged) {
+        free(existing);
+        return;
+    }
+
+    size_t merged_length = 0;
+    if (existing) {
+        const char *line = existing;
+        while (*line) {
+            const char *end = strchr(line, '\n');
+            size_t length = end ? (size_t)(end - line) : strlen(line);
+            if (!resource_line_is_managed(line, (unsigned int)length)) {
+                memcpy(merged + merged_length, line, length);
+                merged_length += length;
+                merged[merged_length++] = '\n';
+            }
+            if (!end) {
+                break;
+            }
+            line = end + 1;
+        }
+    }
+    memcpy(merged + merged_length, ours, strlen(ours));
+    merged_length += strlen(ours);
+    merged[merged_length] = '\0';
+
     XChangeProperty(core->display, core->root, resources_atom, XA_STRING, 8,
-                    PropModeReplace, (unsigned char *)resources,
-                    (int)strlen(resources));
+                    PropModeReplace, (unsigned char *)merged,
+                    (int)merged_length);
     XFlush(core->display);
+
+    free(merged);
+    free(existing);
+}
+
+/* Load the user's own resource file into the running server.
+ *
+ * ~/.Xresources is where a person's terminal settings live, and the login
+ * hooks that load it (dotfile/XTERM writes ~/.xsessionrc and ~/.xprofile) are
+ * sourced by a session that goes through a shell. A session whose window
+ * manager is started directly by a display manager sources neither, so the
+ * file would never reach the server and the terminal would come up as the
+ * bare default — the same symptom as the overwrite above, from the other
+ * direction. Running `xrdb -merge` here is what makes the file apply whatever
+ * started the session. It is silent on failure: a machine with no xrdb, or no
+ * file, is a machine whose terminal simply uses the server's current answer,
+ * and that is not a reason to stop a session starting. */
+static void load_user_resources(void) {
+    const char *home = getenv("HOME");
+    if (!home || !home[0]) {
+        return;
+    }
+    char path[4096];
+    snprintf(path, sizeof(path), "%s/.Xresources", home);
+
+    struct stat info;
+    if (stat(path, &info) != 0 || !S_ISREG(info.st_mode)) {
+        return;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        return;
+    }
+    if (pid == 0) {
+        /* The child's noise is the server's, not the session's: a missing
+           xrdb or a warning about one line is not what a login log is for. */
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+        char *argv[] = { "xrdb", "-merge", path, NULL };
+        execvp(argv[0], argv);
+        _exit(127);
+    }
+
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        /* A signal before the child finished is not a reason to leave it
+           unreaped; the loop retries the wait. */
+    }
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        fprintf(stderr, "gnuchanwm: loaded %s with xrdb\n", path);
+    }
 }
 
 /* One GTK settings file. GTK 3 and GTK 4 read the same keys from their own
@@ -261,6 +419,12 @@ static int theme_init(WmCore *core) {
                                             FALLBACK_CURSOR_THEME);
     int cursor_size = choose_cursor_size();
 
+    /* ~/.Xresources first, then this module's own three lines on top. The
+       order matters: xrdb -merge replaces the values for the keys it sets, so
+       loading the file before publishing means a cursor named here wins over
+       one the file happened to name, while every other setting the file holds
+       — the terminal's font and colours — is left in place. */
+    load_user_resources();
     publish_to_resource_manager(core, cursor_theme, cursor_size);
 
     const char *home = getenv("HOME");

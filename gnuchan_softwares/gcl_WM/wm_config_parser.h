@@ -103,4 +103,12 @@ void wm_config_value_text(const WmValue *value, char *out, unsigned int size);
 int wm_config_value_number(const WmValue *value, int fallback);
 int wm_config_value_bool(const WmValue *value, int fallback);
 
+/* The message for the first statement the last read refused, or an empty
+   string when that read parsed. Reading the file and understanding it are two
+   jobs, and this is how a caller that only learns "the file did not parse"
+   says why: the message names the statement that could not be read, which is
+   what a person is shown when the settings script is saved with a mistake in
+   it. Only the first error is kept — the rest are consequences of it. */
+const char *wm_config_last_error(void);
+
 #endif /* GNUCHANWM_CONFIG_PARSER_H */

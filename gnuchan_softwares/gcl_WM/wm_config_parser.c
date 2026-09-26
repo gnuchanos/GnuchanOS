@@ -47,7 +47,26 @@ typedef struct Parser {
 
 static void free_value(WmValue *value);
 
+/* The first message of the last read. A caller that only learns "the file did
+   not parse" needs the reason as well as the fact, and a config saved with a
+   mistake has to say which statement could not be read — otherwise the person
+   who saved it has one line in a log and a desktop that did not change. It is
+   a plain buffer and not allocated storage: the parser reads one file at a
+   time, and the message lives until the next read. */
+static char last_error[WM_CONFIG_TEXT_LENGTH];
+
+const char *wm_config_last_error(void) {
+    return last_error;
+}
+
 static void parser_error(const Parser *parser, const char *message) {
+    /* Only the first error is kept. Everything after it is a consequence —
+       one unclosed bracket makes the rest of the file nonsense — so reporting
+       the first is reporting the mistake rather than its echoes. */
+    if (last_error[0] == '\0') {
+        snprintf(last_error, sizeof(last_error), "%s near '%.24s'", message,
+                 parser->cursor ? parser->cursor : "");
+    }
     fprintf(stderr, "gnuchanwm: config: %s near '%.24s'\n", message,
             parser->cursor ? parser->cursor : "");
 }
@@ -450,6 +469,7 @@ static int parse_statement(Parser *parser, WmStatement *statement) {
 /* --- the file ------------------------------------------------------------- */
 
 int wm_config_parse_text(const char *text, WmStatement **out, int *out_count) {
+    last_error[0] = '\0';
     if (!out || !out_count) {
         return -1;
     }

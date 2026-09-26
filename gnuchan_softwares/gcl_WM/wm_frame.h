@@ -41,7 +41,17 @@ typedef struct WmCore WmCore;
 /* The chrome every window shares. Constants, not per-window choices: a title
    bar that is a different height on every window is not one desktop. */
 #define WM_TITLE_HEIGHT 22
+
+/* The border width a frame is given when the script asks for none. The frame
+   keeps its own copy in WmFrame.border, taken from the desktop's style, so a
+   script that called gcl_Window.set_window_border_width() gets the width it
+   asked for and this is only the answer for a session that never did. */
 #define WM_FRAME_BORDER 2
+
+/* The widest that border may be drawn. A strip wider than the title bar would
+   be a border with a window on it, so a script asking for more is reported and
+   held here. */
+#define WM_FRAME_BORDER_MAX 8
 #define WM_BUTTON_SIZE 16
 #define WM_BUTTON_GAP 6
 #define WM_MAX_FRAMES 128
@@ -84,6 +94,14 @@ typedef struct WmFrame {
     Window client;       /* the program's window, reparented inside it       */
 
     int x, y;            /* where the frame sits on the screen               */
+
+    /* How thick the border drawn around this window is. It is taken from the
+       desktop's style when the frame is made — the script sets it with
+       gcl_Window.set_window_border_width() — and kept per frame because the
+       geometry is computed from it and the frame has to stay consistent with
+       itself while it is dragged. wm_frame_apply_border() puts every open
+       frame back in step when the script changes it. */
+    int border;
 
     int client_width;    /* the client's size, which the frame wraps         */
     int client_height;
@@ -190,6 +208,12 @@ void wm_frame_sync(WmCore *core, WmFrame *frame);
 
 void wm_frame_draw(WmCore *core, WmFrame *frame);
 void wm_frame_draw_all(WmCore *core);
+
+/* Take the border width from the desktop's style again and put every frame's
+   geometry right with it. Called by wm_config_apply() after a reload, so a
+   script that changed set_window_border_width() is seen on the windows that
+   are already open rather than only on the next one. */
+void wm_frame_apply_border(WmCore *core);
 
 /* --- the module ----------------------------------------------------------- */
 

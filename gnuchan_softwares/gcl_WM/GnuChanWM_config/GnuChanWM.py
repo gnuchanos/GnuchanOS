@@ -3,6 +3,7 @@
 
 gcl_Window.set_active_window_border_color("#d400ff")
 gcl_Window.set_inactive_window_border_color("#450552")
+gcl_Window.set_window_border_width(2)
 
 # can be call multiple bar but for now it's just one bar
 gcl_BAR.call(

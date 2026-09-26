@@ -12,11 +12,14 @@
  *     gcl_keys.all = [gcl_key.MultiKey(keys=[...], action=...)]
  *         -> the key table
  *
- * It also owns the two things that make the script live rather than a
- * start-up file: the name it is looked for under, and the reload that notices
- * it changed. Reload is by modification time, checked on the loop's idle
- * tick, so saving the script is enough — no key to press, no session to
- * restart.
+ * It also owns the two things that make the script reloadable: the name it is
+ * looked for under, and the reload itself. Reload is asked for by hand — the
+ * reload key — and never watched for: a person presses Ctrl+Alt+R when they
+ * want the script read again, and the desktop does not re-read the file behind
+ * their back. That is what lets a read be all-or-nothing: the whole file is
+ * parsed into a copy and swapped in only when it parsed, a mistake leaves the
+ * desktop it already had, and the mistake is put in a window rather than
+ * silently applied half-read.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +33,7 @@
 
 #include "wm_config_parser.h"
 #include "wm_core.h"
+#include "wm_frame.h"
 #include "wm_spawn.h"
 
 /* Values the script named for itself, so a name used as a value can be
@@ -233,17 +237,40 @@ static void set_bar(const Script *script, WmConfig *config,
 /* --- the other statements ------------------------------------------------- */
 
 static void set_border_colours(WmConfig *config, const WmStatement *statement) {
-    /* The script passes the colour as the only argument, so it is positional:
-       set_active_window_border_color("#c369ff"). */
-    const WmValue *colour = wm_config_argument(statement, "color");
-    if (!colour && statement->arg_count > 0) {
-        colour = &statement->args[0].value;
+    /* The script passes its one value as the only argument, so it is
+       positional: set_active_window_border_color("#c369ff") and
+       set_window_border_width(2). */
+    const WmValue *value = wm_config_argument(statement, "color");
+    if (!value) {
+        value = wm_config_argument(statement, "width");
     }
-    if (!colour) {
+    if (!value && statement->arg_count > 0) {
+        value = &statement->args[0].value;
+    }
+    if (!value) {
         return;
     }
+
+    /* The border's thickness, set the same way the colours are but with a
+       number. Zero or less is refused rather than applied: a border of no
+       width is a window with nothing to grab, and a value like that is a
+       mistake the person who wrote it wants to hear about rather than have
+       silently remove the frame. */
+    if (strcmp(statement->target,
+               "gcl_Window.set_window_border_width") == 0) {
+        int width = wm_config_value_number(value, 0);
+        if (width >= 1) {
+            config->border_width = width;
+        } else {
+            fprintf(stderr,
+                    "gnuchanwm: config: set_window_border_width(%d) ignored; "
+                    "a border has to be at least 1 pixel\n", width);
+        }
+        return;
+    }
+
     char text[WM_CONFIG_TEXT_LENGTH];
-    wm_config_value_text(colour, text, sizeof(text));
+    wm_config_value_text(value, text, sizeof(text));
 
     if (strcmp(statement->target,
                "gcl_Window.set_active_window_border_color") == 0) {
@@ -830,6 +857,21 @@ void wm_config_apply(WmCore *core) {
         core->style.border_width = core->config.border_width;
     }
 
+    /* The border width is a number every open frame's geometry is computed
+       from, so a script that changed it has to reach the windows that are
+       already open. wm_frame_apply_border() puts each frame back together at
+       the new width; a screen with no windows is a no-op. */
+    wm_frame_apply_border(core);
+
+    /* And every frame is drawn again, whatever the width did. The two colours
+       above are what a frame's border and its title line are drawn in, and
+       they are read at draw time — so a script that changed only a colour
+       would otherwise leave the windows already on screen showing the old one
+       until something else happened to repaint them. Doing it here, in the one
+       place both reload paths go through, is what makes a colour change appear
+       the moment the script is read. */
+    wm_frame_draw_all(core);
+
     /* The theme names are published to the environment the session starts its
        programs from, so a program that reads GTK_THEME sees the same answer a
        toolkit would be given by the theme module. */
@@ -849,15 +891,113 @@ void wm_config_apply(WmCore *core) {
     wm_input_apply(core);
 }
 
-/* --- hot reload ----------------------------------------------------------- */
+/* --- the window a config mistake is shown in ------------------------------ */
 
-/* When the script was last read, so the tick can tell "unchanged" from
-   "written since". Two saves can share a second, so the size is kept beside
-   the time; the pair changes whenever a person saves a change. */
-static time_t script_time = 0;
-static off_t script_size = -1;
+/* When the reload key asks for the script and it cannot be read, the reason is
+   put on screen and not only in the log.
+ *
+ * A person who pressed the key is looking at the desktop, not at a file: a
+ * change that silently did not happen reads as a key that does nothing, and
+ * the log is somewhere a running session has no terminal to read. So the
+ * mistake is shown where the person already is — the statement that could not
+ * be understood, and the file it came from. The window is override-redirect so
+ * the manager does not try to manage its own message, and it is closed by a
+ * click or a key, which is the one gesture a reader will try. */
+#define WM_ERROR_WINDOW_WIDTH  640
+#define WM_ERROR_WINDOW_HEIGHT 168
+#define WM_ERROR_PADDING       16
+#define WM_ERROR_LINE_HEIGHT   22
 
-int wm_config_reload(WmCore *core) {
+static Window error_window = None;
+static char error_title[WM_CONFIG_TEXT_LENGTH];
+static char error_first[WM_CONFIG_TEXT_LENGTH * 2];
+/* Room for "in " and a path: the path buffer the reload builds is four text
+   lengths, so the line that names the file is one length larger than that. A
+   short buffer here would silently clip the path of the very file the message
+   exists to name. */
+static char error_second[WM_CONFIG_TEXT_LENGTH * 5];
+
+static void config_draw_error(WmCore *core) {
+    if (error_window == None) {
+        return;
+    }
+    Display *display = core->display;
+    XftFont *font = core->style.font;
+
+    XSetForeground(display, core->gc, core->style.panel);
+    XFillRectangle(display, error_window, core->gc, 0, 0,
+                   WM_ERROR_WINDOW_WIDTH, WM_ERROR_WINDOW_HEIGHT);
+    XSetForeground(display, core->gc, core->style.accent);
+    XDrawRectangle(display, error_window, core->gc, 0, 0,
+                   WM_ERROR_WINDOW_WIDTH - 1, WM_ERROR_WINDOW_HEIGHT - 1);
+
+    if (!font) {
+        return;
+    }
+    int baseline = WM_ERROR_PADDING + font->ascent;
+    wm_style_text(display, core->screen, error_window, font,
+                  WM_ERROR_PADDING, baseline, error_title, core->style.accent);
+    baseline += WM_ERROR_LINE_HEIGHT;
+    wm_style_text(display, core->screen, error_window, font,
+                  WM_ERROR_PADDING, baseline, error_first, core->style.text);
+    baseline += WM_ERROR_LINE_HEIGHT;
+    wm_style_text(display, core->screen, error_window, font,
+                  WM_ERROR_PADDING, baseline, error_second,
+                  core->style.text_muted);
+    XFlush(display);
+}
+
+/* Show the reason the script could not be applied. Called from the forced
+   reload, which is the path a person took by pressing the key, so it is the
+   path where a message on screen is what they asked for. */
+static void config_show_error(WmCore *core, const char *path,
+                              const char *reason) {
+    if (!core || !core->display) {
+        return;
+    }
+
+    const char *detail = (reason && reason[0]) ? reason
+                                               : "the file could not be read";
+    snprintf(error_title, sizeof(error_title),
+             "GnuChanWM: the config was not applied");
+    snprintf(error_first, sizeof(error_first), "%s", detail);
+    snprintf(error_second, sizeof(error_second), "in %s", path ? path : "");
+
+    fprintf(stderr, "gnuchanwm: config error shown: %s (%s)\n", detail, path);
+
+    if (error_window != None) {
+        /* A message already up is replaced rather than stacked: two windows,
+           one behind the other, is one message nobody can read. */
+        XDestroyWindow(core->display, error_window);
+        error_window = None;
+    }
+
+    int x = (core->width - WM_ERROR_WINDOW_WIDTH) / 2;
+    if (x < 0) {
+        x = 0;
+    }
+
+    XSetWindowAttributes attributes;
+    memset(&attributes, 0, sizeof(attributes));
+    attributes.override_redirect = True;
+    attributes.background_pixel = core->style.panel;
+    attributes.event_mask = ExposureMask | KeyPressMask | ButtonPressMask;
+
+    error_window = XCreateWindow(core->display, core->root,
+                                 x, 64,
+                                 WM_ERROR_WINDOW_WIDTH, WM_ERROR_WINDOW_HEIGHT,
+                                 1, CopyFromParent, InputOutput, CopyFromParent,
+                                 CWOverrideRedirect | CWBackPixel | CWEventMask,
+                                 &attributes);
+    if (error_window == None) {
+        return;
+    }
+    XStoreName(core->display, error_window, "GnuChanWM config error");
+    XMapRaised(core->display, error_window);
+    XFlush(core->display);
+}
+
+int wm_config_reload_forced(WmCore *core) {
     if (!core) {
         return 0;
     }
@@ -867,34 +1007,47 @@ int wm_config_reload(WmCore *core) {
         return 0;
     }
 
-    struct stat info;
-    if (stat(path, &info) != 0) {
-        return 0;
-    }
-    if (info.st_mtime == script_time && info.st_size == script_size) {
-        return 0;
-    }
-
+    /* The unchanged-file shortcut is deliberately skipped: the key means
+       "read it again now", and a person who saved a change between two ticks
+       would otherwise press it and see nothing. */
     WmConfig fresh = core->config;
     if (wm_config_load(&fresh, path) != 0) {
-        /* The script was saved mid-edit or with a mistake in it. The desktop
-           keeps what it had and the change waits for the next save, which is
-           what makes editing a script safe to do while it is running. The
-           stamp is still recorded, so the same broken file is not re-read on
-           every tick. */
-        fprintf(stderr, "gnuchanwm: config not reloaded; it could not be read\n");
-        script_time = info.st_mtime;
-        script_size = info.st_size;
+        /* A script that does not parse is not a half-desktop: the copy above
+           is thrown away, the desktop keeps what it had, and the reason is
+           put on screen. */
+        config_show_error(core, path, wm_config_last_error());
         return 0;
     }
 
     core->config = fresh;
     wm_config_apply(core);
     config_report(&core->config, "reloaded");
-    script_time = info.st_mtime;
-    script_size = info.st_size;
     fprintf(stderr, "gnuchanwm: config reloaded from %s\n", path);
     return 1;
+}
+
+/* The module's event callback: the error window's own two gestures. Every
+   other event is passed over, so adding this callback costs the rest of the
+   loop one comparison. */
+static void config_event(WmCore *core, XEvent *event) {
+    if (error_window == None || event->xany.window != error_window) {
+        return;
+    }
+    switch (event->type) {
+    case Expose:
+        if (event->xexpose.count == 0) {
+            config_draw_error(core);
+        }
+        break;
+    case ButtonPress:
+    case KeyPress:
+        XDestroyWindow(core->display, error_window);
+        error_window = None;
+        XFlush(core->display);
+        break;
+    default:
+        break;
+    }
 }
 
 /* --- the module ----------------------------------------------------------- */
@@ -909,10 +1062,8 @@ static int config_init(WmCore *core) {
     wm_config_path(path, sizeof(path));
 
     struct stat info;
-    int have_script = path[0] && stat(path, &info) == 0;
-    if (have_script && wm_config_load(&core->config, path) == 0) {
-        script_time = info.st_mtime;
-        script_size = info.st_size;
+    if (path[0] && stat(path, &info) == 0 &&
+        wm_config_load(&core->config, path) == 0) {
         fprintf(stderr, "gnuchanwm: config read from %s\n", path);
     } else {
         /* No script is not a failure: it is a machine that never wrote one,
@@ -929,7 +1080,7 @@ static int config_init(WmCore *core) {
 const WmModule wm_config_module = {
     .name = "config",
     .init = config_init,
-    .event = NULL,
+    .event = config_event,
     .tick = NULL,
     .interval_ms = 0,
     .cleanup = NULL,

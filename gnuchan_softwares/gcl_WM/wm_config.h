@@ -239,10 +239,13 @@ char *wm_config_path(char *buffer, unsigned int size);
    trust — a half-read config is not applied. */
 int wm_config_load(WmConfig *config, const char *path);
 
-/* Re-read the script if it has changed since the last read, and repaint if it
-   has. Called from the loop's idle tick, so editing the script is enough to
-   change the desktop — no key, no logout. Returns 1 when a reload happened. */
-int wm_config_reload(WmCore *core);
+/* Read the script again and apply it, and show the reason in a window when it
+   cannot be read. This is the reload key's whole job: a person presses it when
+   they want the file read again, and nothing reads the file on its own. The
+   read is all-or-nothing — a script that does not parse leaves the desktop
+   exactly as it was, and the mistake is put on screen rather than applied
+   half-read. Returns 1 when the desktop changed. */
+int wm_config_reload_forced(WmCore *core);
 
 /* Push the palette out of config into the desktop's style, the theme names
    into the environment, and the pointer onto the desktop. */
