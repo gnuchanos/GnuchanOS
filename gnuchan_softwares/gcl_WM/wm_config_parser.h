@@ -43,6 +43,10 @@ typedef struct WmValue {
     WmValueKind kind;
     char text[WM_CONFIG_TEXT_LENGTH];
     int number;
+    /* The same number kept whole. A float — the shadow's opacity=0.5 — is read
+       by the tokeniser as one token, but `number` truncates at the dot, so
+       anything that wants the fraction reads it here. */
+    double real;
     int boolean;
 
     /* WM_VALUE_LIST owns its items; wm_config_statements_free() releases
@@ -102,6 +106,11 @@ void wm_config_value_text(const WmValue *value, char *out, unsigned int size);
    missing or is not of that kind. */
 int wm_config_value_number(const WmValue *value, int fallback);
 int wm_config_value_bool(const WmValue *value, int fallback);
+
+/* A value as a real, so a script's own float — set_window_shadow_opacity(0.5)
+   — is read as the fraction it is rather than truncated to 0. The fallback is
+   the answer when the value is missing or is not a number at all. */
+double wm_config_value_real(const WmValue *value, double fallback);
 
 /* The message for the first statement the last read refused, or an empty
    string when that read parsed. Reading the file and understanding it are two

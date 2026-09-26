@@ -5,12 +5,24 @@ gcl_Window.set_active_window_border_color("#d400ff")
 gcl_Window.set_inactive_window_border_color("#450552")
 gcl_Window.set_window_border_width(2)
 
+# The window frame's own look: how far the corners are cut back, and the drop
+# shadow behind a frame. The shadow's colour is a name and its opacity a
+# fraction, 0.0 to 1.0.
+gcl_Window.set_window_border_radius(5)
+gcl_Window.set_window_shadow_color("#000000")
+gcl_Window.set_window_shadow_opacity(0.5)
+
+# The desktop wallpaper, drawn behind every window. This is not the bar's
+# picture: a wallpaper belongs behind the whole desktop, not inside one strip
+# of it. Empty keeps the flat desktop colour.
+# gcl_Window.background_color = "#27022b"
+gcl_Window.BackgroundImage = "bg.png"
+
 # can be call multiple bar but for now it's just one bar
 gcl_BAR.call(
     Position="top",
     Size=24,
     BackgroundColor="#27022b",
-    BackgroundImage="bg.png", # if this place is empty, it will use BackgroundColor
     Vsync=True,
     Widgets=[
         gcl_Widgets.CurrentLayout(

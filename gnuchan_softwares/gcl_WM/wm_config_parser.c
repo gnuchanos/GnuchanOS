@@ -312,6 +312,10 @@ static int parse_value(Parser *parser, WmValue *value) {
     if (parser->kind == TOKEN_NUMBER) {
         value->kind = WM_VALUE_NUMBER;
         value->number = atoi(parser->text);
+        /* The same token kept whole, so a float survives as the fraction it
+           was written as. `number` truncates at the dot; a caller that wants
+           the fraction — the shadow's opacity=0.5 — reads this instead. */
+        value->real = strtod(parser->text, NULL);
         parser_advance(parser);
         return 0;
     }
@@ -660,6 +664,23 @@ int wm_config_value_number(const WmValue *value, int fallback) {
         long parsed = strtol(value->text, &end, 10);
         if (end && end != value->text) {
             return (int)parsed;
+        }
+    }
+    return fallback;
+}
+
+double wm_config_value_real(const WmValue *value, double fallback) {
+    if (!value) {
+        return fallback;
+    }
+    if (value->kind == WM_VALUE_NUMBER) {
+        return value->real;
+    }
+    if (value->kind == WM_VALUE_STRING || value->kind == WM_VALUE_NAME) {
+        char *end = NULL;
+        double parsed = strtod(value->text, &end);
+        if (end && end != value->text) {
+            return parsed;
         }
     }
     return fallback;

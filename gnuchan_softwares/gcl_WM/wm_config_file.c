@@ -231,10 +231,6 @@ static void set_bar(const Script *script, WmConfig *config,
         copy_text(bar->background, sizeof(bar->background), text);
     }
 
-    value_text(script, wm_config_argument(statement, "BackgroundImage"),
-               text, sizeof(text));
-    copy_text(bar->background_image, sizeof(bar->background_image), text);
-
     /* Off unless the script says otherwise — no: on unless the script says
        otherwise. See WmBar.vsync; the field is read as a bool with a default
        of 1 so a script that never mentions it gets the flicker-free bar. */
@@ -279,6 +275,32 @@ static void set_border_colours(WmConfig *config, const WmStatement *statement) {
         return;
     }
 
+    /* The corner radius, a number in pixels. Zero is allowed and means square
+       corners, so a script that writes 0 gets what it asked for rather than
+       the value being refused for being falsy. */
+    if (strcmp(statement->target,
+               "gcl_Window.set_window_border_radius") == 0) {
+        int radius = wm_config_value_number(value, 0);
+        config->border_radius = radius > 0 ? radius : 0;
+        return;
+    }
+
+    /* The shadow's opacity, written as a fraction — 0.5 — and kept per mille
+       so the integer field holds what the script meant. A value outside 0..1
+       is clamped rather than refused. */
+    if (strcmp(statement->target,
+               "gcl_Window.set_window_shadow_opacity") == 0) {
+        double opacity = wm_config_value_real(value, 0.0);
+        if (opacity < 0.0) {
+            opacity = 0.0;
+        }
+        if (opacity > 1.0) {
+            opacity = 1.0;
+        }
+        config->shadow_opacity = (int)(opacity * 1000.0 + 0.5);
+        return;
+    }
+
     char text[WM_CONFIG_TEXT_LENGTH];
     wm_config_value_text(value, text, sizeof(text));
 
@@ -288,6 +310,9 @@ static void set_border_colours(WmConfig *config, const WmStatement *statement) {
     } else if (strcmp(statement->target,
                       "gcl_Window.set_inactive_window_border_color") == 0) {
         copy_text(config->inactive_border, sizeof(config->inactive_border), text);
+    } else if (strcmp(statement->target,
+                      "gcl_Window.set_window_shadow_color") == 0) {
+        copy_text(config->shadow_color, sizeof(config->shadow_color), text);
     }
 }
 
@@ -569,6 +594,16 @@ static void walk(Script *script, WmConfig *config,
                                      sizeof(config->terminal));
             } else if (strcmp(statement->target, "gcl_keys.all") == 0) {
                 add_bindings_from_list(script, config, &statement->value);
+            } else if (strcmp(statement->target,
+                              "gcl_Window.BackgroundImage") == 0) {
+                /* The wallpaper, written as an assignment rather than a call:
+                   `gcl_Window.BackgroundImage = "bg.png"`. It is the desktop
+                   behind every window, not the bar — which is why it lives on
+                   the config and not on WmBar — and an empty value keeps the
+                   flat desktop colour. */
+                value_text(script, &statement->value,
+                           config->desktop_background_image,
+                           sizeof(config->desktop_background_image));
             }
             remember_assignment(script, statement);
             continue;

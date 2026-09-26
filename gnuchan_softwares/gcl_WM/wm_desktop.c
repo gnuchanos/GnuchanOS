@@ -53,12 +53,13 @@
    draws or moves the bar. */
 static Window bar_window = None;
 
-/* The bar's background picture, when the script named one through
-   BackgroundImage. It is kept here, decoded once at the bar's height, so the
-   once-a-second repaint copies a picture rather than reading a file; see
-   wm_image.c. It is only ever used on the bar, so it lives beside the bar's
-   window rather than on the core. */
-static WmImage bar_image;
+/* The desktop's wallpaper, when the script named one through
+   `gcl_Window.BackgroundImage`. It is drawn across the root behind every
+   window, decoded once at the screen's height so a repaint copies a picture
+   rather than reading a file; see wm_image.c. The bar has no picture of its
+   own: a wallpaper belongs behind the whole desktop, not inside one strip of
+   it. */
+static WmImage desktop_image;
 
 /* Declared ahead of the public entry points, which are written next to the
    raise they pair with rather than next to the drawing they call. */
@@ -625,24 +626,6 @@ static void desktop_bar(WmCore *core) {
     XFillRectangle(core->display, canvas, core->gc,
                    0, 0, (unsigned int)bar_width, (unsigned int)height);
 
-    /* The strip's picture, when the script named one through BackgroundImage.
-       It is drawn over the flat colour rather than instead of it, so the
-       colour underneath is what shows wherever the picture has a transparent
-       pixel — and the colour is the fallback when the file is missing or does
-       not decode, which is what the script's comment promises ("if this place
-       is empty, it will use BackgroundColor").
-
-       The picture is prepared once at the bar's height and repeated across the
-       width; see wm_image.c for why a picture is tiled rather than stretched.
-       Loading is cheap here because a name at a height already loaded is kept,
-       so the once-a-second repaint only ever copies. */
-    if (bar->background_image[0]) {
-        if (wm_image_load(core, &bar_image, bar->background_image,
-                          height) == 0) {
-            wm_image_draw(core, &bar_image, canvas, 0, 0, bar_width);
-        }
-    }
-
     if (bar->widget_count == 0) {
         if (canvas != bar_window) {
             XCopyArea(core->display, canvas, bar_window, core->gc, 0, 0,
@@ -874,6 +857,24 @@ static void desktop_paint_background(WmCore *core) {
     XFillRectangle(core->display, core->root, core->gc,
                    0, 0,
                    (unsigned int)core->width, (unsigned int)core->height);
+
+    /* The wallpaper, when the script named one through
+       `gcl_Window.BackgroundImage`. It is drawn over the flat colour rather
+       than instead of it, so the colour underneath is what shows wherever the
+       picture has a transparent pixel, and it is the fallback when the file is
+       missing or does not decode. The picture is prepared once at the screen's
+       height and tiled across the width; see wm_image.c for why a picture is
+       tiled rather than stretched. Loading is cheap after the first call
+       because a name at a height already loaded is kept, so an Expose of the
+       root only copies. */
+    if (core->config.desktop_background_image[0]) {
+        if (wm_image_load(core, &desktop_image,
+                          core->config.desktop_background_image,
+                          core->height) == 0) {
+            wm_image_draw(core, &desktop_image, core->root, 0, 0,
+                          core->width);
+        }
+    }
     XFlush(core->display);
 }
 
@@ -1003,7 +1004,7 @@ static void desktop_cleanup(WmCore *core) {
         bar_buffer_width = 0;
         bar_buffer_height = 0;
     }
-    wm_image_free(core, &bar_image);
+    wm_image_free(core, &desktop_image);
     bar_colour_count = 0;
     bar_icon_total = 0;
     bar_icon_count = 0;

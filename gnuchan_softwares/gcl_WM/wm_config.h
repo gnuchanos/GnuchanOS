@@ -99,7 +99,6 @@ typedef struct WmBar {
     char position[WM_CONFIG_TEXT_LENGTH];         /* "top" or "bottom" */
     int  size;
     char background[WM_CONFIG_TEXT_LENGTH];
-    char background_image[WM_CONFIG_TEXT_LENGTH]; /* empty: use background */
 
     /* Draw the bar off-screen and put it up in one operation, rather than
        painting it straight onto its window.
@@ -171,6 +170,25 @@ typedef struct WmConfig {
     char active_border[WM_CONFIG_TEXT_LENGTH];
     char inactive_border[WM_CONFIG_TEXT_LENGTH];
     int border_width;
+
+    /* gcl_Window.set_window_border_radius(...): how far a frame's corners are
+       cut back. Zero keeps square corners, the shape every window had before
+       this was written, so a script that never names it sees no change. */
+    int border_radius;
+
+    /* gcl_Window.set_window_shadow_color(...) and
+       set_window_shadow_opacity(...): the drop shadow behind a frame. The
+       colour is a name resolved to a pixel once there is a display, like every
+       other colour here; the opacity is kept as a per-mille integer — a script
+       writing 0.5 gives 500 and one writing 0.0 or nothing gives 0, which is
+       "no shadow". */
+    char shadow_color[WM_CONFIG_TEXT_LENGTH];
+    int shadow_opacity;              /* 0..1000, i.e. 0.0 .. 1.0 */
+
+    /* gcl_Window.BackgroundImage = "...": the wallpaper, drawn across the root
+       behind everything. Empty keeps the flat desktop colour, which is what a
+       machine that never named a picture gets. */
+    char desktop_background_image[WM_CONFIG_TEXT_LENGTH];
 
     /* What Alt+Enter opens. Empty means "look at $TERMINAL, then at the usual
        terminals", which is what a machine with no config gets. */
