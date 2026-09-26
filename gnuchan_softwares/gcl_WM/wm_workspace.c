@@ -119,6 +119,22 @@ void wm_workspace_switch(WmCore *core, int workspace) {
             workspace, wm_workspace_count(core));
 }
 
+void wm_workspace_step(WmCore *core, int steps) {
+    int count = wm_workspace_count(core);
+    if (count <= 1) {
+        return;
+    }
+
+    /* Wrapping by modulo, with the count added first so a negative step is
+       still a walk forward round the ring: stepping back one from the first
+       workspace has to land on the last one, not on a number below zero. */
+    int next = (core->current_workspace + steps) % count;
+    if (next < 0) {
+        next += count;
+    }
+    wm_workspace_switch(core, next);
+}
+
 void wm_workspace_place(WmCore *core, struct WmFrame *frame) {
     if (!frame) {
         return;

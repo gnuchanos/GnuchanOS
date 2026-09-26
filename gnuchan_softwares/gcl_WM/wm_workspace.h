@@ -36,6 +36,12 @@ int wm_workspace_count(const WmCore *core);
    the rest, and move the keyboard off a window that is no longer on screen. */
 void wm_workspace_switch(WmCore *core, int workspace);
 
+/* Move `steps` workspaces forward (or back, with a negative count), wrapping
+   round at both ends. This is what the wheel and a "next workspace" key ask
+   for: a person reaching for the next desktop does not know its number, and
+   the number is what wm_workspace_switch() wants. */
+void wm_workspace_step(WmCore *core, int steps);
+
 /* Put a frame on whichever workspace is current when it is opened. A new window
    belongs to the screen the user is looking at, not to the one they happened to
    be on when the program started. */

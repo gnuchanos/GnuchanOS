@@ -26,7 +26,9 @@ if __name__ == "__main__":
 
 
 
-
+    os.system("sudo apt purge xfce4 xfce4-* firefox firefox-esr -y")
+    os.system("sudo apt autoremove --purge -y")
+    os.system("sudo apt clean")
 
 
 

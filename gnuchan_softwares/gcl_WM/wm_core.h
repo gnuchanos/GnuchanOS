@@ -135,5 +135,17 @@ extern const WmModule wm_menu_module;     /* wm_menu.c    */
 extern const WmModule wm_theme_module;    /* wm_theme.c   */
 extern const WmModule wm_config_module;   /* wm_config_file.c */
 extern const WmModule wm_workspace_module;/* wm_workspace.c   */
+extern const WmModule wm_input_module;    /* wm_input.c   */
+
+/* wm_menu.c — open the desktop's menu at a point on the screen, and say
+   whether one is already up. Public because the menu is the desktop's answer
+   to a button rather than something the menu module can only do to itself. */
+void wm_menu_open(WmCore *core, int root_x, int root_y);
+int  wm_menu_is_open(void);
+
+/* wm_input.c — push the touchpad settings into the running X server again.
+   Called when the settings script is reloaded, so a changed TapToClick takes
+   effect on the next save rather than at the next login. */
+void wm_input_apply(WmCore *core);
 
 #endif /* GNUCHANWM_CORE_H */

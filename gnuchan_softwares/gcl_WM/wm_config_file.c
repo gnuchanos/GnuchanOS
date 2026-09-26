@@ -148,6 +148,24 @@ static int widget_from_call(const Script *script, const WmStatement *call,
     value_text(script, argument, text, sizeof(text));
     copy_text(widget->format, sizeof(widget->format), text);
 
+    /* An EmptySpace grows by default: that is what makes a bar of "layout,
+       space, clock" put the clock at the right edge without anyone saying
+       where the edge is. `Expanding=False` turns the same widget into a fixed
+       gap instead, and then Horizontal is the gap in pixels — which is how a
+       script writes "eight pixels here" between two widgets.
+     *
+     * The default is 1 whether or not the widget is an EmptySpace, because a
+     * widget that is not one never reads the field, and a script that wrote
+     * something other than True/False gets the default rather than a zero that
+     * would silently collapse the bar. */
+    widget->expanding = wm_config_value_bool(
+        wm_config_argument(call, "Expanding"), 1);
+    widget->horizontal = wm_config_value_number(
+        wm_config_argument(call, "Horizontal"), 1);
+    if (widget->horizontal < 1) {
+        widget->horizontal = 1;
+    }
+
     return 0;
 }
 
@@ -203,6 +221,12 @@ static void set_bar(const Script *script, WmConfig *config,
                text, sizeof(text));
     copy_text(bar->background_image, sizeof(bar->background_image), text);
 
+    /* Off unless the script says otherwise — no: on unless the script says
+       otherwise. See WmBar.vsync; the field is read as a bool with a default
+       of 1 so a script that never mentions it gets the flicker-free bar. */
+    bar->vsync = wm_config_value_bool(
+        wm_config_argument(statement, "Vsync"), 1);
+
     set_bar_widgets(script, bar, wm_config_argument(statement, "Widgets"));
 }
 
@@ -251,19 +275,63 @@ static void set_theme(WmConfig *config, const WmStatement *statement) {
     }
 }
 
-/* gcl_mouse.MouseBehavior(LeftClick=..., ...) */
+/* What a written mouse action means. The script names them in its own words;
+   this is the table that turns a name into the thing the manager does.
+ *
+ * Several names reach the same action because a script is written by a person
+   and the same idea has more than one obvious spelling — "context_menu" and
+   "menu" are the same request. A name that matches nothing is reported and
+   the button is left to the program, which is what "select" on a button the
+   manager does not use would do anyway. */
+static WmMouseAction mouse_action_of(const char *written) {
+    if (!written || !written[0]) {
+        return WM_MOUSE_NONE;
+    }
+    if (strcmp(written, "select") == 0) {
+        return WM_MOUSE_SELECT;
+    }
+    if (strcmp(written, "context_menu") == 0 || strcmp(written, "menu") == 0 ||
+        strcmp(written, "context") == 0) {
+        return WM_MOUSE_MENU;
+    }
+    if (strcmp(written, "paste") == 0) {
+        return WM_MOUSE_PASTE;
+    }
+    if (strcmp(written, "workspace_next") == 0) {
+        return WM_MOUSE_WORKSPACE_NEXT;
+    }
+    if (strcmp(written, "workspace_prev") == 0) {
+        return WM_MOUSE_WORKSPACE_PREV;
+    }
+    /* The wheel's own two. "scroll_up" is the wheel scrolling — not the same
+       request as "nothing", because scrolling is what a wheel is for and on
+       the desktop there is nothing else for it to do. See wm_input.c. */
+    if (strcmp(written, "scroll_up") == 0) {
+        return WM_MOUSE_SCROLL_UP;
+    }
+    if (strcmp(written, "scroll_down") == 0) {
+        return WM_MOUSE_SCROLL_DOWN;
+    }
+    if (strcmp(written, "none") == 0 || strcmp(written, "nothing") == 0) {
+        return WM_MOUSE_NONE;
+    }
+    fprintf(stderr, "gnuchanwm: config: mouse action '%s' is not known\n",
+            written);
+    return WM_MOUSE_NONE;
+}
+
+/* gcl_mouse.MouseBehavior(LeftClick=..., RightClick=..., ...) */
 static void set_mouse(WmConfig *config, const WmStatement *statement) {
     char text[WM_CONFIG_TEXT_LENGTH];
     struct {
         const char *argument;
-        char *destination;
-        unsigned int size;
+        WmMouseAction *destination;
     } fields[] = {
-        { "LeftClick",   config->mouse_left,        sizeof(config->mouse_left) },
-        { "RightClick",  config->mouse_right,       sizeof(config->mouse_right) },
-        { "MiddleClick", config->mouse_middle,      sizeof(config->mouse_middle) },
-        { "ScrollUp",    config->mouse_scroll_up,   sizeof(config->mouse_scroll_up) },
-        { "ScrollDown",  config->mouse_scroll_down, sizeof(config->mouse_scroll_down) },
+        { "LeftClick",   &config->mouse_left        },
+        { "RightClick",  &config->mouse_right       },
+        { "MiddleClick", &config->mouse_middle      },
+        { "ScrollUp",    &config->mouse_scroll_up   },
+        { "ScrollDown",  &config->mouse_scroll_down },
     };
     for (unsigned int i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
         const WmValue *argument =
@@ -272,7 +340,7 @@ static void set_mouse(WmConfig *config, const WmStatement *statement) {
             continue;
         }
         wm_config_value_text(argument, text, sizeof(text));
-        copy_text(fields[i].destination, fields[i].size, text);
+        *fields[i].destination = mouse_action_of(text);
     }
 }
 
@@ -462,6 +530,13 @@ static void bar_default_widget(WmConfig *config, WmWidgetKind kind,
     widget->font_size = 12;
     copy_text(widget->font_family, sizeof(widget->font_family), "monospace");
 
+    /* The same default the parser gives a written widget: an EmptySpace grows
+       unless it is told not to. Without this the built-in bar's space would be
+       a zero-width gap and the clock would sit against the label instead of
+       against the right edge, which is the one thing the built-in bar is for. */
+    widget->expanding = 1;
+    widget->horizontal = 1;
+
     if (kind == WM_WIDGET_CURRENT_LAYOUT) {
         widget->start_layout = 0;
         widget->end_layout = 5;
@@ -497,13 +572,11 @@ void wm_config_defaults(WmConfig *config) {
     copy_text(config->cursor_theme, sizeof(config->cursor_theme),
               "GnuChanMouseIcons");
 
-    copy_text(config->mouse_left, sizeof(config->mouse_left), "select");
-    copy_text(config->mouse_right, sizeof(config->mouse_right), "context_menu");
-    copy_text(config->mouse_middle, sizeof(config->mouse_middle), "paste");
-    copy_text(config->mouse_scroll_up, sizeof(config->mouse_scroll_up),
-              "scroll_up");
-    copy_text(config->mouse_scroll_down, sizeof(config->mouse_scroll_down),
-              "scroll_down");
+    config->mouse_left = WM_MOUSE_SELECT;
+    config->mouse_right = WM_MOUSE_MENU;
+    config->mouse_middle = WM_MOUSE_PASTE;
+    config->mouse_scroll_up = WM_MOUSE_SCROLL_UP;
+    config->mouse_scroll_down = WM_MOUSE_SCROLL_DOWN;
 
     config->touchpad_tap_to_click = 1;
     config->touchpad_two_finger_scroll = 1;
@@ -511,6 +584,7 @@ void wm_config_defaults(WmConfig *config) {
     /* The bar the shipped script asks for, so a machine with no script still
        has a bar rather than an empty edge. */
     config->bar.present = 1;
+    config->bar.vsync = 1;
     copy_text(config->bar.position, sizeof(config->bar.position), "top");
     config->bar.size = 24;
     copy_text(config->bar.background, sizeof(config->bar.background), "#27022b");
@@ -597,6 +671,21 @@ unsigned int wm_config_bar_edges(const WmConfig *config) {
         return 1u << WM_EDGE_BOTTOM;
     }
     return 1u << WM_EDGE_TOP;
+}
+
+WmMouseAction wm_config_mouse_action(const WmConfig *config,
+                                     unsigned int button) {
+    if (!config) {
+        return WM_MOUSE_NONE;
+    }
+    switch (button) {
+    case 1: return config->mouse_left;
+    case 2: return config->mouse_middle;
+    case 3: return config->mouse_right;
+    case 4: return config->mouse_scroll_up;
+    case 5: return config->mouse_scroll_down;
+    default: return WM_MOUSE_NONE;
+    }
 }
 
 void wm_config_workarea(const WmConfig *config, int screen_width,
@@ -710,6 +799,14 @@ void wm_config_apply(WmCore *core) {
     if (core->config.cursor_theme[0]) {
         setenv("XCURSOR_THEME", core->config.cursor_theme, 1);
     }
+
+    /* The touchpad settings are pushed into the running X server again when
+       they change. wm_input.c applies them at start, but a script whose
+       TapToClick was just edited has to take effect on the next save rather
+       than at the next login — which is what the whole reload path exists
+       for, and a setting that waited would be the one part of the script that
+       did not follow it. */
+    wm_input_apply(core);
 }
 
 /* --- hot reload ----------------------------------------------------------- */

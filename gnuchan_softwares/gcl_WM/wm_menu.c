@@ -503,13 +503,33 @@ static int menu_init(WmCore *core) {
     return 0;
 }
 
+/* Open the menu at a point on the screen. Public because two things ask for it
+   and they are not the same thing: the desktop's own button, and the right
+   button anywhere, which is where a person expects a menu. A menu that is
+   already open is left alone rather than moved. */
+void wm_menu_open(WmCore *core, int root_x, int root_y) {
+    if (core && !menu_open) {
+        menu_open_at(core, root_x, root_y);
+    }
+}
+
+int wm_menu_is_open(void) {
+    return menu_open;
+}
+
 static void menu_event(WmCore *core, XEvent *event) {
     switch (event->type) {
     case ButtonPress:
         if (menu_open) {
             menu_press(core, &event->xbutton);
-        } else if (event->xbutton.button == Button3 &&
-                   event->xbutton.window == core->root) {
+            break;
+        }
+        /* Whichever button the script said opens the menu — by default the
+           right one. Reading it from the config is what makes
+           RightClick="context_menu" mean something: a script that writes
+           "paste" there gets a paste and no menu. */
+        if (wm_config_mouse_action(&core->config,
+                                   event->xbutton.button) == WM_MOUSE_MENU) {
             menu_open_at(core, event->xbutton.x_root, event->xbutton.y_root);
         }
         break;

@@ -58,6 +58,21 @@ typedef struct WmWidget {
     int start_layout;
     int end_layout;
 
+    /* WM_WIDGET_EMPTY_SPACE: what the space is for.
+     *
+     * Expanding (the default) means "take a share of whatever room the fixed
+     * widgets left" — that is how a clock is pushed to the right edge, and two
+     * of them split the room evenly. Expanding=0 makes the widget a spacer of
+     * exactly `horizontal` pixels instead, which is how a small fixed gap is
+     * written between two widgets: `EmptySpace(Expanding=False, Horizontal=8)`
+     * is eight pixels and nothing else.
+     *
+     * Horizontal is in pixels and only read when Expanding is off; a value of
+     * zero or less is taken as one, because a zero-width widget is a widget
+     * nobody asked for and a negative one cannot be drawn. */
+    int expanding;
+    int horizontal;
+
     char symbol[WM_CONFIG_TEXT_LENGTH];   /* WM_WIDGET_GROUP_BOX */
     char text[WM_CONFIG_TEXT_LENGTH];     /* WM_WIDGET_TEXT_BOX  */
     char format[WM_CONFIG_TEXT_LENGTH];   /* WM_WIDGET_CLOCK     */
@@ -71,9 +86,55 @@ typedef struct WmBar {
     char background[WM_CONFIG_TEXT_LENGTH];
     char background_image[WM_CONFIG_TEXT_LENGTH]; /* empty: use background */
 
+    /* Draw the bar off-screen and put it up in one operation, rather than
+       painting it straight onto its window.
+     *
+     * It is on by default because a bar painted straight to its window is seen
+     * half-made: the strip is filled, then each widget's background, then the
+     * text — and the clock redraws the whole bar once a second, so that order
+     * is repeated once a second and is visible as a flicker across the width.
+     * This is the nearest a window manager gets to "wait for the frame to be
+     * finished": nothing is shown until the whole bar is ready.
+     *
+     * It can be turned off for a display where the extra copy costs more than
+     * it saves — a remote X session over a slow link is the honest example —
+     * which is the only reason the option exists. */
+    int  vsync;
+
     WmWidget widgets[WM_CONFIG_MAX_WIDGETS];
     int widget_count;
 } WmBar;
+
+/* What a mouse button does. The script names it —
+   `RightClick="context_menu"` — and this is what the name means to the
+   manager.
+ *
+ * The set is small because most of what a button does belongs to the program
+ * under the pointer: scrolling is the program's, clicking is the program's,
+ * and a manager that swallowed either would be a manager that broke every
+ * program. What is left is the handful of things that are the desktop's own —
+ * choosing a window, opening the desktop's menu, and moving between
+ * workspaces — and one thing a manager can pass on faithfully: a middle click
+ * sent to the window that has the focus, which is how a paste is asked for
+ * when the pointer is somewhere else. */
+typedef enum WmMouseAction {
+    WM_MOUSE_NONE = 0,        /* left to the program                      */
+    WM_MOUSE_SELECT,          /* focus and raise what the pointer is on   */
+    WM_MOUSE_MENU,            /* the desktop's own menu                   */
+    WM_MOUSE_WORKSPACE_NEXT,  /* the workspace after this one             */
+    WM_MOUSE_WORKSPACE_PREV,  /* the workspace before it                  */
+    WM_MOUSE_PASTE,           /* a middle click, sent to the focused window */
+
+    /* The wheel's own two, and the reason they are not WM_MOUSE_NONE: on a
+       window a wheel scrolls and on the desktop there is nothing to scroll, so
+       the two cases have to be told apart. A wheel that scrolls is the wheel
+       doing its job — left to the program over a window, and stepping the
+       workspace over the desktop, which is the one useful thing a desktop can
+       do with it. "workspace_next" on a wheel button asks for the step
+       everywhere instead; "none" asks for nothing anywhere. */
+    WM_MOUSE_SCROLL_UP,
+    WM_MOUSE_SCROLL_DOWN,
+} WmMouseAction;
 
 /* One key binding. The script writes the keys as a list of names —
    `keys=[super_key1, "return"]` — which the config module resolves to a
@@ -113,17 +174,19 @@ typedef struct WmConfig {
     char cursor_theme[WM_CONFIG_TEXT_LENGTH];
     char cursor_path[WM_CONFIG_TEXT_LENGTH];
 
-    /* The pointer. Parsed and held, but no C subsystem applies them: the
-       desktop answers its own right-click with the menu in wm_menu.c, and the
-       rest is left to whatever the programs under the pointer do with the
-       button. They are the script's record of intent until a module reads
-       them. */
-    char mouse_left[WM_CONFIG_TEXT_LENGTH];
-    char mouse_right[WM_CONFIG_TEXT_LENGTH];
-    char mouse_middle[WM_CONFIG_TEXT_LENGTH];
-    char mouse_scroll_up[WM_CONFIG_TEXT_LENGTH];
-    char mouse_scroll_down[WM_CONFIG_TEXT_LENGTH];
+    /* The pointer, resolved to what each button does. Read by wm_menu.c (which
+       button opens the menu), by wm_input.c (what the wheel does) and by the
+       frame code (what a click on a window does). */
+    WmMouseAction mouse_left;
+    WmMouseAction mouse_right;
+    WmMouseAction mouse_middle;
+    WmMouseAction mouse_scroll_up;
+    WmMouseAction mouse_scroll_down;
 
+    /* The touchpad, applied to the running X server by wm_input.c through
+       xinput. They are the four settings libinput actually exposes as
+       properties; anything a pad does not support is reported and skipped
+       rather than stopping the rest. */
     int touchpad_tap_to_click;
     int touchpad_two_finger_scroll;
     int touchpad_three_finger_swipe;
@@ -149,6 +212,14 @@ enum {
    configured. This is what the frame code asks before placing a window, so a
    window does not open underneath the bar. */
 unsigned int wm_config_bar_edges(const WmConfig *config);
+
+/* What the given X button does, from the parsed config: 1/2/3 are the left,
+   middle and right buttons and 4/5 are the two directions of the wheel.
+   Anything else, and any button the config left unset, is WM_MOUSE_NONE —
+   which means the program under the pointer gets it, because that is what an
+   unclaimed button has always done. */
+WmMouseAction wm_config_mouse_action(const WmConfig *config,
+                                     unsigned int button);
 
 /* The rectangle a window may occupy: the whole screen less whatever strip the
    bar has taken. `x` and `y` are where a window may be put and `width` and

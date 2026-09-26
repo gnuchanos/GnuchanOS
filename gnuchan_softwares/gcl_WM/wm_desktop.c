@@ -107,6 +107,96 @@ static void bar_free_fonts(WmCore *core) {
     bar_font_count = 0;
 }
 
+/* --- colours --------------------------------------------------------------- */
+
+/* Resolved pixels, remembered by the name and the fallback they came from.
+ *
+ * A colour name costs an XAllocNamedColor round trip to the server, and the
+ * bar is redrawn every second — once for the strip and twice for each widget.
+ * Resolving the same six or seven names on every one of those redraws is work
+ * that produces the same pixels every time, so the answers are kept here.
+ *
+ * The fallback is part of the key because it is what an unresolvable name
+ * resolves to: a name that failed for one caller must not hand its fallback to
+ * another that would have wanted a different one. */
+typedef struct BarColour {
+    char name[WM_CONFIG_TEXT_LENGTH];
+    unsigned long fallback;
+    unsigned long pixel;
+} BarColour;
+
+static BarColour bar_colours[2 * WM_CONFIG_MAX_WIDGETS + 8];
+static int bar_colour_count = 0;
+
+static unsigned long bar_colour(WmCore *core, const char *name,
+                                unsigned long fallback) {
+    if (!name || !name[0]) {
+        return fallback;
+    }
+    for (int i = 0; i < bar_colour_count; i++) {
+        if (bar_colours[i].fallback == fallback &&
+            strcmp(bar_colours[i].name, name) == 0) {
+            return bar_colours[i].pixel;
+        }
+    }
+
+    unsigned long pixel = wm_style_colour(core->display, core->screen,
+                                          name, fallback);
+    if (bar_colour_count <
+        (int)(sizeof(bar_colours) / sizeof(bar_colours[0]))) {
+        snprintf(bar_colours[bar_colour_count].name,
+                 sizeof(bar_colours[bar_colour_count].name), "%s", name);
+        bar_colours[bar_colour_count].fallback = fallback;
+        bar_colours[bar_colour_count].pixel = pixel;
+        bar_colour_count++;
+    }
+    return pixel;
+}
+
+/* --- the buffer the bar is drawn into -------------------------------------- */
+
+/* The bar is painted off-screen and copied up in one operation.
+ *
+ * Painted straight onto its window it is seen half-made: the strip is filled,
+ * then each widget's background, then the text of each — and the clock redraws
+ * the whole bar once a second, so that order repeats once a second. On a wide
+ * bar that is a visible sweep of colour across the screen every second, which
+ * is the spasm this buffer exists to remove. One copy per redraw is what makes
+ * the bar appear complete or not at all.
+ *
+ * This is as close as a window manager comes to the thing the config calls it:
+ * there is no frame to wait for here, so "not until it is finished" is
+ * achieved by never letting the unfinished version reach the screen. */
+static Pixmap bar_buffer = None;
+static int bar_buffer_width = 0;
+static int bar_buffer_height = 0;
+
+/* Get a buffer of exactly this size, making one or throwing away the old one.
+   A buffer of the wrong size is not stretched: a stretched bar is a blur. */
+static Drawable bar_target(WmCore *core, int width, int height) {
+    if (bar_buffer != None && bar_buffer_width == width &&
+        bar_buffer_height == height) {
+        return bar_buffer;
+    }
+    if (bar_buffer != None) {
+        XFreePixmap(core->display, bar_buffer);
+        bar_buffer = None;
+    }
+    if (width <= 0 || height <= 0) {
+        return bar_window;
+    }
+    bar_buffer = XCreatePixmap(core->display, bar_window,
+                               (unsigned int)width, (unsigned int)height,
+                               (unsigned int)DefaultDepth(core->display,
+                                                          core->screen));
+    if (bar_buffer == None) {
+        return bar_window;   /* no room for one: draw straight, flicker and all */
+    }
+    bar_buffer_width = width;
+    bar_buffer_height = height;
+    return bar_buffer;
+}
+
 /* --- the pointer ---------------------------------------------------------- */
 
 /* The alien-violet arrow, one string per row: 'X' is a pixel, '.' is not.
@@ -379,15 +469,24 @@ static void desktop_bar(WmCore *core) {
         return;
     }
     int height = bar->size;
+    int bar_width = core->width;
 
-    unsigned long strip_colour = wm_style_colour(core->display, core->screen,
-                                                 bar->background,
-                                                 core->style.panel);
+    /* Everything is drawn into the buffer and put on the window in one copy at
+       the end, when the config asked for it. See bar_target() for why. */
+    Drawable canvas = bar->vsync ? bar_target(core, bar_width, height)
+                                 : bar_window;
+
+    unsigned long strip_colour = bar_colour(core, bar->background,
+                                            core->style.panel);
     XSetForeground(core->display, core->gc, strip_colour);
-    XFillRectangle(core->display, bar_window, core->gc,
-                   0, 0, (unsigned int)core->width, (unsigned int)height);
+    XFillRectangle(core->display, canvas, core->gc,
+                   0, 0, (unsigned int)bar_width, (unsigned int)height);
 
     if (bar->widget_count == 0) {
+        if (canvas != bar_window) {
+            XCopyArea(core->display, canvas, bar_window, core->gc, 0, 0,
+                      (unsigned int)bar_width, (unsigned int)height, 0, 0);
+        }
         XFlush(core->display);
         return;
     }
@@ -416,8 +515,18 @@ static void desktop_bar(WmCore *core) {
         bar_widget_label(widget, labels[i], sizeof(labels[i]));
         fonts[i] = bar_font_for(core, widget);
         if (widget->kind == WM_WIDGET_EMPTY_SPACE) {
-            widths[i] = 0;
-            flexible_count++;
+            /* Two kinds of space, decided by Expanding. An expanding one takes
+               a share of what is left over and is counted here so the draw
+               loop can divide by it; a fixed one asks for its own width in
+               pixels and is measured like a label, which is what makes
+               Horizontal a real width rather than a hint. */
+            if (widget->expanding) {
+                widths[i] = 0;
+                flexible_count++;
+            } else {
+                widths[i] = widget->horizontal;
+                needed += widths[i];
+            }
         } else if (widget->kind == WM_WIDGET_CURRENT_LAYOUT) {
             layout_cell_count[i] = bar_layout_cells(
                 core, widget, layout_cells[i], layout_numbers[i],
@@ -450,16 +559,18 @@ static void desktop_bar(WmCore *core) {
     int x = 0;
     for (int i = 0; i < bar->widget_count && i < WM_CONFIG_MAX_WIDGETS; i++) {
         const WmWidget *widget = &bar->widgets[i];
-        int width = (widget->kind == WM_WIDGET_EMPTY_SPACE) ? share : widths[i];
+        /* Only an expanding space takes the shared room. A fixed one was
+           measured like a label and keeps the width it asked for. */
+        int width = (widget->kind == WM_WIDGET_EMPTY_SPACE && widget->expanding)
+                        ? share : widths[i];
         if (width < 0) {
             width = 0;
         }
 
-        unsigned long background = wm_style_colour(core->display, core->screen,
-                                                   widget->background,
-                                                   strip_colour);
+        unsigned long background = bar_colour(core, widget->background,
+                                              strip_colour);
         XSetForeground(core->display, core->gc, background);
-        XFillRectangle(core->display, bar_window, core->gc,
+        XFillRectangle(core->display, canvas, core->gc,
                        x, 0, (unsigned int)width, (unsigned int)height);
 
         if (widget->kind == WM_WIDGET_CURRENT_LAYOUT && fonts[i]) {
@@ -468,13 +579,10 @@ static void desktop_bar(WmCore *core) {
                bar is drawn in the widget's own foreground; the current cell is
                the one exception, which is the whole reason layout is drawn
                here rather than as one label with the others. */
-            unsigned long foreground =
-                wm_style_colour(core->display, core->screen,
-                                widget->foreground, core->style.text);
+            unsigned long foreground = bar_colour(core, widget->foreground,
+                                                  core->style.text);
             unsigned long active =
-                wm_style_colour(core->display, core->screen,
-                                core->config.active_border,
-                                core->style.accent);
+                bar_colour(core, core->config.active_border, core->style.accent);
             int cell = 0;
             for (int c = 0; c < layout_cell_count[i]; c++) {
                 int room = wm_style_text_width(fonts[i], layout_cells[i][c]);
@@ -487,23 +595,27 @@ static void desktop_bar(WmCore *core) {
             int cursor = x;
             for (int c = 0; c < layout_cell_count[i]; c++) {
                 int current = layout_numbers[i][c] == core->current_workspace;
-                wm_style_text(core->display, bar_window, core->gc, fonts[i],
+                wm_style_text(core->display, canvas, core->gc, fonts[i],
                               cursor + WM_BAR_PADDING / 2, baseline,
                               layout_cells[i][c],
                               current ? active : foreground);
                 cursor += cell + WM_BAR_PADDING;
             }
         } else if (labels[i][0] && fonts[i]) {
-            unsigned long foreground =
-                wm_style_colour(core->display, core->screen,
-                                widget->foreground, core->style.text);
+            unsigned long foreground = bar_colour(core, widget->foreground,
+                                                  core->style.text);
             int baseline = (height + fonts[i]->ascent - fonts[i]->descent) / 2;
-            wm_style_text(core->display, bar_window, core->gc, fonts[i],
+            wm_style_text(core->display, canvas, core->gc, fonts[i],
                           x + WM_BAR_PADDING, baseline, labels[i], foreground);
         }
         x += width;
     }
 
+    /* The whole bar, finished, onto the window in one operation. */
+    if (canvas != bar_window) {
+        XCopyArea(core->display, canvas, bar_window, core->gc, 0, 0,
+                  (unsigned int)bar_width, (unsigned int)height, 0, 0);
+    }
     XFlush(core->display);
 }
 
@@ -611,6 +723,17 @@ static void desktop_tick(WmCore *core) {
 }
 
 static void desktop_cleanup(WmCore *core) {
+    /* The buffer is a pixmap of the bar window and would be freed with it, but
+       it is freed here so the size it recorded cannot survive a restart as a
+       stale answer to "is a buffer of this size already there". */
+    if (bar_buffer != None) {
+        XFreePixmap(core->display, bar_buffer);
+        bar_buffer = None;
+        bar_buffer_width = 0;
+        bar_buffer_height = 0;
+    }
+    bar_colour_count = 0;
+
     if (bar_window != None) {
         XDestroyWindow(core->display, bar_window);
         bar_window = None;

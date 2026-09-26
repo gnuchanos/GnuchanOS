@@ -64,6 +64,10 @@ static void register_modules(WmCore *core) {
        is part of the desktop a user lands on, and a session whose first
        terminal is still starting should still answer a right click. */
     wm_register(core, &wm_menu_module);
+    /* The pointer: what the wheel does over the desktop, and the touchpad
+       settings pushed into the running X server. After the menu, because both
+       answer the same button and the menu has to see its press first. */
+    wm_register(core, &wm_input_module);
     /* Last: it opens the first terminal, and by then the keys are already
        grabbed and the desktop is already painted, so the window it opens is
        managed by a session that is completely up rather than one still
