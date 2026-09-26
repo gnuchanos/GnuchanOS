@@ -640,6 +640,30 @@ int gcl_py_run_file(const char *path) {
     fclose(f);
     buf[rd] = '\0';
 
+    /* Python defines __file__ for the script it runs; the embed has to do the
+       same, or a script that reads it -- Path(__file__).resolve().parent,
+       which every makefile.py starts with -- stops at the first line with
+       "NameError: name '__file__' is not defined". The name is published as an
+       assignment so it lands in the same __main__ namespace the script runs
+       in. The value is written as a Python string literal, so a backslash or a
+       single quote in the path is escaped. */
+    {
+        size_t need = strlen(path) * 2 + 3;
+        char *literal = (char *)malloc(need);
+        if (literal) {
+            size_t w = 0;
+            literal[w++] = '\'';
+            for (const char *p = path; *p; p++) {
+                if (*p == '\\' || *p == '\'') literal[w++] = '\\';
+                literal[w++] = *p;
+            }
+            literal[w++] = '\'';
+            literal[w] = '\0';
+            gcl_py_set_global("__file__", literal);
+            free(literal);
+        }
+    }
+
     rc = gcl_py_run_simple(buf) ? 0 : 1;
     free(buf);
     gcl_shared_cleanup();
