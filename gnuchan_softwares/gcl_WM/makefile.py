@@ -292,9 +292,17 @@ def invoking_user() -> tuple[Path, int, int] | None:
 def install_config() -> None:
     """Put the settings script where the window manager will read it.
 
-    An existing script is left exactly as it is. It is the user's file — they
-    may have edited it, and an installer that overwrites it on every run is an
-    installer that silently undoes their work.
+    An existing script that has something in it is left exactly as it is. It
+    is the user's file — they may have edited it, and an installer that
+    overwrites it on every run is an installer that silently undoes their
+    work.
+
+    An empty file is not that. It is what this installer used to leave behind
+    when it was interrupted between creating the file and filling it, and it
+    is worse than no file at all: the window manager reads it, finds a script
+    that asks for no bar and one workspace, and half-erases the built-in
+    desktop instead of falling back to it. So a file of zero bytes is treated
+    as absent and written over.
     """
     if not CONFIG_SOURCE.is_file():
         return
@@ -307,12 +315,21 @@ def install_config() -> None:
     directory = home / ".config" / CONFIG_DIR_NAME
     target = directory / CONFIG_FILE_NAME
 
-    if target.exists():
+    if target.exists() and target.stat().st_size > 0:
         detail(f"kept the existing {target}")
         return
 
     directory.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(CONFIG_SOURCE, target)
+
+    # The source is shipped with the window manager, so it is never empty; a
+    # check here is what turns "the desktop came up with no bar" into one line
+    # naming the file that caused it.
+    if target.stat().st_size == 0:
+        raise SystemExit(
+            f"error: {CONFIG_SOURCE} is empty, so the window manager would "
+            f"have nothing to read"
+        )
 
     # The file was written by root and has to belong to the user who will read
     # it, or the window manager opens a file it can see but not change.

@@ -619,13 +619,47 @@ int wm_config_load(WmConfig *config, const char *path) {
         return -1;
     }
 
+    /* A file with nothing in it is not a desktop. An empty file is what an
+       interrupted install leaves behind, and it used to parse cleanly into "a
+       desktop with no widgets and one workspace" — which silently half-erased
+       the built-in one, so the desktop came up looking broken with nothing in
+       the log to say why. Refusing it makes the caller fall back to the
+       defaults and say so, so the empty file names itself. */
+    if (count == 0) {
+        wm_config_statements_free(statements, count);
+        fprintf(stderr, "gnuchanwm: config: %s is empty; using the defaults\n",
+                path);
+        return -1;
+    }
+
+    /* Which of the collections the script actually names. They are cleared
+       only when it names them: a script that says nothing about the bar keeps
+       the bar it did not mention, and one that binds no keys keeps the keys it
+       did not mention. Without this every field the script left out was reset
+       to nothing, so writing one line — a terminal, a colour — also emptied
+       the bar and unbound every key, and a small change to a complete desktop
+       looked like most of the desktop being deleted. */
+    int defines_bar = 0;
+    int defines_keys = 0;
+    for (int i = 0; i < count; i++) {
+        if (strcmp(statements[i].target, "gcl_BAR.call") == 0) {
+            defines_bar = 1;
+        } else if (strcmp(statements[i].target, "gcl_keys.all") == 0) {
+            defines_keys = 1;
+        }
+    }
+
     /* The script is read into a copy first, then swapped in. A script that
        fails to parse leaves the desktop it already had, which is the whole
        reason the read is a separate step: a half-applied config is a desktop
        nobody asked for. */
     WmConfig parsed = *config;
-    parsed.bar.widget_count = 0;
-    parsed.binding_count = 0;
+    if (defines_bar) {
+        parsed.bar.widget_count = 0;
+    }
+    if (defines_keys) {
+        parsed.binding_count = 0;
+    }
 
     Script script;
     memset(&script, 0, sizeof(script));
@@ -638,24 +672,30 @@ int wm_config_load(WmConfig *config, const char *path) {
        for six, and that is the number the switcher keys are bound from and the
        number the bar hints at. It is taken from what the script asked for
        rather than fixed here, so "the last one the config names" is the rule
-       the two places follow and not a constant that has to be kept in step. */
-    parsed.workspace_count = 0;
-    for (int i = 0; i < parsed.bar.widget_count; i++) {
-        const WmWidget *widget = &parsed.bar.widgets[i];
-        if (widget->kind != WM_WIDGET_CURRENT_LAYOUT) {
-            continue;
+       the two places follow and not a constant that has to be kept in step.
+       Only a bar the script wrote can answer, so a script that wrote none
+       keeps the number it had. */
+    if (defines_bar) {
+        int highest = -1;
+        for (int i = 0; i < parsed.bar.widget_count; i++) {
+            const WmWidget *widget = &parsed.bar.widgets[i];
+            if (widget->kind != WM_WIDGET_CURRENT_LAYOUT) {
+                continue;
+            }
+            int top = widget->end_layout;
+            if (widget->start_layout > top) {
+                top = widget->start_layout;
+            }
+            if (top > highest) {
+                highest = top;
+            }
         }
-        int highest = widget->end_layout;
-        if (widget->start_layout > highest) {
-            highest = widget->start_layout;
-        }
-        int count = highest + 1;
-        if (count > parsed.workspace_count) {
-            parsed.workspace_count = count;
+        if (highest >= 0) {
+            parsed.workspace_count = highest + 1;
         }
     }
     if (parsed.workspace_count < 1) {
-        /* A bar with no layout widget still has a desktop to put windows on. */
+        /* A session with no desks at all cannot place a window on one. */
         parsed.workspace_count = 1;
     }
 
