@@ -10,7 +10,7 @@ gcl_BAR.call(
     Position="top",
     Size=24,
     BackgroundColor="#27022b",
-    BackgroundImage="BG.png", # if this place is empty, it will use BackgroundColor
+    BackgroundImage="bg.png", # if this place is empty, it will use BackgroundColor
     Vsync=True,
     Widgets=[
         gcl_Widgets.CurrentLayout(

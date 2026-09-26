@@ -787,13 +787,16 @@ static void desktop_bar(WmCore *core) {
         } else if (widget->kind == WM_WIDGET_GROUP_BOX) {
             /* The open windows, as their own icons: one per program, centred
                in the strip, each recorded in bar_icon_boxes so a click on it
-               can be turned back into that window. A window with no icon of
-               its own — a bare X program such as xterm usually has none — is
-               left as a gap rather than a placeholder, because a row of
-               identical placeholders would say less than nothing. */
+               can be turned back into that window. A window that published no
+               icon — which is most bare X programs, xterm among them — is
+               drawn as the first letter of its title instead, in the widget's
+               own colour: a row of gaps would say nothing at all, and a letter
+               at least names the window. */
             int icon_y = (height - WM_ICON_SIZE) / 2;
             int gap = bar_icon_gap(core, widget, fonts[i]);
             int separator = bar_separator_width(core, widget, fonts[i]);
+            unsigned long icon_colour = bar_colour(core, widget->foreground,
+                                                   core->style.text);
             unsigned long sep_colour =
                 bar_colour(core, widget->separator_color,
                            bar_colour(core, widget->foreground,
@@ -804,8 +807,23 @@ static void desktop_bar(WmCore *core) {
             int cursor = x + WM_ICON_GAP / 2;
             for (int k = 0; k < bar_icon_total && k < WM_MAX_FRAMES; k++) {
                 WmFrame *frame = bar_icon_frames[k];
-                wm_frame_draw_icon(core, frame, canvas, cursor, icon_y,
-                                   WM_ICON_SIZE);
+                if (!wm_frame_draw_icon(core, frame, canvas, cursor, icon_y,
+                                        WM_ICON_SIZE) && fonts[i]) {
+                    char letter[2] = { '?', '\0' };
+                    unsigned char first = (unsigned char)frame->name[0];
+                    /* A printable first character only: a title beginning with
+                       a control byte would draw as nothing, so it falls back to
+                       the question mark above. */
+                    if (frame->has_name && first >= 0x20 && first != 0x7f) {
+                        letter[0] = (char)first;
+                    }
+                    int letter_width = wm_style_text_width(core->display,
+                                                           fonts[i], letter);
+                    wm_style_text(core->display, core->screen, canvas,
+                                  fonts[i],
+                                  cursor + (WM_ICON_SIZE - letter_width) / 2,
+                                  sep_baseline, letter, icon_colour);
+                }
                 if (bar_icon_count < WM_MAX_FRAMES) {
                     bar_icon_boxes[bar_icon_count].x = cursor;
                     bar_icon_boxes[bar_icon_count].y = icon_y;

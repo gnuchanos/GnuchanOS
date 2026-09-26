@@ -48,6 +48,13 @@ typedef struct WmImage {
        still tries the file the script actually meant. */
     char path[WM_IMAGE_PATH_LENGTH];
     int height_loaded;
+
+    /* The name as the script wrote it. The cache tests this and the height,
+       not the resolved path: the caller passes "BG.png" on every repaint,
+       while `path` holds the absolute place that name was found, so comparing
+       the two never matched and the file was read and decoded once a second —
+       the flicker the cache was written to prevent. */
+    char source_name[WM_IMAGE_PATH_LENGTH];
 } WmImage;
 
 /* Load the picture the name refers to, scaled to `target_height` and ready to

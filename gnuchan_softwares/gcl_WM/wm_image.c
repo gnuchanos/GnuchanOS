@@ -208,9 +208,15 @@ int wm_image_load(WmCore *core, WmImage *image, const char *name,
 
     /* The same name at the same height is already loaded: the bar redraws once
        a second and the file almost never changes, so the second read is the
-       one thing this cache exists to prevent. */
-    if (image->ok && image->height_loaded == target_height &&
-        strcmp(image->path, name ? name : "") == 0) {
+       one thing this cache exists to prevent.
+     *
+     * The test is against the name as written, not the resolved path: the
+     * caller passes "BG.png" on every repaint, while `path` holds the absolute
+     * place that name was found. Comparing the two never matched, so the file
+     * was read, decoded and re-uploaded once a second — the flicker this cache
+     * was written to remove. */
+    if (image->ok && image->height_loaded == target_height && name &&
+        strcmp(image->source_name, name) == 0) {
         return 0;
     }
 
@@ -218,6 +224,8 @@ int wm_image_load(WmCore *core, WmImage *image, const char *name,
     if (!resolve_path(name, path, sizeof(path)) || target_height <= 0) {
         wm_image_free(core, image);
         snprintf(image->path, sizeof(image->path), "%s", path);
+        snprintf(image->source_name, sizeof(image->source_name), "%s",
+                 name ? name : "");
         image->height_loaded = target_height;
         return -1;
     }
@@ -228,6 +236,8 @@ int wm_image_load(WmCore *core, WmImage *image, const char *name,
     if (wm_png_load(path, &pixels, &source_width, &source_height) != 0) {
         wm_image_free(core, image);
         snprintf(image->path, sizeof(image->path), "%s", path);
+        snprintf(image->source_name, sizeof(image->source_name), "%s",
+                 name ? name : "");
         image->height_loaded = target_height;
         return -1;
     }
@@ -250,6 +260,8 @@ int wm_image_load(WmCore *core, WmImage *image, const char *name,
     free(pixels);
 
     snprintf(image->path, sizeof(image->path), "%s", path);
+    snprintf(image->source_name, sizeof(image->source_name), "%s",
+             name ? name : "");
     image->height_loaded = target_height;
     return image->ok ? 0 : -1;
 }
