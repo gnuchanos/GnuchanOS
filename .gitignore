@@ -1,7 +1,15 @@
 # ── Build outputs ──────────────────────────────────────────
 *.exe
 *.o
+# NOT a blanket `*.obj`: the Wavefront 3D models under assets/
+# (terrain.obj, water.obj, cube.obj) share that extension and are project
+# CONTENT, not compiler output. Blanket-ignoring them kept every model out of
+# the repository, so a fresh clone ran the fps demo with no terrain, water or
+# cube at all. `language/build/` and `_temp/` already exclude every real
+# compiler object, so the two lines below split the extension by PURPOSE: the
+# general rule still catches stray objects, the negation keeps the assets.
 *.obj
+!**/assets/*.obj
 *.a
 *.lib
 *.so

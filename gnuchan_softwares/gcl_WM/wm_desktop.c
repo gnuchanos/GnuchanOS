@@ -570,78 +570,17 @@ static void bar_widget_label(const WmWidget *widget, char *out,
  * and the top and bottom of a vertical one, which is why there are two pairs
  * of empty spaces — Left/Right for a horizontal bar and Up/Down for a vertical
  * one — and why each pair is applied to the along axis of its own pose. */
+/* The bar's rectangle on the screen. The rule itself lives in
+ * wm_config_bar_rect() — the SAME function the workarea subtracts — so the
+ * space the bar covers and the space a window is kept out of are one
+ * computation and cannot drift apart. They used to be two: the workarea
+ * assumed "an edge bar starts at the screen edge and is Size thick", which is
+ * wrong the moment a bar names an X, a Y or an empty space, and a bar written
+ * Position="top", Y=10, Left_EmptySpace=5 then sat over the top of the window
+ * it was supposed to be above. */
 static void bar_geometry(WmCore *core, const WmBar *bar,
                          int *x, int *y, int *width, int *height) {
-    int vertical = strcmp(bar->pose, "vertical") == 0;
-    int size = bar->size;
-    if (size <= 0) {
-        *x = 0;
-        *y = 0;
-        *width = 0;
-        *height = 0;
-        return;
-    }
-
-    int bx = 0;
-    int by = 0;
-    int bw = 0;
-    int bh = 0;
-
-    if (vertical) {
-        bw = size;
-        bh = core->height;
-        if (strcmp(bar->position, "right") == 0) {
-            bx = core->width - size;
-        }
-    } else {
-        bw = core->width;
-        bh = size;
-        if (strcmp(bar->position, "bottom") == 0) {
-            by = core->height - size;
-        }
-    }
-
-    /* The script's own corner, when it wrote one. Zero is a place and is kept;
-       only a negative value — "not written" — leaves the edge where Position
-       put it. */
-    if (bar->x >= 0) {
-        bx = bar->x;
-    }
-    if (bar->y >= 0) {
-        by = bar->y;
-    }
-
-    /* The room left at each end, taken off the along axis: the height of a
-       vertical bar, the width of a horizontal one. Each pose has its own pair
-       — Up/Down for a vertical bar, Left/Right for a horizontal one — because
-       "the first end" is the top of one and the left of the other. The reader
-       has already refused the pair belonging to the other pose and said so, so
-       only the pair this pose uses is applied here.
-     *
-     * A pair that would leave nothing is dropped rather than producing a bar
-     * of negative size. */
-    if (vertical) {
-        if (bar->up_empty + bar->down_empty < bh) {
-            by += bar->up_empty;
-            bh -= bar->up_empty + bar->down_empty;
-        }
-    } else {
-        if (bar->left_empty + bar->right_empty < bw) {
-            bx += bar->left_empty;
-            bw -= bar->left_empty + bar->right_empty;
-        }
-    }
-
-    if (bw < 1) {
-        bw = 1;
-    }
-    if (bh < 1) {
-        bh = 1;
-    }
-    *x = bx;
-    *y = by;
-    *width = bw;
-    *height = bh;
+    wm_config_bar_rect(bar, core->width, core->height, x, y, width, height);
 }
 
 /* Make one bar's window, or move the one that is already there.

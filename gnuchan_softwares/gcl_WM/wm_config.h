@@ -315,11 +315,26 @@ unsigned int wm_config_bar_edges(const WmConfig *config);
 WmMouseAction wm_config_mouse_action(const WmConfig *config,
                                      unsigned int button);
 
-/* The rectangle a window may occupy: the whole screen less whatever strip the
-   bar has taken. `x` and `y` are where a window may be put and `width` and
-   `height` how large it may be, both already reduced for a top or bottom bar.
-   Called by the frame code both when a window opens and when one is maximised,
-   so a bar is never covered by the thing it is meant to sit above. */
+/* The rectangle a bar actually occupies on a screen of this size, out of its
+   own Position, Size, X, Y and empty-space settings.
+
+   This is the ONE computation of a bar's rectangle. The desktop draws the bar
+   from it and wm_config_workarea() subtracts it, so the space a window is kept
+   out of is exactly the space the bar covers. They used to be two separate
+   rules — the desktop's real geometry and the workarea's "an edge bar starts
+   at the screen edge and is Size thick" — which agreed only for a bar that
+   named no X, no Y and no empty spaces. A bar written Position="top", Y=10,
+   Left_EmptySpace=5 sits at x=5, y=10 and is 24 tall, so its bottom edge is 34,
+   while the workarea still believed the strip ended at 24: a maximised window
+   came to rest ten pixels inside the bar and the bar stayed over it. */
+void wm_config_bar_rect(const WmBar *bar, int screen_width, int screen_height,
+                        int *x, int *y, int *width, int *height);
+
+/* The rectangle a window may occupy: the whole screen less every bar's real
+   rectangle (see wm_config_bar_rect). `x` and `y` are where a window may be
+   put and `width` and `height` how large it may be. Called by the frame code
+   both when a window opens and when one is maximised, so a bar is never
+   covered by the thing it is meant to sit above. */
 void wm_config_workarea(const WmConfig *config, int screen_width,
                         int screen_height, int *x, int *y,
                         int *width, int *height);

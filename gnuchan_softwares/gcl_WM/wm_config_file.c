@@ -1055,57 +1055,143 @@ WmMouseAction wm_config_mouse_action(const WmConfig *config,
     }
 }
 
-void wm_config_workarea(const WmConfig *config, int screen_width,
-                        int screen_height, int *x, int *y,
-                        int *width, int *height) {
-    *x = 0;
-    *y = 0;
-    *width = screen_width;
-    *height = screen_height;
-    if (!config) {
+void wm_config_bar_rect(const WmBar *bar, int screen_width, int screen_height,
+                        int *x, int *y, int *width, int *height) {
+    int vertical;
+    int size;
+    int bx = 0;
+    int by = 0;
+    int bw = 0;
+    int bh = 0;
+
+    if (!bar) {
+        *x = 0; *y = 0; *width = 0; *height = 0;
+        return;
+    }
+    vertical = strcmp(bar->pose, "vertical") == 0;
+    size = bar->size;
+    if (size <= 0) {
+        *x = 0; *y = 0; *width = 0; *height = 0;
         return;
     }
 
-    /* Every edge bar takes its strip out of the workarea, one after another,
-       so a top bar *and* a bottom bar both come off the height and a left bar
-       off the width. Only bars that named an edge count: one placed with X and
-       Y floats over the screen and does not sit against a side, so it takes no
-       room from the windows below. A strip that would leave nothing is held so
-       that at least one pixel of screen is left, which is what stops a script
-       asking for a bar taller than the screen from producing a negative
-       workarea. */
+    /* Pose decides which way the bar runs and which way it is thick: a
+       horizontal bar is as wide as the screen and as thick as Size, a vertical
+       one is the other way round. Position then says which edge it hugs, so a
+       right bar is pushed to the right edge and a bottom one down to the
+       bottom edge. */
+    if (vertical) {
+        bw = size;
+        bh = screen_height;
+        if (strcmp(bar->position, "right") == 0) {
+            bx = screen_width - size;
+        }
+    } else {
+        bw = screen_width;
+        bh = size;
+        if (strcmp(bar->position, "bottom") == 0) {
+            by = screen_height - size;
+        }
+    }
+
+    /* X and Y, when written, are the bar's own corner and win over the edge
+       Position chose. -1 is "not written" and leaves the edge where it is;
+       zero is the very corner of the screen and is kept. */
+    if (bar->x >= 0) {
+        bx = bar->x;
+    }
+    if (bar->y >= 0) {
+        by = bar->y;
+    }
+
+    /* The empty spaces pull the two ends of the bar in along its own axis —
+       Left/Right for a horizontal bar, Up/Down for a vertical one — which is
+       also why a bar with Left_EmptySpace=5 no longer starts at x=0. A pair
+       that would leave nothing is dropped rather than making the bar negative
+       wide. */
+    if (vertical) {
+        if (bar->up_empty + bar->down_empty < bh) {
+            by += bar->up_empty;
+            bh -= bar->up_empty + bar->down_empty;
+        }
+    } else {
+        if (bar->left_empty + bar->right_empty < bw) {
+            bx += bar->left_empty;
+            bw -= bar->left_empty + bar->right_empty;
+        }
+    }
+
+    if (bw < 1) bw = 1;
+    if (bh < 1) bh = 1;
+    *x = bx;
+    *y = by;
+    *width = bw;
+    *height = bh;
+}
+
+void wm_config_workarea(const WmConfig *config, int screen_width,
+                        int screen_height, int *x, int *y,
+                        int *width, int *height) {
+    int wx = 0;
+    int wy = 0;
+    int ww = screen_width;
+    int wh = screen_height;
+
+    if (!config) {
+        *x = wx; *y = wy; *width = ww; *height = wh;
+        return;
+    }
+
+    /* Every bar takes the strip it ACTUALLY covers out of the workarea, one
+       after another — a top bar and a bottom bar both come off the height, a
+       left bar off the width. The strip is the bar's real rectangle, not
+       "the edge, Size thick": a bar with Y=10 and empty spaces five pixels in
+       at each end sits at x=5, y=10 and is 24 tall, so the workarea has to
+       begin at 34 and not at 24. Deriving it from wm_config_bar_rect() is what
+       keeps the space a window is kept out of the same as the space the bar
+       covers — the two used to be separate rules and disagreed exactly for a
+       bar that named an X, a Y or an empty space. A strip that would leave
+       nothing is held so at least one pixel of screen is left, which is what
+       stops a script asking for a bar thicker than the screen from producing a
+       negative workarea. */
     for (int i = 0; i < config->bar_count; i++) {
         const WmBar *bar = &config->bars[i];
+        int bx, by, bw, bh;
+
         if (!bar->present || bar->size <= 0) {
             continue;
         }
-        int strip = bar->size;
+        wm_config_bar_rect(bar, screen_width, screen_height, &bx, &by, &bw, &bh);
 
         if (strcmp(bar->position, "bottom") == 0) {
-            if (strip >= *height) {
-                strip = *height > 0 ? *height - 1 : 0;
-            }
-            *height -= strip;
+            int room = by - wy;              /* bar's top edge is the new floor */
+            if (room < 1) room = 1;
+            wh = room;
         } else if (strcmp(bar->position, "left") == 0) {
-            if (strip >= *width) {
-                strip = *width > 0 ? *width - 1 : 0;
-            }
-            *x += strip;
-            *width -= strip;
+            int right = bx + bw;             /* bar's right edge */
+            int room = (wx + ww) - right;
+            if (right < wx) right = wx;
+            if (room < 1) room = 1;
+            wx = right;
+            ww = room;
         } else if (strcmp(bar->position, "right") == 0) {
-            if (strip >= *width) {
-                strip = *width > 0 ? *width - 1 : 0;
-            }
-            *width -= strip;
-        } else if (strncmp(bar->position, "top", 3) == 0 ||
-                   bar->position[0] == '\0') {
-            if (strip >= *height) {
-                strip = *height > 0 ? *height - 1 : 0;
-            }
-            *y += strip;
-            *height -= strip;
+            int room = bx - wx;              /* bar's left edge */
+            if (room < 1) room = 1;
+            ww = room;
+        } else {                             /* "top", or no position written */
+            int bottom = by + bh;            /* bar's bottom edge */
+            int room = (wy + wh) - bottom;
+            if (bottom < wy) bottom = wy;
+            if (room < 1) room = 1;
+            wy = bottom;
+            wh = room;
         }
     }
+
+    *x = wx;
+    *y = wy;
+    *width = ww;
+    *height = wh;
 }
 
 /* --- reporting what was read ----------------------------------------------
