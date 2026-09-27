@@ -22,12 +22,160 @@
  * carried. Scaling is done once, here, by nearest pixel when the image is
  * copied down to bar size; a plain pixmap cannot scale and the drawing code
  * never has to.
+ *
+ * --- why this file is written the way it is ------------------------------
+ *
+ * Everything a client sends here is untrusted: the property is a list the
+ * program wrote, it can be any size, and any part of it can be wrong. And every
+ * call that waits on the server — an XAllocColor, an XGetWindowProperty with a
+ * long length — is a moment the window manager is not reading events, not
+ * answering a map or a key, and not repainting anything. On a machine whose GPU
+ * is already the weak part, a client that opens a window with a heavy or broken
+ * icon is exactly the program that must not be allowed to freeze the desktop.
+ *
+ * So two rules run through this file:
+ *
+ *   1. No round trip in the drawing path. A pixel's colour is computed from the
+ *      screen's own visual mask — the arithmetic a TrueColor screen defines and
+ *      needs no server to answer — and the whole icon goes onto its pixmap in
+ *      one XPutImage. The older code asked the server to allocate every distinct
+ *      colour (up to 512 times) and drew every pixel with its own XDrawPoint;
+ *      each alloc is a round trip and the whole thing ran inside the event loop,
+ *      so a busy client made the manager stutter with every window it opened.
+ *
+ *   2. Read no more than a bar icon can be made from. The property is read with
+ *      a ceiling on its length, and the length is the whole cost of the read,
+ *      because XGetWindowProperty waits for all of it. Without a ceiling a
+ *      client could make the manager pull an unbounded property in one call.
  */
 #include <stdlib.h>
 #include <string.h>
 
+/* XCreateImage, XPutPixel, XPutImage and XDestroyImage live here rather than
+   in Xlib.h, which does not pull this in on its own. */
+#include <X11/Xutil.h>
+
 #include "wm_core.h"
 #include "wm_frame.h"
+
+/* The most colours kept in the fallback table, for a screen that is not
+   TrueColor. It is a table and not the drawing path: see
+   pixel_from_palette(). */
+#define WM_ICON_COLOUR_CACHE 256
+
+typedef struct IconColour {
+    unsigned int key;        /* (r << 16) | (g << 8) | b                    */
+    unsigned long pixel;
+} IconColour;
+
+static IconColour icon_colours[WM_ICON_COLOUR_CACHE];
+static int icon_colour_count = 0;
+
+/* --- the pixels ----------------------------------------------------------- */
+
+/* The number of bits the screen's mask keeps, and how far it is shifted. */
+static void mask_span(unsigned long mask, int *shift, int *bits) {
+    int s = 0;
+    int b = 0;
+    if (mask != 0) {
+        while ((mask & 1UL) == 0) {
+            mask >>= 1;
+            s++;
+        }
+        while (mask & 1UL) {
+            mask >>= 1;
+            b++;
+        }
+    }
+    *shift = s;
+    *bits = b;
+}
+
+/* One 8-bit channel placed where the visual's mask wants it. */
+static unsigned long channel_pixel(unsigned int value, int shift, int bits) {
+    if (bits <= 0) {
+        return 0;
+    }
+    if (bits >= 8) {
+        return (unsigned long)value << (shift + (bits - 8));
+    }
+    return (unsigned long)(value >> (8 - bits)) << shift;
+}
+
+/* Whether the screen's visual is one whose pixel value can be computed from the
+   mask. TrueColor and DirectColor both answer yes; a PseudoColor screen is a
+   palette and has to be asked, which is the slow path below. */
+static int visual_is_direct(Visual *visual) {
+    if (!visual) {
+        return 0;
+    }
+    if (visual->class != TrueColor && visual->class != DirectColor) {
+        return 0;
+    }
+    int shift = 0;
+    int bits = 0;
+    mask_span(visual->red_mask, &shift, &bits);
+    if (bits == 0) {
+        return 0;
+    }
+    mask_span(visual->green_mask, &shift, &bits);
+    if (bits == 0) {
+        return 0;
+    }
+    mask_span(visual->blue_mask, &shift, &bits);
+    return bits != 0;
+}
+
+/* A colour as a pixel, computed from the visual's masks — no server call. Only
+   used for a direct-colour screen, which every screen that runs a compositor
+   or a piece of GL software is. */
+static unsigned long pixel_from_masks(Visual *visual, unsigned int red,
+                                      unsigned int green, unsigned int blue) {
+    int shift = 0;
+    int bits = 0;
+    unsigned long pixel = 0;
+
+    mask_span(visual->red_mask, &shift, &bits);
+    pixel |= channel_pixel(red, shift, bits);
+    mask_span(visual->green_mask, &shift, &bits);
+    pixel |= channel_pixel(green, shift, bits);
+    mask_span(visual->blue_mask, &shift, &bits);
+    pixel |= channel_pixel(blue, shift, bits);
+    return pixel;
+}
+
+/* A colour as a pixel on a screen that is a palette rather than masks. This is
+   the one place a round trip can happen, so it is kept off the common path: it
+   is only reached on a PseudoColor screen, and the answers are remembered so a
+   bar of icons costs a handful of allocations rather than one per pixel. */
+static unsigned long pixel_from_palette(WmCore *core, unsigned int red,
+                                        unsigned int green, unsigned int blue) {
+    unsigned int key = (red << 16) | (green << 8) | blue;
+
+    for (int i = 0; i < icon_colour_count; i++) {
+        if (icon_colours[i].key == key) {
+            return icon_colours[i].pixel;
+        }
+    }
+
+    XColor colour;
+    colour.red   = (unsigned short)(red * 257);   /* 8 bits to 16 */
+    colour.green = (unsigned short)(green * 257);
+    colour.blue  = (unsigned short)(blue * 257);
+    colour.flags = DoRed | DoGreen | DoBlue;
+    unsigned long pixel = BlackPixel(core->display, core->screen);
+    if (XAllocColor(core->display,
+                    DefaultColormap(core->display, core->screen), &colour)) {
+        pixel = colour.pixel;
+    }
+
+    if (icon_colour_count < WM_ICON_COLOUR_CACHE) {
+        icon_colours[icon_colour_count].key = key;
+        icon_colours[icon_colour_count].pixel = pixel;
+        icon_colour_count++;
+    }
+    return pixel;
+}
 
 /* --- the mask and the colours --------------------------------------------- */
 
@@ -46,24 +194,6 @@ void wm_frame_free_icon(WmCore *core, WmFrame *frame) {
     frame->icon_ok = 0;
 }
 
-/* A pixel of the icon, allocated on the server's colour map. The colour is a
-   round trip to the server, which is why the caller keeps a small table of
-   the ones it has already allocated: an icon is thousands of pixels and a
-   hand-drawn one is a handful of colours. */
-static unsigned long icon_pixel(WmCore *core, unsigned int red,
-                                unsigned int green, unsigned int blue) {
-    XColor colour;
-    colour.red   = (unsigned short)(red * 257);   /* 8 bits to 16 */
-    colour.green = (unsigned short)(green * 257);
-    colour.blue  = (unsigned short)(blue * 257);
-    colour.flags = DoRed | DoGreen | DoBlue;
-    if (!XAllocColor(core->display,
-                     DefaultColormap(core->display, core->screen), &colour)) {
-        return BlackPixel(core->display, core->screen);
-    }
-    return colour.pixel;
-}
-
 /* --- reading -------------------------------------------------------------- */
 
 /* The best entry in a _NET_WM_ICON list: the one with the most pixels that is
@@ -74,7 +204,15 @@ static unsigned long icon_pixel(WmCore *core, unsigned int red,
  * triples, so where one image ends is only known by reading its width and
  * height first; a malformed list — a width of zero, or a height that is not
  * the width — is where the walk stops, because past it there is no way to know
- * where the next image begins. */
+ * where the next image begins.
+ *
+ * Every number here comes from the client and is treated as hostile. A width
+ * larger than the ceiling is skipped without its area being multiplied out (a
+ * width of four thousand million squares to a number that wraps, and a wrapped
+ * area is an area that cannot be trusted to advance the walk), and the room a
+ * triple claims is checked against what is left before the offset moves. The
+ * walk therefore cannot leave the buffer and cannot run without end, whatever
+ * the list says. */
 static unsigned long icon_best(const unsigned long *cards, unsigned long items,
                                unsigned long *side_out) {
     unsigned long best = 0;
@@ -87,11 +225,19 @@ static unsigned long icon_best(const unsigned long *cards, unsigned long items,
         if (side == 0 || side != other) {
             break;
         }
-        unsigned long area = side * side;
-        if (off + 2 + area > items) {
+        /* Past the ceiling, only the length of the triple can be checked, and
+           that check is `side * side` itself — which would overflow. So the
+           image is skipped by the one fact that is safe: an image larger than
+           the ceiling is not wanted, and the list ends at the first triple
+           that cannot be walked. */
+        if (side > WM_ICON_MAX_SIDE) {
             break;
         }
-        if (side <= WM_ICON_MAX_SIDE && area > best_area) {
+        unsigned long area = side * side;
+        if (area > items || off + 2 + area > items) {
+            break;
+        }
+        if (area > best_area) {
             best_area = area;
             best_side = side;
             best = off;
@@ -103,41 +249,44 @@ static unsigned long icon_best(const unsigned long *cards, unsigned long items,
     return best;
 }
 
-/* Copy one chosen image down to bar size.
+/* Copy one chosen image down to bar size, with no round trip to the server.
  *
  * The source is read at (x * source / side, y * source / side), which is
  * nearest-neighbour: for the sizes involved — a 48 pixel icon onto a 16 pixel
  * square — the difference from a smoother scale is a few pixels of edge, and
  * doing it here keeps every other part of the drawing code free of scaling. A
  * pixel whose alpha is nearly zero is left out of the mask, which is what
- * makes a rounded or irregular icon sit on the bar rather than in a box. */
+ * makes a rounded or irregular icon sit on the bar rather than in a box.
+ *
+ * Both images are built in memory and put on their pixmaps with one XPutImage
+ * each. XPutPixel is what does the packing — the byte order and the bits per
+ * pixel are the server's business and it answers them the same way here as it
+ * would to any client — so this file never assumes a layout of its own. */
 static void icon_scale(WmCore *core, WmFrame *frame, const unsigned long *cards,
                        unsigned long base, unsigned long source_side) {
     int side = WM_ICON_SIZE;
-    unsigned long *seen_key = calloc(512, sizeof(unsigned long));
-    unsigned long *seen_pixel = calloc(512, sizeof(unsigned long));
-    int seen_count = 0;
-    if (!seen_key || !seen_pixel) {
-        free(seen_key);
-        free(seen_pixel);
+    int depth = DefaultDepth(core->display, core->screen);
+    Visual *visual = DefaultVisual(core->display, core->screen);
+    int direct = visual_is_direct(visual);
+
+    /* An image per pixmap, both built in memory. The colour one holds a pixel
+       per point and the mask one holds a single bit. */
+    XImage *colour_image = XCreateImage(core->display, visual,
+                                        (unsigned int)depth, ZPixmap, 0, NULL,
+                                        (unsigned int)side, (unsigned int)side,
+                                        32, 0);
+    XImage *mask_image = XCreateImage(core->display, visual, 1, ZPixmap, 0,
+                                      NULL, (unsigned int)side,
+                                      (unsigned int)side, 8, 0);
+    if (!colour_image || !mask_image) {
+        if (colour_image) {
+            XDestroyImage(colour_image);
+        }
+        if (mask_image) {
+            XDestroyImage(mask_image);
+        }
         return;
     }
-
-    /* Two graphics contexts, one per drawable.
-     *
-     * The mask is one bit deep and the colours are as deep as the screen, and
-     * a GC carries the depth of the drawable it was made on. Using one GC for
-     * both — which this did — is a PolyPoint with a colour the mask cannot
-     * hold onto a window whose depth is not the GC's, and the server answers
-     * every one of those with BadMatch: one error per pixel of every icon on
-     * the bar, and the icon itself never drawn. */
-    GC mask_gc = XCreateGC(core->display, frame->icon_mask, 0, NULL);
-    XSetForeground(core->display, mask_gc, 0);
-    XFillRectangle(core->display, frame->icon_mask, mask_gc, 0, 0,
-                   (unsigned int)side, (unsigned int)side);
-    XSetForeground(core->display, mask_gc, 1);
-
-    GC gc = XCreateGC(core->display, frame->icon_source, 0, NULL);
 
     for (int y = 0; y < side; y++) {
         unsigned long sy =
@@ -148,40 +297,43 @@ static void icon_scale(WmCore *core, WmFrame *frame, const unsigned long *cards,
             unsigned long argb = cards[base + 2 + sy * source_side + sx];
             unsigned int alpha = (unsigned int)((argb >> 24) & 0xff);
             if (alpha < 0x20) {
+                /* A see-through pixel is left out of the mask, so the bar's own
+                   colour shows there rather than a rectangle of the icon's. */
+                XPutPixel(mask_image, x, y, 0);
+                XPutPixel(colour_image, x, y, 0);
                 continue;
             }
             unsigned int red   = (unsigned int)((argb >> 16) & 0xff);
             unsigned int green = (unsigned int)((argb >> 8) & 0xff);
             unsigned int blue  = (unsigned int)(argb & 0xff);
 
-            unsigned int key = (red << 16) | (green << 8) | blue;
-            unsigned long pixel = 0;
-            int found = 0;
-            for (int i = 0; i < seen_count; i++) {
-                if (seen_key[i] == key) {
-                    pixel = seen_pixel[i];
-                    found = 1;
-                    break;
-                }
-            }
-            if (!found) {
-                pixel = icon_pixel(core, red, green, blue);
-                if (seen_count < 512) {
-                    seen_key[seen_count] = key;
-                    seen_pixel[seen_count] = pixel;
-                    seen_count++;
-                }
-            }
-            XSetForeground(core->display, gc, pixel);
-            XDrawPoint(core->display, frame->icon_source, gc, x, y);
-            XDrawPoint(core->display, frame->icon_mask, mask_gc, x, y);
+            unsigned long pixel = direct
+                                      ? pixel_from_masks(visual, red, green, blue)
+                                      : pixel_from_palette(core, red, green, blue);
+            XPutPixel(colour_image, x, y, pixel);
+            XPutPixel(mask_image, x, y, 1);
         }
     }
 
+    GC gc = XCreateGC(core->display, frame->icon_source, 0, NULL);
+    XPutImage(core->display, frame->icon_source, gc, colour_image, 0, 0, 0, 0,
+              (unsigned int)side, (unsigned int)side);
     XFreeGC(core->display, gc);
+
+    /* The mask needs a GC whose foreground is set, because XPutImage on a
+       one-bit drawable draws the image through the GC's colours: a 1 in the
+       image is the foreground and a 0 is the background. */
+    GC mask_gc = XCreateGC(core->display, frame->icon_mask, 0, NULL);
+    XSetForeground(core->display, mask_gc, 1);
+    XSetBackground(core->display, mask_gc, 0);
+    XPutImage(core->display, frame->icon_mask, mask_gc, mask_image, 0, 0, 0, 0,
+              (unsigned int)side, (unsigned int)side);
     XFreeGC(core->display, mask_gc);
-    free(seen_key);
-    free(seen_pixel);
+
+    /* XDestroyImage frees the data the image carried, which is why the two are
+       destroyed here rather than left to the connection. */
+    XDestroyImage(colour_image);
+    XDestroyImage(mask_image);
 }
 
 void wm_frame_read_icon(WmCore *core, WmFrame *frame) {
@@ -195,6 +347,10 @@ void wm_frame_read_icon(WmCore *core, WmFrame *frame) {
     unsigned char *data = NULL;
     Atom icon_atom = wm_atom(core, "_NET_WM_ICON");
 
+    /* The ceiling is the whole cost of the read, because this call waits for
+       the property as well as asking for it. WM_ICON_MAX_CARDS is sized to hold
+       several of the sizes a bar can use and no more, so a client with a huge
+       or broken icon cannot make the event loop pull a megabyte in one go. */
     if (XGetWindowProperty(core->display, frame->client, icon_atom,
                            0, WM_ICON_MAX_CARDS, False, AnyPropertyType,
                            &actual_type, &actual_format, &items, &after,

@@ -66,9 +66,20 @@ typedef struct WmCore WmCore;
    thrown away reads as nothing. */
 #define WM_ICON_MAX_SIDE 64
 
-/* The most 32-bit cards read from _NET_WM_ICON, a ceiling so a broken client
-   cannot ask the manager to allocate without bound. */
-#define WM_ICON_MAX_CARDS (256 * 1024)
+/* The most 32-bit cards read from _NET_WM_ICON.
+ *
+ * This is the whole cost of the read, because XGetWindowProperty waits for the
+ * property as well as asking for it: on a 64-bit server every card comes back
+ * as one unsigned long, so this many cards is this many megabytes pulled into
+ * the event loop in a single call — a call the manager makes while a client is
+ * opening a window, and nothing else is being read or drawn for its duration.
+ *
+ * The ceiling is therefore sized to what a bar icon is made from and no more:
+ * a 16, 32, 48 and 64 pixel icon together are about ten thousand cards, so
+ * this holds several times that. A client that publishes more than this is a
+ * client whose icon is not going on the bar anyway, and it is better that the
+ * manager stops reading than that it stops working. */
+#define WM_ICON_MAX_CARDS 32768
 
 /* The three buttons, in the order they are drawn from the right edge inwards:
    close is rightmost, then maximise, then minimise. A count and an order, so

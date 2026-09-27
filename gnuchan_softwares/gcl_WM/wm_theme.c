@@ -472,12 +472,14 @@ void wm_theme_apply(WmCore *core) {
                                             FALLBACK_CURSOR_THEME);
     int cursor_size = choose_cursor_size();
 
-    /* ~/.Xresources first, then this module's own three lines on top. The
-       order matters: xrdb -merge replaces the values for the keys it sets, so
-       loading the file before publishing means a cursor named here wins over
-       one the file happened to name, while every other setting the file holds
-       — the terminal's font and colours — is left in place. */
-    load_user_resources();
+    /* This is the reload path as well as the first one, and it is why
+       load_user_resources() is not called here. That runs xrdb, which is a fork
+       and a wait — up to THEME_HELPER_TIMEOUT_MS — and doing it on every reload
+       is a key that freezes the desktop for as long as the helper takes, for a
+       file the user did not ask to be re-read. ~/.Xresources is loaded once, at
+       the module's init, where a moment of stillness at login is expected; a
+       reload only re-publishes this module's own three keys below, which is a
+       property read and write and no more. */
     publish_to_resource_manager(core, cursor_theme, cursor_size);
 
     const char *home = getenv("HOME");
@@ -509,6 +511,11 @@ void wm_theme_apply(WmCore *core) {
    reload has to reach the GTK settings files and the resource manager, not
    only the environment the first run also set. */
 static int theme_init(WmCore *core) {
+    /* ~/.Xresources is read here and only here: the module's init is the one
+       time a moment of stillness is expected, and re-reading the file on a
+       reload is a wait nobody asked for. See wm_theme_apply(), which is the
+       reload path too and deliberately does not call this. */
+    load_user_resources();
     wm_theme_apply(core);
     return 0;
 }
