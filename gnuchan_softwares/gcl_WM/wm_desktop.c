@@ -59,19 +59,13 @@ static Window bar_window = None;
    rather than reading a file; see wm_image.c. The bar has no picture of its
    own: a wallpaper belongs behind the whole desktop, not inside one strip of
    it. */
+/* The desktop's wallpaper, when the script named one through
+   `gcl_Window.BackgroundImage`. It is loaded at exactly the screen's size and
+   stretched to it, so the pixmap it holds is the root's background as it
+   stands — there is no second pixmap to draw into and no copy to make. The
+   server keeps the pixmap alive for as long as it is the background, so the
+   one held here is freed when it is replaced and at shutdown. */
 static WmImage desktop_image;
-
-/* The pixmap the root's background is set to, held for as long as it is the
-   background. It is module state rather than a local, and that is not a
-   detail: a pixmap a window is using as its background must not be freed.
-   XSetWindowBackgroundPixmap makes the server paint the window with it, but
-   nothing keeps the pixmap alive — freeing it leaves the background naming
-   something that is gone, and the server falls back to clearing the window to
-   nothing. That is a wallpaper that is drawn, set, and then silently dropped
-   one line later, which is exactly a desktop that keeps its flat colour
-   however good the picture was. It is freed when it is replaced and at
-   shutdown. */
-static Pixmap desktop_backdrop = None;
 
 /* Declared ahead of the public entry points, which are written next to the
    raise they pair with rather than next to the drawing they call. */
@@ -906,54 +900,32 @@ static void desktop_paint_background(WmCore *core) {
         return;
     }
 
-    /* A picture that is not named, is not there, or does not decode leaves the
-       flat colour as the background. That colour is what the desktop had
-       before it could have a wallpaper, and a name that cannot be read is not
-       a reason to have no desktop at all. */
+    /* The picture is loaded at exactly the screen's size and stretched to it,
+       so what comes back is already the surface the root needs: it becomes the
+       root's background as it stands, with no second pixmap drawn into and no
+       copy made. A picture that is not named, is not there, or does not decode
+       leaves the flat colour, which is what the desktop had before it could
+       have a wallpaper. */
     if (!core->config.desktop_background_image[0] ||
         wm_image_load(core, &desktop_image,
                       core->config.desktop_background_image,
-                      core->height) != 0) {
+                      core->width, core->height) != 0) {
         XSetWindowBackground(core->display, core->root, core->style.background);
         XClearWindow(core->display, core->root);
         XFlush(core->display);
         return;
     }
 
-    Pixmap backdrop = XCreatePixmap(core->display, core->root,
-                                    (unsigned int)core->width,
-                                    (unsigned int)core->height,
-                                    (unsigned int)DefaultDepth(core->display,
-                                                               core->screen));
-    if (backdrop == None) {
-        XSetWindowBackground(core->display, core->root, core->style.background);
-        XClearWindow(core->display, core->root);
-        XFlush(core->display);
-        return;
-    }
-
-    /* The flat colour first, so the picture is drawn over it rather than
-       instead of it: where the file has a transparent pixel the colour is what
-       shows, which is what makes a picture with a transparent part sit on the
-       desktop rather than in a box of its own. */
-    GC gc = XCreateGC(core->display, backdrop, 0, NULL);
-    XSetForeground(core->display, gc, core->style.background);
-    XFillRectangle(core->display, backdrop, gc, 0, 0,
-                   (unsigned int)core->width, (unsigned int)core->height);
-    XFreeGC(core->display, gc);
-
-    wm_image_draw(core, &desktop_image, backdrop, 0, 0, core->width);
-
-    /* The pixmap becomes the root's background and is kept until it is
-       replaced. See desktop_backdrop for why it is not freed here. The old one
-       goes only after the new one is in place, so the root is never left
-       naming a freed pixmap, not even for the width of one request. */
-    XSetWindowBackgroundPixmap(core->display, core->root, backdrop);
+    /* A background *pixmap*, not painted pixels: the server is handed the
+       wallpaper once and paints it itself into every part of the root it has
+       to paint, for as long as the pixmap is set. Painting the root's pixels
+       directly is what loses a wallpaper the moment a window moves off it —
+       the server clears the hole to the flat colour and nothing puts the
+       picture back, because losing those pixels is not an event this manager
+       is told about. */
+    XSetWindowBackgroundPixmap(core->display, core->root,
+                               desktop_image.pixmap);
     XClearWindow(core->display, core->root);
-    if (desktop_backdrop != None) {
-        XFreePixmap(core->display, desktop_backdrop);
-    }
-    desktop_backdrop = backdrop;
     XFlush(core->display);
 }
 
@@ -1084,10 +1056,6 @@ static void desktop_cleanup(WmCore *core) {
         bar_buffer_height = 0;
     }
     wm_image_free(core, &desktop_image);
-    if (desktop_backdrop != None) {
-        XFreePixmap(core->display, desktop_backdrop);
-        desktop_backdrop = None;
-    }
     bar_colour_count = 0;
     bar_icon_total = 0;
     bar_icon_count = 0;

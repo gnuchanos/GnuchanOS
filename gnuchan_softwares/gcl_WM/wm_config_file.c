@@ -1086,12 +1086,12 @@ Window wm_config_error_window(void) {
     return error_window;
 }
 static char error_title[WM_CONFIG_TEXT_LENGTH];
-static char error_first[WM_CONFIG_TEXT_LENGTH * 2];
+static char error_detail[WM_CONFIG_TEXT_LENGTH * 2];
 /* Room for "in " and a path: the path buffer the reload builds is four text
    lengths, so the line that names the file is one length larger than that. A
    short buffer here would silently clip the path of the very file the message
    exists to name. */
-static char error_second[WM_CONFIG_TEXT_LENGTH * 5];
+static char error_where[WM_CONFIG_TEXT_LENGTH * 5];
 
 static void config_draw_error(WmCore *core) {
     if (error_window == None) {
@@ -1115,35 +1115,44 @@ static void config_draw_error(WmCore *core) {
                   WM_ERROR_PADDING, baseline, error_title, core->style.accent);
     baseline += WM_ERROR_LINE_HEIGHT;
     wm_style_text(display, core->screen, error_window, font,
-                  WM_ERROR_PADDING, baseline, error_first, core->style.text);
+                  WM_ERROR_PADDING, baseline, error_detail, core->style.text);
     baseline += WM_ERROR_LINE_HEIGHT;
     wm_style_text(display, core->screen, error_window, font,
-                  WM_ERROR_PADDING, baseline, error_second,
+                  WM_ERROR_PADDING, baseline, error_where,
                   core->style.text_muted);
     XFlush(display);
 }
 
-/* Show the reason the script could not be applied. Called from the forced
-   reload, which is the path a person took by pressing the key, so it is the
-   path where a message on screen is what they asked for. */
-static void config_show_error(WmCore *core, const char *path,
-                              const char *reason) {
+/* Show a message on the screen. Public because the problems a session can have
+   are not all the config module's: a settings picture that will not load, a
+   key that cannot be bound, no terminal to open. Every one of them reaches the
+   log — a session started by a display manager has no terminal, so the log is
+   the record — but a log is where a person looks after they have already
+   noticed something is wrong, and the whole point of a message is to be the
+   thing they notice. So the same message that goes to the log is put in a
+   window here.
+ *
+ * The window is override-redirect so the manager does not try to manage its own
+ * message, and it is closed by a click or a key. A message already up is
+ * replaced rather than stacked: two windows, one behind the other, is one
+ * message nobody can read. */
+void wm_config_show_message(WmCore *core, const char *title,
+                            const char *detail, const char *where) {
     if (!core || !core->display) {
         return;
     }
 
-    const char *detail = (reason && reason[0]) ? reason
-                                               : "the file could not be read";
-    snprintf(error_title, sizeof(error_title),
-             "GnuChanWM: the config was not applied");
-    snprintf(error_first, sizeof(error_first), "%s", detail);
-    snprintf(error_second, sizeof(error_second), "in %s", path ? path : "");
+    snprintf(error_title, sizeof(error_title), "%s",
+             (title && title[0]) ? title : "GnuChanWM");
+    snprintf(error_detail, sizeof(error_detail), "%s",
+             (detail && detail[0]) ? detail : "something went wrong");
+    snprintf(error_where, sizeof(error_where), "%s",
+             (where && where[0]) ? where : "");
 
-    fprintf(stderr, "gnuchanwm: config error shown: %s (%s)\n", detail, path);
+    fprintf(stderr, "gnuchanwm: message shown: %s (%s)\n",
+            error_detail, error_where);
 
     if (error_window != None) {
-        /* A message already up is replaced rather than stacked: two windows,
-           one behind the other, is one message nobody can read. */
         XDestroyWindow(core->display, error_window);
         error_window = None;
     }
@@ -1151,6 +1160,10 @@ static void config_show_error(WmCore *core, const char *path,
     int x = (core->width - WM_ERROR_WINDOW_WIDTH) / 2;
     if (x < 0) {
         x = 0;
+    }
+    int y = (core->height - WM_ERROR_WINDOW_HEIGHT) / 3;
+    if (y < 0) {
+        y = 0;
     }
 
     XSetWindowAttributes attributes;
@@ -1160,7 +1173,7 @@ static void config_show_error(WmCore *core, const char *path,
     attributes.event_mask = ExposureMask | KeyPressMask | ButtonPressMask;
 
     error_window = XCreateWindow(core->display, core->root,
-                                 x, 64,
+                                 x, y,
                                  WM_ERROR_WINDOW_WIDTH, WM_ERROR_WINDOW_HEIGHT,
                                  1, CopyFromParent, InputOutput, CopyFromParent,
                                  CWOverrideRedirect | CWBackPixel | CWEventMask,
@@ -1168,9 +1181,24 @@ static void config_show_error(WmCore *core, const char *path,
     if (error_window == None) {
         return;
     }
-    XStoreName(core->display, error_window, "GnuChanWM config error");
+    XStoreName(core->display, error_window, "GnuChanWM");
     XMapRaised(core->display, error_window);
     XFlush(core->display);
+    config_draw_error(core);
+}
+
+/* Show the reason the script could not be applied. Called from the forced
+   reload, which is the path a person took by pressing the key, so it is the
+   path where a message on screen is what they asked for. */
+static void config_show_error(WmCore *core, const char *path,
+                              const char *reason) {
+    char where[WM_CONFIG_TEXT_LENGTH * 4 + 8];
+    snprintf(where, sizeof(where), "in %s", path ? path : "");
+    wm_config_show_message(core,
+                           "GnuChanWM: the config was not applied",
+                           (reason && reason[0]) ? reason
+                                                 : "the file could not be read",
+                           where);
 }
 
 int wm_config_reload_forced(WmCore *core) {

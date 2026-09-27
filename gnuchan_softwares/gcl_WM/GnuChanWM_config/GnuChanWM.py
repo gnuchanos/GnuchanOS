@@ -9,14 +9,17 @@ gcl_Window.set_window_border_width(2)
 # shadow behind a frame. The shadow's colour is a name and its opacity a
 # fraction, 0.0 to 1.0.
 gcl_Window.set_window_border_radius(5)
-gcl_Window.set_window_shadow_color("#000000")
+gcl_Window.set_window_shadow_color("#24022B")
 gcl_Window.set_window_shadow_opacity(0.5)
 
 # The desktop wallpaper, drawn behind every window. This is not the bar's
 # picture: a wallpaper belongs behind the whole desktop, not inside one strip
 # of it. Empty keeps the flat desktop colour.
 # gcl_Window.background_color = "#27022b"
-gcl_Window.BackgroundImage = "bg.png"
+gcl_Window.BackgroundImage = "~/.config/GnuChanWM/bg.png"
+
+# --> gcl_Window.BackgroundImage = "bg.png" direct readin ~/.config/GnuChanWM directory
+# --> gcl_Window.BackgroundImage = "~/.config/GnuChanWM/bg.png" full path read
 
 # can be call multiple bar but for now it's just one bar
 gcl_BAR.call(
@@ -214,13 +217,13 @@ gcl_compositor.Cube_Rotate_Effect(
 
 # video settings, if you want to use video as wallpaper, you can set this to True
 # not video exist -> use background image or not background image exist -> use background color
-gcl_compasitor.ScreenVideo(
-    enable=True,
-    # optimize for performance but quality must be fine
-    # if wine open disable video playback, you can set this to False
-    optimize_for_performance=True, # quality will be fine not high quality but performance will be better
-    video_path="/usr/share/videos/GnuChanWM.mp4",
-)
+# gcl_compasitor.ScreenVideo(
+#     enable=True,
+#     # optimize for performance but quality must be fine
+#     # if wine open disable video playback, you can set this to False
+#     optimize_for_performance=True, # quality will be fine not high quality but performance will be better
+#     video_path="/usr/share/videos/GnuChanWM.mp4",
+# )
 
 # animation settings
 gcl_compositor.Animation(
@@ -237,8 +240,8 @@ gcl_compositor.Animation(
 
 
 # screen saver settings --> this is extra x11 program but we setting in here
-gcl_screensaver.ScreenSaver(
-    enable=True,
-    ready_animation_path="/usr/share/animations/GnuChanWM_ready_animation.gif",
+# gcl_screensaver.ScreenSaver(
+#     enable=True,
+#     ready_animation_path="/usr/share/animations/GnuChanWM_ready_animation.gif",
 
-)
+# )

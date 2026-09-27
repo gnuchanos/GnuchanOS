@@ -236,7 +236,7 @@ static KeyAction action_for(const char *written) {
    keysym X keys the grab by, and its action into the function to call. A key
    name X does not know is reported and skipped, because a binding that cannot
    be resolved must not stop the rest of the table from being bound. */
-static int add_config_binding(const WmBinding *binding) {
+static int add_config_binding(WmCore *core, const WmBinding *binding) {
     if (binding_count >= MAX_BINDINGS) {
         return -1;
     }
@@ -253,6 +253,10 @@ static int add_config_binding(const WmBinding *binding) {
     }
     if (keysym == NoSymbol) {
         fprintf(stderr, "gnuchanwm: config: unknown key '%s'\n", binding->key);
+        wm_config_show_message(core,
+                               "GnuChanWM: a key binding cannot be used",
+                               "this key name is not one X knows",
+                               binding->key);
         return -1;
     }
 
@@ -260,9 +264,16 @@ static int add_config_binding(const WmBinding *binding) {
     if (!action) {
         /* The action names something the runtime does that this window
            manager does not: reported once at start-up, so a person can see
-           why the key does not answer. */
+           why the key does not answer. It is shown in a window as well as
+           written to the log, because a key that silently does nothing is
+           the one fault a person cannot tell from a key that was never
+           bound. */
         fprintf(stderr, "gnuchanwm: config: action '%s' is not one this WM does\n",
                 binding->action);
+        wm_config_show_message(core,
+                               "GnuChanWM: a key binding cannot be used",
+                               "this action is not one the window manager does",
+                               binding->action);
         return -1;
     }
 
@@ -290,7 +301,7 @@ static int keys_init(WmCore *core) {
     /* The script's bindings first, then the reload key that always has to be
        there — it is the way back from a config that bound nothing usable. */
     for (int i = 0; i < core->config.binding_count; i++) {
-        add_config_binding(&core->config.bindings[i]);
+        add_config_binding(core, &core->config.bindings[i]);
     }
     if (binding_count == 0) {
         for (unsigned int i = 0; i < BUILT_IN_COUNT; i++) {

@@ -36,6 +36,13 @@ static int autostart_init(WmCore *core) {
         fprintf(stderr,
                 "gnuchanwm: no terminal to open at start-up; "
                 "install one or set $TERMINAL\n");
+        /* Shown as well as logged: an empty desktop with nothing on it is
+           exactly what a missing terminal looks like, and the log is not
+           somewhere a running session can be read. */
+        wm_config_show_message(core,
+                               "GnuChanWM: no terminal was found",
+                               "install one (xterm, alacritty) or set $TERMINAL",
+                               "");
     }
     return 0;
 }

@@ -1,0 +1,73 @@
+import sys
+import struct
+import zlib
+
+path = sys.argv[1]
+
+fh = open(path, "rb")
+data = fh.read()
+fh.close()
+
+pos = 8
+idat = bytearray()
+width = height = 0
+while pos + 8 <= len(data):
+    length = struct.unpack(">I", data[pos:pos + 4])[0]
+    name = data[pos + 4:pos + 8]
+    body = data[pos + 8:pos + 8 + length]
+    if name == b"IHDR":
+        width, height = struct.unpack(">II", body[0:8])
+    elif name == b"IDAT":
+        idat += body
+    elif name == b"IEND":
+        break
+    pos += 12 + length
+
+raw = zlib.decompress(bytes(idat))
+stride = width * 3
+
+hist = {}
+prev = bytearray(stride)
+out = bytearray()
+p = 0
+for y in range(height):
+    f = raw[p]
+    p += 1
+    row = bytearray(raw[p:p + stride])
+    p += stride
+    for x in range(stride):
+        a = row[x - 1] if x >= 1 else 0
+        b = prev[x]
+        if f == 1:
+            row[x] = (row[x] + a) & 0xff
+        elif f == 2:
+            row[x] = (row[x] + b) & 0xff
+        elif f == 3:
+            row[x] = (row[x] + ((a + b) >> 1)) & 0xff
+        elif f == 4:
+            c = prev[x - 1] if x >= 1 else 0
+            pp = a + b - c
+            pa = abs(pp - a)
+            pb = abs(pp - b)
+            pc = abs(pp - c)
+            if pa <= pb and pa <= pc:
+                pr = a
+            elif pb <= pc:
+                pr = b
+            else:
+                pr = c
+            row[x] = (row[x] + pr) & 0xff
+    out += row
+    prev = row
+
+total = width * height
+for i in range(total):
+    off = i * 3
+    key = (out[off], out[off + 1], out[off + 2])
+    hist[key] = hist.get(key, 0) + 1
+
+print("%s: %dx%d, %d distinct colours" % (path, width, height, len(hist)))
+print("top 15 colours:")
+for colour, count in sorted(hist.items(), key=lambda kv: -kv[1])[:15]:
+    print("  rgb%-16s %8d  %5.1f%%" % (str(colour), count,
+                                       100.0 * count / total))

@@ -151,11 +151,25 @@ extern const WmModule wm_input_module;    /* wm_input.c   */
 void wm_menu_open(WmCore *core, int root_x, int root_y);
 int  wm_menu_is_open(void);
 
-/* wm_config_file.c — the window a config mistake is shown in, or None when
-   none is up. Read by the menu's logout walk, which must skip the windows
-   this manager owns: killing one of them closes this manager's own
-   connection, and every kill queued after it is then discarded. */
+/* wm_config_file.c — the window a message is shown in, or None when none is
+   up. Read by the menu's logout walk, which must skip the windows this
+   manager owns: killing one of them closes this manager's own connection, and
+   every kill queued after it is then discarded. */
 Window wm_config_error_window(void);
+
+/* wm_config_file.c — put a message on the screen, in a window of the
+   manager's own, for a problem the user has to see rather than read in a log.
+ *
+ * A window manager started by a display manager has no terminal: a fault that
+ * only reaches stderr is a fault nobody sees, and the desktop simply looks
+ * wrong with nothing to say why. Every module that can fail in a way the user
+ * must act on routes its message here.
+ *
+ * `title` is the heading, `detail` the line under it and `where` the place the
+ * message is about — a path, a setting, or empty. One message is up at a time:
+ * a second replaces the first. The window is closed by a click or a key. */
+void wm_config_show_message(WmCore *core, const char *title,
+                            const char *detail, const char *where);
 
 /* wm_input.c — push the touchpad settings into the running X server again.
    Called when the settings script is reloaded, so a changed TapToClick takes
