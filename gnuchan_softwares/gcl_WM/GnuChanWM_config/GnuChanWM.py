@@ -1,5 +1,7 @@
 # path ~/.config/GnuChanWM/GnuChanWM.py
 
+# WARNING THIS IS NOT REAL PYTHON SCRIPT IT'S JUST CONFIG FILE I JUST DO THAT BECOUSE IT'S FUNNY
+
 
 gcl_Window.set_active_window_border_color("#d400ff")
 gcl_Window.set_inactive_window_border_color("#450552")
@@ -11,6 +13,16 @@ gcl_Window.set_window_border_width(2)
 gcl_Window.set_window_border_radius(5)
 gcl_Window.set_window_shadow_color("#24022B")
 gcl_Window.set_window_shadow_opacity(0.5)
+
+# The desktop wallpaper, drawn behind every window with Imlib2, the way feh
+# draws one. This is not the bar's picture: a wallpaper belongs behind the
+# whole desktop, not inside one strip of it. Empty keeps the flat desktop
+# colour.
+# gcl_Window.background_color = "#27022b"
+gcl_Window.BackgroundImage = "~/.config/GnuChanWM/bg.png"
+
+# --> gcl_Window.BackgroundImage = "bg.png" reads ~/.config/GnuChanWM/bg.png
+# --> gcl_Window.BackgroundImage = "~/.config/GnuChanWM/bg.png" is the same file by full path
 
 # can be call multiple bar but for now it's just one bar
 gcl_BAR.call(

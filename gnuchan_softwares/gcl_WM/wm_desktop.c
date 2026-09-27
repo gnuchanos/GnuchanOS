@@ -38,6 +38,7 @@
 
 #include "wm_core.h"
 #include "wm_frame.h"
+#include "wm_image.h"
 #include "wm_workspace.h"
 
 /* The room a widget's text gets on either side of it. */
@@ -51,6 +52,13 @@
 /* The bar's window. Module state rather than core state: nothing but this file
    draws or moves the bar. */
 static Window bar_window = None;
+
+/* The wallpaper, when the script named one through `gcl_Window.BackgroundImage`
+   and wm_image.c has drawn it. It is made the root window's background below,
+   so the server paints it into every part of the root it has to paint; the
+   picture this holds is kept alive for as long as that is true, and replaced
+   and freed when the script names a different one. */
+static WmImage desktop_image;
 
 /* Declared ahead of the public entry points, which are written next to the
    raise they pair with rather than next to the drawing they call. */
@@ -859,24 +867,60 @@ static void desktop_bar(WmCore *core) {
 
 /* --- painting ------------------------------------------------------------- */
 
-/* The backdrop: the desktop's own colour, made the root window's background.
+/* The backdrop: the wallpaper when there is one, and the flat desktop colour
+ * when there is not.
  *
- * The colour is set as the root's *background* rather than painted onto its
- * pixels, and that is the point. The root window has a background of its own,
- * and the X server paints that background into every part of the root it has
- * to paint, without asking anybody: move a window away, close one, or clear
- * the root, and the server fills the hole itself. Painting pixels directly
- * would leave those holes — the server clears the uncovered part to whatever
- * it was told the background is, and nothing puts a painted picture back,
- * because losing those pixels is not an event this manager is told about. A
- * background set on the window is the server's to repaint, so nothing has to
- * be redrawn at all. */
+ * Whatever comes out is set as the root window's *background* rather than
+ * painted onto its pixels, and that is the point. The root window has a
+ * background of its own, and the X server paints that background into every
+ * part of the root it has to paint, without asking anybody: move a window
+ * away, close one, or clear the root, and the server fills the hole itself.
+ * Painting pixels directly would leave those holes — the server clears the
+ * uncovered part to whatever it was told the background is, and nothing puts a
+ * painted picture back, because losing those pixels is not an event this
+ * manager is told about. A background set on the window is the server's to
+ * repaint, so nothing has to be redrawn at all. feh does exactly this, and
+ * additionally publishes the pixmap as _XROOTPMAP_ID so other programs that
+ * read the root background — desktop widgets, compositors — find the same
+ * picture rather than a black or stale root. */
 static void desktop_paint_background(WmCore *core) {
     if (core->width <= 0 || core->height <= 0) {
         return;
     }
-    XSetWindowBackground(core->display, core->root, core->style.background);
+
+    /* A picture that is not named, is not there, or does not decode leaves the
+       flat colour, which is what the desktop had before it could have a
+       wallpaper. */
+    if (!core->config.desktop_background_image[0] ||
+        wm_image_load(core, &desktop_image,
+                      core->config.desktop_background_image,
+                      core->width, core->height) != 0) {
+        XSetWindowBackground(core->display, core->root, core->style.background);
+        XClearWindow(core->display, core->root);
+        XFlush(core->display);
+        return;
+    }
+
+    /* The picture is made the root's background pixmap, and published as
+       _XROOTPMAP_ID and ESETROOT_PMAP_ID — the two properties feh, hsetroot,
+       xsetroot and every wallpaper reader agree on. Setting the property is
+       what makes the picture the one a program reading the root finds, so such
+       a program draws the same wallpaper rather than a black or stale root. */
+    XSetWindowBackgroundPixmap(core->display, core->root, desktop_image.pixmap);
     XClearWindow(core->display, core->root);
+
+    Atom root_pixmap = XInternAtom(core->display, "_XROOTPMAP_ID", False);
+    Atom esetroot = XInternAtom(core->display, "ESETROOT_PMAP_ID", False);
+    if (root_pixmap != None) {
+        XChangeProperty(core->display, core->root, root_pixmap, XA_PIXMAP, 32,
+                        PropModeReplace,
+                        (unsigned char *)&desktop_image.pixmap, 1);
+    }
+    if (esetroot != None) {
+        XChangeProperty(core->display, core->root, esetroot, XA_PIXMAP, 32,
+                        PropModeReplace,
+                        (unsigned char *)&desktop_image.pixmap, 1);
+    }
     XFlush(core->display);
 }
 
@@ -1006,6 +1050,7 @@ static void desktop_cleanup(WmCore *core) {
         bar_buffer_width = 0;
         bar_buffer_height = 0;
     }
+    wm_image_free(core, &desktop_image);
     bar_colour_count = 0;
     bar_icon_total = 0;
     bar_icon_count = 0;

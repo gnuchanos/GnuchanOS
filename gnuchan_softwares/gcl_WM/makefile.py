@@ -57,6 +57,7 @@ SOURCES = (
     "wm_desktop.c",
     "wm_frame.c",
     "wm_icon.c",
+    "wm_image.c",
     "wm_manage.c",
     "wm_focus.c",
     "wm_spawn.c",
@@ -71,7 +72,7 @@ HEADERS = (
     "wm_module.h", "wm_core.h", "wm_style.h", "wm_frame.h", "wm_spawn.h",
     "wm_theme.h",
     "wm_config.h", "wm_config_parser.h",
-    "wm_workspace.h", "wm_desktop.h",
+    "wm_workspace.h", "wm_desktop.h", "wm_image.h",
 )
 
 FALLBACK_TERMINAL = "xterm"
@@ -191,6 +192,19 @@ def xcursor_headers_present() -> bool:
     return header_present("X11/Xcursor/Xcursor.h")
 
 
+def imlib2_headers_present() -> bool:
+    """Whether Imlib2's header is here.
+
+    Imlib2 is what reads the wallpaper and renders it onto a pixmap, the way
+    feh does: it knows the file formats (through libpng, libjpeg and the rest,
+    which it pulls in itself) and the drawing, so the window manager does not
+    carry a decoder of its own. It is a dependency of the build because a
+    desktop without it has only its flat colour; see dotfile/ or the README for
+    the package that provides it.
+    """
+    return header_present("Imlib2.h")
+
+
 def program_exists(name: str) -> bool:
     if "/" in name:
         return os.access(name, os.X_OK)
@@ -224,6 +238,10 @@ def ensure_build_dependencies() -> None:
     # and the shadow are cuts in the frame's window, not pixels on it.
     if not xext_headers_present():
         needed.append("libxext-dev")
+    # Imlib2 is what the wallpaper is read and drawn with, the way feh does it.
+    # Its header is in a package of its own; libx11-dev does not pull it in.
+    if not imlib2_headers_present():
+        needed.append("libimlib2-dev")
     if shutil.which("gcc") is None:
         needed.append("build-essential")
     if shutil.which("pkg-config") is None:
@@ -264,14 +282,16 @@ def x11_flags() -> tuple[list[str], list[str]]:
     """
     pkg_config = shutil.which("pkg-config")
     if pkg_config is not None:
-        cflags = run([pkg_config, "--cflags", "x11", "xft", "xcursor", "xext"],
+        cflags = run([pkg_config, "--cflags",
+                      "x11", "xft", "xcursor", "xext", "imlib2"],
                      capture=True)
-        libs = run([pkg_config, "--libs", "x11", "xft", "xcursor", "xext"],
+        libs = run([pkg_config, "--libs",
+                    "x11", "xft", "xcursor", "xext", "imlib2"],
                    capture=True)
         if cflags.returncode == 0 and libs.returncode == 0:
             return cflags.stdout.split(), libs.stdout.split()
     return (["-I/usr/include", "-I/usr/include/freetype2"],
-            ["-lX11", "-lXft", "-lXcursor", "-lXext"])
+            ["-lX11", "-lXft", "-lXcursor", "-lXext", "-lImlib2"])
 
 
 def check_sources() -> None:
