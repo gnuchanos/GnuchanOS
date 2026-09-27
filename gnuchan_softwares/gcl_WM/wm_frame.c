@@ -538,34 +538,79 @@ void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
 }
 
 /* A client that moved or resized itself. Its position is meaningless inside a
-   frame — the bar lives above it — so only the size is taken, and the position
+   frame — the bar lives above it — so only the size is taken and the position
    is put back to where the frame wants it.
  *
- * Nothing is redrawn when nothing changed. This is called from every
- * ConfigureNotify the client sends, and the server sends one for reasons that
- * are not a resize — a restack above it, for instance — so repainting
- * unconditionally here is a title bar that repaints whenever anything in the
- * stack moves. The size is the only thing this frame takes from the client,
- * so the size differing is the whole test. */
+ * The position has to be put back, and that is the whole reason this test is
+ * not "the size changed". Once a client is reparented it is a GRANDCHILD of
+ * the root, and the root's structure redirection only covers the root's own
+ * children — so a move the program makes itself is not redirected and does not
+ * arrive as a ConfigureRequest. It arrives here, as a ConfigureNotify, with
+ * the client already sitting wherever it put itself INSIDE the frame. Only
+ * checking the size let that stand: the client slid away from (border, title)
+ * and nothing brought it back.
+ *
+ * That is exactly what a GLFW program does — raylib's SetWindowPosition calls
+ * XMoveWindow — so the two courts of the pong demo placed themselves at their
+ * requested SCREEN coordinates measured from the frame's corner instead: the
+ * Lua court, at x=60 in an 804 pixel frame, drew its court out past its frame,
+ * and the Python court at x=880 fell outside the frame completely, leaving its
+ * frame showing nothing but the border colour.
+ *
+ * Nothing is redrawn when nothing changed, which is still what keeps a plain
+ * restack from repainting the title bar: a client whose size and place are both
+ * already right returns above. */
 void wm_frame_sync(WmCore *core, WmFrame *frame) {
     XWindowAttributes attributes;
     if (!XGetWindowAttributes(core->display, frame->client, &attributes)) {
         return;
     }
-    if (attributes.width == frame->client_width &&
-        attributes.height == frame->client_height) {
+
+    int moved = attributes.x != frame->border ||
+                attributes.y != WM_TITLE_HEIGHT;
+    int resized = attributes.width != frame->client_width ||
+                  attributes.height != frame->client_height;
+    if (!moved && !resized) {
         return;
     }
-    if (attributes.width > 1) {
-        frame->client_width = attributes.width;
+
+    if (resized) {
+        if (attributes.width > 1) {
+            frame->client_width = attributes.width;
+        }
+        if (attributes.height > 1) {
+            frame->client_height = attributes.height;
+        }
     }
-    if (attributes.height > 1) {
-        frame->client_height = attributes.height;
+
+    /* A move is not undone, it is TAKEN, and it is taken as a SCREEN place.
+       The server reports the client's new place relative to its parent, which
+       is the frame — but the program has no idea it is inside a frame. It
+       believes it is a window on the root, so the coordinates it asked for are
+       the coordinates it wanted ON THE SCREEN. So the frame is put where the
+       client would then sit where it asked: the client's own place less the
+       frame's chrome, which is exactly the (border, title) offset the client
+       is drawn at inside the frame.
+           frame_screen = client_asked - (border, title)
+           client_screen = frame_screen + (border, title) = client_asked
+       Reading it as a delta from where the client already was — the obvious
+       first guess — does not survive a client that asks twice: every move is
+       measured from the place the previous one was taken to, so the window
+       walks across the screen by the sum of its own coordinates. raylib's
+       SetWindowPosition is one XMoveWindow per call, and the pong demo calls
+       it once per court, which is what made the two frames land on top of one
+       another instead of at 60 and 880. */
+    if (moved) {
+        frame->x = attributes.x - frame->border;
+        frame->y = attributes.y - WM_TITLE_HEIGHT;
     }
+
     /* A client that resized itself goes through the same clamp a requested
        resize does: it may not make its frame bigger than the workarea, nor
        leave it hanging off the edge of the screen. */
     frame_clamp_to_workarea(core, frame);
+    /* frame_apply moves the client back to (frame->border, WM_TITLE_HEIGHT)
+       as well as resizing it, so the placement and the resize are one call. */
     frame_apply(core, frame);
 }
 
