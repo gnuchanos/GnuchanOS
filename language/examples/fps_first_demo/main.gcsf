@@ -12,16 +12,6 @@
 #native <RaylibSimpleWater>
 
 
-#if defined(Raylib.PLATFORM_DESKTOP)
-    #define Raylib.GLSL_VERSION            330
-#else   // PLATFORM_ANDROID, PLATFORM_WEB
-    #define Raylib.GLSL_VERSION            100
-#endif
-
-
-
-
-
 int main() {
     Raylib.InitWindow(1600, 900, "GCL Project");
 
@@ -79,7 +69,29 @@ int main() {
     #// esikler ve fizik oyuncunun kendi modulunde (RaylibFPS) yasar; boylece
     #// ekranin "yuzuyorum" dedigi an ile fizigin yuzdugu an ayrisamaz.
 
-    RaylibShader.SimpleShader shader = RaylibShader.CreateSimpleShader("lighting.vs", "lighting.fs", Raylib.GLSL_VERSION);
+    #// SHADER SURUMU CALISMA ANINDA SECILIR.
+    #//
+    #// Iki shader cifti var cunku GLSL 3.30 ile 1.20 arasindaki fark yalnizca
+    #// bir surum numarasi DEGILDIR: 1.20'de `in/out` yerine `attribute/varying`,
+    #// `texture()` yerine `texture2D()`, cikis degiskeni yerine `gl_FragColor`
+    #// kullanilir. Ayni dosya ikisini birden konusamaz.
+    #//
+    #//   assets/lighting.vs / .fs       -> #version 330
+    #//   assets/lighting_gl2.vs / .fs   -> #version 120  (ayni islev)
+    #//
+    #// HANGISI: baglamin gercekten konustugu surum. Intel GM965/GL960
+    #// (GMA X3100, Vostro A860) OpenGL 2.1 tavanlidir ve 330'luk shader'i
+    #// DERLEMEZ; orada 120'lik varyant yuklenir. Sabit 330 yazmak o makinede
+    #// shader'i derlenmez birakir ve sahne tamamen CIZIMSIZ kalirdi.
+    #// GetGLSLVersion() 120 / 330 / 100 / 300 dondurur (bkz. gcl_raylib.c).
+    int glsl_ver = Raylib.GetGLSLVersion();
+    gcChar shader_vs = "lighting.vs";
+    gcChar shader_fs = "lighting.fs";
+    if (glsl_ver < 330) {
+        shader_vs = "lighting_gl2.vs";
+        shader_fs = "lighting_gl2.fs";
+    }
+    RaylibShader.SimpleShader shader = RaylibShader.CreateSimpleShader(shader_vs, shader_fs, glsl_ver);
 
 
 

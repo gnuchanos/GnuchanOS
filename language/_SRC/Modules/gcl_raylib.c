@@ -26,6 +26,11 @@
 #include "gcl_module.h"
 
 #include <raylib.h>
+/* rlGetVersion(): baglamin ACTIGI OpenGL surumu. Script bunu okuyup shader'in
+   hangi dil surumuyle yazilmasi gerektigini secebilir; bir GM965/GL960
+   (OpenGL 2.1, GLSL 120) uzerinde 330'luk bir shader DERLENMEZ, 120'lik
+   derlenir. Yalnizca bir sorgu sembolu kullanilir, cizim yapilmaz. */
+#include <rlgl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -1162,6 +1167,31 @@ static double fn_SetTargetFPS(int argc,const char**argv){ SetTargetFPS(ii(argv[0
 static double fn_GetFrameTime(int argc,const char**argv){(void)argc;(void)argv;return (double)GetFrameTime();}
 static double fn_GetTime(int argc,const char**argv){(void)argc;(void)argv;return GetTime();}
 static double fn_GetFPS(int argc,const char**argv){(void)argc;(void)argv;return (double)GetFPS();}
+
+/* GetGLSLVersion() -> baglamin destekledigi GLSL surumu (120, 330, 100, 300).
+
+   NEDEN GEREKLI: shader dosyasi kendi `#version` satirini tasiyorsa
+   SimpleShader onu OLDUGU GIBI derler (bkz. gcl_raylib_simple_shader). Bu
+   yuzden bir shader dosyasi hangi surumle yazildiysa ona BAGLIDIR: `#version
+   330` yazan bir dosya, yalnizca GLSL 1.20 konusan bir GPU'da (Intel
+   GM965/GL960, GMA X3100) HIC DERLENMEZ ve program cizimsiz kalir. Script bu
+   uyeyi cagirip 120 ile 330 arasinda secebilir; `#version` satiri OLMAYAN bir
+   dosya zaten SimpleShader'in parametresiyle surumlenir.
+
+   Eşleme rlgl'nin kendi numaralandirmasiyla birdir: RL_OPENGL_21 -> GLSL 120,
+   RL_OPENGL_33/43 -> GLSL 330, RL_OPENGL_ES_20 -> GLSL 100, ES_30 -> 300.
+   Bilinmeyen bir degerde 120 dondurulur: en dar kume, en genis uyumluluk. */
+static double fn_GetGLSLVersion(int argc,const char**argv){
+    (void)argc;(void)argv;
+    switch (rlGetVersion()) {
+    case RL_OPENGL_21:    return 120.0;
+    case RL_OPENGL_33:    return 330.0;
+    case RL_OPENGL_43:    return 330.0;
+    case RL_OPENGL_ES_20: return 100.0;
+    case RL_OPENGL_ES_30: return 300.0;
+    default:              return 120.0;
+    }
+}
 static double fn_SwapScreenBuffer(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(SwapScreenBuffer);SwapScreenBuffer();return 0.0;}
 static double fn_PollInputEvents(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(PollInputEvents);PollInputEvents();return 0.0;}
 static double fn_WaitTime(int argc,const char**argv){ WaitTime(atof(argv[0])); return 0.0; }
@@ -3622,7 +3652,7 @@ static const GclNativeEntry g_entries[] = {
     E(GetScreenToWorld2D),E(GetCameraMatrix),E(GetCameraMatrix2D),
 
     /* Timing */
-    E(SetTargetFPS),E(GetFrameTime),E(GetTime),E(GetFPS),E(SwapScreenBuffer),E(PollInputEvents),E(WaitTime),
+    E(SetTargetFPS),E(GetFrameTime),E(GetTime),E(GetFPS),E(GetGLSLVersion),E(SwapScreenBuffer),E(PollInputEvents),E(WaitTime),
     E(SetRandomSeed),E(GetRandomValue),E(LoadRandomSequence),E(UnloadRandomSequence),E(TakeScreenshot),
     E(SetConfigFlags),E(OpenURL),E(SetTraceLogLevel),E(TraceLog),E(SetTraceLogCallback),E(MemAlloc),E(MemRealloc),E(MemFree),
 

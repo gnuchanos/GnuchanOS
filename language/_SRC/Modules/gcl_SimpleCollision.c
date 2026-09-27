@@ -101,6 +101,15 @@ RaylibSimpleCollision.MoveAndSlide(PLAYER, dx, dy, dz, maxSlides, MESH1, MESH2, 
    bu olurdu. Tampon bu yuzden malloc/realloc ile buyur. */
 #define COL_TRIS_INIT 16384
 
+/* ARAZI IZGARASI: X/Z duzleminde hucre boyu (metre) ve eksen basina en fazla
+   hucre. Hucre kapsul yaricapindan (0.3) belirgin sekilde buyuk secilir ki
+   kapsul bir hucrenin kenarindayken komsu hucreler de gezilsin ve temas
+   kacmasin. COL_GRID_MAX cok buyuk bir arazide bellegi sinirlar; asilirsa
+   hucre boyu buyur (izgara kabalasir) ama DOGRULUK bozulmaz — yalnizca
+   elenen ucgen sayisi azalir. */
+#define COL_GRID_CELL 4.0
+#define COL_GRID_MAX  512
+
 enum {
     S_POS_X = 0, S_POS_Y, S_POS_Z,
     S_ROT_X, S_ROT_Y, S_ROT_Z,
@@ -249,10 +258,42 @@ typedef struct {
     double lo[3], hi[3];
 } ColTri;
 
+/* X/Z DUZLEMINDE BIR IZGARA. Ucgenleri kapsule gore onceden eler.
+
+   NEDEN: resolve_pass her cagride butun kumeyi tarar ve AABB testini her
+   ucgen icin yapar. fps_first_demo'da arazi 41.454 ucgendir ve resolve_pass
+   kare basina COL_SOLVE_ITERS (6) kez, MoveAndSlide'da ayrica her adimda
+   cagrilir; yani kare basina yuz binlerce AABB testi. Oysa oyuncunun o karede
+   dokunabilecegi ucgen sayisi birkac douzendir.
+
+   Y KOVALANMAZ. Yalnizca X ve Z bolunur, ucgenin Y araligi ne olursa olsun
+   icinde bulundugu X/Z hucresine yazilir. Sebep: arazi bir yukseklik alani
+   DEGIL — magaralar ve tavanlar vardir. Y'yi de kovalarsak bir tavanin
+   altindaki oyuncu onu bulamaz. X/Z bolmesi bu dogrulugu BOZMAZ; yalnizca
+   ayni sutundaki az sayida ucgen fazladan test edilir.
+
+   Izgara YALNIZCA ARAZININ onbelleginde kurulur. Scratch kume (MoveAndSlide'in
+   collider'lari) kucuktur ve her karede degisir; ona izgara kurmak, kazanci
+   kurma maliyetine yedirir. */
+typedef struct {
+    int *items;      /* bu hucredeki ucgen indeksleri */
+    int  count;
+    int  cap;
+} GridCell;
+
+typedef struct {
+    GridCell *cells;
+    int    nx, nz;       /* hucre sayisi                */
+    double min_x, min_z; /* izgaranin sol-alt kosesi    */
+    double cell;         /* hucre boyu (kare, metre)    */
+    int    built;        /* 0 ise resolve_pass tam tarar */
+} TriGrid;
+
 typedef struct {
     ColTri *tris;
     int     count;   /* kullanimdaki ucgen sayisi */
     int     cap;     /* ayrilmis kapasite        */
+    TriGrid grid;    /* yalnizca ARAZI icin kurulur */
 } TriBuffer;
 
 /* IKI AYRI KUME. `g_tris` bir CAGRI icindeki collider'larin scratch tamponudur
@@ -277,6 +318,96 @@ static int tri_reserve(TriBuffer *b, int need) {
     b->tris = grown;
     b->cap = cap;
     return 1;
+}
+
+/* ---------- izgara (yalnizca ARAZI icin) ---------- */
+
+/* Bir hucreye ucgen indeksi ekler; kapasite gerekirse buyur. */
+static int grid_add(GridCell *cell, int idx) {
+    if (cell->count >= cell->cap) {
+        int cap = cell->cap > 0 ? cell->cap * 2 : 4;
+        int *grown = (int *)realloc(cell->items, (size_t)cap * sizeof(int));
+        if (!grown) return 0;
+        cell->items = grown;
+        cell->cap = cap;
+    }
+    cell->items[cell->count++] = idx;
+    return 1;
+}
+
+static void grid_free(TriGrid *g) {
+    if (!g) return;
+    if (g->cells) {
+        for (int i = 0; i < g->nx * g->nz; i++) free(g->cells[i].items);
+        free(g->cells);
+    }
+    memset(g, 0, sizeof(*g));
+}
+
+/* Arazi ucgenlerinden X/Z izgarasini kurar. Y kovalanmaz (bkz. TriGrid):
+   ucgen, Y araligi ne olursa olsun X/Z'de dokundugu HER hucreeye yazilir.
+   Boylece magara tavani da, taban da ayni sekilde bulunur. */
+static void grid_build(TriGrid *g, const ColTri *tris, int count) {
+    double min_x = 1.0e30, min_z = 1.0e30, max_x = -1.0e30, max_z = -1.0e30;
+    double span_x, span_z, cell;
+    int nx, nz, i;
+
+    grid_free(g);
+    if (!g || !tris || count <= 0) return;
+
+    for (i = 0; i < count; i++) {
+        if (tris[i].lo[0] < min_x) min_x = tris[i].lo[0];
+        if (tris[i].hi[0] > max_x) max_x = tris[i].hi[0];
+        if (tris[i].lo[2] < min_z) min_z = tris[i].lo[2];
+        if (tris[i].hi[2] > max_z) max_z = tris[i].hi[2];
+    }
+    span_x = max_x - min_x;
+    span_z = max_z - min_z;
+    if (!(span_x > 0.0)) span_x = COL_GRID_CELL;
+    if (!(span_z > 0.0)) span_z = COL_GRID_CELL;
+
+    cell = COL_GRID_CELL;
+    if (span_x / cell > (double)COL_GRID_MAX) {
+        cell = span_x / (double)COL_GRID_MAX;
+    }
+    if (span_z / cell > (double)COL_GRID_MAX) {
+        cell = span_z / (double)COL_GRID_MAX;
+    }
+    if (!(cell > 0.0)) cell = COL_GRID_CELL;
+
+    nx = (int)(span_x / cell) + 1;
+    nz = (int)(span_z / cell) + 1;
+    if (nx < 1) nx = 1;
+    if (nz < 1) nz = 1;
+    if (nx > COL_GRID_MAX) nx = COL_GRID_MAX;
+    if (nz > COL_GRID_MAX) nz = COL_GRID_MAX;
+
+    g->cells = (GridCell *)calloc((size_t)nx * (size_t)nz, sizeof(GridCell));
+    if (!g->cells) return;
+    g->nx = nx; g->nz = nz;
+    g->min_x = min_x; g->min_z = min_z;
+    g->cell = cell;
+
+    for (i = 0; i < count; i++) {
+        int cx0 = (int)((tris[i].lo[0] - min_x) / cell);
+        int cx1 = (int)((tris[i].hi[0] - min_x) / cell);
+        int cz0 = (int)((tris[i].lo[2] - min_z) / cell);
+        int cz1 = (int)((tris[i].hi[2] - min_z) / cell);
+
+        if (cx0 < 0) cx0 = 0;
+        if (cz0 < 0) cz0 = 0;
+        if (cx1 > nx - 1) cx1 = nx - 1;
+        if (cz1 > nz - 1) cz1 = nz - 1;
+        if (cx1 < cx0) cx1 = cx0;
+        if (cz1 < cz0) cz1 = cz0;
+
+        for (int cz = cz0; cz <= cz1; cz++) {
+            for (int cx = cx0; cx <= cx1; cx++) {
+                grid_add(&g->cells[cz * nx + cx], i);
+            }
+        }
+    }
+    g->built = 1;
 }
 
 /* ---------- mesh modulunden ucgen erisimi ---------- */
@@ -435,6 +566,28 @@ static int capsule_tri(const ColCapsule *cap,
     return 1;
 }
 
+/* Bir ucgeni kapsule karsi dener ve daha derin bir temas bulursa en iyiyi
+   guncelleyip 1 doner. AABB testi ONCE yapilir: uzak ucgenler neredeyse
+   bedava elenir, asil (pahali) kapsul-ucgen testi yalnizca yakinda calisir.
+   Bu ayirma, izgaranin dogrulugu bozmadan yalnizca hiz kazandirdigi yerdir. */
+static int tri_consider(const ColTri *t, const ColCapsule *cap,
+                        const double lo[3], const double hi[3],
+                        double best_n[3], double *best_pen) {
+    double n[3], pen;
+
+    if (t->hi[0] < lo[0] || t->lo[0] > hi[0]) return 0;
+    if (t->hi[1] < lo[1] || t->lo[1] > hi[1]) return 0;
+    if (t->hi[2] < lo[2] || t->lo[2] > hi[2]) return 0;
+
+    if (!capsule_tri(cap, t->v, t->v + 3, t->v + 6, n, &pen)) return 0;
+    if (pen > *best_pen) {
+        *best_pen = pen;
+        vcopy(best_n, n);
+        return 1;
+    }
+    return 0;
+}
+
 /* ---------- ucgen kumesine karsi en derin temasi bul ve uygula ----------
 
    Bir gecis: TUM ucgenler taranir, EN DERIN temas secilir, kapsul o kadar
@@ -456,19 +609,42 @@ static int resolve_pass(const TriBuffer *buf, ColCapsule *cap, double out_normal
 
     v3(best_n, 0.0, 1.0, 0.0);
 
-    for (i = 0; i < buf->count; i++) {
-        const ColTri *t = &buf->tris[i];
-        double n[3], pen;
+    /* IZGARA VARSA YALNIZCA KAPSULUN USTUNDEKI HUCRELER. Kapsulun X/Z AABB'si
+       kac hucreye dokunuyorsa yalnizca onlar gezilir; 41.454 ucgenlik bir
+       arazide bu, kare basina yuz binlerce test yerine birkac douzen demektir.
+       En DERIN temas yine secilir: gezilen kumeler tum adaylari kapsar, yani
+       sonuc tam taramanin AYNISIDIR — degisen yalnizca kaca bakildigidir.
+       Izgara yoksa (scratch kume, ya da bellek yetmedi) tam tarama yapilir. */
+    if (buf->grid.built) {
+        const TriGrid *g = &buf->grid;
+        int cx0 = (int)((lo[0] - g->min_x) / g->cell);
+        int cx1 = (int)((hi[0] - g->min_x) / g->cell);
+        int cz0 = (int)((lo[2] - g->min_z) / g->cell);
+        int cz1 = (int)((hi[2] - g->min_z) / g->cell);
 
-        if (t->hi[0] < lo[0] || t->lo[0] > hi[0]) continue;
-        if (t->hi[1] < lo[1] || t->lo[1] > hi[1]) continue;
-        if (t->hi[2] < lo[2] || t->lo[2] > hi[2]) continue;
+        if (cx0 < 0) cx0 = 0;
+        if (cz0 < 0) cz0 = 0;
+        if (cx1 > g->nx - 1) cx1 = g->nx - 1;
+        if (cz1 > g->nz - 1) cz1 = g->nz - 1;
 
-        if (!capsule_tri(cap, t->v, t->v + 3, t->v + 6, n, &pen)) continue;
-        if (pen > best_pen) {
-            best_pen = pen;
-            vcopy(best_n, n);
-            found = 1;
+        for (int cz = cz0; cz <= cz1; cz++) {
+            for (int cx = cx0; cx <= cx1; cx++) {
+                const GridCell *cell = &g->cells[cz * g->nx + cx];
+                for (int k = 0; k < cell->count; k++) {
+                    int idx = cell->items[k];
+                    if (idx < 0 || idx >= buf->count) continue;
+                    if (tri_consider(&buf->tris[idx], cap, lo, hi,
+                                     best_n, &best_pen)) {
+                        found = 1;
+                    }
+                }
+            }
+        }
+    } else {
+        for (i = 0; i < buf->count; i++) {
+            if (tri_consider(&buf->tris[i], cap, lo, hi, best_n, &best_pen)) {
+                found = 1;
+            }
         }
     }
 
@@ -549,6 +725,13 @@ static void terrain_buffer_ensure(int handle) {
     if (g_terrain_handle == handle) return;   /* onbellek gecerli */
     g_terrain_tris.count = 0;
     gather_mesh(&g_terrain_tris, handle, (const double[9]){ 0,0,0, 0,0,0, 1,1,1 });
+
+    /* Izgara, ucgenler DEGISTIGINDE kurulur ve sonra dokunulmaz. Arazi
+       hareket etmedigi icin bu bir kerelik bir maliyettir; kurulduktan sonra
+       her kare yalnizca kapsulun ustundeki hucreler gezilir. Toplama
+       basarisiz olursa (handle -1, mesh yok) izgara kurulmaz ve resolve_pass
+       tam taramaya duserdi — zaten 0 ucgen vardir, yani bedava. */
+    grid_build(&g_terrain_tris.grid, g_terrain_tris.tris, g_terrain_tris.count);
     g_terrain_handle = handle;
 }
 

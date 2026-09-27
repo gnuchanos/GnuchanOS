@@ -146,6 +146,20 @@ Raylib.EndMode3D(void);
    without it the blend factor is 0 and holding CTRL does nothing at all. */
 #define FPS_STANCE_MIN_STEP    0.08f
 
+/* Bir karenin sayilacagi EN BUYUK sure (saniye). GetFrameTime() bir takilma,
+   bir sayfa hatasi ya da cok yavas bir GPU yuzunden buyuk donebilir; bu deger
+   olmadan tek karede dt=0.2 cikar ve hareket integrator'u oyuncuyu 30 cm'lik
+   kapsulun yaricapindan COK daha fazla ilerletir. Collision yalnizca ORTUSME
+   cozer (supurme yok); adim yaricaptan buyukse kapsul yuzeyi iskalayip
+   ICINDEN gecer — "karakter zeminin icinden geciyor" tam olarak budur.
+
+   Oyuncu 5 m/sn yurur, dusme hizi ~9.8 m/sn'ye kadar cikar. 1/30 sn'de
+   (0.0333) en kotu dusme adimi 0.33 m'dir; kapsul yaricapi 0.3 m. Adim
+   yaricapi asmaz, yani yuzey her zaman yakalanir. GM965 gibi 10-15 FPS'lik
+   bir GPU'da bu, oyunun yavaslamasi degil, DOGRU kalmasi demektir: dt
+   kirpilinca hareket kisalir ama fizik bozulmaz. */
+#define FPS_MAX_DELTA          0.0333f
+
 /* ---------- YUZME (Half-Life modeli) ----------
 
    ESKI HATA ("tekne gibi yuzme"): kaldirma kuvveti yercekiminden buyuktu
@@ -615,6 +629,10 @@ static double fn_move(int argc, const char **argv) {
 
     float dt = GetFrameTime();
     if (!(dt > 0.0f)) dt = 1.0f / 60.0f;
+    /* Ust sinir: yavas bir karede adim kapsul yaricapini asmasin, yoksa
+       collision (yalnizca ortusme cozer) yuzeyi iskalar ve oyuncu zeminin
+       icinden gecer. Bkz. FPS_MAX_DELTA. */
+    if (dt > FPS_MAX_DELTA) dt = FPS_MAX_DELTA;
     float step = FPS_MOVE_SPEED * dt;
 
     float fx, fz, rx, rz;
