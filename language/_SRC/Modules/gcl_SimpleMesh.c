@@ -257,40 +257,30 @@ static int take_entry(const char *file) {
    the module also runs when Raylib.dll is not loaded. */
 typedef Texture2D (*GclRaylibTextureGet)(int);
 
-#ifdef _WIN32
 static GclRaylibTextureGet raylib_texture_get(void) {
     static GclRaylibTextureGet fn = NULL;
     static int tried = 0;
     if (!tried) {
         tried = 1;
-        HMODULE h = GetModuleHandleA("Raylib.dll");
-        if (h) fn = (GclRaylibTextureGet)(void *)GetProcAddress(h, "gcl_raylib_texture_get");
+        fn = (GclRaylibTextureGet)gcl_module_symbol("Raylib.dll", "gcl_raylib_texture_get");
     }
     return fn;
 }
-#else
-static GclRaylibTextureGet raylib_texture_get(void) { return NULL; }
-#endif
 
 /* Asset yolu çözümü Raylib.dll'de TEK kaynaktan gelir (gcl_raylib_asset_path):
    script "terrain.obj" yazar, dosya ise projenin varlık dizinindedir. Kuralı
    burada TEKRARLAMAK yerine yokluyoruz; sembol yoksa ad aynen kullanılır. */
 typedef const char *(*GclRaylibAssetPath)(const char *);
 
-#ifdef _WIN32
 static GclRaylibAssetPath raylib_asset_path(void) {
     static GclRaylibAssetPath fn = NULL;
     static int tried = 0;
     if (!tried) {
         tried = 1;
-        HMODULE h = GetModuleHandleA("Raylib.dll");
-        if (h) fn = (GclRaylibAssetPath)(void *)GetProcAddress(h, "gcl_raylib_asset_path");
+        fn = (GclRaylibAssetPath)gcl_module_symbol("Raylib.dll", "gcl_raylib_asset_path");
     }
     return fn;
 }
-#else
-static GclRaylibAssetPath raylib_asset_path(void) { return NULL; }
-#endif
 
 /* Dosya adını çöz (<proje>/assets/<ad> varsa o). */
 static const char *resolve_file(const char *file) {
@@ -321,14 +311,9 @@ static const char *resolve_file(const char *file) {
 typedef int (*GclRaylibShaderCurrent)(void);
 typedef Shader (*GclRaylibShaderGet)(int);
 
-#ifdef _WIN32
 static void *raylib_shader_symbol(const char *name) {
-    HMODULE h = GetModuleHandleA("Raylib.dll");
-    return h ? (void *)GetProcAddress(h, name) : NULL;
+    return gcl_module_symbol("Raylib.dll", name);
 }
-#else
-static void *raylib_shader_symbol(const char *name) { (void)name; return NULL; }
-#endif
 
 static GclRaylibShaderCurrent raylib_shader_current(void) {
     static GclRaylibShaderCurrent fn = NULL;

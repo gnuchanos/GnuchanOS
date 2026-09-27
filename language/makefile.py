@@ -1044,10 +1044,17 @@ def build_raygui_module(build_dir: Path) -> None:
     # Otherwise it embeds its own libraylib.a → second, uninitialized raylib state → crash.
     raylib_stack_libs = list(RAYLIB_SRC.glob("libraylib*.a"))
     import_lib = lib_dir / "libraylib.a"
+    raylib_so = lib_dir / f"Raylib.{ext}"
     # GCL native Raygui.dll is loaded in the SAME process as Raylib.dll → use import lib
     # (single raylib state). Otherwise it embeds its own libraylib.a → second, uninitialized
-    # raylib state → crash.
-    raylib_link = import_lib if (os_name() == "windows" and import_lib.exists()) else (raylib_stack_libs[0] if raylib_stack_libs else None)
+    # raylib state → crash. On Linux the shared Raylib.so plays the import library's role
+    # for the exact same reason (see build_simple_modules).
+    if os_name() == "windows" and import_lib.exists():
+        raylib_link = import_lib
+    elif os_name() != "windows" and raylib_so.exists():
+        raylib_link = raylib_so
+    else:
+        raylib_link = raylib_stack_libs[0] if raylib_stack_libs else None
     cmd = ["gcc", "-std=c99", "-shared", "-fPIC", "-D_POSIX_C_SOURCE=200809L",
            "-DRAYGUI_IMPLEMENTATION",
            "-I", "_SRC/include",
@@ -1087,8 +1094,22 @@ def build_simple_modules(build_dir: Path) -> None:
 
     raylib_stack_libs = list(RAYLIB_SRC.glob("libraylib*.a"))
     import_lib = lib_dir / "libraylib.a"
-    raylib_link = (import_lib if (os_name() == "windows" and import_lib.exists())
-                   else (raylib_stack_libs[0] if raylib_stack_libs else None))
+    raylib_so = lib_dir / f"Raylib.{ext}"
+    # Linux MUST link Raylib.so, not the static libraylib.a. Embedding the
+    # archive gives every module its OWN raylib state: RaylibFPS's
+    # DisableCursor() and GetMouseDelta() then act on a window-less copy, so the
+    # cursor never hides and the mouse is never captured even though Raylib.so
+    # is the one that opened the window and draws every frame. Windows already
+    # avoids this through the import library; on Linux the shared object plays
+    # that role, and it sits in this very directory, so $ORIGIN finds it at run
+    # time. This is not about Lua/Python — those runtimes keep their own raylib
+    # on purpose; it is ONLY the GCL native modules that must share Raylib.so.
+    if os_name() == "windows" and import_lib.exists():
+        raylib_link = import_lib
+    elif os_name() != "windows" and raylib_so.exists():
+        raylib_link = raylib_so
+    else:
+        raylib_link = raylib_stack_libs[0] if raylib_stack_libs else None
     if raylib_link is None:
         print("[gcl] warning: no raylib library found — SimpleCollision/SimpleMesh "
               "are skipped (Raylib.dll must be built first).", flush=True)

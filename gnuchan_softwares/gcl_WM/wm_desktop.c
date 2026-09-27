@@ -558,17 +558,18 @@ static void bar_widget_label(const WmWidget *widget, char *out,
  * Three things are asked of a bar and they can disagree, so the order is
  * fixed: Position says which edge the bar hugs and makes it as long as that
  * edge, then X and Y — when the script wrote them — place the bar's own
- * corner, and last Left_EmptySpace and Right_EmptySpace pull the two ends of
- * the bar inwards. Doing it in that order is what makes a bar written as
- * Position="top", X=0, Y=10, Left_EmptySpace=5 sit ten pixels down from the
- * top with five pixels of screen showing at each end, instead of one setting
- * silently cancelling another.
+ * corner, and last the empty spaces pull the two ends of the bar inwards.
+ * Doing it in that order is what makes a bar written as Position="top", X=0,
+ * Y=10, Left_EmptySpace=5 sit ten pixels down from the top with five pixels of
+ * screen showing at each end, instead of one setting silently cancelling
+ * another.
  *
  * "Along" is the way the bar runs and "across" is its thickness. A horizontal
  * bar is as long as the screen is wide and as thick as Size; a vertical one is
  * the other way round. The two ends are the left and right of a horizontal bar
- * and the top and bottom of a vertical one, which is why the empty spaces are
- * applied to the along axis whichever way the bar runs. */
+ * and the top and bottom of a vertical one, which is why there are two pairs
+ * of empty spaces — Left/Right for a horizontal bar and Up/Down for a vertical
+ * one — and why each pair is applied to the along axis of its own pose. */
 static void bar_geometry(WmCore *core, const WmBar *bar,
                          int *x, int *y, int *width, int *height) {
     int vertical = strcmp(bar->pose, "vertical") == 0;
@@ -610,13 +611,19 @@ static void bar_geometry(WmCore *core, const WmBar *bar,
         by = bar->y;
     }
 
-    /* The room left at each end, taken off the along axis: the width of a
-       horizontal bar, the height of a vertical one. A pair that would leave
-       nothing is dropped rather than producing a bar of negative size. */
+    /* The room left at each end, taken off the along axis: the height of a
+       vertical bar, the width of a horizontal one. Each pose has its own pair
+       — Up/Down for a vertical bar, Left/Right for a horizontal one — because
+       "the first end" is the top of one and the left of the other. The reader
+       has already refused the pair belonging to the other pose and said so, so
+       only the pair this pose uses is applied here.
+     *
+     * A pair that would leave nothing is dropped rather than producing a bar
+     * of negative size. */
     if (vertical) {
-        if (bar->left_empty + bar->right_empty < bh) {
-            by += bar->left_empty;
-            bh -= bar->left_empty + bar->right_empty;
+        if (bar->up_empty + bar->down_empty < bh) {
+            by += bar->up_empty;
+            bh -= bar->up_empty + bar->down_empty;
         }
     } else {
         if (bar->left_empty + bar->right_empty < bw) {
@@ -1018,8 +1025,8 @@ static void bar_draw_horizontal(WmCore *core, const WmBar *bar, Window window,
  * one.
  *
  * The empty spaces follow the same rule the geometry gives them: on a vertical
- * bar they are room at the top and bottom, which is why the along axis here is
- * the height and Left_EmptySpace is the top. */
+ * bar they are Up_EmptySpace at the top and Down_EmptySpace at the bottom,
+ * which is why the along axis here is the height. */
 static void bar_draw_vertical(WmCore *core, const WmBar *bar, Window window,
                               int width, int bar_height) {
     Drawable canvas = bar->vsync ? bar_target(core, width, bar_height)

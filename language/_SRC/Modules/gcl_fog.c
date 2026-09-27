@@ -170,16 +170,9 @@ typedef void (*GclShaderSetFogFn)(int handle, unsigned int color,
                                   float height_fog, float height,
                                   float falloff);
 
-#ifdef _WIN32
 static void *module_symbol(const char *dll, const char *name) {
-    HMODULE h = GetModuleHandleA(dll);
-    return h ? (void *)GetProcAddress(h, name) : NULL;
+    return gcl_module_symbol(dll, name);
 }
-#else
-static void *module_symbol(const char *dll, const char *name) {
-    (void)dll; (void)name; return NULL;
-}
-#endif
 
 static GclShaderSetFogFn shader_set_fog(void) {
     static GclShaderSetFogFn fn = NULL;

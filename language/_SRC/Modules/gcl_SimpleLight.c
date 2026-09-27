@@ -243,14 +243,9 @@ static Color unpack_color(unsigned int v) {
 
    Semboller tembel cozulur; DLL yoksa statik kopyaya dusulur ki pencere
    acmadan calisan bir program bozulmasin. */
-#ifdef _WIN32
 static void *raylib_symbol(const char *name) {
-    HMODULE h = GetModuleHandleA("Raylib.dll");
-    return h ? (void *)GetProcAddress(h, name) : NULL;
+    return gcl_module_symbol("Raylib.dll", name);
 }
-#else
-static void *raylib_symbol(const char *name) { (void)name; return NULL; }
-#endif
 
 static void draw_cube(Vector3 at, float side, Color c) {
     static void (*fn)(Vector3, float, float, float, Color) = NULL;
@@ -441,14 +436,9 @@ static GclShaderSetAmbientFn shader_set_ambient(void) {
 typedef int    (*GclSkyboxSunVecFn)(float *out3);
 typedef double (*GclSkyboxSunPowerFn)(void);
 
-#ifdef _WIN32
 static void *skybox_symbol(const char *name) {
-    HMODULE h = GetModuleHandleA("RaylibSkybox.dll");
-    return h ? (void *)GetProcAddress(h, name) : NULL;
+    return gcl_module_symbol("RaylibSkybox.dll", name);
 }
-#else
-static void *skybox_symbol(const char *name) { (void)name; return NULL; }
-#endif
 
 static GclSkyboxSunVecFn skybox_sun_direction(void) {
     static GclSkyboxSunVecFn fn = NULL;
@@ -474,10 +464,8 @@ static GclSkyboxSunPowerFn skybox_sun_power(void) {
 /* ---------- hedef shader ---------- */
 typedef int (*GclShaderCurrentFn)(void);
 
-#ifdef _WIN32
 static void *shader_symbol(const char *dll, const char *name) {
-    HMODULE h = GetModuleHandleA(dll);
-    return h ? (void *)GetProcAddress(h, name) : NULL;
+    return gcl_module_symbol(dll, name);
 }
 
 /* Raylib.dll remembers the shader Raylib.BeginShaderMode() selected, and that
@@ -496,10 +484,6 @@ static GclShaderCurrentFn shader_current(void) {
     if (!tried) { tried = 1; fn = (GclShaderCurrentFn)shader_symbol("RaylibShader.dll", "gcl_shader_current"); }
     return fn;
 }
-#else
-static GclShaderCurrentFn raylib_light_shader(void) { return NULL; }
-static GclShaderCurrentFn shader_current(void) { return NULL; }
-#endif
 
 /* The shader whose lights are being fed, or -1 when there is none.
 

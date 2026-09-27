@@ -66,6 +66,28 @@ static void copy_text(char *destination, unsigned int size, const char *source) 
     snprintf(destination, size, "%s", source);
 }
 
+/* Add a line to the config's notes: the things the script asked for that could
+   not be given. They are collected while the file is read and shown once there
+   is a screen to show them on — see WmConfig.notes and wm_config_apply().
+ *
+ * A note that does not fit is dropped rather than clipping the notes already
+ * there: a half-written sentence is worse than a missing one, and the notes are
+ * a courtesy on top of the log, which has every one of them whole. */
+static void append_note(WmConfig *config, const char *note) {
+    if (!config || !note || !note[0]) {
+        return;
+    }
+    size_t used = strlen(config->notes);
+    /* Room for a separator, the note and the terminator. */
+    if (used + 2 + strlen(note) + 1 > sizeof(config->notes)) {
+        return;
+    }
+    if (used > 0) {
+        config->notes[used++] = '\n';
+    }
+    snprintf(config->notes + used, sizeof(config->notes) - used, "%s", note);
+}
+
 /* A value as text, with variables resolved. An unresolved name is kept as
    itself, which is what makes a command like "xterm" written unquoted still
    work. */
@@ -342,6 +364,13 @@ static void set_bar(const Script *script, WmConfig *config,
     bar->x = wm_config_value_number(wm_config_argument(statement, "X"), -1);
     bar->y = wm_config_value_number(wm_config_argument(statement, "Y"), -1);
 
+    value_text(script, wm_config_argument(statement, "pose"),
+               text, sizeof(text));
+    if (text[0]) {
+        copy_text(bar->pose, sizeof(bar->pose), text);
+    }
+    int vertical = strcmp(bar->pose, "vertical") == 0;
+
     /* The room left at each end of the bar. A negative number would be a bar
        wider than the screen asks for, so it is held at zero. */
     bar->left_empty = wm_config_value_number(
@@ -354,11 +383,40 @@ static void set_bar(const Script *script, WmConfig *config,
     if (bar->right_empty < 0) {
         bar->right_empty = 0;
     }
+    bar->up_empty = wm_config_value_number(
+        wm_config_argument(statement, "Up_EmptySpace"), 0);
+    if (bar->up_empty < 0) {
+        bar->up_empty = 0;
+    }
+    bar->down_empty = wm_config_value_number(
+        wm_config_argument(statement, "Down_EmptySpace"), 0);
+    if (bar->down_empty < 0) {
+        bar->down_empty = 0;
+    }
 
-    value_text(script, wm_config_argument(statement, "pose"),
-               text, sizeof(text));
-    if (text[0]) {
-        copy_text(bar->pose, sizeof(bar->pose), text);
+    /* The two pairs of empty spaces each belong to one pose, and a script that
+       names the wrong pair has asked for something this bar cannot do: a
+       horizontal bar runs left to right, so there is no top or bottom end for
+       Up_EmptySpace to shorten, and a vertical bar has no left or right one.
+       The number is not applied — it would be a spacing on an axis the bar
+       does not have — and the mistake is put in the config's notes to be shown
+       once there is a screen to show it on. See WmConfig.notes and
+       wm_config_apply().
+     *
+     * Only a value that is actually set is reported: a script that writes
+     * `Up_EmptySpace=0` on a horizontal bar is asking for no space, which is
+     * what it already has, and a message about nothing would be noise. */
+    if (!vertical && (bar->up_empty > 0 || bar->down_empty > 0)) {
+        append_note(config,
+                    "A horizontal bar cannot use Up_EmptySpace or "
+                    "Down_EmptySpace; those belong to a bar with "
+                    "pose=\"vertical\". The value was ignored.");
+    }
+    if (vertical && (bar->left_empty > 0 || bar->right_empty > 0)) {
+        append_note(config,
+                    "A vertical bar cannot use Left_EmptySpace or "
+                    "Right_EmptySpace; those belong to a bar with "
+                    "pose=\"horizontal\". The value was ignored.");
     }
 
     set_bar_widgets(script, bar, wm_config_argument(statement, "Widgets"));
@@ -898,6 +956,11 @@ int wm_config_load(WmConfig *config, const char *path) {
     parsed.desktop_background_image[0] = '\0';
     parsed.desktop_background_color[0] = '\0';
 
+    /* The notes are last read's, not this one's: they are collected while the
+       file is walked below, and a note left over from a script the user has
+       since fixed would name a mistake that is not in the file any more. */
+    parsed.notes[0] = '\0';
+
     Script script;
     memset(&script, 0, sizeof(script));
     walk(&script, &parsed, statements, count);
@@ -1065,16 +1128,20 @@ static void config_report(const WmConfig *config, const char *origin) {
             config->workspace_count,
             config->terminal[0] ? config->terminal : "(from $TERMINAL)");
     /* One line per bar, so a wrong pose or a bar that did not appear can be
-       told apart from a bar that was never read. */
+       told apart from a bar that was never read. The empty spaces named are
+       the pair the bar's own pose uses, so the line never shows a number that
+       was not applied. */
     for (int i = 0; i < config->bar_count; i++) {
         const WmBar *bar = &config->bars[i];
+        int vertical = strcmp(bar->pose, "vertical") == 0;
         fprintf(stderr,
                 "gnuchanwm: config %s: bar %d %s %s size %d, %d widget(s), "
                 "at (%d,%d), space %d/%d\n",
                 origin, i, bar->position[0] ? bar->position : "(top)",
                 bar->pose[0] ? bar->pose : "horizontal",
                 bar->size, bar->widget_count, bar->x, bar->y,
-                bar->left_empty, bar->right_empty);
+                vertical ? bar->up_empty : bar->left_empty,
+                vertical ? bar->down_empty : bar->right_empty);
     }
     fprintf(stderr,
             "gnuchanwm: config %s: theme %s, icons %s, cursor %s\n",
@@ -1085,6 +1152,12 @@ static void config_report(const WmConfig *config, const char *origin) {
 }
 
 /* --- applying it to the desktop ------------------------------------------- */
+
+/* The message window lives further down this file — it belongs with the other
+   window the config module owns — so the one call that reaches it from here
+   needs the name stated first. */
+void wm_config_show_message(WmCore *core, const char *title,
+                            const char *detail, const char *where);
 
 void wm_config_apply(WmCore *core) {
     if (!core || !core->display) {
@@ -1145,6 +1218,21 @@ void wm_config_apply(WmCore *core) {
        for, and a setting that waited would be the one part of the script that
        did not follow it. */
     wm_input_apply(core);
+
+    /* Whatever the script asked for that could not be given — a bar with an
+       empty-space setting that belongs to the other pose — is shown once here,
+       because this is the one place both reads pass through and both have a
+       core to draw on. The reader that found the mistake only had the file: it
+       recorded the notes on the config (see WmConfig.notes and set_bar()) and
+       the message goes up now, where the person who wrote the script will see
+       it. The log has every note whether or not a message can be drawn. */
+    if (core->config.notes[0]) {
+        fprintf(stderr, "gnuchanwm: config notes: %s\n", core->config.notes);
+        wm_config_show_message(core,
+                               "GnuChanWM: the config was applied, with notes",
+                               core->config.notes,
+                               "the log has the same list");
+    }
 }
 
 /* --- the window a config mistake is shown in ------------------------------ */

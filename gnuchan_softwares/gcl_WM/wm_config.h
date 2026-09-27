@@ -139,14 +139,20 @@ typedef struct WmBar {
     int  x;
     int  y;
 
-    /* gcl_BAR.call(Left_EmptySpace=..., Right_EmptySpace=...): the room left
-       between the bar and the edge it would otherwise reach. On a horizontal
-       bar they shorten it from each end, which is how a top bar is inset from
-       the screen's sides; on a vertical one they shorten it top and bottom, so
-       the two names mean "the near end and the far end" wherever the bar runs.
-       They are what makes a bar that does not touch the screen's corners. */
-    int  left_empty;
-    int  right_empty;
+    /* The room left between the bar and the end it would otherwise reach, so
+       the bar does not touch the screen's corners.
+     *
+     * There are four of these and each pair belongs to one pose, because "the
+     * left end" and "the top end" are the same end of two bars that run in
+     * different directions. Left_EmptySpace and Right_EmptySpace shorten a
+     * horizontal bar from its two ends; Up_EmptySpace and Down_EmptySpace do
+     * the same for a vertical one. A script that names the pair belonging to
+     * the other pose has made a mistake, and the reader says so rather than
+     * quietly applying a number that means nothing on this bar. */
+    int  left_empty;      /* horizontal bars only */
+    int  right_empty;     /* horizontal bars only */
+    int  up_empty;        /* vertical bars only   */
+    int  down_empty;      /* vertical bars only   */
 
     /* gcl_BAR.call(pose="horizontal"|"vertical"): which way the bar runs and
        so which way its widgets are laid out — left to right, or top to
@@ -269,6 +275,18 @@ typedef struct WmConfig {
        walks the first `bar_count` of the array. */
     WmBar bars[WM_CONFIG_MAX_BARS];
     int bar_count;
+
+    /* Something the script asked for that could not be given, in the words to
+       show the person who wrote it — a bar with an empty-space setting that
+       belongs to the other pose, and whatever else the reader finds wrong.
+     *
+     * It is carried here rather than shown where it is found because the
+     * reader that finds it has no display to show it on: wm_config_load()
+     * reads the file and this is filled in, and wm_config_apply() — which is
+     * the one place both the first read and a reload pass through, and which
+     * does have the core — puts it on the screen. Empty when there is nothing
+     * to say, which is the usual case. */
+    char notes[WM_CONFIG_TEXT_LENGTH * 3];
 } WmConfig;
 
 /* The desktop the code had before it was configurable: the palette in

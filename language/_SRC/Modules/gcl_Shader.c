@@ -65,20 +65,15 @@ static double g_slot[SHADER_SLOT_COUNT] = { -1.0 };
 
 typedef int (*GclSimpleShaderFn)(const char *vs_file, const char *fs_file, int glsl_version);
 
-#ifdef _WIN32
 static GclSimpleShaderFn raylib_simple_shader(void) {
     static GclSimpleShaderFn fn = NULL;
     static int tried = 0;
     if (!tried) {
         tried = 1;
-        HMODULE h = GetModuleHandleA("Raylib.dll");
-        if (h) fn = (GclSimpleShaderFn)(void *)GetProcAddress(h, "gcl_raylib_simple_shader");
+        fn = (GclSimpleShaderFn)gcl_module_symbol("Raylib.dll", "gcl_raylib_simple_shader");
     }
     return fn;
 }
-#else
-static GclSimpleShaderFn raylib_simple_shader(void) { return NULL; }
-#endif
 
 /* ---------- members ---------- */
 

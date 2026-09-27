@@ -257,6 +257,7 @@ static void runtime_errorcf(GclDiagCode code, GclSpan span, const char *fmt, ...
 #define access _access
 #else
 #include <dlfcn.h>
+#include <dirent.h>   /* opendir/readdir — the case-insensitive module lookup */
 #include <unistd.h>
 #endif
 
@@ -1406,11 +1407,81 @@ static void flatten_struct_members(GclStructValue *m, const char **argv,
 /* #lib support removed */
 
 /* Find a module */
+/* Module names are compared WITHOUT regard to case.
+ *
+ * A module is named twice: once in the `#native <Name>` line and once as the
+ * prefix of every call it is used with — `Name.Member(...)`. The two are
+ * written by hand in different places, and nothing stops them from disagreeing.
+ * The shipped FPS demo does exactly that: it declares `#native <RaylibSkybox>`
+ * and then calls `RaylibSKYBOX.CreateSimpleSkybox()`.
+ *
+ * On Windows the disagreement is invisible — both the filesystem and the DLL
+ * loader are case-insensitive, so `RaylibSKYBOX.dll` resolves to
+ * `RaylibSkybox.dll` — and on Linux it is fatal: the file is not found, the
+ * module is never loaded, and every call reports "unknown module
+ * 'RaylibSKYBOX'" while the .so sits right there in Library/. A script that
+ * runs on one platform and dies on the other for a difference of capital
+ * letters is not a defensible behaviour.
+ *
+ * The export SYMBOL was already matched case-insensitively (`gcl_<Name>_
+ * get_functions` is lowered before it is looked up), so treating the name
+ * itself as exact was the odd one out. */
+static int module_name_equals(const char *a, const char *b) {
+    if (!a || !b) return 0;
+    while (*a && *b) {
+        unsigned char ca = (unsigned char)*a;
+        unsigned char cb = (unsigned char)*b;
+        if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca + ('a' - 'A'));
+        if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb + ('a' - 'A'));
+        if (ca != cb) return 0;
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
+
 static NativeModule *native_find(GclEnv *env, const char *name) {
     for (NativeModule *m = env->modules; m; m = m->next) {
-        if (strcmp(m->name, name) == 0) return m;
+        if (module_name_equals(m->name, name)) return m;
     }
     return NULL;
+}
+
+/* Find `<dir>/<name>.<ext>`, taking the first directory entry whose name
+   matches without regard to case. Returns 1 and writes the FULL path when it
+   finds one.
+ *
+ * A directory that cannot be read answers 0 — the same answer as "not there" —
+ * so the caller simply moves on to the next place to look. The exact spelling
+ * is tried with a single access() first, both because it is the common case and
+ * because on Windows it is the ONLY case: that filesystem is already
+ * case-insensitive, so the scan below would only repeat the same answer. */
+static int find_module_in_dir(const char *dir, const char *name,
+                              const char *ext, char *out, size_t outsz) {
+    char want[1024];
+    if (!dir || !dir[0] || !name || !name[0] || !ext || !ext[0]) return 0;
+
+    snprintf(want, sizeof(want), "%s.%s", name, ext);
+    snprintf(out, outsz, "%s/%s", dir, want);
+    if (access(out, 0) == 0) return 1;
+#ifdef _WIN32
+    return 0;
+#else
+    {
+        DIR *d = opendir(dir);
+        struct dirent *ent;
+        int found = 0;
+        if (!d) return 0;
+        while (!found && (ent = readdir(d)) != NULL) {
+            if (module_name_equals(ent->d_name, want)) {
+                snprintf(out, outsz, "%s/%s", dir, ent->d_name);
+                found = 1;
+            }
+        }
+        closedir(d);
+        return found;
+    }
+#endif
 }
 
 /* scanf(name) or scanf("format", var...) — safe input, writes to env */
@@ -1918,22 +1989,29 @@ static NativeModule *native_load(GclEnv *env, const char *name) {
         }
     }
 #endif
-    /* 1) exe_dir/Library/name.dll */
+    /* The four places a module is looked for, in order: beside the executable,
+       the project directory, the working directory, and PATH. Each Library
+       lookup matches WITHOUT regard to case (see find_module_in_dir), so a
+       `#native <RaylibSKYBOX>` line finds `RaylibSkybox.so`: on Linux the
+       filesystem would otherwise answer "no such file" for a module sitting
+       right there, and the mismatch would be visible on only one platform. */
+    /* 1) exe_dir/Library/name.(dll|so) */
     if (exe_dir[0]) {
-        snprintf(path, sizeof(path), "%s/Library/%s.%s", exe_dir, name, dll_ext);
-        if (access(path, 0) == 0) found = 1;
+        char lib_dir[4096];
+        snprintf(lib_dir, sizeof(lib_dir), "%s/Library", exe_dir);
+        found = find_module_in_dir(lib_dir, name, dll_ext, path, sizeof(path));
     }
-    /* 2) base_dir/Library/name.dll */
+    /* 2) base_dir/Library/name.(dll|so) */
     if (!found && env->base_dir[0]) {
-        snprintf(path, sizeof(path), "%s/Library/%s.%s", env->base_dir, name, dll_ext);
-        if (access(path, 0) == 0) found = 1;
+        char lib_dir[4096];
+        snprintf(lib_dir, sizeof(lib_dir), "%s/Library", env->base_dir);
+        found = find_module_in_dir(lib_dir, name, dll_ext, path, sizeof(path));
     }
-    /* 3) cwd/Library/name.dll */
+    /* 3) cwd/Library/name.(dll|so) */
     if (!found) {
-        snprintf(path, sizeof(path), "Library/%s.%s", name, dll_ext);
-        if (access(path, 0) == 0) found = 1;
+        found = find_module_in_dir("Library", name, dll_ext, path, sizeof(path));
     }
-    /* 4) name.dll (PATH) */
+    /* 4) name.(dll|so) — resolved by the loader itself, through PATH */
     if (!found) {
         snprintf(path, sizeof(path), "%s.%s", name, dll_ext);
         if (access(path, 0) != 0) { free(m->name); free(m); return NULL; }
@@ -1945,7 +2023,14 @@ static NativeModule *native_load(GclEnv *env, const char *name) {
     m->handle = LoadLibraryA(path);
     if (!m->handle) { free(m->name); free(m); return NULL; }
 #else
-    m->handle = dlopen(path, RTLD_LAZY);
+    /* RTLD_GLOBAL is what lets the modules see each other. `Raylib` owns the
+       single raylib state and the others ask it for the shader it bound, the
+       texture behind a handle, the resolved asset path — all through
+       gcl_module_symbol() (see gcl_module.h). Without RTLD_GLOBAL each module
+       is loaded into its own namespace and every one of those lookups answers
+       NULL, which is exactly how the FPS demo came to load its models from the
+       wrong directory on Linux while working on Windows. */
+    m->handle = dlopen(path, RTLD_LAZY | RTLD_GLOBAL);
     if (!m->handle) { free(m->name); free(m); return NULL; }
 #endif
     /* Export name: gcl_<name>_get_functions — convert to lowercase */

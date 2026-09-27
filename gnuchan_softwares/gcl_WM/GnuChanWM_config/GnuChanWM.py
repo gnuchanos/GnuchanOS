@@ -13,18 +13,29 @@ gcl_Window.set_window_border_width(2)
 # gcl_Window.background_color = "#27022b"
 gcl_Window.BackgroundImage = "~/.config/GnuChanWM/bg.png"
 
-# can be call multiple bar but for now it's just one bar
+# gcl_BAR.call(...) may be written more than once: each call is one bar, so a
+# script can put a bar along the top, another along the bottom, and a small one
+# down the side. This one is the top bar.
 gcl_BAR.call(
-    # bar settings
+    # bar settings.
+    # Position names the edge the bar hugs (top / bottom / left / right); X and
+    # Y place the bar's own top-left corner when it should sit off the edge.
+    # Size is its thickness.
     Position="top",
     Size=24,
     BackgroundColor="#27022b",
     Vsync=True,
     X=0,
     Y=10,
-    Left_EmptySpace=5,
-    Right_EmptySpace=5,
-    pose="horizontal", # vertical
+    # The room left at each end. There are two pairs because a horizontal bar
+    # and a vertical bar have different ends: Left/Right belong to a horizontal
+    # bar and Up/Down to a vertical one. Naming the pair that does not match
+    # `pose` is a mistake the manager reports on screen rather than applies.
+    Left_EmptySpace=5, # only for horizontal bar
+    Right_EmptySpace=5,# only for horizontal bar
+    Up_EmptySpace=0,   # only for vertical bar
+    Down_EmptySpace=0, # only for vertical bar
+    pose="horizontal", # horizontal / vertical
 
 
     Widgets=[
@@ -129,5 +140,3 @@ gcl_touchpad.TouchpadBehavior(
     ThreeFingerSwipe=False,
     FourFingerSwipe=False,
 )
-
-

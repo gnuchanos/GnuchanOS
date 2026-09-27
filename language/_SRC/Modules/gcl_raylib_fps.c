@@ -344,18 +344,13 @@ static double stance_speed(int crouching, int sprinting) {
 typedef int (*GclWaterProbeFn)(float, float, float *, float *);
 
 static GclWaterProbeFn water_probe_fn(void) {
-#ifdef _WIN32
     static GclWaterProbeFn fn = NULL;
     static int tried = 0;
     if (!tried) {
         tried = 1;
-        HMODULE h = GetModuleHandleA("RaylibSimpleWater.dll");
-        if (h) fn = (GclWaterProbeFn)(void *)GetProcAddress(h, "gcl_water_volume_probe");
+        fn = (GclWaterProbeFn)gcl_module_symbol("RaylibSimpleWater.dll", "gcl_water_volume_probe");
     }
     return fn;
-#else
-    return NULL;
-#endif
 }
 
 /* Su sorgusunun tam cevabi. */
@@ -487,18 +482,13 @@ typedef void (*GclRaylibCameraSet)(double, double, double, double, double, doubl
                                    double, double, double, double, double);
 
 static GclRaylibCameraSet raylib_camera_set(void) {
-#ifdef _WIN32
     static GclRaylibCameraSet fn = NULL;
     static int tried = 0;
     if (!tried) {
         tried = 1;
-        HMODULE h = GetModuleHandleA("Raylib.dll");
-        if (h) fn = (GclRaylibCameraSet)(void *)GetProcAddress(h, "gcl_raylib_camera_set");
+        fn = (GclRaylibCameraSet)gcl_module_symbol("Raylib.dll", "gcl_raylib_camera_set");
     }
     return fn;
-#else
-    return NULL;
-#endif
 }
 
 static void push_camera(void) {
@@ -521,14 +511,18 @@ static void push_camera(void) {
    would hold the player in the air above them, so holes looked like they did
    not exist and walking felt like flying.
 
-   Read every call rather than caching: one GetModuleHandleA per frame is far
-   cheaper than the raylib work in the same frame, and it cannot go stale. */
+   Read every call rather than caching: one lookup per frame is far cheaper than
+   the raylib work in the same frame, and it cannot go stale.
+
+   The question is "is the collision module loaded", and a module is loaded
+   exactly when its exported table is reachable — gcl_module_symbol answers
+   that on both platforms (on ELF the modules share one namespace, see
+   gcl_module.h). Spelling it as GetModuleHandleA here would have made the
+   answer permanently "no" on Linux, so every collision query returned 0 and
+   the player fell through the terrain. */
 static int collision_module_present(void) {
-#ifdef _WIN32
-    return GetModuleHandleA("RaylibSimpleCollision.dll") != NULL;
-#else
-    return 0;
-#endif
+    return gcl_module_symbol("RaylibSimpleCollision.dll",
+                             "gcl_raylibsimplecollision_get_functions") != NULL;
 }
 
 /* Sudan CIKIS temizligi. Yuzmeden kalan DIKEY hiz kara fizigine sizarsa

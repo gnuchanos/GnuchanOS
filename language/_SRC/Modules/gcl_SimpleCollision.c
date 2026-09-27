@@ -249,21 +249,33 @@ typedef struct {
     double lo[3], hi[3];
 } ColTri;
 
-static ColTri *g_tris = NULL;
-static int     g_tri_count = 0;     /* kullanimdaki ucgen sayisi */
-static int     g_tri_cap   = 0;     /* ayrilmis kapasite        */
+typedef struct {
+    ColTri *tris;
+    int     count;   /* kullanimdaki ucgen sayisi */
+    int     cap;     /* ayrilmis kapasite        */
+} TriBuffer;
+
+/* IKI AYRI KUME. `g_tris` bir CAGRI icindeki collider'larin scratch tamponudur
+   (MoveAndSlide onu doldurur). `g_terrain_tris` ise ARAZININ ONBELLEGIDIR ve
+   cagrilar arasinda YASAR. Tek global dizi uzerinden calisildigi surece ikisi
+   birbirini ezerdi: MoveAndSlide'in doldurdugu kume bir sonraki karede
+   TerrainCollision'in onbellegini silerdi. resolve_pass hangi kumeyle
+   calisacagini bu yuzden ARGUMANLA alir. */
+static TriBuffer g_tris;          /* scratch: bir cagrinin collider'lari */
+static TriBuffer g_terrain_tris;  /* ARAZI onbellegi (kalici)            */
+static int       g_terrain_handle = -2;   /* -2 = henuz toplanmadi       */
 
 /* Kapasiteyi en az `need` ucgen alacak sekilde buyutur. 0 = bellek yetmedi. */
-static int tri_reserve(int need) {
+static int tri_reserve(TriBuffer *b, int need) {
     ColTri *grown;
     int cap;
-    if (need <= g_tri_cap) return 1;
-    cap = g_tri_cap > 0 ? g_tri_cap : COL_TRIS_INIT;
+    if (need <= b->cap) return 1;
+    cap = b->cap > 0 ? b->cap : COL_TRIS_INIT;
     while (cap < need) cap *= 2;
-    grown = (ColTri *)realloc(g_tris, (size_t)cap * sizeof(ColTri));
+    grown = (ColTri *)realloc(b->tris, (size_t)cap * sizeof(ColTri));
     if (!grown) return 0;
-    g_tris = grown;
-    g_tri_cap = cap;
+    b->tris = grown;
+    b->cap = cap;
     return 1;
 }
 
@@ -274,14 +286,9 @@ typedef int (*GclTriCountFn)(double, double, double, double, double,
 typedef int (*GclTriFn)(double, double, double, double, double,
                         double, double, double, double, double, int, float *);
 
-#ifdef _WIN32
 static void *mesh_symbol(const char *name) {
-    HMODULE h = GetModuleHandleA("RaylibSimpleMesh.dll");
-    return h ? (void *)GetProcAddress(h, name) : NULL;
+    return gcl_module_symbol("RaylibSimpleMesh.dll", name);
 }
-#else
-static void *mesh_symbol(const char *name) { (void)name; return NULL; }
-#endif
 
 static GclTriCountFn tri_count_fn(void) {
     static GclTriCountFn fn = NULL; static int tried = 0;
@@ -298,12 +305,12 @@ static GclTriFn tri_fn(void) {
 /* Bir mesh'in TUM ucgenlerini dunya uzayinda tampona ekler. `xf` dokuz
    donusum yuvasidir (px,py,pz, rx,ry,rz, sx,sy,sz). Donus: eklenen ucgen
    sayisi. Mesh modulu yuklu degilse ya da handle bilinmiyorsa 0. */
-static int gather_mesh(int handle, const double xf[9]) {
+static int gather_mesh(TriBuffer *b, int handle, const double xf[9]) {
     GclTriCountFn count = tri_count_fn();
     GclTriFn      tri   = tri_fn();
     int total, i, added = 0;
 
-    if (!count || !tri || handle < 0) return 0;
+    if (!b || !count || !tri || handle < 0) return 0;
 
     total = count((double)handle,
                   xf[0], xf[1], xf[2], xf[3], xf[4], xf[5], xf[6], xf[7], xf[8]);
@@ -311,7 +318,7 @@ static int gather_mesh(int handle, const double xf[9]) {
 
     /* Tamponu simdiden buyut: eksik ucgen collision'in bir kisminin
        dusmesi demektir, sessizce kirpMAK yerine yer ac. */
-    if (!tri_reserve(g_tri_count + total)) return 0;
+    if (!tri_reserve(b, b->count + total)) return 0;
 
     for (i = 0; i < total; i++) {
         float w9[9];
@@ -321,7 +328,7 @@ static int gather_mesh(int handle, const double xf[9]) {
                  xf[0], xf[1], xf[2], xf[3], xf[4], xf[5], xf[6], xf[7], xf[8],
                  i, w9)) continue;
 
-        t = &g_tris[g_tri_count];
+        t = &b->tris[b->count];
         for (int k = 0; k < 9; k++) t->v[k] = (double)w9[k];
 
         for (int c = 0; c < 3; c++) {
@@ -332,7 +339,7 @@ static int gather_mesh(int handle, const double xf[9]) {
             t->lo[c] = lo; t->hi[c] = hi;
         }
 
-        g_tri_count++;
+        b->count++;
         added++;
     }
     return added;
@@ -433,7 +440,7 @@ static int capsule_tri(const ColCapsule *cap,
    Bir gecis: TUM ucgenler taranir, EN DERIN temas secilir, kapsul o kadar
    itilir. Godot'un cozumu de iteratiftir; tek gecis yetmez cunku bir itme
    oyuncuyu ikinci bir yuzeye sokabilir. */
-static int resolve_pass(ColCapsule *cap, double out_normal[3]) {
+static int resolve_pass(const TriBuffer *buf, ColCapsule *cap, double out_normal[3]) {
     double best_pen = 0.0, best_n[3];
     int found = 0, i;
 
@@ -445,10 +452,12 @@ static int resolve_pass(ColCapsule *cap, double out_normal[3]) {
         hi[i] = (a > b ? a : b) + cap->r;
     }
 
+    if (!buf) return 0;
+
     v3(best_n, 0.0, 1.0, 0.0);
 
-    for (i = 0; i < g_tri_count; i++) {
-        const ColTri *t = &g_tris[i];
+    for (i = 0; i < buf->count; i++) {
+        const ColTri *t = &buf->tris[i];
         double n[3], pen;
 
         if (t->hi[0] < lo[0] || t->lo[0] > hi[0]) continue;
@@ -530,6 +539,19 @@ static void build_camera(void) {
    YALNIZCA SEKIL COZUMU. Arazi bir yukseklik alani SAYILMAZ: (x, z) altinda
    "en yuksek yuzey" diye bir soru SORULMAZ, cunku magarali bir arazide bu
    sorunun cevabi magaranin tavanidir ve oyuncuyu yukari isinlardi. */
+/* ARAZI ONBELLEGI: arazi HER KAREDE aynidir, hareket etmez ve sekli degismez.
+   Onbellek olmadan bu fonksiyon her karede butun modeli moduller-arası
+   cagriyla YENIDEN topluyordu — fps_first_demo'da 41.454 ucgen, kare basina.
+   Ucgenler bir kez cikarilip tutulur; sonraki kareler yalnizca kapsulu
+   cozer. Ayni handle degismedigi surece yeniden toplanmaz; handle degisirse
+   (baska bir arazi yuklendiyse) onbellek tazelenir. */
+static void terrain_buffer_ensure(int handle) {
+    if (g_terrain_handle == handle) return;   /* onbellek gecerli */
+    g_terrain_tris.count = 0;
+    gather_mesh(&g_terrain_tris, handle, (const double[9]){ 0,0,0, 0,0,0, 1,1,1 });
+    g_terrain_handle = handle;
+}
+
 static double fn_terrain_collision(int argc, const char **argv) {
     ColCapsule cap;
     int handle;
@@ -538,12 +560,11 @@ static double fn_terrain_collision(int argc, const char **argv) {
     handle = (argc > COL_PLAYER_SLOTS + T_HANDLE)
            ? (int)num_arg(argc, argv, COL_PLAYER_SLOTS + T_HANDLE) : -1;
 
-    g_tri_count = 0;
-    gather_mesh(handle, (const double[9]){ 0,0,0, 0,0,0, 1,1,1 });
+    terrain_buffer_ensure(handle);
 
     player_capsule(&cap);
     for (int i = 0; i < COL_SOLVE_ITERS; i++) {
-        if (!resolve_pass(&cap, NULL)) break;
+        if (!resolve_pass(&g_terrain_tris, &cap, NULL)) break;
     }
 
     build_camera();
@@ -576,15 +597,17 @@ static double fn_move_and_slide(int argc, const char **argv) {
     if (max_slides <= 0) max_slides = COL_DEF_SLIDE_STEPS;
     if (max_slides > COL_MAX_SLIDE_STEPS) max_slides = COL_MAX_SLIDE_STEPS;
 
-    /* Collider'lari topla: her 12'lik blok bir Mesh struct'idir. */
-    g_tri_count = 0;
+    /* Collider'lari topla: her 12'lik blok bir Mesh struct'idir. Bunlar
+       HAREKET EDEBILIR (tasinmis bir kutu), bu yuzden her cagride yeniden
+       toplanirlar; onbellege ALINMAZLAR. */
+    g_tris.count = 0;
     {
         int n = 0;
         while (n < COL_MAX_COLLIDERS && base + COL_BOX_SLOTS <= argc) {
             double mesh[COL_BOX_SLOTS];
             for (k = 0; k < COL_BOX_SLOTS; k++) mesh[k] = num_arg(argc, argv, base + k);
             base += COL_BOX_SLOTS;
-            gather_mesh((int)mesh[B_HANDLE],
+            gather_mesh(&g_tris, (int)mesh[B_HANDLE],
                         (const double[9]){ mesh[B_POS_X], mesh[B_POS_Y], mesh[B_POS_Z],
                                            mesh[B_ROT_X], mesh[B_ROT_Y], mesh[B_ROT_Z],
                                            mesh[B_SCALE_X], mesh[B_SCALE_Y], mesh[B_SCALE_Z] });
@@ -597,7 +620,7 @@ static double fn_move_and_slide(int argc, const char **argv) {
     /* ONCE AYRIMA: hareket sifir olsa bile kapsul bir ucgenin icinde kalmis
        olabilir; hareketten BAGIMSIZ olarak disari cikarilir. */
     for (int i = 0; i < COL_SOLVE_ITERS; i++) {
-        if (!resolve_pass(&cap, NULL)) break;
+        if (!resolve_pass(&g_tris, &cap, NULL)) break;
     }
 
     remaining[0] = motion[0];
@@ -627,7 +650,7 @@ static double fn_move_and_slide(int argc, const char **argv) {
         /* Bu dilimin temaslarini coz; her itmenin normalini sakla. */
         for (int i = 0; i < COL_SOLVE_ITERS; i++) {
             double n[3];
-            if (!resolve_pass(&cap, n)) break;
+            if (!resolve_pass(&g_tris, &cap, n)) break;
             if (hit_count < COL_SOLVE_ITERS) vcopy(normals[hit_count], n);
             hit_count++;
         }

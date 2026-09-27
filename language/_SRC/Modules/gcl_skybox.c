@@ -313,14 +313,9 @@ static int   g_sky_state_valid = 0;
 typedef float (*GclRaylibFrameTimeFn)(void);
 typedef int   (*GclRaylibCameraPosFn)(float *out3);
 
-#ifdef _WIN32
 static void *raylib_symbol(const char *name) {
-    HMODULE h = GetModuleHandleA("Raylib.dll");
-    return h ? (void *)GetProcAddress(h, name) : NULL;
+    return gcl_module_symbol("Raylib.dll", name);
 }
-#else
-static void *raylib_symbol(const char *name) { (void)name; return NULL; }
-#endif
 
 /* Kare suresi raylib'in KENDI saatiyle olculur: bir tam gun boylece
    Raylib.SetTargetFPS() ile ayni hizda akar. Sembol yoksa (Raylib.dll

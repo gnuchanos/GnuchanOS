@@ -450,10 +450,18 @@ static double clamp01(double v) { return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v); }
 
    Yalnizca Raylib.dll'e bakilsaydi gokyuzu ve FPS sembolleri hicbir zaman
    bulunamazdi: su kendi yedek gradyanini yansitir ve dolgu hic inmezdi. */
-#ifdef _WIN32
+#ifndef _WIN32
+/* ELF has ONE symbol namespace: with every module dlopen'd RTLD_GLOBAL
+   (gcl_runner.c, native_load) a single dlsym finds a symbol from the skybox,
+   the FPS module or Raylib alike. Naming the three libraries on Windows is a
+   lookup PATH, not a different set of answers; here the path collapses to the
+   one namespace that already holds all three. */
+static void *raylib_symbol(const char *name) {
+    return gcl_module_symbol(NULL, name);
+}
+#else
 static void *symbol_in(const char *dll, const char *name) {
-    HMODULE h = GetModuleHandleA(dll);
-    return h ? (void *)GetProcAddress(h, name) : NULL;
+    return gcl_module_symbol(dll, name);
 }
 
 static void *raylib_symbol(const char *name) {
@@ -463,8 +471,6 @@ static void *raylib_symbol(const char *name) {
     if (p) return p;
     return symbol_in("Raylib.dll", name);
 }
-#else
-static void *raylib_symbol(const char *name) { (void)name; return NULL; }
 #endif
 
 typedef float (*GclFrameTimeFn)(void);
