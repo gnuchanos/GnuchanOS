@@ -22,20 +22,23 @@
    which includes this file's. */
 typedef struct WmCore WmCore;
 
-/* Draw the bar again and keep it on top. Called when something outside this
-   module changes what the bar should say. */
+/* Draw the bar again. Called when something outside this module changes what
+   the bar should say. The bar stays below the windows; see wm_desktop_lower_bar
+   for the stacking rule. */
 void wm_desktop_repaint(WmCore *core);
 
-/* Put the bar back above the windows.
+/* Put the bar at the bottom of the stack, under every window.
  *
- * Called by the frame module right after it raises a window, and that pairing
- * is the whole point: the bar and the windows are siblings on the root, so
- * raising a window puts it over the bar until the bar is raised again. Doing
- * it here, at the moment the window moves, is what keeps the bar on top
- * without a timer that restacks everything several times a second — which is
- * what a bar that re-raised itself on a tick used to do, and what made a
- * window appear to flicker while nothing was touching it. */
-void wm_desktop_raise_bar(WmCore *core);
+ * The bar and the windows are siblings on the root, and the bar belongs under
+ * them: a window moved onto the bar then covers it, and the bar is seen again
+ * as soon as the window moves off. The bar is still visible in its own strip
+ * because windows are opened inside the workarea, which is the screen less the
+ * bar.
+ *
+ * This is the opposite of the old wm_desktop_raise_bar, which kept the bar on
+ * top and trapped any window dragged onto it. Called when the bar is configured
+ * and after a repaint. */
+void wm_desktop_lower_bar(WmCore *core);
 
 /* The bar's own window, or None when the session has no bar. The menu's logout
    walk needs it because the bar is a window this process owns, and killing a

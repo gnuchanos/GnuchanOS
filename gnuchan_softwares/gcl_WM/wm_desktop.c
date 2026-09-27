@@ -633,7 +633,12 @@ static void desktop_configure_one_bar(WmCore *core, int index,
         XMoveResizeWindow(core->display, bar_windows[index], x, y,
                           (unsigned int)width, (unsigned int)height);
     }
-    XMapRaised(core->display, bar_windows[index]);
+    /* Mapped, then put at the bottom of the stack: the bar belongs under the
+       windows, so a window dragged onto it covers it rather than being trapped
+       behind it. XMapWindow rather than XMapRaised because raising it here
+       would be undone a line later anyway. */
+    XMapWindow(core->display, bar_windows[index]);
+    XLowerWindow(core->display, bar_windows[index]);
     XFlush(core->display);
 }
 
@@ -665,18 +670,22 @@ static void desktop_configure_bar(WmCore *core) {
     XFlush(core->display);
 }
 
-/* Put the bar above everything.
+/* Put the bar below every window.
  *
- * Called at the moments a window can have got above it — a window was raised,
- * or one was just mapped — and not on a timer. A bar that re-raised itself
- * several times a second was restacking the whole desktop every half second,
- * which is invisible while nothing is happening and is not while a window is
- * being dragged: every restack makes the window underneath repaint, and a
- * repaint on a timer looks like a flicker that nothing is causing. */
-void wm_desktop_raise_bar(WmCore *core) {
+ * The bar sits at the bottom of the stack, so a window moved onto it covers it
+ * and is never trapped behind it. This replaces the old bar-on-top behaviour,
+ * which raised the bar again the moment a window was raised — so a window
+ * dragged up to the bar disappeared underneath it and could not be brought
+ * back out. The bar is still seen in its own strip, because windows are placed
+ * in the workarea and do not open over it.
+ *
+ * Called when the bar is (re)configured so a freshly mapped bar starts at the
+ * bottom, and after a repaint. It is a restack and not a repaint, so a window
+ * on top of the bar is not disturbed. */
+void wm_desktop_lower_bar(WmCore *core) {
     for (int i = 0; i < bar_window_count && i < WM_CONFIG_MAX_BARS; i++) {
         if (bar_windows[i] != None) {
-            XRaiseWindow(core->display, bar_windows[i]);
+            XLowerWindow(core->display, bar_windows[i]);
         }
     }
     XFlush(core->display);
@@ -705,7 +714,7 @@ void wm_desktop_repaint(WmCore *core) {
     desktop_paint_background(core);
     desktop_configure_bar(core);
     desktop_bar(core);
-    wm_desktop_raise_bar(core);
+    wm_desktop_lower_bar(core);
 }
 
 /* One bar: the strip, then its widgets, laid out the way its pose runs.
@@ -1373,12 +1382,13 @@ static void desktop_event(WmCore *core, XEvent *event) {
         break;
     case MapNotify:
         /* A window has just been placed on top of everything. The bar belongs
-           above it, so it is raised again — this is the one event that tells
-           the bar it has been covered. It is also the moment a new program's
-           icon has to appear, so the bar is drawn again. */
+           BELOW it, so the bar is put back at the bottom — a new window is the
+           one moment something can have been stacked under the bar. It is also
+           the moment a new program's icon has to appear, so the bar is drawn
+           again. */
         if (!wm_desktop_is_bar_window(event->xmap.window)) {
             desktop_bar(core);
-            wm_desktop_raise_bar(core);
+            wm_desktop_lower_bar(core);
         }
         break;
     default:

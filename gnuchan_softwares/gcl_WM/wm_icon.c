@@ -270,7 +270,17 @@ static void icon_scale(WmCore *core, WmFrame *frame, const unsigned long *cards,
     int direct = visual_is_direct(visual);
 
     /* An image per pixmap, both built in memory. The colour one holds a pixel
-       per point and the mask one holds a single bit. */
+       per point and the mask one holds a single bit.
+     *
+     * XCreateImage does NOT allocate the pixel buffer. Asked for an image with
+     * a NULL data pointer it returns a struct whose `data` is still NULL, and
+     * the first XPutPixel below then reads and writes through that NULL — a
+     * crash inside libX11 at the one-bit putpixel, which is what took the whole
+     * window manager down the moment a client with an ordinary icon (one no
+     * bigger than WM_ICON_MAX_SIDE, so that it is actually chosen) opened.
+     * The buffer is allocated here, sized from the line stride XCreateImage
+     * computed times the height; XDestroyImage frees it again below, so the
+     * ownership is the same as it would have been had Xlib done it. */
     XImage *colour_image = XCreateImage(core->display, visual,
                                         (unsigned int)depth, ZPixmap, 0, NULL,
                                         (unsigned int)side, (unsigned int)side,
@@ -278,6 +288,22 @@ static void icon_scale(WmCore *core, WmFrame *frame, const unsigned long *cards,
     XImage *mask_image = XCreateImage(core->display, visual, 1, ZPixmap, 0,
                                       NULL, (unsigned int)side,
                                       (unsigned int)side, 8, 0);
+    if (colour_image) {
+        colour_image->data = calloc(1, (size_t)colour_image->bytes_per_line *
+                                       (size_t)colour_image->height);
+        if (!colour_image->data) {
+            XDestroyImage(colour_image);
+            colour_image = NULL;
+        }
+    }
+    if (mask_image) {
+        mask_image->data = calloc(1, (size_t)mask_image->bytes_per_line *
+                                     (size_t)mask_image->height);
+        if (!mask_image->data) {
+            XDestroyImage(mask_image);
+            mask_image = NULL;
+        }
+    }
     if (!colour_image || !mask_image) {
         if (colour_image) {
             XDestroyImage(colour_image);

@@ -447,15 +447,79 @@ void wm_frame_move(WmCore *core, WmFrame *frame, int x, int y) {
 
 void wm_frame_raise(WmCore *core, WmFrame *frame) {
     XRaiseWindow(core->display, frame->frame);
-    /* The bar is a sibling of the frame on the root, so raising the frame has
-       just put it above the bar. Putting the bar back is this module's job
-       because this is the moment it happened, and it is what lets the bar stay
-       on top without a timer that restacked the desktop several times a second
-       — a restack under the pointer also fires Enter and Leave events for
-       whatever the pointer is over, and those redraw title bars, which is what
-       made a still window flicker. */
-    wm_desktop_raise_bar(core);
+    /* The bar is left where it is, below the windows. It used to be put back
+       on top from here, and that is exactly what trapped a window dragged onto
+       the bar: the bar's own raise arrived right after the window's and covered
+       it again, so the window could never come out in front. The bar lives at
+       the bottom of the stack now (see wm_desktop_lower_bar), so a window moved
+       over it covers it and the bar is seen again the moment the window moves
+       off. */
     XFlush(core->display);
+}
+
+/* Keep a frame inside the workarea after the client asks to be resized.
+ *
+ * A client may ask to be bigger than the desktop — the raylib demo opens at
+ * 1600x900 on a 1366x768 screen — and the frame it lives in belongs to the
+ * manager, so it is the manager that has to refuse. The client's size is held
+ * to the room the workarea leaves once the frame's own chrome is taken off,
+ * and a frame that would then stick out past the right or bottom edge is
+ * pulled back inside. A client that asks for a size it can have is left
+ * exactly as it asked, because a manager that resizes a window the program
+ * placed deliberately makes every program's own geometry meaningless.
+ *
+ * This is the counterpart of the clamp wm_frame_create() already does when a
+ * window first opens; without it a window was clamped once at creation and
+ * could grow straight off the screen the next time it called resize, which is
+ * what an InitWindow(1600, 900) does. */
+static void frame_clamp_to_workarea(WmCore *core, WmFrame *frame) {
+    int screen_width = core->width > 1 ? core->width
+                                       : DisplayWidth(core->display,
+                                                      core->screen);
+    int screen_height = core->height > 1 ? core->height
+                                         : DisplayHeight(core->display,
+                                                         core->screen);
+    int area_x = 0;
+    int area_y = 0;
+    int area_width = 0;
+    int area_height = 0;
+    int room_width;
+    int room_height;
+
+    wm_config_workarea(&core->config, screen_width, screen_height,
+                       &area_x, &area_y, &area_width, &area_height);
+
+    room_width = area_width - 2 * frame->border;
+    room_height = area_height - WM_TITLE_HEIGHT - frame->border;
+    if (room_width < 1) {
+        room_width = 1;
+    }
+    if (room_height < 1) {
+        room_height = 1;
+    }
+
+    if (frame->client_width > room_width) {
+        frame->client_width = room_width;
+    }
+    if (frame->client_height > room_height) {
+        frame->client_height = room_height;
+    }
+
+    /* Pull the frame back so its right and bottom edges stay inside the area.
+       Only the overflow is taken back, so a window that already fits is not
+       moved by the clamping. */
+    if (frame->x + frame_width(frame) > area_x + area_width) {
+        frame->x = area_x + area_width - frame_width(frame);
+    }
+    if (frame->y + frame_height(frame) > area_y + area_height) {
+        frame->y = area_y + area_height - frame_height(frame);
+    }
+    if (frame->x < area_x) {
+        frame->x = area_x;
+    }
+    if (frame->y < area_y) {
+        frame->y = area_y;
+    }
 }
 
 void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
@@ -465,6 +529,10 @@ void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
     if (height > 1) {
         frame->client_height = height;
     }
+    /* A resize the client asked for is a request, not an order: it is held
+       inside the workarea before it is applied, exactly as an opening window
+       is. This is what stops a program from growing its frame off the screen. */
+    frame_clamp_to_workarea(core, frame);
     frame_apply(core, frame);
     frame_notify_configure(core, frame);
 }
@@ -494,6 +562,10 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
     if (attributes.height > 1) {
         frame->client_height = attributes.height;
     }
+    /* A client that resized itself goes through the same clamp a requested
+       resize does: it may not make its frame bigger than the workarea, nor
+       leave it hanging off the edge of the screen. */
+    frame_clamp_to_workarea(core, frame);
     frame_apply(core, frame);
 }
 

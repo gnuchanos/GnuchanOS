@@ -18,6 +18,16 @@ const char *wm_terminal_program(void);
 /* fork + execvp. Returns 0 when the child was started, -1 otherwise. */
 int wm_spawn(const char *program, char *const argv[]);
 
+/* Run a written command line — RunProgram(command="rofi -show run").
+ *
+ * The script's argument is a command LINE and not the name of a program, so it
+ * is split into words first — white space separates them, quotes group them, a
+ * backslash escapes — and the words become argv. wm_spawn() cannot do this on
+ * its own: it is handed words already, which is what it is for. Returns 0 when
+ * the program was started, -1 when the line was empty or the child could not
+ * be forked. */
+int wm_spawn_command(const char *command);
+
 /* Open the terminal found by wm_terminal_program(). */
 int wm_spawn_terminal(void);
 

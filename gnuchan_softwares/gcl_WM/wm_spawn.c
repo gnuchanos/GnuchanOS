@@ -10,6 +10,14 @@
  * Spawning is done by forking and re-executing, never by a shell string, so a
  * terminal named in $TERMINAL with a space in its path cannot turn into two
  * arguments.
+ *
+ * A command LINE — what RunProgram(command=...) carries — is a different
+ * thing from a program name: "rofi -show run" is one line that names a
+ * program and its arguments. wm_spawn_command() below splits such a line into
+ * its words with a small tokeniser and hands the words to wm_spawn(), which is
+ * still the fork + execvp path and still never a shell. The tokeniser is what
+ * the script's own reader uses — quotes group, a backslash escapes — so a
+ * command written in the settings file is read the way it was written.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -127,6 +135,111 @@ int wm_spawn(const char *program, char *const argv[]) {
         _exit(127);
     }
     return 0;
+}
+
+/* A written command line, split into the words execvp wants. The words live
+   back to back in `storage`; `argv` points into them and is NULL-terminated. */
+typedef struct CommandLine {
+    char *storage;
+    char **argv;
+    int argc;
+} CommandLine;
+
+static void command_line_release(CommandLine *line) {
+    free(line->storage);
+    free(line->argv);
+    line->storage = NULL;
+    line->argv = NULL;
+    line->argc = 0;
+}
+
+/* Split a command line into words.
+ *
+ * This is the whole of what a command line needs and nothing more, and it is
+ * a real little piece of lexing rather than a call to a shell. White space
+ * separates words; a single or a double quote groups them, so a path with a
+ * space in it stays one word; and a backslash escapes the character after it
+ * — inside double quotes as well, and literally inside single ones, which is
+ * what a shell does. The action a binding names is read by the same kind of
+ * tokeniser that read the script, so a command written in the settings file
+ * is read the way it was written.
+ *
+ * Returns 0 with `line` filled in, or -1 when the line is empty or memory
+ * could not be had. */
+static int command_line_split(const char *command, CommandLine *line) {
+    memset(line, 0, sizeof(*line));
+    if (!command || !command[0]) {
+        return -1;
+    }
+
+    size_t length = strlen(command);
+    /* A word can never be longer than the whole line, so the word block is the
+       line; and there are at most half as many words as characters, plus one,
+       which is room for the pointers. */
+    line->storage = malloc(length + 1);
+    line->argv = malloc(((length + 1) / 2 + 2) * sizeof(char *));
+    if (!line->storage || !line->argv) {
+        command_line_release(line);
+        return -1;
+    }
+
+    char *write = line->storage;
+    const char *c = command;
+    while (*c) {
+        while (*c == ' ' || *c == '\t' || *c == '\n' || *c == '\r') {
+            c++;
+        }
+        if (!*c) {
+            break;
+        }
+        line->argv[line->argc++] = write;
+
+        char quote = '\0';
+        for (; *c; c++) {
+            char ch = *c;
+            if (quote == '\'') {
+                if (ch == '\'') { quote = '\0'; continue; }
+                *write++ = ch;
+                continue;
+            }
+            if (quote == '"') {
+                if (ch == '"') { quote = '\0'; continue; }
+                if (ch == '\\' && c[1]) { c++; *write++ = *c; continue; }
+                *write++ = ch;
+                continue;
+            }
+            if (ch == '\'' || ch == '"') { quote = ch; continue; }
+            if (ch == '\\' && c[1]) { c++; *write++ = *c; continue; }
+            if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+                break;
+            }
+            *write++ = ch;
+        }
+        if (quote != '\0') {
+            fprintf(stderr,
+                    "gnuchanwm: a command has a quote with no closing quote; "
+                    "the rest of the line became one word\n");
+        }
+        *write++ = '\0';
+    }
+    line->argv[line->argc] = NULL;
+    return 0;
+}
+
+int wm_spawn_command(const char *command) {
+    CommandLine line;
+    if (command_line_split(command, &line) != 0) {
+        return -1;
+    }
+    if (line.argc == 0) {
+        command_line_release(&line);
+        return -1;
+    }
+    /* wm_spawn() forks, so the child has its own copy of the words and the
+       release below happens in the parent alone. */
+    int result = wm_spawn(line.argv[0], line.argv);
+    command_line_release(&line);
+    return result;
 }
 
 int wm_spawn_terminal(void) {

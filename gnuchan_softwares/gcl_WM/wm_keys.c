@@ -56,15 +56,21 @@ typedef struct KeyBinding {
 
 /* --- the actions a key can be bound to ------------------------------------- */
 
-/* Open a terminal. The command the binding named is used when it has one —
-   `RunProgram(command=default_terminal)` becomes the xterm the script set
-   above — and the session's configured terminal is used when it does not, so
-   a binding written without a program still opens something. */
+/* Run what the binding named, or open a terminal when it named nothing.
+ *
+ * The command is a command LINE — `RunProgram(command="rofi -show run")` — so
+ * it goes through wm_spawn_command(), which splits it into the words the
+ * process must be started with. Handing the whole line to wm_spawn() instead
+ * asked the kernel for a program whose name contained a space, which no such
+ * program answers to: the run key did nothing and the terminal fallback was
+ * never reached, because the fork itself had already succeeded.
+ *
+ * A binding with no command — `RunProgram()` with nothing said, or a script
+ * that only named a terminal to fall back to — opens the session's terminal. */
 static void action_spawn_terminal(WmCore *core, const char *command) {
     (void)core;
     if (command && command[0]) {
-        char *const argv[] = { (char *)command, NULL };
-        if (wm_spawn(command, argv) == 0) {
+        if (wm_spawn_command(command) == 0) {
             return;
         }
     }

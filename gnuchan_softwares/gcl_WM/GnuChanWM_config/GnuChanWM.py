@@ -122,6 +122,17 @@ gcl_keys.all = [
     ),
     gcl_key.MultiKey(keys=[super_key1, "F4"], action=gcl_window.Close()),
     gcl_key.MultiKey(keys=[super_key1, "Tab"], action=gcl_window.Switch()),
+
+    gcl_key.MultiKey(
+        keys=[super_key1, "r"],
+        action=gcl_spawn.RunProgram(command="rofi -show run"),
+    ),
+
+    gcl_key.MultiKey(
+        keys=[super_key1, "a"],
+        action=gcl_spawn.RunProgram(command="chromium"),
+    ),
+
 ]
 
 # fare behavior
