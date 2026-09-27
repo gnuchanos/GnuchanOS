@@ -33,8 +33,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <X11/extensions/shape.h>
-
 #include "wm_core.h"
 #include "wm_desktop.h"
 #include "wm_frame.h"
@@ -90,121 +88,6 @@ static WmFrameButton button_at(const WmFrame *frame, int x, int y) {
         }
     }
     return WM_BUTTON_COUNT;
-}
-
-/* --- the shape: rounded corners -------------------------------------------
- *
- * A rounded corner is not drawn: it is a part of the window that is not there,
- * so the desktop behind it shows through. The shape extension is what says
- * which pixels of a window exist, and it clips the program inside the frame as
- * well as the frame itself — which is what stops a client's square corner from
- * poking out of a rounded frame.
- *
- * Only ShapeBounding is ever set, and only to a solid rectangle with its
- * corners cut. Two things this deliberately does not do, because both were
- * tried and both made the session unusable:
- *
- * ShapeClip is not set. X gives a window two regions, and the clip one is
- * inherited by everything drawn inside the window, children included — so a
- * clip set here is a clip on the program's own pixels. The program then cannot
- * paint itself and what shows through the gaps is the desktop behind it: a
- * grey speckle where a terminal should be.
- *
- * The mask is never a pattern. A dithered region is thousands of tiny holes
- * and the server keeps a region as a list of rectangles, so every move, resize
- * and expose rebuilds the whole list — a drag that should be instant stalls,
- * and a session doing it constantly is a session that falls over. A drop
- * shadow on plain X is a compositor's work and is not attempted here; a script
- * that asks for one is simply not drawn, which is honest rather than a stutter.
- */
-
-/* The corner radius the script asked for, or 0 for square corners. Read in one
-   place so the shape and the drawing agree about the same number. */
-static int frame_radius(const WmCore *core) {
-    return core->config.border_radius > 0 ? core->config.border_radius : 0;
-}
-
-/* A one-bit mask of a rounded rectangle, filled in.
- *
- * The corners are four quarter circles and the rest is two overlapping bands: a
- * band across the middle and one down it leave exactly the four corner squares
- * to the arcs. A radius that does not fit is held to half the shorter side,
- * which is the largest a corner can be before the two meet. */
-static Pixmap frame_round_mask(WmCore *core, int width, int height,
-                               int radius) {
-    if (width <= 0 || height <= 0) {
-        return None;
-    }
-    Pixmap mask = XCreatePixmap(core->display, core->root,
-                                (unsigned int)width, (unsigned int)height, 1);
-    if (mask == None) {
-        return None;
-    }
-
-    GC gc = XCreateGC(core->display, mask, 0, NULL);
-    XSetForeground(core->display, gc, 0);
-    XFillRectangle(core->display, mask, gc, 0, 0,
-                   (unsigned int)width, (unsigned int)height);
-    XSetForeground(core->display, gc, 1);
-
-    int r = radius;
-    if (r > width / 2) {
-        r = width / 2;
-    }
-    if (r > height / 2) {
-        r = height / 2;
-    }
-
-    if (r < 1) {
-        XFillRectangle(core->display, mask, gc, 0, 0,
-                       (unsigned int)width, (unsigned int)height);
-    } else {
-        XFillRectangle(core->display, mask, gc, r, 0,
-                       (unsigned int)(width - 2 * r), (unsigned int)height);
-        XFillRectangle(core->display, mask, gc, 0, r,
-                       (unsigned int)width, (unsigned int)(height - 2 * r));
-        /* Angles are in sixty-fourths of a degree, measured anticlockwise
-           from three o'clock, so each corner is the quarter of its circle
-           that faces into the rectangle. */
-        XFillArc(core->display, mask, gc, 0, 0,
-                 (unsigned int)(2 * r), (unsigned int)(2 * r),
-                 90 * 64, 90 * 64);
-        XFillArc(core->display, mask, gc, width - 2 * r, 0,
-                 (unsigned int)(2 * r), (unsigned int)(2 * r), 0, 90 * 64);
-        XFillArc(core->display, mask, gc, width - 2 * r, height - 2 * r,
-                 (unsigned int)(2 * r), (unsigned int)(2 * r),
-                 270 * 64, 90 * 64);
-        XFillArc(core->display, mask, gc, 0, height - 2 * r,
-                 (unsigned int)(2 * r), (unsigned int)(2 * r),
-                 180 * 64, 90 * 64);
-    }
-
-    XFreeGC(core->display, gc);
-    return mask;
-}
-
-/* Cut the frame's window to the shape the script asked for.
- *
- * Called whenever a frame's size is put right and whenever the script is read
- * again, because the radius is a number a reload can change on windows that
- * are already open. */
-static void frame_apply_shape(WmCore *core, WmFrame *frame) {
-    int width = frame_width(frame);
-    int height = frame_height(frame);
-
-    /* The full rectangle is applied even when nothing is to be cut away,
-       rather than the shape being left alone: a script that reloads with the
-       radius taken out has to take the old corners off windows already open.
-       A radius of zero fills the whole mask, which is the same as applying no
-       shape at all. */
-    Pixmap mask = frame_round_mask(core, width, height, frame_radius(core));
-    if (mask == None) {
-        return;
-    }
-
-    XShapeCombineMask(core->display, frame->frame, ShapeBounding, 0, 0,
-                      mask, ShapeSet);
-    XFreePixmap(core->display, mask);
 }
 
 /* --- the table ------------------------------------------------------------ */
@@ -515,7 +398,6 @@ static void frame_apply(WmCore *core, WmFrame *frame) {
                       frame->border, WM_TITLE_HEIGHT,
                       (unsigned int)frame->client_width,
                       (unsigned int)frame->client_height);
-    frame_apply_shape(core, frame);
     wm_frame_draw(core, frame);
 }
 
@@ -541,9 +423,6 @@ void wm_frame_apply_border(WmCore *core) {
         }
 
         if (frame->border == width) {
-            /* Only the radius changed: the geometry is already right, so only
-               the cut is put back. */
-            frame_apply_shape(core, frame);
             continue;
         }
 
@@ -957,7 +836,6 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
 
     frame_read_name(core, frame);
     wm_frame_read_icon(core, frame);
-    frame_apply_shape(core, frame);
     wm_frame_draw(core, frame);
     return frame;
 }

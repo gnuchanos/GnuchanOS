@@ -867,6 +867,32 @@ static void desktop_bar(WmCore *core) {
 
 /* --- painting ------------------------------------------------------------- */
 
+/* Drop the wallpaper and everything that publishes it.
+ *
+ * Called when the desktop stops showing a picture — the script stopped naming
+ * one, or the one it names cannot be read — so the pixmap this module made is
+ * freed and the two properties that name it are removed. Doing only half of
+ * that is the bug this function exists to prevent: a freed pixmap still named
+ * by _XROOTPMAP_ID is a stale id other programs read, and a pixmap left alive
+ * but no longer shown is a full-screen buffer held on the server for the life
+ * of the session. The properties are deleted rather than set to None, because
+ * a program reading the root background treats "the property is not there" as
+ * "there is no picture" and falls back to the colour, which is what the
+ * desktop just did. */
+static void desktop_forget_image(WmCore *core) {
+    if (desktop_image.pixmap != None) {
+        Atom root_pixmap = XInternAtom(core->display, "_XROOTPMAP_ID", False);
+        Atom esetroot = XInternAtom(core->display, "ESETROOT_PMAP_ID", False);
+        if (root_pixmap != None) {
+            XDeleteProperty(core->display, core->root, root_pixmap);
+        }
+        if (esetroot != None) {
+            XDeleteProperty(core->display, core->root, esetroot);
+        }
+    }
+    wm_image_free(core, &desktop_image);
+}
+
 /* The backdrop: the wallpaper when there is one, and the flat desktop colour
  * when there is not.
  *
@@ -888,14 +914,32 @@ static void desktop_paint_background(WmCore *core) {
         return;
     }
 
+    /* The flat colour the desktop is painted in when there is no picture: what
+       gcl_Window.background_color named, or the palette's own background
+       (wm_style.c) when it named none. Resolved here rather than kept on the
+       style because it is the desktop's colour and not a widget's — the bar
+       and the frames have their own, and one of those must not follow a change
+       to this one. */
+    unsigned long flat = core->config.desktop_background_color[0]
+                             ? wm_style_colour(core->display, core->screen,
+                                               core->config.desktop_background_color,
+                                               core->style.background)
+                             : core->style.background;
+
     /* A picture that is not named, is not there, or does not decode leaves the
        flat colour, which is what the desktop had before it could have a
-       wallpaper. */
+       wallpaper — and what it falls back to when the picture is commented out
+       with a '#'. */
     if (!core->config.desktop_background_image[0] ||
         wm_image_load(core, &desktop_image,
                       core->config.desktop_background_image,
                       core->width, core->height) != 0) {
-        XSetWindowBackground(core->display, core->root, core->style.background);
+        /* The picture that was there has to go, and this is the moment it
+           stops being shown: the root is about to be given a colour instead,
+           so the old pixmap is freed and the two properties that still name it
+           are removed. See desktop_forget_image(). */
+        desktop_forget_image(core);
+        XSetWindowBackground(core->display, core->root, flat);
         XClearWindow(core->display, core->root);
         XFlush(core->display);
         return;

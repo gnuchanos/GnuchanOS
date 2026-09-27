@@ -344,32 +344,6 @@ static void set_border_colours(WmConfig *config, const WmStatement *statement) {
         return;
     }
 
-    /* The corner radius, a number in pixels. Zero is allowed and means square
-       corners, so a script that writes 0 gets what it asked for rather than
-       the value being refused for being falsy. */
-    if (strcmp(statement->target,
-               "gcl_Window.set_window_border_radius") == 0) {
-        int radius = wm_config_value_number(value, 0);
-        config->border_radius = radius > 0 ? radius : 0;
-        return;
-    }
-
-    /* The shadow's opacity, written as a fraction — 0.5 — and kept per mille
-       so the integer field holds what the script meant. A value outside 0..1
-       is clamped rather than refused. */
-    if (strcmp(statement->target,
-               "gcl_Window.set_window_shadow_opacity") == 0) {
-        double opacity = wm_config_value_real(value, 0.0);
-        if (opacity < 0.0) {
-            opacity = 0.0;
-        }
-        if (opacity > 1.0) {
-            opacity = 1.0;
-        }
-        config->shadow_opacity = (int)(opacity * 1000.0 + 0.5);
-        return;
-    }
-
     char text[WM_CONFIG_TEXT_LENGTH];
     wm_config_value_text(value, text, sizeof(text));
 
@@ -379,9 +353,6 @@ static void set_border_colours(WmConfig *config, const WmStatement *statement) {
     } else if (strcmp(statement->target,
                       "gcl_Window.set_inactive_window_border_color") == 0) {
         copy_text(config->inactive_border, sizeof(config->inactive_border), text);
-    } else if (strcmp(statement->target,
-                      "gcl_Window.set_window_shadow_color") == 0) {
-        copy_text(config->shadow_color, sizeof(config->shadow_color), text);
     }
 }
 
@@ -668,11 +639,20 @@ static void walk(Script *script, WmConfig *config,
                 /* The wallpaper, written as an assignment rather than a call:
                    `gcl_Window.BackgroundImage = "bg.png"`. It is the desktop
                    behind every window, not the bar — which is why it lives on
-                   the config and not on WmBar — and an empty value keeps the
-                   flat desktop colour. */
+                   the config and not on WmBar. */
                 value_text(script, &statement->value,
                            config->desktop_background_image,
                            sizeof(config->desktop_background_image));
+            } else if (strcmp(statement->target,
+                              "gcl_Window.background_color") == 0) {
+                /* The flat desktop colour, written the same way:
+                   `gcl_Window.background_color = "#27022b"`. It is what the
+                   desktop is painted in when no wallpaper is named — or when
+                   the one named cannot be read — so commenting the picture out
+                   is all it takes to fall back to this colour. */
+                value_text(script, &statement->value,
+                           config->desktop_background_color,
+                           sizeof(config->desktop_background_color));
             }
             remember_assignment(script, statement);
             continue;
@@ -844,6 +824,18 @@ int wm_config_load(WmConfig *config, const char *path) {
         parsed.binding_count = 0;
     }
 
+    /* The desktop's picture and its flat colour are single settings and not
+       collections, so neither is carried over from the read before: a script
+       that commented its picture out means "no picture", and a name left over
+       from the previous read is a wallpaper that stays on the screen however
+       the file is edited. Everything that is carried over — the bar, the keys,
+       the border colours — is carried over because a script that says nothing
+       about it is a script that did not mean to change it; a background is the
+       opposite, since the whole way to ask for no picture is to stop naming
+       one. */
+    parsed.desktop_background_image[0] = '\0';
+    parsed.desktop_background_color[0] = '\0';
+
     Script script;
     memset(&script, 0, sizeof(script));
     walk(&script, &parsed, statements, count);
@@ -1011,16 +1003,6 @@ void wm_config_apply(WmCore *core) {
             wm_style_colour(core->display, core->screen,
                             core->config.inactive_border,
                             core->style.border_unfocused);
-    }
-    /* The shadow's colour, for the ring a frame's shape keeps around it. The
-       radius and the opacity are read by wm_frame.c straight from the config,
-       because they are geometry rather than palette: a radius is a number of
-       pixels and an opacity a fraction, and neither becomes a pixel here. */
-    if (core->config.shadow_color[0]) {
-        core->style.shadow =
-            wm_style_colour(core->display, core->screen,
-                            core->config.shadow_color,
-                            core->style.shadow);
     }
     if (core->config.border_width > 0) {
         core->style.border_width = core->config.border_width;

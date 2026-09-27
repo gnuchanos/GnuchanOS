@@ -72,17 +72,20 @@ static int resolve_path(const char *name, char *out, unsigned int size) {
 
     char config_path[WM_IMAGE_PATH_LENGTH];
     wm_config_path(config_path, sizeof(config_path));
-    if (config_path[0]) {
-        /* The directory the script sits in, cut from the path to it. It is
-           made smaller than the output so joining a name to it — the name may
-           be a whole path itself — can never promise more than fits, which is
-           the one thing snprintf here has to be exact about. */
-        char directory[WM_IMAGE_PATH_LENGTH - WM_IMAGE_PATH_LENGTH / 4];
-        snprintf(directory, sizeof(directory), "%s", config_path);
-        char *slash = strrchr(directory, '/');
-        if (slash) {
-            *slash = '\0';
-            snprintf(out, size, "%s/%s", directory, name);
+    char *slash = strrchr(config_path, '/');
+    if (slash) {
+        /* Everything before the last slash is the directory the script sits
+           in, and the name is looked for under it. The two are joined in
+           place, the name given exactly the room the output has left, so no
+           part of the join can be written past the end — which is what the
+           compiler was right to point at when the directory was copied into a
+           buffer of its own and the name was then added to it. */
+        *slash = '\0';
+        size_t used = strlen(config_path);
+        if (used + 1 < size) {
+            memcpy(out, config_path, used);
+            out[used] = '/';
+            snprintf(out + used + 1, size - used - 1, "%s", name);
             if (file_readable(out)) {
                 return 1;
             }

@@ -169,18 +169,6 @@ def xft_headers_present() -> bool:
     return header_present("X11/Xft/Xft.h", ("/usr/include/freetype2",))
 
 
-def xext_headers_present() -> bool:
-    """Whether libXext's header is here.
-
-    It is what the shape extension is reached through, and the frame's rounded
-    corners and its drop shadow are both cuts in a window rather than things
-    painted on it: the frame is told which of its pixels exist, and every other
-    pixel shows the desktop behind it. Without the header there is no shape, so
-    this is a dependency of the build like the others.
-    """
-    return header_present("X11/extensions/shape.h")
-
-
 def xcursor_headers_present() -> bool:
     """Whether libXcursor's header is here.
 
@@ -234,10 +222,6 @@ def ensure_build_dependencies() -> None:
     # package of its own; libx11-dev does not pull it in.
     if not xcursor_headers_present():
         needed.append("libxcursor-dev")
-    # Xext is what the shape extension is reached through: the rounded corners
-    # and the shadow are cuts in the frame's window, not pixels on it.
-    if not xext_headers_present():
-        needed.append("libxext-dev")
     # Imlib2 is what the wallpaper is read and drawn with, the way feh does it.
     # Its header is in a package of its own; libx11-dev does not pull it in.
     if not imlib2_headers_present():
@@ -283,15 +267,15 @@ def x11_flags() -> tuple[list[str], list[str]]:
     pkg_config = shutil.which("pkg-config")
     if pkg_config is not None:
         cflags = run([pkg_config, "--cflags",
-                      "x11", "xft", "xcursor", "xext", "imlib2"],
+                      "x11", "xft", "xcursor", "imlib2"],
                      capture=True)
         libs = run([pkg_config, "--libs",
-                    "x11", "xft", "xcursor", "xext", "imlib2"],
+                    "x11", "xft", "xcursor", "imlib2"],
                    capture=True)
         if cflags.returncode == 0 and libs.returncode == 0:
             return cflags.stdout.split(), libs.stdout.split()
     return (["-I/usr/include", "-I/usr/include/freetype2"],
-            ["-lX11", "-lXft", "-lXcursor", "-lXext", "-lImlib2"])
+            ["-lX11", "-lXft", "-lXcursor", "-lImlib2"])
 
 
 def check_sources() -> None:

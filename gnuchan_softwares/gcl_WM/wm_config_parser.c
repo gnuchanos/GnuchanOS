@@ -314,7 +314,8 @@ static int parse_value(Parser *parser, WmValue *value) {
         value->number = atoi(parser->text);
         /* The same token kept whole, so a float survives as the fraction it
            was written as. `number` truncates at the dot; a caller that wants
-           the fraction — the shadow's opacity=0.5 — reads this instead. */
+           the fraction — a compositor effect's opacity=0.5 — reads this
+           instead. */
         value->real = strtod(parser->text, NULL);
         parser_advance(parser);
         return 0;
