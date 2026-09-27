@@ -57,8 +57,6 @@ SOURCES = (
     "wm_desktop.c",
     "wm_frame.c",
     "wm_icon.c",
-    "wm_png.c",
-    "wm_image.c",
     "wm_manage.c",
     "wm_focus.c",
     "wm_spawn.c",
@@ -74,7 +72,6 @@ HEADERS = (
     "wm_theme.h",
     "wm_config.h", "wm_config_parser.h",
     "wm_workspace.h", "wm_desktop.h",
-    "wm_png.h", "wm_image.h",
 )
 
 FALLBACK_TERMINAL = "xterm"
@@ -194,17 +191,6 @@ def xcursor_headers_present() -> bool:
     return header_present("X11/Xcursor/Xcursor.h")
 
 
-def zlib_headers_present() -> bool:
-    """Whether zlib's header is here.
-
-    zlib is what a PNG's pixels are compressed with, and the bar reads its
-    BackgroundImage through the PNG reader in wm_png.c. It is a dependency of
-    the build for the same reason the others are: without it there is no PNG,
-    and without a PNG the bar has only its colour.
-    """
-    return header_present("zlib.h")
-
-
 def program_exists(name: str) -> bool:
     if "/" in name:
         return os.access(name, os.X_OK)
@@ -238,10 +224,6 @@ def ensure_build_dependencies() -> None:
     # and the shadow are cuts in the frame's window, not pixels on it.
     if not xext_headers_present():
         needed.append("libxext-dev")
-    # zlib is what the PNG reader inflates a picture with; its header is in a
-    # package of its own.
-    if not zlib_headers_present():
-        needed.append("zlib1g-dev")
     if shutil.which("gcc") is None:
         needed.append("build-essential")
     if shutil.which("pkg-config") is None:
@@ -313,10 +295,10 @@ def build() -> Path:
     command += [str(ROOT / name) for name in SOURCES]
     command += ["-o", str(output)]
     command += libs
-    # zlib is what wm_png.c inflates a bar background with. It is named here
+    # -lm is for the arithmetic the frame and the icons do. It is named here
     # rather than through pkg-config because it has no include flags of its
     # own to find.
-    command += ["-lz", "-lm"]
+    command += ["-lm"]
 
     step("Building")
     if run(command, cwd=ROOT).returncode != 0:

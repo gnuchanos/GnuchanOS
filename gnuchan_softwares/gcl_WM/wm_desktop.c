@@ -38,7 +38,6 @@
 
 #include "wm_core.h"
 #include "wm_frame.h"
-#include "wm_image.h"
 #include "wm_workspace.h"
 
 /* The room a widget's text gets on either side of it. */
@@ -52,20 +51,6 @@
 /* The bar's window. Module state rather than core state: nothing but this file
    draws or moves the bar. */
 static Window bar_window = None;
-
-/* The desktop's wallpaper, when the script named one through
-   `gcl_Window.BackgroundImage`. It is drawn across the root behind every
-   window, decoded once at the screen's height so a repaint copies a picture
-   rather than reading a file; see wm_image.c. The bar has no picture of its
-   own: a wallpaper belongs behind the whole desktop, not inside one strip of
-   it. */
-/* The desktop's wallpaper, when the script named one through
-   `gcl_Window.BackgroundImage`. It is loaded at exactly the screen's size and
-   stretched to it, so the pixmap it holds is the root's background as it
-   stands — there is no second pixmap to draw into and no copy to make. The
-   server keeps the pixmap alive for as long as it is the background, so the
-   one held here is freed when it is replaced and at shutdown. */
-static WmImage desktop_image;
 
 /* Declared ahead of the public entry points, which are written next to the
    raise they pair with rather than next to the drawing they call. */
@@ -613,9 +598,8 @@ Window wm_desktop_bar_window(void) {
 
 /* Draw the bar again. See the header for why this is not simply bar(). */
 void wm_desktop_repaint(WmCore *core) {
-    /* The backdrop is put back as well as the bar: a reload can name a
-       different picture, and a wallpaper that only changed on the next login
-       is the one part of the script that did not follow it. */
+    /* The backdrop is put back as well as the bar: a reload can change the
+       desktop colour, and it is applied here rather than on the next login. */
     desktop_paint_background(core);
     desktop_configure_bar(core);
     desktop_bar(core);
@@ -875,56 +859,23 @@ static void desktop_bar(WmCore *core) {
 
 /* --- painting ------------------------------------------------------------- */
 
-/* The backdrop: the wallpaper, made the root window's own background.
+/* The backdrop: the desktop's own colour, made the root window's background.
  *
- * Painting the picture onto the root's pixels is not enough, and that is the
- * bug this replaced. The root window has a background of its own — a flat
- * colour — and the X server paints that background into every part of the root
- * it has to paint, without asking anybody. Move a window away, close one, or
- * clear the root, and the server fills the hole with the flat colour; the
- * wallpaper that was painted there is gone, and nothing puts it back, because
- * losing those pixels is not an event this manager is told about. It is the
- * same mistake as drawing into a raylib frame buffer and never clearing it:
- * the surface is painted by someone else the moment it is uncovered.
- *
- * A background *pixmap* is the answer. The server is handed the wallpaper once
- * and paints it itself, into every part of the root it has to paint, for as
- * long as the pixmap is set. Nothing has to be redrawn, because nothing is
- * ever uncovered without the server drawing the picture back.
- *
- * The picture is tiled across the pixmap over the flat colour, so a
- * transparent pixel of the file shows the colour underneath — the same rule
- * the bar's own picture follows. */
+ * The colour is set as the root's *background* rather than painted onto its
+ * pixels, and that is the point. The root window has a background of its own,
+ * and the X server paints that background into every part of the root it has
+ * to paint, without asking anybody: move a window away, close one, or clear
+ * the root, and the server fills the hole itself. Painting pixels directly
+ * would leave those holes — the server clears the uncovered part to whatever
+ * it was told the background is, and nothing puts a painted picture back,
+ * because losing those pixels is not an event this manager is told about. A
+ * background set on the window is the server's to repaint, so nothing has to
+ * be redrawn at all. */
 static void desktop_paint_background(WmCore *core) {
     if (core->width <= 0 || core->height <= 0) {
         return;
     }
-
-    /* The picture is loaded at exactly the screen's size and stretched to it,
-       so what comes back is already the surface the root needs: it becomes the
-       root's background as it stands, with no second pixmap drawn into and no
-       copy made. A picture that is not named, is not there, or does not decode
-       leaves the flat colour, which is what the desktop had before it could
-       have a wallpaper. */
-    if (!core->config.desktop_background_image[0] ||
-        wm_image_load(core, &desktop_image,
-                      core->config.desktop_background_image,
-                      core->width, core->height) != 0) {
-        XSetWindowBackground(core->display, core->root, core->style.background);
-        XClearWindow(core->display, core->root);
-        XFlush(core->display);
-        return;
-    }
-
-    /* A background *pixmap*, not painted pixels: the server is handed the
-       wallpaper once and paints it itself into every part of the root it has
-       to paint, for as long as the pixmap is set. Painting the root's pixels
-       directly is what loses a wallpaper the moment a window moves off it —
-       the server clears the hole to the flat colour and nothing puts the
-       picture back, because losing those pixels is not an event this manager
-       is told about. */
-    XSetWindowBackgroundPixmap(core->display, core->root,
-                               desktop_image.pixmap);
+    XSetWindowBackground(core->display, core->root, core->style.background);
     XClearWindow(core->display, core->root);
     XFlush(core->display);
 }
@@ -1055,7 +1006,6 @@ static void desktop_cleanup(WmCore *core) {
         bar_buffer_width = 0;
         bar_buffer_height = 0;
     }
-    wm_image_free(core, &desktop_image);
     bar_colour_count = 0;
     bar_icon_total = 0;
     bar_icon_count = 0;

@@ -663,16 +663,6 @@ static void walk(Script *script, WmConfig *config,
                                      sizeof(config->terminal));
             } else if (strcmp(statement->target, "gcl_keys.all") == 0) {
                 add_bindings_from_list(script, config, &statement->value);
-            } else if (strcmp(statement->target,
-                              "gcl_Window.BackgroundImage") == 0) {
-                /* The wallpaper, written as an assignment rather than a call:
-                   `gcl_Window.BackgroundImage = "bg.png"`. It is the desktop
-                   behind every window, not the bar — which is why it lives on
-                   the config and not on WmBar — and an empty value keeps the
-                   flat desktop colour. */
-                value_text(script, &statement->value,
-                           config->desktop_background_image,
-                           sizeof(config->desktop_background_image));
             }
             remember_assignment(script, statement);
             continue;

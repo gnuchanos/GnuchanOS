@@ -185,11 +185,6 @@ typedef struct WmConfig {
     char shadow_color[WM_CONFIG_TEXT_LENGTH];
     int shadow_opacity;              /* 0..1000, i.e. 0.0 .. 1.0 */
 
-    /* gcl_Window.BackgroundImage = "...": the wallpaper, drawn across the root
-       behind everything. Empty keeps the flat desktop colour, which is what a
-       machine that never named a picture gets. */
-    char desktop_background_image[WM_CONFIG_TEXT_LENGTH];
-
     /* What Alt+Enter opens. Empty means "look at $TERMINAL, then at the usual
        terminals", which is what a machine with no config gets. */
     char terminal[WM_CONFIG_TEXT_LENGTH];
