@@ -313,6 +313,20 @@ static void image_prepare(WmCore *core, WmImage *image,
     XFreeGC(core->display, gc);
 
     GC mask_gc = XCreateGC(core->display, mask_pixmap, 0, NULL);
+    /* The two colours XPutImage paints a bitmap's bits with, and they have to
+       be set or the mask comes out inverted.
+     *
+     * In XYBitmap form a one bit is painted with the GC's foreground and a
+     * zero bit with its background — and a fresh GC has those the other way
+     * round, foreground zero and background one. Left alone, every pixel the
+     * picture is solid in is cleared and every pixel it is not is set: the
+     * mask the drawing code clips through is the exact opposite of the shape,
+     * so the clip keeps the pixels that have no colour and drops the ones that
+     * do, and the picture can never appear however well it decoded. Setting
+     * them here is what makes the bit that was set for a solid pixel stay set
+     * in the mask. */
+    XSetForeground(core->display, mask_gc, 1);
+    XSetBackground(core->display, mask_gc, 0);
     XPutImage(core->display, mask_pixmap, mask_gc, mask, 0, 0, 0, 0,
               (unsigned int)width, (unsigned int)height);
     XFreeGC(core->display, mask_gc);
@@ -353,6 +367,14 @@ int wm_image_load(WmCore *core, WmImage *image, const char *name,
 
     char path[sizeof(image->path)];
     if (!resolve_path(name, path, sizeof(path)) || target_height <= 0) {
+        /* Said out loud, because this is the failure that looks like nothing
+           at all: no picture, no message, and a desktop that is a flat colour
+           with no clue which of the three steps gave up. The name and the
+           place it was looked for are both printed, because a name that does
+           not resolve is the one mistake a person fixes by reading. */
+        fprintf(stderr,
+                "gnuchanwm: image '%s' not found (looked for '%s')\n",
+                name ? name : "", path);
         wm_image_free(core, image);
         snprintf(image->path, sizeof(image->path), "%s", path);
         snprintf(image->source_name, sizeof(image->source_name), "%s",
@@ -365,6 +387,9 @@ int wm_image_load(WmCore *core, WmImage *image, const char *name,
     int source_width = 0;
     int source_height = 0;
     if (wm_png_load(path, &pixels, &source_width, &source_height) != 0) {
+        fprintf(stderr,
+                "gnuchanwm: image '%s' could not be decoded "
+                "(only 8-bit, non-interlaced PNG is read)\n", path);
         wm_image_free(core, image);
         snprintf(image->path, sizeof(image->path), "%s", path);
         snprintf(image->source_name, sizeof(image->source_name), "%s",
@@ -389,6 +414,13 @@ int wm_image_load(WmCore *core, WmImage *image, const char *name,
     wm_image_free(core, image);
     image_prepare(core, image, pixels, source_width, source_height, width, height);
     free(pixels);
+
+    if (!image->ok) {
+        fprintf(stderr,
+                "gnuchanwm: image '%s' (%dx%d) could not be "
+                "prepared at %dx%d\n",
+                path, source_width, source_height, width, height);
+    }
 
     snprintf(image->path, sizeof(image->path), "%s", path);
     snprintf(image->source_name, sizeof(image->source_name), "%s",

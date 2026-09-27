@@ -61,6 +61,18 @@ static Window bar_window = None;
    it. */
 static WmImage desktop_image;
 
+/* The pixmap the root's background is set to, held for as long as it is the
+   background. It is module state rather than a local, and that is not a
+   detail: a pixmap a window is using as its background must not be freed.
+   XSetWindowBackgroundPixmap makes the server paint the window with it, but
+   nothing keeps the pixmap alive — freeing it leaves the background naming
+   something that is gone, and the server falls back to clearing the window to
+   nothing. That is a wallpaper that is drawn, set, and then silently dropped
+   one line later, which is exactly a desktop that keeps its flat colour
+   however good the picture was. It is freed when it is replaced and at
+   shutdown. */
+static Pixmap desktop_backdrop = None;
+
 /* Declared ahead of the public entry points, which are written next to the
    raise they pair with rather than next to the drawing they call. */
 static void desktop_configure_bar(WmCore *core);
@@ -932,12 +944,16 @@ static void desktop_paint_background(WmCore *core) {
 
     wm_image_draw(core, &desktop_image, backdrop, 0, 0, core->width);
 
-    /* The pixmap is the root's background from here on; the server keeps its
-       own copy of it for as long as that is true, so this one is ours to
-       free. */
+    /* The pixmap becomes the root's background and is kept until it is
+       replaced. See desktop_backdrop for why it is not freed here. The old one
+       goes only after the new one is in place, so the root is never left
+       naming a freed pixmap, not even for the width of one request. */
     XSetWindowBackgroundPixmap(core->display, core->root, backdrop);
     XClearWindow(core->display, core->root);
-    XFreePixmap(core->display, backdrop);
+    if (desktop_backdrop != None) {
+        XFreePixmap(core->display, desktop_backdrop);
+    }
+    desktop_backdrop = backdrop;
     XFlush(core->display);
 }
 
@@ -1068,6 +1084,10 @@ static void desktop_cleanup(WmCore *core) {
         bar_buffer_height = 0;
     }
     wm_image_free(core, &desktop_image);
+    if (desktop_backdrop != None) {
+        XFreePixmap(core->display, desktop_backdrop);
+        desktop_backdrop = None;
+    }
     bar_colour_count = 0;
     bar_icon_total = 0;
     bar_icon_count = 0;

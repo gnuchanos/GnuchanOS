@@ -233,7 +233,22 @@ static void frame_mask_dither(WmCore *core, Pixmap mask, int width, int height,
 
     GC dither = XCreateGC(core->display, mask, 0, NULL);
     XSetStipple(core->display, dither, tile);
-    XSetFillStyle(core->display, dither, FillStippled);
+    /* Opaque stippling, not the plain kind, and the difference is the whole
+       pattern.
+     *
+     * FillStippled draws the foreground where the tile is set and leaves the
+     * destination alone where it is clear — the clear pixels are simply not
+     * part of the request. The AND below therefore never runs over them, the
+     * mask keeps its ones there, and the "dither" is a no-op: the shadow comes
+     * out as a solid band of its colour, which is what a ring of black paint
+     * around every window looked like.
+     *
+     * FillOpaqueStippled draws the background where the tile is clear, so the
+     * raster op is applied to every pixel. With the background cleared and an
+     * AND, a set pixel keeps what it had and a clear one is emptied — which is
+     * the pattern the tile was built for. */
+    XSetBackground(core->display, dither, 0);
+    XSetFillStyle(core->display, dither, FillOpaqueStippled);
     XSetForeground(core->display, dither, 1);
     XSetFunction(core->display, dither, GXand);
     XFillRectangle(core->display, mask, dither, 0, 0,
