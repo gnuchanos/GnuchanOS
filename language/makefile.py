@@ -252,6 +252,16 @@ def dll_ext() -> str:
     return "dll" if os_name() == "windows" else "so"
 
 
+# Modules that link the SHARED Raylib.so must find it BESIDE THEMSELVES at run
+# time, wherever the tree is installed. `$ORIGIN` is the directory the loader
+# found the module in, so this rpath travels with the build output instead of
+# freezing the build machine's absolute path into DT_NEEDED. Its companion is
+# `-Wl,-soname,Raylib.so` on Raylib.so itself: without a SONAME the linker
+# records the path it was GIVEN, and there is nothing for rpath to resolve.
+# (One argv element, so nothing ever expands `$ORIGIN` along the way.)
+LINUX_RAYLIB_SO_RPATH = ["-Wl,-rpath,$ORIGIN"]
+
+
 # Lua kaynaklari (loslib.c) Linux'ta POSIX yapilandirmasiyla derlenir:
 #   * os.tmpname -> tmpnam yerine mkstemp (loslib.c: <unistd.h> + mkstemp).
 #     tmpnam'e referans veren obje, GNU ld'ye her linkte
@@ -1000,6 +1010,17 @@ def build_raylib_module(build_dir: Path) -> None:
     if os_name() == "windows":
         cmd += ["-Wl,--export-all-symbols", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lshell32", "-lole32"]
     else:
+        # SONAME is what makes Raylib.so RELOCATABLE, and it is not optional.
+        # Without it GNU ld records the path it was GIVEN as DT_NEEDED, so every
+        # module linked against it (RaylibFPS, RaylibSkybox, RaylibSimpleMesh,
+        # RaylibSimpleLight, RaylibSimpleWater, Raygui) hard-codes the build
+        # machine's absolute directory. Move the tree — build on one machine and
+        # run on another, which is the normal case — and those modules fail to
+        # load with "unknown module 'X'" and then crash on their first call. With
+        # a SONAME the dependency is recorded as just `Raylib.so`, and the
+        # modules find it beside themselves through the $ORIGIN rpath set in
+        # build_simple_modules/build_raygui_module/build_modules.
+        cmd += ["-Wl,-soname,Raylib.so"]
         cmd += ["-lGL", "-lpthread", "-ldl", "-lrt", "-lX11"]
     cmd += ["-lm"]
     run(cmd, cwd=ROOT)
@@ -1068,6 +1089,9 @@ def build_raygui_module(build_dir: Path) -> None:
     if os_name() == "windows":
         cmd += ["-Wl,--export-all-symbols", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lshell32", "-lole32"]
     else:
+        # Raygui.so depends on the SHARED Raylib.so, so it has to find it beside
+        # itself wherever the tree is installed (see LINUX_RAYLIB_SO_RPATH).
+        cmd += LINUX_RAYLIB_SO_RPATH
         cmd += ["-lGL", "-lpthread", "-ldl", "-lrt", "-lX11"]
     cmd += ["-lm"]
     run(cmd, cwd=ROOT)
@@ -1130,6 +1154,10 @@ def build_simple_modules(build_dir: Path) -> None:
             cmd += ["-Wl,--export-all-symbols", "-lwinmm", "-lgdi32", "-lopengl32",
                     "-luser32", "-lshell32", "-lole32"]
         else:
+            # Every module here depends on the SHARED Raylib.so, and this rpath is
+            # what lets it be found beside the module instead of at the path the
+            # build machine happened to use (see LINUX_RAYLIB_SO_RPATH).
+            cmd += LINUX_RAYLIB_SO_RPATH
             cmd += ["-lGL", "-lpthread", "-ldl", "-lrt", "-lX11"]
         cmd += ["-lm"]
         run(cmd, cwd=ROOT)
