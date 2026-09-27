@@ -32,7 +32,7 @@ gcl_BAR.call(
             ForegroundColor="#f069ff",
             FontSize=12,
             FontFamily="monospace",
-            symbol=" [●] ",
+            symbol="[●]",
             Gap=5,
         ),
         gcl_Widgets.EmptySpace(

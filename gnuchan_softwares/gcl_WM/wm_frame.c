@@ -33,6 +33,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <X11/extensions/shape.h>
+
 #include "wm_core.h"
 #include "wm_desktop.h"
 #include "wm_frame.h"
@@ -88,6 +90,208 @@ static WmFrameButton button_at(const WmFrame *frame, int x, int y) {
         }
     }
     return WM_BUTTON_COUNT;
+}
+
+/* --- the shape: rounded corners and the drop shadow -----------------------
+ *
+ * Both are cuts made in the window rather than things painted on it.
+ *
+ * A rounded corner is not drawn: it is a part of the window that is not there,
+ * so the desktop behind it shows through. The shape extension is what says
+ * which pixels of a window exist, and it clips the program inside the frame as
+ * well as the frame itself — which is what stops a client's square corner from
+ * poking out of a rounded frame.
+ *
+ * The shadow is the same cut used for a different end. X has no way to draw one
+ * window over another: that is a compositor's work, and this window manager is
+ * not one. What it can do is leave the shadow's pixels half-present in a fixed
+ * pattern, so half of them show the desktop and the other half show the
+ * shadow's colour. That is how a translucent shadow has been drawn on plain X
+ * since long before compositors existed, and the pattern is fine enough to read
+ * as a shadow rather than as a screen door.
+ */
+
+/* The room a shadow takes on every side of a frame. */
+#define WM_SHADOW_SPREAD 5
+
+/* Whether the script asked for a shadow, and how much room it takes. A script
+   that never called set_window_shadow_opacity() gets none. */
+static int frame_shadow_spread(const WmCore *core) {
+    if (core->config.shadow_opacity <= 0 || !core->config.shadow_color[0]) {
+        return 0;
+    }
+    return WM_SHADOW_SPREAD;
+}
+
+/* The colour the window is cleared to. With a shadow that is the shadow's own
+   colour, because the ring the shape keeps is exactly where the shadow is
+   seen; without one the ring does not exist and the frame's panel colour is
+   used, so nothing depends on a value the script never set. */
+static unsigned long frame_shadow_pixel(const WmCore *core) {
+    return frame_shadow_spread(core) > 0 ? core->style.shadow
+                                         : core->style.panel;
+}
+
+/* A one-bit mask of a rounded rectangle, filled in.
+ *
+ * The corners are four quarter circles and the rest is two overlapping bands: a
+ * band across the middle and one down it leave exactly the four corner squares
+ * to the arcs. A radius that does not fit is held to half the shorter side,
+ * which is the largest a corner can be before the two meet. */
+static Pixmap frame_round_mask(WmCore *core, int width, int height,
+                               int radius) {
+    if (width <= 0 || height <= 0) {
+        return None;
+    }
+    Pixmap mask = XCreatePixmap(core->display, core->root,
+                                (unsigned int)width, (unsigned int)height, 1);
+    if (mask == None) {
+        return None;
+    }
+
+    GC gc = XCreateGC(core->display, mask, 0, NULL);
+    XSetForeground(core->display, gc, 0);
+    XFillRectangle(core->display, mask, gc, 0, 0,
+                   (unsigned int)width, (unsigned int)height);
+    XSetForeground(core->display, gc, 1);
+
+    int r = radius;
+    if (r > width / 2) {
+        r = width / 2;
+    }
+    if (r > height / 2) {
+        r = height / 2;
+    }
+
+    if (r < 1) {
+        XFillRectangle(core->display, mask, gc, 0, 0,
+                       (unsigned int)width, (unsigned int)height);
+    } else {
+        XFillRectangle(core->display, mask, gc, r, 0,
+                       (unsigned int)(width - 2 * r), (unsigned int)height);
+        XFillRectangle(core->display, mask, gc, 0, r,
+                       (unsigned int)width, (unsigned int)(height - 2 * r));
+        /* Angles are in sixty-fourths of a degree, measured anticlockwise
+           from three o'clock, so each corner is the quarter of its circle
+           that faces into the rectangle. */
+        XFillArc(core->display, mask, gc, 0, 0,
+                 (unsigned int)(2 * r), (unsigned int)(2 * r),
+                 90 * 64, 90 * 64);
+        XFillArc(core->display, mask, gc, width - 2 * r, 0,
+                 (unsigned int)(2 * r), (unsigned int)(2 * r), 0, 90 * 64);
+        XFillArc(core->display, mask, gc, width - 2 * r, height - 2 * r,
+                 (unsigned int)(2 * r), (unsigned int)(2 * r),
+                 270 * 64, 90 * 64);
+        XFillArc(core->display, mask, gc, 0, height - 2 * r,
+                 (unsigned int)(2 * r), (unsigned int)(2 * r),
+                 180 * 64, 90 * 64);
+    }
+
+    XFreeGC(core->display, gc);
+    return mask;
+}
+
+/* Knock the holes that make a shadow read as translucent.
+ *
+ * The pattern is a four-by-four ordered dither: sixteen levels, each pixel of
+ * the tile given a threshold, and a pixel is kept when the shadow's opacity is
+ * above its threshold. Half-opaque therefore keeps half the pixels, scattered
+ * so that no row or column is left empty — a plain checkerboard is one level,
+ * and a shadow at a quarter opacity needs a finer answer than that.
+ *
+ * The tile is applied with AND rather than drawn: a pixel the pattern leaves
+ * clear is cleared in the mask, and one it sets is left as it was. That keeps
+ * the mask's own shape — the rounded corners the frame was cut to — and only
+ * takes pixels out of it. */
+static void frame_mask_dither(WmCore *core, Pixmap mask, int width, int height,
+                              int opacity) {
+    static const unsigned char BAYER[4][4] = {
+        {  0,  8,  2, 10 },
+        { 12,  4, 14,  6 },
+        {  3, 11,  1,  9 },
+        { 15,  7, 13,  5 },
+    };
+
+    Pixmap tile = XCreatePixmap(core->display, mask, 4, 4, 1);
+    if (tile == None) {
+        return;
+    }
+    GC gc = XCreateGC(core->display, tile, 0, NULL);
+    XSetForeground(core->display, gc, 0);
+    XFillRectangle(core->display, tile, gc, 0, 0, 4, 4);
+    XSetForeground(core->display, gc, 1);
+
+    int keep = opacity * 16 / 1000;
+    for (int y = 0; y < 4; y++) {
+        for (int x = 0; x < 4; x++) {
+            if (keep > BAYER[y][x]) {
+                XDrawPoint(core->display, tile, gc, x, y);
+            }
+        }
+    }
+    XFreeGC(core->display, gc);
+
+    GC dither = XCreateGC(core->display, mask, 0, NULL);
+    XSetStipple(core->display, dither, tile);
+    XSetFillStyle(core->display, dither, FillStippled);
+    XSetForeground(core->display, dither, 1);
+    XSetFunction(core->display, dither, GXand);
+    XFillRectangle(core->display, mask, dither, 0, 0,
+                   (unsigned int)width, (unsigned int)height);
+    XFreeGC(core->display, dither);
+    XFreePixmap(core->display, tile);
+}
+
+/* Cut the frame's window to the shape the script asked for.
+ *
+ * Called whenever a frame's size is put right and whenever the script is read
+ * again, because both the radius and the shadow are numbers a reload can
+ * change on windows that are already open. */
+static void frame_apply_shape(WmCore *core, WmFrame *frame) {
+    int width = frame_width(frame);
+    int height = frame_height(frame);
+    int spread = frame_shadow_spread(core);
+    int win_width = width + 2 * spread;
+    int win_height = height + 2 * spread;
+
+    /* The full rectangle is applied even when nothing is to be cut away,
+       rather than the shape being left alone: a script that reloads with the
+       radius taken out has to take the old corners off windows already open. */
+    Pixmap mask = frame_round_mask(core, win_width, win_height,
+                                   core->config.border_radius + spread);
+    if (mask == None) {
+        return;
+    }
+
+    if (spread > 0 && core->config.shadow_opacity < 1000) {
+        frame_mask_dither(core, mask, win_width, win_height,
+                          core->config.shadow_opacity);
+    }
+
+    if (spread > 0) {
+        /* The frame itself is solid: the shadow is only the ring around it,
+           and the dither must not be let into the window's own pixels. */
+        Pixmap solid = frame_round_mask(core, width, height,
+                                        core->config.border_radius);
+        if (solid != None) {
+            GC gc = XCreateGC(core->display, mask, 0, NULL);
+            XSetForeground(core->display, gc, 1);
+            XSetClipMask(core->display, gc, solid);
+            XSetClipOrigin(core->display, gc, spread, spread);
+            XFillRectangle(core->display, mask, gc, spread, spread,
+                           (unsigned int)width, (unsigned int)height);
+            XSetClipMask(core->display, gc, None);
+            XSetClipOrigin(core->display, gc, 0, 0);
+            XFreeGC(core->display, gc);
+            XFreePixmap(core->display, solid);
+        }
+    }
+
+    XShapeCombineMask(core->display, frame->frame, ShapeBounding, 0, 0,
+                      mask, ShapeSet);
+    XShapeCombineMask(core->display, frame->frame, ShapeClip, 0, 0,
+                      mask, ShapeSet);
+    XFreePixmap(core->display, mask);
 }
 
 /* --- the table ------------------------------------------------------------ */
@@ -352,8 +556,13 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
     /* Onto the screen in one operation, which is the whole point of the
        copy above. */
     if (target != frame->frame) {
+        /* The copy lands inside the window, past the ring the shadow is drawn
+           in. The ring itself is the window's own background, which the
+           server puts down before this, so it is not painted here. */
+        int spread = frame_shadow_spread(core);
         XCopyArea(display, frame->buffer, frame->frame, core->gc,
-                  0, 0, (unsigned int)width, (unsigned int)height, 0, 0);
+                  0, 0, (unsigned int)width, (unsigned int)height,
+                  spread, spread);
     }
     XFlush(display);
 }
@@ -377,8 +586,8 @@ static void frame_notify_configure(WmCore *core, WmFrame *frame) {
     event.xconfigure.display = core->display;
     event.xconfigure.event = frame->client;
     event.xconfigure.window = frame->client;
-    event.xconfigure.x = frame->border;
-    event.xconfigure.y = WM_TITLE_HEIGHT;
+    event.xconfigure.x = frame->border + frame_shadow_spread(core);
+    event.xconfigure.y = WM_TITLE_HEIGHT + frame_shadow_spread(core);
     event.xconfigure.width = frame->client_width;
     event.xconfigure.height = frame->client_height;
     event.xconfigure.border_width = 0;
@@ -391,13 +600,16 @@ static void frame_notify_configure(WmCore *core, WmFrame *frame) {
    through here, so the frame window, the client inside it and the bar drawn on
    it cannot disagree. */
 static void frame_apply(WmCore *core, WmFrame *frame) {
+    int spread = frame_shadow_spread(core);
+
     XMoveResizeWindow(core->display, frame->frame, frame->x, frame->y,
-                      (unsigned int)frame_width(frame),
-                      (unsigned int)frame_height(frame));
+                      (unsigned int)(frame_width(frame) + 2 * spread),
+                      (unsigned int)(frame_height(frame) + 2 * spread));
     XMoveResizeWindow(core->display, frame->client,
-                      frame->border, WM_TITLE_HEIGHT,
+                      frame->border + spread, WM_TITLE_HEIGHT + spread,
                       (unsigned int)frame->client_width,
                       (unsigned int)frame->client_height);
+    frame_apply_shape(core, frame);
     wm_frame_draw(core, frame);
 }
 
@@ -414,15 +626,28 @@ void wm_frame_apply_border(WmCore *core) {
 
     for (int i = 0; i < core->frame_count; i++) {
         WmFrame *frame = &core->frames[i];
-        if (frame->border == width) {
-            continue;
-        }
-        frame->border = width;
+
         /* A frame that is put away has no pixels to rearrange; it is given
            the new width and drawn when it comes back. */
         if (frame->minimized) {
+            frame->border = width;
             continue;
         }
+
+        /* The window's own colour is set again whatever changed, because the
+           shadow's colour is one of them and a script that recoloured the
+           shadow has to reach the windows that are already open. */
+        XSetWindowBackground(core->display, frame->frame,
+                             frame_shadow_pixel(core));
+
+        if (frame->border == width) {
+            /* Only the radius or the shadow changed: the geometry is already
+               right, so only the cut is put back. */
+            frame_apply_shape(core, frame);
+            continue;
+        }
+
+        frame->border = width;
         frame_apply(core, frame);
         frame_notify_configure(core, frame);
     }
@@ -707,10 +932,15 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
         frame->client_height = room_height;
     }
 
+    /* The window is the frame plus the ring its shadow is drawn in, and it is
+       cleared to the shadow's own colour: the shape keeps that ring, so the
+       colour behind the frame is what is seen there. */
+    int spread = frame_shadow_spread(core);
     frame->frame = XCreateSimpleWindow(
         core->display, core->root, frame->x, frame->y,
-        (unsigned int)frame_width(frame), (unsigned int)frame_height(frame),
-        0, 0, core->style.panel);
+        (unsigned int)(frame_width(frame) + 2 * spread),
+        (unsigned int)(frame_height(frame) + 2 * spread),
+        0, 0, frame_shadow_pixel(core));
     if (frame->frame == None) {
         return NULL;
     }
@@ -823,7 +1053,7 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
 
     XSetWindowBorderWidth(core->display, client, 0);
     XReparentWindow(core->display, client, frame->frame,
-                    frame->border, WM_TITLE_HEIGHT);
+                    frame->border + spread, WM_TITLE_HEIGHT + spread);
     XMapWindow(core->display, client);
     XMapWindow(core->display, frame->frame);
 
@@ -831,6 +1061,7 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
 
     frame_read_name(core, frame);
     wm_frame_read_icon(core, frame);
+    frame_apply_shape(core, frame);
     wm_frame_draw(core, frame);
     return frame;
 }

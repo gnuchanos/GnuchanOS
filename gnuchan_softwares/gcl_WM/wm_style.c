@@ -35,6 +35,11 @@ int wm_style_load(WmStyle *style, Display *display, int screen) {
     style->accent_dim       = wm_style_colour(display, screen, "#7b2cbf", white);
     style->border           = wm_style_colour(display, screen, "#c77dff", white);
     style->border_unfocused = wm_style_colour(display, screen, "#32143f", black);
+    /* Black, which is what a shadow almost always is and what the shipped
+       script asks for. It is only ever seen through the stipple the frame's
+       shape is cut to, so it reads as a darkening of the desktop rather than
+       as a band of colour. */
+    style->shadow           = wm_style_colour(display, screen, "#000000", black);
 
     style->border_width = 2;
 

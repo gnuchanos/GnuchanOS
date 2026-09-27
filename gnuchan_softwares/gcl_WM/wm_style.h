@@ -42,6 +42,11 @@ typedef struct WmStyle {
     unsigned long accent_dim;    /* #7b2cbf - an accented thing, idle        */
     unsigned long border;        /* #c77dff - a focused window's border      */
     unsigned long border_unfocused; /* #32143f - any other window's          */
+    /* The colour behind a window's drop shadow. It is a pixel of its own
+       because the ring the shadow is drawn in is cut to a stipple and cleared
+       to this colour, so the window shows it in a fixed pattern rather than
+       as a solid band — see wm_frame.c. */
+    unsigned long shadow;
 
     XftFont *font;               /* the one font the desktop draws in        */
 

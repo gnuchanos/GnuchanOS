@@ -65,6 +65,7 @@ static WmImage desktop_image;
    raise they pair with rather than next to the drawing they call. */
 static void desktop_configure_bar(WmCore *core);
 static void desktop_bar(WmCore *core);
+static void desktop_paint_background(WmCore *core);
 
 /* --- fonts ---------------------------------------------------------------- */
 
@@ -606,6 +607,10 @@ Window wm_desktop_bar_window(void) {
 
 /* Draw the bar again. See the header for why this is not simply bar(). */
 void wm_desktop_repaint(WmCore *core) {
+    /* The backdrop is put back as well as the bar: a reload can name a
+       different picture, and a wallpaper that only changed on the next login
+       is the one part of the script that did not follow it. */
+    desktop_paint_background(core);
     desktop_configure_bar(core);
     desktop_bar(core);
     wm_desktop_raise_bar(core);
@@ -864,31 +869,75 @@ static void desktop_bar(WmCore *core) {
 
 /* --- painting ------------------------------------------------------------- */
 
-/* The backdrop. Called at start and on every Expose of the root, so a session
-   that logs in over an old one does not inherit its picture. */
+/* The backdrop: the wallpaper, made the root window's own background.
+ *
+ * Painting the picture onto the root's pixels is not enough, and that is the
+ * bug this replaced. The root window has a background of its own — a flat
+ * colour — and the X server paints that background into every part of the root
+ * it has to paint, without asking anybody. Move a window away, close one, or
+ * clear the root, and the server fills the hole with the flat colour; the
+ * wallpaper that was painted there is gone, and nothing puts it back, because
+ * losing those pixels is not an event this manager is told about. It is the
+ * same mistake as drawing into a raylib frame buffer and never clearing it:
+ * the surface is painted by someone else the moment it is uncovered.
+ *
+ * A background *pixmap* is the answer. The server is handed the wallpaper once
+ * and paints it itself, into every part of the root it has to paint, for as
+ * long as the pixmap is set. Nothing has to be redrawn, because nothing is
+ * ever uncovered without the server drawing the picture back.
+ *
+ * The picture is tiled across the pixmap over the flat colour, so a
+ * transparent pixel of the file shows the colour underneath — the same rule
+ * the bar's own picture follows. */
 static void desktop_paint_background(WmCore *core) {
-    XSetForeground(core->display, core->gc, core->style.background);
-    XFillRectangle(core->display, core->root, core->gc,
-                   0, 0,
-                   (unsigned int)core->width, (unsigned int)core->height);
-
-    /* The wallpaper, when the script named one through
-       `gcl_Window.BackgroundImage`. It is drawn over the flat colour rather
-       than instead of it, so the colour underneath is what shows wherever the
-       picture has a transparent pixel, and it is the fallback when the file is
-       missing or does not decode. The picture is prepared once at the screen's
-       height and tiled across the width; see wm_image.c for why a picture is
-       tiled rather than stretched. Loading is cheap after the first call
-       because a name at a height already loaded is kept, so an Expose of the
-       root only copies. */
-    if (core->config.desktop_background_image[0]) {
-        if (wm_image_load(core, &desktop_image,
-                          core->config.desktop_background_image,
-                          core->height) == 0) {
-            wm_image_draw(core, &desktop_image, core->root, 0, 0,
-                          core->width);
-        }
+    if (core->width <= 0 || core->height <= 0) {
+        return;
     }
+
+    /* A picture that is not named, is not there, or does not decode leaves the
+       flat colour as the background. That colour is what the desktop had
+       before it could have a wallpaper, and a name that cannot be read is not
+       a reason to have no desktop at all. */
+    if (!core->config.desktop_background_image[0] ||
+        wm_image_load(core, &desktop_image,
+                      core->config.desktop_background_image,
+                      core->height) != 0) {
+        XSetWindowBackground(core->display, core->root, core->style.background);
+        XClearWindow(core->display, core->root);
+        XFlush(core->display);
+        return;
+    }
+
+    Pixmap backdrop = XCreatePixmap(core->display, core->root,
+                                    (unsigned int)core->width,
+                                    (unsigned int)core->height,
+                                    (unsigned int)DefaultDepth(core->display,
+                                                               core->screen));
+    if (backdrop == None) {
+        XSetWindowBackground(core->display, core->root, core->style.background);
+        XClearWindow(core->display, core->root);
+        XFlush(core->display);
+        return;
+    }
+
+    /* The flat colour first, so the picture is drawn over it rather than
+       instead of it: where the file has a transparent pixel the colour is what
+       shows, which is what makes a picture with a transparent part sit on the
+       desktop rather than in a box of its own. */
+    GC gc = XCreateGC(core->display, backdrop, 0, NULL);
+    XSetForeground(core->display, gc, core->style.background);
+    XFillRectangle(core->display, backdrop, gc, 0, 0,
+                   (unsigned int)core->width, (unsigned int)core->height);
+    XFreeGC(core->display, gc);
+
+    wm_image_draw(core, &desktop_image, backdrop, 0, 0, core->width);
+
+    /* The pixmap is the root's background from here on; the server keeps its
+       own copy of it for as long as that is true, so this one is ours to
+       free. */
+    XSetWindowBackgroundPixmap(core->display, core->root, backdrop);
+    XClearWindow(core->display, core->root);
+    XFreePixmap(core->display, backdrop);
     XFlush(core->display);
 }
 

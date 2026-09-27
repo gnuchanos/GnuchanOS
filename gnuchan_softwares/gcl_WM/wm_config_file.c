@@ -1012,6 +1012,16 @@ void wm_config_apply(WmCore *core) {
                             core->config.inactive_border,
                             core->style.border_unfocused);
     }
+    /* The shadow's colour, for the ring a frame's shape keeps around it. The
+       radius and the opacity are read by wm_frame.c straight from the config,
+       because they are geometry rather than palette: a radius is a number of
+       pixels and an opacity a fraction, and neither becomes a pixel here. */
+    if (core->config.shadow_color[0]) {
+        core->style.shadow =
+            wm_style_colour(core->display, core->screen,
+                            core->config.shadow_color,
+                            core->style.shadow);
+    }
     if (core->config.border_width > 0) {
         core->style.border_width = core->config.border_width;
     }
