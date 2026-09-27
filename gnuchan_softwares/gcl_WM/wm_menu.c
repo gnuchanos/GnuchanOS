@@ -153,7 +153,7 @@ static int run_program(char *const argv[]) {
  * message window. */
 static int window_belongs_to_manager(WmCore *core, Window window) {
     if (window == core->check_window ||
-        window == wm_desktop_bar_window() ||
+        wm_desktop_is_bar_window(window) ||
         window == wm_config_error_window()) {
         return 1;
     }

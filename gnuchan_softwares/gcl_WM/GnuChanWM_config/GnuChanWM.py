@@ -15,10 +15,18 @@ gcl_Window.BackgroundImage = "~/.config/GnuChanWM/bg.png"
 
 # can be call multiple bar but for now it's just one bar
 gcl_BAR.call(
+    # bar settings
     Position="top",
     Size=24,
     BackgroundColor="#27022b",
     Vsync=True,
+    X=0,
+    Y=10,
+    Left_EmptySpace=5,
+    Right_EmptySpace=5,
+    pose="horizontal", # vertical
+
+
     Widgets=[
         gcl_Widgets.CurrentLayout(
             start_layout=0,

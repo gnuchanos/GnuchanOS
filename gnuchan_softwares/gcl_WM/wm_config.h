@@ -29,6 +29,14 @@ typedef struct WmCore WmCore;
 #define WM_CONFIG_MAX_WIDGETS  64
 #define WM_CONFIG_MAX_BINDINGS 64
 
+/* How many bars one session may have. A script may call gcl_BAR.call(...) as
+   many times as it likes — a bar along the top, another along the bottom, a
+   small one down the side — and each call is one bar. There is a ceiling
+   because every bar is a window and a set of widgets the manager draws on a
+   timer, and a script that asked for a hundred of them is a script that has
+   stopped being a desktop. */
+#define WM_CONFIG_MAX_BARS 8
+
 /* The kinds of widget a bar can hold — one per gcl_Widgets.X the script can
    name. Adding a widget kind is adding one enumerator and one branch in the
    drawing code. */
@@ -93,11 +101,20 @@ typedef struct WmWidget {
     char separator_color[WM_CONFIG_TEXT_LENGTH];
 } WmWidget;
 
-/* The bar. A config may omit it; `present` is then 0 and no bar is drawn. */
+/* One bar. A config may have none, one, or several; a bar with `present` 0 is
+   not drawn, and the number of bars a session has is WmConfig.bar_count.
+ *
+ * Every field a script can set through gcl_BAR.call(...) lives here. Where a
+ * bar goes is asked in two ways that can disagree, and the rule is the same as
+ * everywhere else in this file: what the script wrote wins. X and Y, when
+ * given, are the bar's own top-left corner and are used as written; when they
+ * are not given, Position decides the edge the bar hugs. So a script that
+ * wants the ordinary top bar writes Position="top" and nothing else, and one
+ * that wants six pixels above the top edge writes Y=6. */
 typedef struct WmBar {
     int  present;
-    char position[WM_CONFIG_TEXT_LENGTH];         /* "top" or "bottom" */
-    int  size;
+    char position[WM_CONFIG_TEXT_LENGTH];   /* "top", "bottom", "left", "right" */
+    int  size;                              /* thickness of the strip          */
     char background[WM_CONFIG_TEXT_LENGTH];
 
     /* Draw the bar off-screen and put it up in one operation, rather than
@@ -114,6 +131,28 @@ typedef struct WmBar {
      * it saves — a remote X session over a slow link is the honest example —
      * which is the only reason the option exists. */
     int  vsync;
+
+    /* gcl_BAR.call(X=..., Y=...): where the bar's top-left corner is. A value
+       of -1, which is what "the script did not write it" becomes, means "let
+       Position decide". Zero is a real place — the very corner of the screen —
+       so it is kept as written rather than treated as missing. */
+    int  x;
+    int  y;
+
+    /* gcl_BAR.call(Left_EmptySpace=..., Right_EmptySpace=...): the room left
+       between the bar and the edge it would otherwise reach. On a horizontal
+       bar they shorten it from each end, which is how a top bar is inset from
+       the screen's sides; on a vertical one they shorten it top and bottom, so
+       the two names mean "the near end and the far end" wherever the bar runs.
+       They are what makes a bar that does not touch the screen's corners. */
+    int  left_empty;
+    int  right_empty;
+
+    /* gcl_BAR.call(pose="horizontal"|"vertical"): which way the bar runs and
+       so which way its widgets are laid out — left to right, or top to
+       bottom. A horizontal bar is as wide as it is allowed and as tall as
+       `size`; a vertical one is the other way round. */
+    char pose[WM_CONFIG_TEXT_LENGTH];
 
     WmWidget widgets[WM_CONFIG_MAX_WIDGETS];
     int widget_count;
@@ -225,7 +264,11 @@ typedef struct WmConfig {
     int touchpad_three_finger_swipe;
     int touchpad_four_finger_swipe;
 
-    WmBar bar;
+    /* The bars, in the order the script wrote them. A session may have none,
+       one, or several; `bar_count` is how many there are and every reader
+       walks the first `bar_count` of the array. */
+    WmBar bars[WM_CONFIG_MAX_BARS];
+    int bar_count;
 } WmConfig;
 
 /* The desktop the code had before it was configurable: the palette in

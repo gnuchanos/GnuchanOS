@@ -274,13 +274,43 @@ static void set_bar_widgets(const Script *script, WmBar *bar,
     }
 }
 
-/* gcl_BAR.call(Position=..., Size=..., BackgroundColor=..., Widgets=[...]) */
+/* The values a bar has when a gcl_BAR.call(...) does not name them.
+ *
+ * Written once so a bar the script wrote and the built-in bar of a machine
+ * with no script cannot disagree about what "no Y" or "no pose" means. X and Y
+ * are -1, which is "the script did not write them" — the corner the bar takes
+ * is then the one Position names — because 0 is a real place on the screen and
+ * must not be mistaken for "unset". */
+static void bar_defaults(WmBar *bar) {
+    memset(bar, 0, sizeof(*bar));
+    bar->present = 1;
+    bar->size = 24;
+    bar->vsync = 1;
+    bar->x = -1;
+    bar->y = -1;
+    copy_text(bar->position, sizeof(bar->position), "top");
+    copy_text(bar->pose, sizeof(bar->pose), "horizontal");
+    copy_text(bar->background, sizeof(bar->background), "#27022b");
+}
+
+/* gcl_BAR.call(Position=..., Size=..., BackgroundColor=..., Vsync=...,
+ *              X=..., Y=..., Left_EmptySpace=..., Right_EmptySpace=...,
+ *              pose=..., Widgets=[...])
+ *
+ * One call is one bar, and a script may make as many calls as it likes: a bar
+ * along the top, another along the bottom, a small one down the side. There is
+ * a ceiling (WM_CONFIG_MAX_BARS), because each bar is a window and a set of
+ * widgets drawn on a timer, and a call past the ceiling is reported and
+ * dropped rather than growing the array without end. */
 static void set_bar(const Script *script, WmConfig *config,
                     const WmStatement *statement) {
-    WmBar *bar = &config->bar;
+    if (config->bar_count >= WM_CONFIG_MAX_BARS) {
+        fprintf(stderr, "gnuchanwm: config: too many bars, one ignored\n");
+        return;
+    }
+    WmBar *bar = &config->bars[config->bar_count];
+    bar_defaults(bar);
     char text[WM_CONFIG_TEXT_LENGTH];
-
-    bar->present = 1;
 
     value_text(script, wm_config_argument(statement, "Position"),
                text, sizeof(text));
@@ -306,7 +336,36 @@ static void set_bar(const Script *script, WmConfig *config,
     bar->vsync = wm_config_value_bool(
         wm_config_argument(statement, "Vsync"), 1);
 
+    /* Where the bar is, when the script says so itself rather than naming an
+       edge. -1 is "not written"; any other number, zero included, is a place
+       on the screen and is kept. */
+    bar->x = wm_config_value_number(wm_config_argument(statement, "X"), -1);
+    bar->y = wm_config_value_number(wm_config_argument(statement, "Y"), -1);
+
+    /* The room left at each end of the bar. A negative number would be a bar
+       wider than the screen asks for, so it is held at zero. */
+    bar->left_empty = wm_config_value_number(
+        wm_config_argument(statement, "Left_EmptySpace"), 0);
+    if (bar->left_empty < 0) {
+        bar->left_empty = 0;
+    }
+    bar->right_empty = wm_config_value_number(
+        wm_config_argument(statement, "Right_EmptySpace"), 0);
+    if (bar->right_empty < 0) {
+        bar->right_empty = 0;
+    }
+
+    value_text(script, wm_config_argument(statement, "pose"),
+               text, sizeof(text));
+    if (text[0]) {
+        copy_text(bar->pose, sizeof(bar->pose), text);
+    }
+
     set_bar_widgets(script, bar, wm_config_argument(statement, "Widgets"));
+
+    /* The bar is only counted once it is finished, so a call that fails the
+       ceiling check above never leaves a half-written bar in the array. */
+    config->bar_count++;
 }
 
 /* --- the other statements ------------------------------------------------- */
@@ -679,13 +738,13 @@ static void walk(Script *script, WmConfig *config,
 
 /* --- the public entry points ---------------------------------------------- */
 
-static void bar_default_widget(WmConfig *config, WmWidgetKind kind,
+static void bar_default_widget(WmBar *bar, WmWidgetKind kind,
                                const char *background, const char *foreground)
 {
-    if (config->bar.widget_count >= WM_CONFIG_MAX_WIDGETS) {
+    if (bar->widget_count >= WM_CONFIG_MAX_WIDGETS) {
         return;
     }
-    WmWidget *widget = &config->bar.widgets[config->bar.widget_count++];
+    WmWidget *widget = &bar->widgets[bar->widget_count++];
     memset(widget, 0, sizeof(*widget));
     widget->kind = kind;
     copy_text(widget->background, sizeof(widget->background), background);
@@ -745,15 +804,14 @@ void wm_config_defaults(WmConfig *config) {
     config->touchpad_two_finger_scroll = 1;
 
     /* The bar the shipped script asks for, so a machine with no script still
-       has a bar rather than an empty edge. */
-    config->bar.present = 1;
-    config->bar.vsync = 1;
-    copy_text(config->bar.position, sizeof(config->bar.position), "top");
-    config->bar.size = 24;
-    copy_text(config->bar.background, sizeof(config->bar.background), "#27022b");
-    bar_default_widget(config, WM_WIDGET_CURRENT_LAYOUT, "#53055c", "#f069ff");
-    bar_default_widget(config, WM_WIDGET_EMPTY_SPACE, "#940da3", "#f069ff");
-    bar_default_widget(config, WM_WIDGET_CLOCK, "#53055c", "#f069ff");
+       has a bar rather than an empty edge. It is one bar, the first of the
+       array, and it is filled the same way the script's own call fills one. */
+    config->bar_count = 1;
+    WmBar *bar = &config->bars[0];
+    bar_defaults(bar);
+    bar_default_widget(bar, WM_WIDGET_CURRENT_LAYOUT, "#53055c", "#f069ff");
+    bar_default_widget(bar, WM_WIDGET_EMPTY_SPACE, "#940da3", "#f069ff");
+    bar_default_widget(bar, WM_WIDGET_CLOCK, "#53055c", "#f069ff");
 }
 
 char *wm_config_path(char *buffer, unsigned int size) {
@@ -818,7 +876,11 @@ int wm_config_load(WmConfig *config, const char *path) {
        nobody asked for. */
     WmConfig parsed = *config;
     if (defines_bar) {
-        parsed.bar.widget_count = 0;
+        /* The script names its own bars, so the ones read before are dropped
+           whole. A script that lists one top bar and one bottom bar means two
+           bars, not the two it listed added to whatever was there — so the
+           count goes to zero and each gcl_BAR.call(...) appends one. */
+        parsed.bar_count = 0;
     }
     if (defines_keys) {
         parsed.binding_count = 0;
@@ -852,17 +914,23 @@ int wm_config_load(WmConfig *config, const char *path) {
        keeps the number it had. */
     if (defines_bar) {
         int highest = -1;
-        for (int i = 0; i < parsed.bar.widget_count; i++) {
-            const WmWidget *widget = &parsed.bar.widgets[i];
-            if (widget->kind != WM_WIDGET_CURRENT_LAYOUT) {
-                continue;
-            }
-            int top = widget->end_layout;
-            if (widget->start_layout > top) {
-                top = widget->start_layout;
-            }
-            if (top > highest) {
-                highest = top;
+        /* Every bar is asked, not just the first: a layout widget on the
+           bottom bar and a range on the top one both count, and the session's
+           workspace number is the highest any of them names. */
+        for (int b = 0; b < parsed.bar_count; b++) {
+            const WmBar *bar = &parsed.bars[b];
+            for (int i = 0; i < bar->widget_count; i++) {
+                const WmWidget *widget = &bar->widgets[i];
+                if (widget->kind != WM_WIDGET_CURRENT_LAYOUT) {
+                    continue;
+                }
+                int top = widget->end_layout;
+                if (widget->start_layout > top) {
+                    top = widget->start_layout;
+                }
+                if (top > highest) {
+                    highest = top;
+                }
             }
         }
         if (highest >= 0 && highest < WM_WORKSPACE_MAX) {
@@ -882,13 +950,31 @@ int wm_config_load(WmConfig *config, const char *path) {
 }
 
 unsigned int wm_config_bar_edges(const WmConfig *config) {
-    if (!config || !config->bar.present) {
+    if (!config) {
         return 0;
     }
-    if (strcmp(config->bar.position, "bottom") == 0) {
-        return 1u << WM_EDGE_BOTTOM;
+    /* Every bar is asked, and the answer is the union of them: a session with
+       a top bar and a bottom bar takes room at both edges, and a window is
+       kept clear of each. A bar that placed itself with X and Y rather than
+       naming an edge is not an edge bar and contributes nothing here — it is
+       floating somewhere on the screen rather than against a side. */
+    unsigned int edges = 0;
+    for (int i = 0; i < config->bar_count; i++) {
+        const WmBar *bar = &config->bars[i];
+        if (!bar->present || bar->size <= 0) {
+            continue;
+        }
+        if (strcmp(bar->position, "bottom") == 0) {
+            edges |= 1u << WM_EDGE_BOTTOM;
+        } else if (strcmp(bar->position, "left") == 0) {
+            edges |= 1u << WM_EDGE_LEFT;
+        } else if (strcmp(bar->position, "right") == 0) {
+            edges |= 1u << WM_EDGE_RIGHT;
+        } else {
+            edges |= 1u << WM_EDGE_TOP;
+        }
     }
-    return 1u << WM_EDGE_TOP;
+    return edges;
 }
 
 WmMouseAction wm_config_mouse_action(const WmConfig *config,
@@ -913,30 +999,49 @@ void wm_config_workarea(const WmConfig *config, int screen_width,
     *y = 0;
     *width = screen_width;
     *height = screen_height;
-
-    /* A bar that is not present — or is 0 pixels tall, which a hand-written
-       script can ask for — leaves the whole screen to the windows. */
-    if (!config || !config->bar.present || config->bar.size <= 0) {
+    if (!config) {
         return;
     }
 
-    int strip = config->bar.size;
-    if (strip >= screen_height) {
-        strip = screen_height > 0 ? screen_height - 1 : 0;
-    }
-    if (strip <= 0) {
-        return;
-    }
+    /* Every edge bar takes its strip out of the workarea, one after another,
+       so a top bar *and* a bottom bar both come off the height and a left bar
+       off the width. Only bars that named an edge count: one placed with X and
+       Y floats over the screen and does not sit against a side, so it takes no
+       room from the windows below. A strip that would leave nothing is held so
+       that at least one pixel of screen is left, which is what stops a script
+       asking for a bar taller than the screen from producing a negative
+       workarea. */
+    for (int i = 0; i < config->bar_count; i++) {
+        const WmBar *bar = &config->bars[i];
+        if (!bar->present || bar->size <= 0) {
+            continue;
+        }
+        int strip = bar->size;
 
-    /* The bar is along an edge, so it takes height from the top or the bottom
-       and leaves the width alone. A bottom bar moves the origin up rather than
-       shrinking from the top, which is the whole difference between the two:
-       the window has to start below a top bar and stop above a bottom one. */
-    if (strcmp(config->bar.position, "bottom") == 0) {
-        *height = screen_height - strip;
-    } else {
-        *y = strip;
-        *height = screen_height - strip;
+        if (strcmp(bar->position, "bottom") == 0) {
+            if (strip >= *height) {
+                strip = *height > 0 ? *height - 1 : 0;
+            }
+            *height -= strip;
+        } else if (strcmp(bar->position, "left") == 0) {
+            if (strip >= *width) {
+                strip = *width > 0 ? *width - 1 : 0;
+            }
+            *x += strip;
+            *width -= strip;
+        } else if (strcmp(bar->position, "right") == 0) {
+            if (strip >= *width) {
+                strip = *width > 0 ? *width - 1 : 0;
+            }
+            *width -= strip;
+        } else if (strncmp(bar->position, "top", 3) == 0 ||
+                   bar->position[0] == '\0') {
+            if (strip >= *height) {
+                strip = *height > 0 ? *height - 1 : 0;
+            }
+            *y += strip;
+            *height -= strip;
+        }
     }
 }
 
@@ -948,28 +1053,29 @@ void wm_config_workarea(const WmConfig *config, int screen_width,
  * to the log, which is where a session with no terminal can be read back from.
  */
 
-static const char *config_bar_edge_name(const WmConfig *config) {
-    if (!config->bar.present) {
-        return "none";
-    }
-    return strcmp(config->bar.position, "bottom") == 0 ? "bottom" : "top";
-}
-
 static void config_report(const WmConfig *config, const char *origin) {
     fprintf(stderr,
             "gnuchanwm: config %s: border %s / %s, %d binding(s), "
-            "bar %s %dx%d with %d widget(s), %d workspace(s), "
-            "terminal '%s'\n",
+            "%d bar(s), %d workspace(s), terminal '%s'\n",
             origin,
             config->active_border[0] ? config->active_border : "(default)",
             config->inactive_border[0] ? config->inactive_border : "(default)",
             config->binding_count,
-            config_bar_edge_name(config),
-            config->bar.size,
-            config->bar.present,
-            config->bar.widget_count,
+            config->bar_count,
             config->workspace_count,
             config->terminal[0] ? config->terminal : "(from $TERMINAL)");
+    /* One line per bar, so a wrong pose or a bar that did not appear can be
+       told apart from a bar that was never read. */
+    for (int i = 0; i < config->bar_count; i++) {
+        const WmBar *bar = &config->bars[i];
+        fprintf(stderr,
+                "gnuchanwm: config %s: bar %d %s %s size %d, %d widget(s), "
+                "at (%d,%d), space %d/%d\n",
+                origin, i, bar->position[0] ? bar->position : "(top)",
+                bar->pose[0] ? bar->pose : "horizontal",
+                bar->size, bar->widget_count, bar->x, bar->y,
+                bar->left_empty, bar->right_empty);
+    }
     fprintf(stderr,
             "gnuchanwm: config %s: theme %s, icons %s, cursor %s\n",
             origin,

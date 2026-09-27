@@ -40,6 +40,6 @@ void wm_desktop_raise_bar(WmCore *core);
 /* The bar's own window, or None when the session has no bar. The menu's logout
    walk needs it because the bar is a window this process owns, and killing a
    window this process owns closes its connection to the server. */
-Window wm_desktop_bar_window(void);
+int wm_desktop_is_bar_window(Window window);
 
 #endif /* GNUCHANWM_DESKTOP_H */

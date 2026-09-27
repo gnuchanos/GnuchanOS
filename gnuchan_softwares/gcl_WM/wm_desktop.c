@@ -49,8 +49,14 @@
    repainting anything worth measuring. */
 #define WM_TICK_MS 500
 
-/* The bar's window. Module state rather than core state: nothing but this file
-   draws or moves the bar. */
+/* The bars' windows: one per bar the config asked for, in the config's own
+   order. Module state rather than core state: nothing but this file draws or
+   moves a bar. `bar_window` is not one of these — it is the window currently
+   being drawn, set for the length of one bar's paint so the drawing and
+   measuring helpers below can name "the bar I am working on" without every one
+   of them taking a bar index as well as a window. */
+static Window bar_windows[WM_CONFIG_MAX_BARS];
+static int bar_window_count = 0;
 static Window bar_window = None;
 
 /* The wallpaper, when the script named one through `gcl_Window.BackgroundImage`
@@ -392,6 +398,11 @@ static Cursor desktop_make_cursor(WmCore *core) {
 typedef struct BarIconBox {
     int x, y, width, height;
     Window client;
+    /* Which bar the box was drawn on. A press is delivered to one bar's own
+       window, and each bar has its boxes in its own coordinates — so the
+       window is part of the match, or a press on the top bar would be tested
+       against the bottom bar's icons at the same x. */
+    Window bar;
 } BarIconBox;
 
 static BarIconBox bar_icon_boxes[WM_MAX_FRAMES];
@@ -461,8 +472,13 @@ static int bar_layout_cells(WmCore *core, const WmWidget *widget,
            A cell is not always one character: a symbol like " [●] " is a
            whole cell with its own spacing, which is why this is a string. */
         if (widget->symbol[0]) {
-            snprintf(cells[written], WM_LAYOUT_CELL_LENGTH, "%s",
-                     widget->symbol);
+            /* Written with an explicit field width: a symbol is the config's
+               own string and may be far longer than one cell is, and a cell
+               that overran its buffer would write over the next. Truncating a
+               symbol longer than a cell is the right answer — there is no room
+               to draw the rest of it anyway. */
+            snprintf(cells[written], WM_LAYOUT_CELL_LENGTH, "%.*s",
+                     WM_LAYOUT_CELL_LENGTH - 1, widget->symbol);
         } else {
             snprintf(cells[written], WM_LAYOUT_CELL_LENGTH, "%d", number);
         }
@@ -537,50 +553,169 @@ static void bar_widget_label(const WmWidget *widget, char *out,
 
 /* --- the bar window ------------------------------------------------------- */
 
-/* Put the bar window where the config says it goes, making it the first time.
-   Called at start, on a screen resize and after a reload — so the strip follows
-   the config rather than being fixed at whatever the session started with. */
-static void desktop_configure_bar(WmCore *core) {
-    const WmBar *bar = &core->config.bar;
+/* Where a bar goes on the screen, and how big it is.
+ *
+ * Three things are asked of a bar and they can disagree, so the order is
+ * fixed: Position says which edge the bar hugs and makes it as long as that
+ * edge, then X and Y — when the script wrote them — place the bar's own
+ * corner, and last Left_EmptySpace and Right_EmptySpace pull the two ends of
+ * the bar inwards. Doing it in that order is what makes a bar written as
+ * Position="top", X=0, Y=10, Left_EmptySpace=5 sit ten pixels down from the
+ * top with five pixels of screen showing at each end, instead of one setting
+ * silently cancelling another.
+ *
+ * "Along" is the way the bar runs and "across" is its thickness. A horizontal
+ * bar is as long as the screen is wide and as thick as Size; a vertical one is
+ * the other way round. The two ends are the left and right of a horizontal bar
+ * and the top and bottom of a vertical one, which is why the empty spaces are
+ * applied to the along axis whichever way the bar runs. */
+static void bar_geometry(WmCore *core, const WmBar *bar,
+                         int *x, int *y, int *width, int *height) {
+    int vertical = strcmp(bar->pose, "vertical") == 0;
+    int size = bar->size;
+    if (size <= 0) {
+        *x = 0;
+        *y = 0;
+        *width = 0;
+        *height = 0;
+        return;
+    }
 
+    int bx = 0;
+    int by = 0;
+    int bw = 0;
+    int bh = 0;
+
+    if (vertical) {
+        bw = size;
+        bh = core->height;
+        if (strcmp(bar->position, "right") == 0) {
+            bx = core->width - size;
+        }
+    } else {
+        bw = core->width;
+        bh = size;
+        if (strcmp(bar->position, "bottom") == 0) {
+            by = core->height - size;
+        }
+    }
+
+    /* The script's own corner, when it wrote one. Zero is a place and is kept;
+       only a negative value — "not written" — leaves the edge where Position
+       put it. */
+    if (bar->x >= 0) {
+        bx = bar->x;
+    }
+    if (bar->y >= 0) {
+        by = bar->y;
+    }
+
+    /* The room left at each end, taken off the along axis: the width of a
+       horizontal bar, the height of a vertical one. A pair that would leave
+       nothing is dropped rather than producing a bar of negative size. */
+    if (vertical) {
+        if (bar->left_empty + bar->right_empty < bh) {
+            by += bar->left_empty;
+            bh -= bar->left_empty + bar->right_empty;
+        }
+    } else {
+        if (bar->left_empty + bar->right_empty < bw) {
+            bx += bar->left_empty;
+            bw -= bar->left_empty + bar->right_empty;
+        }
+    }
+
+    if (bw < 1) {
+        bw = 1;
+    }
+    if (bh < 1) {
+        bh = 1;
+    }
+    *x = bx;
+    *y = by;
+    *width = bw;
+    *height = bh;
+}
+
+/* Make one bar's window, or move the one that is already there.
+ *
+ * The window is created once and only moved afterwards — on a screen resize,
+ * on a reload, on a change of position — because a bar that is destroyed and
+ * made again loses what is drawn on it and is seen to blink. Only a window
+ * this manager no longer wants, one past the number of bars the config now
+ * asks for, is unmapped; it is left alive so a reload that brings the bar
+ * back does not have to make it again. */
+static void desktop_configure_one_bar(WmCore *core, int index,
+                                      const WmBar *bar) {
+    if (index < 0 || index >= WM_CONFIG_MAX_BARS) {
+        return;
+    }
     if (!bar->present || bar->size <= 0) {
-        if (bar_window != None) {
-            XUnmapWindow(core->display, bar_window);
+        if (bar_windows[index] != None) {
+            XUnmapWindow(core->display, bar_windows[index]);
         }
         return;
     }
 
-    int height = bar->size;
-    int y = strcmp(bar->position, "bottom") == 0 ? core->height - height : 0;
+    int x, y, width, height;
+    bar_geometry(core, bar, &x, &y, &width, &height);
 
-    if (bar_window == None) {
+    if (bar_windows[index] == None) {
         XSetWindowAttributes attributes;
         memset(&attributes, 0, sizeof(attributes));
         /* Override-redirect: the server maps this window without asking the
-           manager, so the bar can never be framed, focused or managed. */
+           manager, so a bar can never be framed, focused or managed. */
         attributes.override_redirect = True;
         attributes.event_mask = ExposureMask | ButtonPressMask;
         attributes.background_pixel = BlackPixel(core->display, core->screen);
         attributes.border_pixel = 0;
 
-        bar_window = XCreateWindow(core->display, core->root,
-                                   0, y,
-                                   (unsigned int)core->width,
-                                   (unsigned int)height,
-                                   0, CopyFromParent, InputOutput,
-                                   CopyFromParent,
-                                   CWOverrideRedirect | CWEventMask |
-                                   CWBackPixel | CWBorderPixel,
-                                   &attributes);
-        if (bar_window == None) {
-            fprintf(stderr, "gnuchanwm: cannot make the bar window\n");
+        bar_windows[index] = XCreateWindow(core->display, core->root,
+                                           x, y,
+                                           (unsigned int)width,
+                                           (unsigned int)height,
+                                           0, CopyFromParent, InputOutput,
+                                           CopyFromParent,
+                                           CWOverrideRedirect | CWEventMask |
+                                           CWBackPixel | CWBorderPixel,
+                                           &attributes);
+        if (bar_windows[index] == None) {
+            fprintf(stderr, "gnuchanwm: cannot make bar %d's window\n", index);
             return;
         }
     } else {
-        XMoveResizeWindow(core->display, bar_window, 0, y,
-                          (unsigned int)core->width, (unsigned int)height);
+        XMoveResizeWindow(core->display, bar_windows[index], x, y,
+                          (unsigned int)width, (unsigned int)height);
     }
-    XMapRaised(core->display, bar_window);
+    XMapRaised(core->display, bar_windows[index]);
+    XFlush(core->display);
+}
+
+/* Put every bar where the config says it goes. Called at start, on a screen
+   resize and after a reload, so the bars follow the config rather than being
+   fixed at whatever the session started with. */
+static void desktop_configure_bar(WmCore *core) {
+    int count = core->config.bar_count;
+    if (count > WM_CONFIG_MAX_BARS) {
+        count = WM_CONFIG_MAX_BARS;
+    }
+    if (count < 0) {
+        count = 0;
+    }
+
+    for (int i = 0; i < count; i++) {
+        desktop_configure_one_bar(core, i, &core->config.bars[i]);
+    }
+    /* The windows of bars the config no longer asks for are put away, not
+       destroyed: the reload that dropped a bar may be followed by one that
+       brings it back at the same index, and a bar that was never destroyed is
+       one it can simply be shown at again. */
+    for (int i = count; i < bar_window_count && i < WM_CONFIG_MAX_BARS; i++) {
+        if (bar_windows[i] != None) {
+            XUnmapWindow(core->display, bar_windows[i]);
+        }
+    }
+    bar_window_count = count;
     XFlush(core->display);
 }
 
@@ -593,15 +728,28 @@ static void desktop_configure_bar(WmCore *core) {
  * being dragged: every restack makes the window underneath repaint, and a
  * repaint on a timer looks like a flicker that nothing is causing. */
 void wm_desktop_raise_bar(WmCore *core) {
-    if (bar_window != None) {
-        XRaiseWindow(core->display, bar_window);
-        XFlush(core->display);
+    for (int i = 0; i < bar_window_count && i < WM_CONFIG_MAX_BARS; i++) {
+        if (bar_windows[i] != None) {
+            XRaiseWindow(core->display, bar_windows[i]);
+        }
     }
+    XFlush(core->display);
 }
 
-/* The bar's own window, or None. See the header for who asks and why. */
-Window wm_desktop_bar_window(void) {
-    return bar_window;
+/* Whether a window is one of the desktop's own bars. The menu asks this before
+   it decides whether a window on screen is an open program or the desktop's
+   furniture: a bar is the latter, and must never be listed or closed as if it
+   were something the user opened. */
+int wm_desktop_is_bar_window(Window window) {
+    if (window == None) {
+        return 0;
+    }
+    for (int i = 0; i < bar_window_count && i < WM_CONFIG_MAX_BARS; i++) {
+        if (bar_windows[i] == window) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* Draw the bar again. See the header for why this is not simply bar(). */
@@ -614,28 +762,19 @@ void wm_desktop_repaint(WmCore *core) {
     wm_desktop_raise_bar(core);
 }
 
-/* The bar: the strip, then its widgets, left to right. See the note at the top
-   of the file for why the width is shared rather than each widget placed. */
-static void desktop_bar(WmCore *core) {
-    if (bar_window == None) {
-        return;
-    }
-    const WmBar *bar = &core->config.bar;
-    if (!bar->present || bar->size <= 0) {
-        return;
-    }
-    int height = bar->size;
-    int bar_width = core->width;
-
-    /* Which windows the group box lists, worked out once so the measuring
-       pass and the drawing pass below agree about how many there are. */
-    bar_collect_icons(core);
-    bar_icon_count = 0;
-
+/* One bar: the strip, then its widgets, laid out the way its pose runs.
+ *
+ * This is the horizontal case and the one the desktop has always drawn: a
+ * strip as tall as Size and as wide as the bar, its widgets placed left to
+ * right and sharing the width. A widget with text asks for the room that text
+ * takes, an expanding space takes a share of what is left, and the clock is
+ * pushed to whichever end the space was written at. */
+static void bar_draw_horizontal(WmCore *core, const WmBar *bar, Window window,
+                                int bar_width, int height) {
     /* Everything is drawn into the buffer and put on the window in one copy at
        the end, when the config asked for it. See bar_target() for why. */
     Drawable canvas = bar->vsync ? bar_target(core, bar_width, height)
-                                 : bar_window;
+                                 : window;
 
     unsigned long strip_colour = bar_colour(core, bar->background,
                                             core->style.panel);
@@ -644,8 +783,8 @@ static void desktop_bar(WmCore *core) {
                    0, 0, (unsigned int)bar_width, (unsigned int)height);
 
     if (bar->widget_count == 0) {
-        if (canvas != bar_window) {
-            XCopyArea(core->display, canvas, bar_window, core->gc, 0, 0,
+        if (canvas != window) {
+            XCopyArea(core->display, canvas, window, core->gc, 0, 0,
                       (unsigned int)bar_width, (unsigned int)height, 0, 0);
         }
         XFlush(core->display);
@@ -731,7 +870,7 @@ static void desktop_bar(WmCore *core) {
         }
     }
 
-    int leftover = core->width - needed;
+    int leftover = bar_width - needed;
     if (leftover < 0) {
         leftover = 0;
     }
@@ -830,6 +969,7 @@ static void desktop_bar(WmCore *core) {
                     bar_icon_boxes[bar_icon_count].width = WM_ICON_SIZE;
                     bar_icon_boxes[bar_icon_count].height = WM_ICON_SIZE;
                     bar_icon_boxes[bar_icon_count].client = frame->client;
+                    bar_icon_boxes[bar_icon_count].bar = window;
                     bar_icon_count++;
                 }
                 cursor += WM_ICON_SIZE;
@@ -858,11 +998,251 @@ static void desktop_bar(WmCore *core) {
     }
 
     /* The whole bar, finished, onto the window in one operation. */
-    if (canvas != bar_window) {
-        XCopyArea(core->display, canvas, bar_window, core->gc, 0, 0,
+    if (canvas != window) {
+        XCopyArea(core->display, canvas, window, core->gc, 0, 0,
                   (unsigned int)bar_width, (unsigned int)height, 0, 0);
     }
     XFlush(core->display);
+}
+
+/* One bar, written vertically: the strip as wide as Size and as tall as the
+ * bar, its widgets stacked top to bottom and sharing the height.
+ *
+ * It is the same idea as the horizontal case with the two axes exchanged: a
+ * widget asks for the along-axis room its content takes — the height of a line
+ * of text, the height of the icons, the height of the row of workspace cells —
+ * an expanding space takes a share of what is left, and each is placed under
+ * the one before. Text is drawn the same way up as everywhere else rather than
+ * rotated: a vertical bar is a list of labels down the side of the screen, not
+ * a bar turned on its side, and a rotated word is harder to read than a short
+ * one.
+ *
+ * The empty spaces follow the same rule the geometry gives them: on a vertical
+ * bar they are room at the top and bottom, which is why the along axis here is
+ * the height and Left_EmptySpace is the top. */
+static void bar_draw_vertical(WmCore *core, const WmBar *bar, Window window,
+                              int width, int bar_height) {
+    Drawable canvas = bar->vsync ? bar_target(core, width, bar_height)
+                                 : window;
+
+    unsigned long strip_colour = bar_colour(core, bar->background,
+                                            core->style.panel);
+    XSetForeground(core->display, core->gc, strip_colour);
+    XFillRectangle(core->display, canvas, core->gc,
+                   0, 0, (unsigned int)width, (unsigned int)bar_height);
+
+    if (bar->widget_count == 0) {
+        if (canvas != window) {
+            XCopyArea(core->display, canvas, window, core->gc, 0, 0,
+                      (unsigned int)width, (unsigned int)bar_height, 0, 0);
+        }
+        XFlush(core->display);
+        return;
+    }
+
+    static char labels[WM_CONFIG_MAX_WIDGETS][WM_CONFIG_TEXT_LENGTH];
+    static char layout_cells[WM_CONFIG_MAX_WIDGETS][WM_WORKSPACE_MAX]
+                            [WM_LAYOUT_CELL_LENGTH];
+    static int layout_numbers[WM_CONFIG_MAX_WIDGETS][WM_WORKSPACE_MAX];
+    int layout_cell_count[WM_CONFIG_MAX_WIDGETS];
+    XftFont *fonts[WM_CONFIG_MAX_WIDGETS];
+    int extents[WM_CONFIG_MAX_WIDGETS];
+    int flexible_count = 0;
+    int needed = 0;
+
+    for (int i = 0; i < bar->widget_count && i < WM_CONFIG_MAX_WIDGETS; i++) {
+        const WmWidget *widget = &bar->widgets[i];
+        layout_cell_count[i] = 0;
+        bar_widget_label(widget, labels[i], sizeof(labels[i]));
+        fonts[i] = bar_font_for(core, widget);
+        int line = fonts[i] ? (fonts[i]->ascent + fonts[i]->descent) : 16;
+
+        if (widget->kind == WM_WIDGET_EMPTY_SPACE) {
+            if (widget->expanding) {
+                extents[i] = 0;
+                flexible_count++;
+            } else {
+                extents[i] = widget->horizontal;
+                needed += extents[i];
+            }
+        } else if (widget->kind == WM_WIDGET_GROUP_BOX) {
+            if (bar_icon_total > 0) {
+                int gap = bar_icon_gap(core, widget, fonts[i]);
+                extents[i] = bar_icon_total * WM_ICON_SIZE +
+                             (bar_icon_total - 1) * gap;
+            } else {
+                extents[i] = 0;
+            }
+            needed += extents[i];
+        } else if (widget->kind == WM_WIDGET_CURRENT_LAYOUT) {
+            layout_cell_count[i] = bar_layout_cells(
+                core, widget, layout_cells[i], layout_numbers[i],
+                WM_WORKSPACE_MAX);
+            int gap = bar_layout_gap(widget);
+            extents[i] = layout_cell_count[i] * (line + gap);
+            needed += extents[i];
+        } else {
+            extents[i] = line + 2 * WM_BAR_PADDING;
+            needed += extents[i];
+        }
+    }
+
+    int leftover = bar_height - needed;
+    if (leftover < 0) {
+        leftover = 0;
+    }
+    int share = flexible_count > 0 ? leftover / flexible_count : 0;
+
+    int y = 0;
+    for (int i = 0; i < bar->widget_count && i < WM_CONFIG_MAX_WIDGETS; i++) {
+        const WmWidget *widget = &bar->widgets[i];
+        int extent = (widget->kind == WM_WIDGET_EMPTY_SPACE && widget->expanding)
+                         ? share : extents[i];
+        if (extent < 0) {
+            extent = 0;
+        }
+
+        unsigned long background = bar_colour(core, widget->background,
+                                              strip_colour);
+        XSetForeground(core->display, core->gc, background);
+        XFillRectangle(core->display, canvas, core->gc,
+                       0, y, (unsigned int)width, (unsigned int)extent);
+
+        if (widget->kind == WM_WIDGET_CURRENT_LAYOUT && fonts[i]) {
+            unsigned long foreground = bar_colour(core, widget->foreground,
+                                                  core->style.text);
+            unsigned long active =
+                bar_colour(core, core->config.active_border, core->style.accent);
+            int gap = bar_layout_gap(widget);
+            int line = fonts[i]->ascent + fonts[i]->descent;
+            int cursor = y;
+            for (int c = 0; c < layout_cell_count[i]; c++) {
+                int room = wm_style_text_width(core->display, fonts[i],
+                                               layout_cells[i][c]);
+                int current = layout_numbers[i][c] == core->current_workspace;
+                wm_style_text(core->display, core->screen, canvas, fonts[i],
+                              (width - room) / 2,
+                              cursor + gap / 2 + fonts[i]->ascent,
+                              layout_cells[i][c],
+                              current ? active : foreground);
+                cursor += line + gap;
+            }
+        } else if (widget->kind == WM_WIDGET_GROUP_BOX) {
+            int gap = bar_icon_gap(core, widget, fonts[i]);
+            int separator = bar_separator_width(core, widget, fonts[i]);
+            unsigned long icon_colour = bar_colour(core, widget->foreground,
+                                                   core->style.text);
+            unsigned long sep_colour =
+                bar_colour(core, widget->separator_color,
+                           bar_colour(core, widget->foreground,
+                                      core->style.text));
+            int cursor = y + WM_ICON_GAP / 2;
+            for (int k = 0; k < bar_icon_total && k < WM_MAX_FRAMES; k++) {
+                WmFrame *frame = bar_icon_frames[k];
+                int icon_x = (width - WM_ICON_SIZE) / 2;
+                if (!wm_frame_draw_icon(core, frame, canvas, icon_x, cursor,
+                                        WM_ICON_SIZE) && fonts[i]) {
+                    char letter[2] = { '?', '\0' };
+                    unsigned char first = (unsigned char)frame->name[0];
+                    if (frame->has_name && first >= 0x20 && first != 0x7f) {
+                        letter[0] = (char)first;
+                    }
+                    int letter_width = wm_style_text_width(core->display,
+                                                           fonts[i], letter);
+                    int line = fonts[i]->ascent + fonts[i]->descent;
+                    wm_style_text(core->display, core->screen, canvas,
+                                  fonts[i],
+                                  (width - letter_width) / 2,
+                                  cursor + (WM_ICON_SIZE - line) / 2 +
+                                      fonts[i]->ascent,
+                                  letter, icon_colour);
+                }
+                if (bar_icon_count < WM_MAX_FRAMES) {
+                    bar_icon_boxes[bar_icon_count].x = icon_x;
+                    bar_icon_boxes[bar_icon_count].y = cursor;
+                    bar_icon_boxes[bar_icon_count].width = WM_ICON_SIZE;
+                    bar_icon_boxes[bar_icon_count].height = WM_ICON_SIZE;
+                    bar_icon_boxes[bar_icon_count].client = frame->client;
+                    bar_icon_boxes[bar_icon_count].bar = window;
+                    bar_icon_count++;
+                }
+                cursor += WM_ICON_SIZE;
+                if (k + 1 < bar_icon_total) {
+                    if (separator > 0 && fonts[i]) {
+                        int sep_width = wm_style_text_width(core->display,
+                                                            fonts[i],
+                                                            widget->separator);
+                        wm_style_text(core->display, core->screen, canvas,
+                                      fonts[i], (width - sep_width) / 2,
+                                      cursor + WM_ICON_GAP +
+                                          fonts[i]->ascent,
+                                      widget->separator, sep_colour);
+                    }
+                    cursor += gap;
+                }
+            }
+        } else if (labels[i][0] && fonts[i]) {
+            unsigned long foreground = bar_colour(core, widget->foreground,
+                                                  core->style.text);
+            int text_width = wm_style_text_width(core->display, fonts[i],
+                                                 labels[i]);
+            wm_style_text(core->display, core->screen, canvas, fonts[i],
+                          (width - text_width) / 2,
+                          y + WM_BAR_PADDING + fonts[i]->ascent,
+                          labels[i], foreground);
+        }
+        y += extent;
+    }
+
+    if (canvas != window) {
+        XCopyArea(core->display, canvas, window, core->gc, 0, 0,
+                  (unsigned int)width, (unsigned int)bar_height, 0, 0);
+    }
+    XFlush(core->display);
+}
+
+/* Every bar the config asks for, one after another.
+ *
+ * A script may write as many gcl_BAR.call(...) as it likes — a bar along the
+ * top, another along the bottom, a small one down the side — and each is drawn
+ * here on its own window at its own place, the way bar_geometry() worked out.
+ * `bar_window` is set to the window being drawn for the length of one bar, so
+ * the helpers above and the click bookkeeping can name "the bar I am working
+ * on" without being handed an index as well. */
+static void desktop_bar(WmCore *core) {
+    int count = core->config.bar_count;
+    if (count > WM_CONFIG_MAX_BARS) {
+        count = WM_CONFIG_MAX_BARS;
+    }
+    if (count < 0) {
+        count = 0;
+    }
+
+    /* Which windows the group box lists, worked out once before any bar is
+       drawn so every bar's measuring and drawing passes agree about how many
+       icons there are. The boxes a click is matched against are collected from
+       all bars at once, and the window each was drawn on is part of the record
+       so a press on one bar is never read as a press on another. */
+    bar_collect_icons(core);
+    bar_icon_count = 0;
+
+    for (int i = 0; i < count; i++) {
+        const WmBar *bar = &core->config.bars[i];
+        Window window = bar_windows[i];
+        if (window == None || !bar->present || bar->size <= 0) {
+            continue;
+        }
+        int x, y, width, height;
+        bar_geometry(core, bar, &x, &y, &width, &height);
+
+        bar_window = window;
+        if (strcmp(bar->pose, "vertical") == 0) {
+            bar_draw_vertical(core, bar, window, width, height);
+        } else {
+            bar_draw_horizontal(core, bar, window, width, height);
+        }
+        bar_window = None;
+    }
 }
 
 /* --- painting ------------------------------------------------------------- */
@@ -997,6 +1377,13 @@ static int desktop_init(WmCore *core) {
 static void desktop_bar_press(WmCore *core, XButtonEvent *press) {
     for (int i = 0; i < bar_icon_count; i++) {
         BarIconBox *box = &bar_icon_boxes[i];
+        /* The box's own bar is part of the match: a press is delivered to one
+           bar's window, and two bars can have a box at the same x — the top
+           bar's third icon and the bottom bar's third icon. Without the window
+           in the test, a press on one would activate the other's window. */
+        if (box->bar != press->window) {
+            continue;
+        }
         if (press->x >= box->x && press->x < box->x + box->width &&
             press->y >= box->y && press->y < box->y + box->height) {
             WmFrame *frame = wm_frame_find(core, box->client);
@@ -1009,8 +1396,11 @@ static void desktop_bar_press(WmCore *core, XButtonEvent *press) {
 }
 
 static void desktop_event(WmCore *core, XEvent *event) {
-    if (bar_window != None && event->xany.window == bar_window) {
+    if (wm_desktop_is_bar_window(event->xany.window)) {
         if (event->type == Expose) {
+            /* Every bar is drawn again, rather than working out which bar the
+               expose belonged to: the cost is one strip per bar, which is the
+               same work the clock's own tick does once a second. */
             desktop_bar(core);
             return;
         }
@@ -1040,7 +1430,7 @@ static void desktop_event(WmCore *core, XEvent *event) {
            above it, so it is raised again — this is the one event that tells
            the bar it has been covered. It is also the moment a new program's
            icon has to appear, so the bar is drawn again. */
-        if (event->xmap.window != bar_window) {
+        if (!wm_desktop_is_bar_window(event->xmap.window)) {
             desktop_bar(core);
             wm_desktop_raise_bar(core);
         }
@@ -1099,10 +1489,14 @@ static void desktop_cleanup(WmCore *core) {
     bar_icon_total = 0;
     bar_icon_count = 0;
 
-    if (bar_window != None) {
-        XDestroyWindow(core->display, bar_window);
-        bar_window = None;
+    for (int i = 0; i < WM_CONFIG_MAX_BARS; i++) {
+        if (bar_windows[i] != None) {
+            XDestroyWindow(core->display, bar_windows[i]);
+            bar_windows[i] = None;
+        }
     }
+    bar_window_count = 0;
+    bar_window = None;
     bar_free_fonts(core);
 
     if (core->root_cursor != None) {
