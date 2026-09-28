@@ -361,12 +361,16 @@ static void glow_end(void) {
     typedef void         (*GclIntFn)(int);
     typedef void         (*GclSetShaderFn)(unsigned int, int *);
     typedef Shader       (*GclShaderGetFn)(int);
+    /* `GclCurrentFn` glow_begin()in GÖVDESİNDE tanimlidir ve burada gorunmez;
+       ayni typedef burada da yazilmalidir. */
+    typedef int          (*GclCurrentFn)(void);
 
     static GclVoidFn      flush         = NULL;
     static GclSetShaderFn set_shader    = NULL;
     static GclIntFn       set_blend     = NULL;
     static GclVoidFn      depth_mask_on = NULL;
     static GclShaderGetFn shader_get    = NULL;
+    static GclCurrentFn   blocked_shader= NULL;
     static int tried = 0;
 
     if (!tried) {
@@ -376,6 +380,7 @@ static void glow_end(void) {
         set_blend     = (GclIntFn)       raylib_symbol("rlSetBlendMode");
         depth_mask_on = (GclVoidFn)      raylib_symbol("rlEnableDepthMask");
         shader_get    = (GclShaderGetFn) raylib_symbol("gcl_raylib_shader_get");
+        blocked_shader= (GclCurrentFn)   raylib_symbol("gcl_raylib_shader_current");
     }
 
     /* ---------- BU BOSALTMA ZORUNLUDUR ----------
@@ -398,12 +403,40 @@ static void glow_end(void) {
     if (set_blend) set_blend(BLEND_ALPHA);
     else           BeginBlendMode(BLEND_ALPHA);
 
-    /* Sahne programini GERI KOY — yine `rlSetShader` ile. Yalnizca `id`
-       yetmez: uniform KONUMLARI da (`locs`) geri yazilmalidir, yoksa
+    /* ---------- SAHNE PROGRAMINI GERI KOY — AMA YALNIZCA BLOK ACIKKEN ----------
+
+       BURASI BIR EKRAN-KARARTMA HATASININ KAYNAGIYDI.
+
+       `gcl_raylib_light_shader()`, Raylib.dll'in `g_light_shader` degerini
+       dondurur. O deger `BeginShaderMode`te ATANIR ve `EndShaderMode`te
+       TEMIZLENMEZ - bilerek, cunku isik uniform'lari blok DISINDA da
+       beslenir. Bu yuzden blok KAPANDIKTAN sonra da "hedef shader" olarak
+       gorunur ve glow, sahne programini kosulsuz geri koyardi.
+
+       Script'te isiklar blok kapandiktan SONRA cizilir:
+
+           Raylib.BeginShaderMode(shader);  ...  Raylib.EndShaderMode();
+           _0_point_light.Draw();           <- glow burada; sahne programini geri koyardi
+
+       Sonuc: rlgl'nin aktif programi arazinin isiklandirma programinda
+       KALIRDI. Ardindan gelen HER cizim - 2B arayuz ve EN ONEMLISI nihai
+       kompozit (`gcl_render_end` -> DrawTexturePro) - o programdan gecerdi.
+       Arazi programi bir doku ornekleyicisi ve isik uniform'lari bekledigi
+       icin kompozit anlamsiz cikti uretirdi: EKRAN SIYAH.
+
+       KURAL: sahne programi yalnizca GERCEKTEN acik bir blok varsa geri
+       konur. Blok yoksa (`gcl_raylib_shader_current()` < 0) zaten varsayilan
+       program gecerlidir ve geri koyacak bir sey yoktur; o durumda DOKUNMAK
+       hatanin ta kendisidir.
+
+       `id` YETMEZ: uniform KONUMLARI (`locs`) da geri yazilmalidir, yoksa
        sonraki cizimler eski programin konumlarina uniform yollar. */
     if (set_shader && shader_get && g_scene_shader >= 0) {
-        Shader s = shader_get(g_scene_shader);
-        set_shader(s.id, s.locs);
+        int block_open = (blocked_shader && blocked_shader() >= 0) ? 1 : 0;
+        if (block_open) {
+            Shader s = shader_get(g_scene_shader);
+            set_shader(s.id, s.locs);
+        }
     }
     g_scene_shader = -1;
 

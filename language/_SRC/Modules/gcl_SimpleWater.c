@@ -331,6 +331,11 @@ static Texture2D g_uw_frame = {0};
 static int       g_uw_frame_w = 0;
 static int       g_uw_frame_h = 0;
 
+/* Ekran okuma YARDIMCISI, tanimindan ONCE burada bildirilir: `uw_frame_refresh`
+   dosyada ondan once gelir. Govdesi asagida, "EKRAN OKUMA VE BLIT"
+   bolumundedir. */
+static Image load_screen_image(void);
+
 /* Kareyi dokuya tazele. Doku hazir degilse/boyut degistiyse yeniden kurar.
    Donus: 1 = doku kullanilabilir. */
 static int uw_frame_refresh(int w, int h) {
@@ -354,25 +359,39 @@ static int uw_frame_refresh(int w, int h) {
        Simdi gecersiz kare dokuya hic yazilmaz: once dogrulanir, sonra
        kullanilir. Doku zaten kareyi tutuyorsa bir onceki gecerli kare kalir -
        ekran beyaza boyanmaz, yalnizca bir kare gecikir. */
-    img = LoadImageFromScreen();
-    if (!img.data || img.width <= 0 || img.height <= 0) {
-        if (img.data) UnloadImage(img);
-        return 0;
-    }
+    /* BOYUT, SERBEST BIRAKMADAN ONCE ALINIR.
 
-    if (g_uw_frame.id == 0 || g_uw_frame_w != img.width || g_uw_frame_h != img.height) {
-        if (g_uw_frame.id != 0) UnloadTexture(g_uw_frame);
-        g_uw_frame = LoadTextureFromImage(img);
-        UnloadImage(img);   /* dokuya kopyalandi; Image artik gerekmez */
-        if (g_uw_frame.id == 0) return 0;
-        g_uw_frame_w = img.width;
-        g_uw_frame_h = img.height;
+       BURASI IKINCI BIR HATAYDI: `UnloadImage(img)` cagrildiktan SONRA
+       `img.width` / `img.height` okunuyordu. Yani doku boyutu SERBEST
+       BIRAKILMIS bellekten okunuyordu - tanimsiz davranis. Pratikte cop
+       deger gelir, `g_uw_frame_w/h` yanlis kalir ve bir sonraki karede
+       "boyut degisti" sanilip doku her karede YENIDEN KURULUR; arada
+       `UpdateTexture` hic calismaz. Sonuc: perde hep AYNI kareyi tasir -
+       "su yuzeyi ekranda kaliyor, goruntu dondu" halinin ikinci sebebi. */
+    {
+        int iw, ih;
+        img = load_screen_image();
+        if (!img.data || img.width <= 0 || img.height <= 0) {
+            if (img.data) UnloadImage(img);
+            return 0;
+        }
+        iw = img.width;
+        ih = img.height;
+
+        if (g_uw_frame.id == 0 || g_uw_frame_w != iw || g_uw_frame_h != ih) {
+            if (g_uw_frame.id != 0) UnloadTexture(g_uw_frame);
+            g_uw_frame = LoadTextureFromImage(img);
+            UnloadImage(img);   /* dokuya kopyalandi; Image artik gerekmez */
+            if (g_uw_frame.id == 0) return 0;
+            g_uw_frame_w = iw;
+            g_uw_frame_h = ih;
+            return 1;
+        }
+
+        UpdateTexture(g_uw_frame, img.data);
+        UnloadImage(img);
         return 1;
     }
-
-    UpdateTexture(g_uw_frame, img.data);
-    UnloadImage(img);
-    return 1;
 }
 
 /* ---------- GOKYUZU DURUMU (PAYLASILAN) ----------
@@ -540,6 +559,156 @@ static const char *resolve_file(const char *file) {
     if (!tried) { tried = 1; fn = (GclAssetPathFn)raylib_symbol("gcl_raylib_asset_path"); }
     if (!fn || !file) return file ? file : "";
     return fn(file);
+}
+
+/* ---------- EKRAN OKUMA VE BLIT: Raylib.dll SEMBOLLERI ----------
+
+   BURASI "SU ALTINDA EKRAN DONUYOR" HATASININ KAYNAGIYDI.
+
+   Perde, CIZILMIS KAREYI orneklemek zorundadir (`uw_frame_refresh`). Kareyi
+   okumak icin kullanilan `LoadImageFromScreen()` GL'in O AN BAGLI
+   framebuffer'ini okur (`glReadPixels`) ve boyutunu `GetRenderWidth/Height`
+   ile alir.
+
+   Sorun: `RaylibRender` acikken cizim bir RENDER TEXTURE'a gider ve pencere
+   arabellegi sahne gecidi boyunca HIC GUNCELLENMEZ - yalnizca kare sonunda,
+   `gcl_render_end` icindeki kompozitte bir kez yazilir. Modulun STATIK
+   `libraylib.a` kopyasindan cagrilan okuma ise DLL'in rlgl durumunu
+   GORMEZ: bagli FBO'yu ve ekran olcusunu yanlis bilir.
+
+   Sonuc: perde, icinde SU YUZEYININ DE bulundugu SON KOMPOZITI okur ve onu
+   her karede yeniden ekrana basar. Goruntu donar; sudan cikinca perde
+   kapandigi icin "kendiliginden duzelir". Bildirilen hal TAM OLARAK budur.
+
+   COZUM: okuma ve blit de Raylib.dll'den cozulur. Boylece ayni rlgl
+   durumunu paylasirlar; hangi FBO bagliysa (RT ya da pencere) DOGRU yuzey ve
+   DOGRU olcek okunur. Bu, dosyanin basindaki "ayni surecteki raylib durumu"
+   kuralinin ekrana bakan yarisidir. */
+typedef Image (*GclScreenImageFn)(void);
+typedef int   (*GclIntVoidFn)(void);
+typedef void  (*GclVoidVoidFn)(void);
+typedef void  (*GclDrawTextureProFn)(Texture2D, Rectangle, Rectangle,
+                                     Vector2, float, Color);
+
+static int render_width(void) {
+    static GclIntVoidFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclIntVoidFn)raylib_symbol("GetRenderWidth"); }
+    return fn ? fn() : GetRenderWidth();
+}
+
+static int render_height(void) {
+    static GclIntVoidFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclIntVoidFn)raylib_symbol("GetRenderHeight"); }
+    return fn ? fn() : GetRenderHeight();
+}
+
+static Image load_screen_image(void) {
+    static GclScreenImageFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclScreenImageFn)raylib_symbol("LoadImageFromScreen"); }
+    return fn ? fn() : LoadImageFromScreen();
+}
+
+static void blit_texture(Texture2D tex, Rectangle src, Rectangle dst,
+                         Vector2 origin, float rot, Color tint) {
+    static GclDrawTextureProFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclDrawTextureProFn)raylib_symbol("DrawTexturePro"); }
+    if (fn) fn(tex, src, dst, origin, rot, tint);
+    else    DrawTexturePro(tex, src, dst, origin, rot, tint);
+}
+
+/* Shader secimi de DLL'den cozulur. `BeginShaderMode` rlgl'nin
+   `currentShaderId`ini ATAR; kurulum ve cizim AYNI rlgl durumunda olmalidir.
+   Modulun statik kopyasi kendi durumuna yazarsa doku, sahnenin programiyla
+   cizilir - perde bozuk/siyah cikar (bkz. gcl_SimpleLight.c: glow_begin,
+   ayni tuzak). */
+typedef void (*GclShaderModeFn)(Shader);
+
+static void begin_shader_mode(Shader s) {
+    static GclShaderModeFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclShaderModeFn)raylib_symbol("BeginShaderMode"); }
+    if (fn) fn(s); else BeginShaderMode(s);
+}
+
+static void end_shader_mode(void) {
+    static GclVoidVoidFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclVoidVoidFn)raylib_symbol("EndShaderMode"); }
+    if (fn) fn(); else EndShaderMode();
+}
+
+/* ---------- rlgl DURUM CAGLARI DA DLL'DEN ----------
+
+   PERDE BIR ARADA IKI AYRI rlgl DURUMU KULLANIYORDU ve bu bir KUSURDU.
+
+   Modulun geri kalani (matris yigini, bagli FBO, viewport) TEK bir yerde,
+   Raylib.dll'de yasar; dosyanin basindaki "TUM RAYLIB CAGRILARI DLL'DEN
+   COZULUR" kurali tam olarak bunun icindir. Ama perde su cagrilari STATIK
+   `libraylib.a` kopyasindan yapiyordu:
+
+       rlDrawRenderBatchActive / rlDisableDepthTest / rlEnableDepthTest
+       rlDisableDepthMask     / rlEnableDepthMask
+       BeginBlendMode         / EndBlendMode
+
+   Statik kopya KENDI `RLGL.State`ini degistirir; DLL'in durumuna dokunmaz.
+   Bu yuzden DLL uzerinden cagrilan `DrawTexturePro` cizilirken derinlik
+   testi ve maske DLL'in hala ESKI degerlerinde kalir: perde, 3B sahnenin
+   derinlik tamponuna karsi cizilir ve perde icin kapatildigi soylenen test
+   aslinda ACIKTIR. Ayni gecitte iki farkli durum sahibi olmak, "kimi zaman
+   dogru kimi zaman yanlis" davranisin klasik sebebidir.
+
+   Asagidaki sarmalayicilar bu cagrilari da DLL'e verir; boylece perde
+   cizilirken TEK bir durum gecerli olur. */
+
+typedef void (*GclIntFn)(int);
+
+static void gpu_batch_flush(void) {
+    static GclVoidVoidFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclVoidVoidFn)raylib_symbol("rlDrawRenderBatchActive"); }
+    if (fn) fn(); else rlDrawRenderBatchActive();
+}
+
+static void gpu_depth_test(int on) {
+    static GclVoidVoidFn en = NULL, dis = NULL;
+    static int tried = 0;
+    if (!tried) {
+        tried = 1;
+        en  = (GclVoidVoidFn)raylib_symbol("rlEnableDepthTest");
+        dis = (GclVoidVoidFn)raylib_symbol("rlDisableDepthTest");
+    }
+    if (!en || !dis) { if (on) rlEnableDepthTest(); else rlDisableDepthTest(); return; }
+    if (on) en(); else dis();
+}
+
+static void gpu_depth_mask(int on) {
+    static GclVoidVoidFn en = NULL, dis = NULL;
+    static int tried = 0;
+    if (!tried) {
+        tried = 1;
+        en  = (GclVoidVoidFn)raylib_symbol("rlEnableDepthMask");
+        dis = (GclVoidVoidFn)raylib_symbol("rlDisableDepthMask");
+    }
+    if (!en || !dis) { if (on) rlEnableDepthMask(); else rlDisableDepthMask(); return; }
+    if (on) en(); else dis();
+}
+
+static void gpu_blend_begin(int mode) {
+    static GclIntFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclIntFn)raylib_symbol("BeginBlendMode"); }
+    if (fn) fn(mode); else BeginBlendMode(mode);
+}
+
+static void gpu_blend_end(void) {
+    static GclVoidVoidFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclVoidVoidFn)raylib_symbol("EndBlendMode"); }
+    if (fn) fn(); else EndBlendMode();
 }
 
 /* Gokyuzu durumu (RaylibSKYBOX). Yansima ve pencereden gorunen gok
@@ -1416,8 +1585,10 @@ static double fn_underwater_effect(int argc, const char **argv) {
 
        Ekran uzayinda calisan bir efekt icin dogru olcu her zaman RENDER
        olcusudur - shader'daki `uwRes` de ayni sayiyi almali. */
-    sw = GetRenderWidth();
-    sh = GetRenderHeight();
+    /* DLL UZERINDEN OKUNUR - gerekcesi `render_width` notunda: RaylibRender
+       acikken dogru cevap RT olcusudur ve onu yalnizca DLL bilir. */
+    sw = render_width();
+    sh = render_height();
     if (sw <= 0 || sh <= 0) return 0.0;
     /* Uyari: kameranin KONUMU artik gerekmez. Kursak shader'i ekran uzayinda
        calisir (kaynak `underwater.glsl` de oyle); dunya uzayindan izdusurme
@@ -1550,14 +1721,11 @@ static double fn_underwater_effect(int argc, const char **argv) {
        `discard`i orada hicbir sey yazmaz. Kamera suyun DISINDAYKEN veya isin
        suyu iskalayip gokyuzune kactiginda piksel bos kalir; su kenarinda ekran
        gereksizce maviye boyanmaz. */
-    rlDrawRenderBatchActive();
-    /* DERINLIK TESTI KAPATILIR ve bu DOGRUDUR: perde artik SAHNENIN KENDISINI
-       tasir (kare dokuya okunur, shader onu bulaniklastirip tonlar). Sahne
-       zaten `col`in icindedir, dolayisiyla ekran derinligine gore kirpmak
-       yalnizca rastgele bir bolgeyi acikta birakir. Suyun icindeyken tum
-       goruntu ayni su tonundan gecmelidir. */
-    rlDisableDepthTest();
-    BeginBlendMode(BLEND_ALPHA);
+    /* TUM DURUM CAGRILARI DLL UZERINDEN - gerekcesi `gpu_batch_flush` notunda:
+       statik kopya kendi rlgl durumunu degistirir, DLL'inki degismez. */
+    gpu_batch_flush();
+    gpu_depth_test(0);
+    gpu_blend_begin(BLEND_ALPHA);
     /* DERINLIK TESTI ACIK KALIR - ONCEDEN KAPATILIYORDU VE YANLISTI.
 
        Kapatildiginda perde her pikselin ustune KOSULSUZ yaziyordu: 2 m
@@ -1593,7 +1761,7 @@ static double fn_underwater_effect(int argc, const char **argv) {
        YAZMA KAPALI KALIR (rlDisableDepthMask): perde, kendisinden sonra
        cizilecek hicbir seyin derinligini bozmaz. Test, cagri sonunda 2B
        varsayilanina GERI ALINIR ki UI ve DrawFPS etkilenmesin. */
-    rlDisableDepthMask();
+    gpu_depth_mask(0);
     /* KAREYI OKU ve PERDEYI O KARENIN UZERINDEN GECIR.
        Artik cizilen sey duz bir dikdortgen degil, CIZILMIS KARENIN
        KENDISIDIR: shader onu bulaniklastirir, dalgayla buker ve sogurur.
@@ -1611,16 +1779,19 @@ static double fn_underwater_effect(int argc, const char **argv) {
            tamamen ortadan kaldirir. */
         float fw = (float)g_uw_frame.width;
         float fh = (float)g_uw_frame.height;
-        BeginShaderMode(g_uw_shader);
-        DrawTexturePro(g_uw_frame,
-                       (Rectangle){0.0f, 0.0f, fw, fh},
-                       (Rectangle){0.0f, 0.0f, (float)sw, (float)sh},
-                       (Vector2){0.0f, 0.0f}, 0.0f, WHITE);
-        EndShaderMode();
+        /* Blit ve shader secimi DLL uzerinden - gerekcesi `begin_shader_mode`
+           notunda. Modulun statik kopyasi kendi rlgl durumuna yazar ve
+           RaylibRender'in bagli FBO'sunu gormez. */
+        begin_shader_mode(g_uw_shader);
+        blit_texture(g_uw_frame,
+                     (Rectangle){0.0f, 0.0f, fw, fh},
+                     (Rectangle){0.0f, 0.0f, (float)sw, (float)sh},
+                     (Vector2){0.0f, 0.0f}, 0.0f, WHITE);
+        end_shader_mode();
     }
-    rlEnableDepthMask();
-    rlEnableDepthTest();
-    EndBlendMode();
+    gpu_depth_mask(1);
+    gpu_depth_test(1);
+    gpu_blend_end();
     return 0.0;
 }
 

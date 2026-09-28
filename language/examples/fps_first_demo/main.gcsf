@@ -11,9 +11,11 @@
 #native <RaylibFOG>
 #native <RaylibSimpleWater>
 
+#native <RaylibRender>
+
 
 int main() {
-    Raylib.InitWindow(1024, 768, "GCL Project");
+    Raylib.InitWindow(320, 240, "GCL Project");
 
     #// skybox
     RaylibSKYBOX.Skybox sky = RaylibSKYBOX.CreateSimpleSkybox();
@@ -112,9 +114,18 @@ int main() {
 
 
 
-
-
-
+    #// IC COZUNURLUK: sahne 320x240'ta cizilir, ekrana GERILEREK basilir.
+    #// Pahali kisim (arazi, isik, su, golgelendirme) 4.5 kat az pikselde
+    #// kosar; ekrana basmak tek bir doku cizimidir. Amac zayif makinede
+    #// oynanabilir kalmak.
+    #//
+    #// DIKKAT - ORAN KORUNMAZ (STRETCH): buradaki 320x240 (4:3) bir dizustu
+    #// ekraninda 16:9'a gerdirilir, yani goruntu yatayda ~%33 fazla buyur
+    #// ve daireler ELIPS olur. Bu bilincli bir secimdir.
+    #// Bozulma istemiyorsan ic cozunurlugu ekranin oraniyla ayni sec:
+    #// 16:9 icin 320x240 yerine 480x270 (veya 384x216) kullan.
+    #// Ayrintili gerekce: _SRC/Modules/gcl_Render.c basligi.
+    RaylibRender.FullScreenRenderResolution(320, 240);
 
 
     #// Raylib.SetTargetFPS(60);

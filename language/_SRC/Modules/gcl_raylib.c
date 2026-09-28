@@ -938,10 +938,76 @@ static void gcl_no_window_warn(const char *name) {
 #define GCL_NO_WINDOW(NAME) \
     do { if (!IsWindowReady()) { gcl_no_window_warn(#NAME); return 0.0; } } while (0)
 
+/* ================= CEKIRDEK COZUNURLUK KAPISI (RaylibRender) =================
+
+   `RaylibRender` modulu, cizimi dusuk bir cozunurlukte yapip sonucu ekrana
+   gerer - bir PS2 emulatorunun "internal resolution" ayari gibi. Modulun
+   VARLIK SEBEBI, script'in her kareyi elle sarmak zorunda kalmamasidir:
+
+       RaylibRender.FullScreenRenderResolution(320, 240);
+       while (...) { Raylib.BeginDrawing(); ... Raylib.EndDrawing(); }
+
+   Bunun calismasi icin cerceve sinirlarinin BURADAN, modulun icine
+   yonlendirilmesi gerekir. Bu dosyadaki uc baglanti noktasi su:
+
+       BeginDrawing / EndDrawing   -> cerceve RT'ye alinir, sonra ekrana gerilir
+       GetScreenWidth/Height       -> RT boyutu (dogru cizim yuzeyi)
+       CloseWindow                 -> RT serbest birakilir (pencere varken)
+
+   SEMBOLLER TEMBEL COZULUR VE MODUL YOKSA HICBIR SEY DEGISMEZ. `dlsym` her
+   karede cagrilacak kadar ucuz degildir, bu yuzden sonuc bir kez alinip
+   saklanir. Modul yuklu degilse isaretci NULL kalir ve raylib'in normal
+   yolu AYNEN isler: bu modulu kullanmayan hicbir program etkilenmez.
+
+   NEDEN BURADA, MODULDE DEGIL: `BeginDrawing` cagrisini yakalamanin baska
+   yolu yoktur. Script `Raylib.BeginDrawing()` yazar; bu fonksiyon bu
+   dosyada tanimlidir ve baska hicbir modul onu goremez. */
+typedef int  (*GclRenderBeginFn)(void);
+typedef int  (*GclRenderEndFn)(void);
+typedef int  (*GclRenderSizeFn)(int);
+typedef void (*GclRenderShutdownFn)(void);
+
+typedef struct RenderHooks {
+    GclRenderBeginFn    begin;
+    GclRenderEndFn      end;
+    GclRenderSizeFn     width;
+    GclRenderSizeFn     height;
+    GclRenderShutdownFn shutdown;
+} RenderHooks;
+
+static RenderHooks g_render;
+static int g_render_tried = 0;
+
+/* Modulun kapilarini bir kez coz. `Raylib.dll` adi Windows'ta aranir; ELF'te
+   tek bir global sembol uzayi vardir ve ad yok sayilir (bkz. gcl_module.h). */
+static const RenderHooks *render_hooks(void) {
+    if (g_render_tried) {
+        return g_render.begin ? &g_render : NULL;
+    }
+    g_render_tried = 1;
+
+    g_render.begin    = (GclRenderBeginFn)   gcl_module_symbol("RaylibRender.dll", "gcl_render_begin");
+    g_render.end      = (GclRenderEndFn)     gcl_module_symbol("RaylibRender.dll", "gcl_render_end");
+    g_render.width    = (GclRenderSizeFn)    gcl_module_symbol("RaylibRender.dll", "gcl_render_screen_width");
+    g_render.height   = (GclRenderSizeFn)    gcl_module_symbol("RaylibRender.dll", "gcl_render_screen_height");
+    g_render.shutdown = (GclRenderShutdownFn)gcl_module_symbol("RaylibRender.dll", "gcl_render_shutdown");
+
+    return g_render.begin ? &g_render : NULL;
+}
+
 static double fn_InitWindow(int argc,const char**argv){
     InitWindow(ii(argv[0]),ii(argv[1]),ss(argv[2])); return 0.0;
 }
-static double fn_CloseWindow(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(CloseWindow);CloseWindow();return 0.0;}
+/* Kapanmadan ONCE RT serbest birakilir: GL kaynaklari pencere yokken
+   silinemez, ve unutulursa surucude sizinti kalir. */
+static double fn_CloseWindow(int argc,const char**argv){
+    (void)argc;(void)argv;
+    GCL_NO_WINDOW(CloseWindow);
+    { const RenderHooks *h = render_hooks();
+      if (h && h->shutdown) h->shutdown(); }
+    CloseWindow();
+    return 0.0;
+}
 static double fn_WindowShouldClose(int argc,const char**argv){(void)argc;(void)argv;return WindowShouldClose()?1.0:0.0;}
 static double fn_IsWindowReady(int argc,const char**argv){(void)argc;(void)argv;return IsWindowReady()?1.0:0.0;}
 static double fn_IsWindowFullscreen(int argc,const char**argv){(void)argc;(void)argv;return IsWindowFullscreen()?1.0:0.0;}
@@ -989,10 +1055,29 @@ static double fn_SetWindowSize(int argc,const char**argv){ GCL_NO_WINDOW(SetWind
 static double fn_SetWindowOpacity(int argc,const char**argv){ GCL_NO_WINDOW(SetWindowOpacity); SetWindowOpacity(ff(argv[0])); return 0.0; }
 static double fn_SetWindowFocused(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(SetWindowFocused);SetWindowFocused();return 0.0;}
 static double fn_GetWindowHandle(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(GetWindowHandle);return (double)(intptr_t)GetWindowHandle();}
-static double fn_GetScreenWidth(int argc,const char**argv){(void)argc;(void)argv;return (double)GetScreenWidth();}
-static double fn_GetScreenHeight(int argc,const char**argv){(void)argc;(void)argv;return (double)GetScreenHeight();}
-static double fn_GetRenderWidth(int argc,const char**argv){(void)argc;(void)argv;return (double)GetRenderWidth();}
-static double fn_GetRenderHeight(int argc,const char**argv){(void)argc;(void)argv;return (double)GetRenderHeight();}
+/* Boyutlar, cekirdek cozunurluk modulu acikken RT boyutudur - gerekcesi
+   yukaridaki "CEKIRDEK COZUNURLUK KAPISI" notunda. Modul yuklu degilse
+   `render_hooks()` NULL doner ve raylib'in kendi degeri AYNEN gecer. */
+static double fn_GetScreenWidth(int argc,const char**argv){
+    (void)argc;(void)argv;
+    const RenderHooks *h = render_hooks();
+    return (double)(h && h->width ? h->width(GetScreenWidth()) : GetScreenWidth());
+}
+static double fn_GetScreenHeight(int argc,const char**argv){
+    (void)argc;(void)argv;
+    const RenderHooks *h = render_hooks();
+    return (double)(h && h->height ? h->height(GetScreenHeight()) : GetScreenHeight());
+}
+static double fn_GetRenderWidth(int argc,const char**argv){
+    (void)argc;(void)argv;
+    const RenderHooks *h = render_hooks();
+    return (double)(h && h->width ? h->width(GetRenderWidth()) : GetRenderWidth());
+}
+static double fn_GetRenderHeight(int argc,const char**argv){
+    (void)argc;(void)argv;
+    const RenderHooks *h = render_hooks();
+    return (double)(h && h->height ? h->height(GetRenderHeight()) : GetRenderHeight());
+}
 static double fn_GetMonitorCount(int argc,const char**argv){(void)argc;(void)argv;return (double)GetMonitorCount();}
 static double fn_GetCurrentMonitor(int argc,const char**argv){(void)argc;(void)argv;return (double)GetCurrentMonitor();}
 static double fn_GetMonitorPosition(int argc,const char**argv){ g_last_v2=GetMonitorPosition(ii(argv[0])); return 0.0; }
@@ -1024,8 +1109,26 @@ static double fn_IsCursorOnScreen(int argc,const char**argv){(void)argc;(void)ar
 
 /* drawing — B25: GL bağlamı (rlgl toplu çizim) gerektirirler. */
 static double fn_ClearBackground(int argc,const char**argv){ GCL_NO_WINDOW(ClearBackground); ClearBackground(ci(argv,0)); return 0.0; }
-static double fn_BeginDrawing(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(BeginDrawing);BeginDrawing();return 0.0;}
-static double fn_EndDrawing(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(EndDrawing);EndDrawing();return 0.0;}
+/* CERCEVE SINIRI — cekirdek cozunurluk kapisi. RaylibRender acikken
+   `BeginDrawing` bir render target baslatir ve `EndDrawing` onu ekrana
+   gerer; modul yuklu degilse yukaridaki iki satirin yaptigi is AYNEN
+   yapilir. Gerekce icin bkz. yukaridaki "CEKIRDEK COZUNURLUK KAPISI". */
+static double fn_BeginDrawing(int argc,const char**argv){
+    (void)argc;(void)argv;
+    GCL_NO_WINDOW(BeginDrawing);
+    { const RenderHooks *h = render_hooks();
+      if (h && h->begin && h->begin()) return 0.0; }
+    BeginDrawing();
+    return 0.0;
+}
+static double fn_EndDrawing(int argc,const char**argv){
+    (void)argc;(void)argv;
+    GCL_NO_WINDOW(EndDrawing);
+    { const RenderHooks *h = render_hooks();
+      if (h && h->end && h->end()) return 0.0; }
+    EndDrawing();
+    return 0.0;
+}
 static double fn_BeginMode2D(int argc,const char**argv){
     if (argc >= 6) g_last_cam2d=(Camera2D){v2_arg(argv,0),v2_arg(argv,2),ff(argv[4]),ff(argv[5])};
     /* Argümansız çağrı: Raylib.Camera2D(...) ile oluşturulan son kamerayı kullan */

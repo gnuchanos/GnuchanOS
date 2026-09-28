@@ -224,6 +224,14 @@ SIMPLE_MODULES = [
     # yalnizca cizim, varlik yolu ve kamera sembolleri cozulur; import
     # library yeterlidir.
     ("RaylibSimpleWater", "_SRC/Modules/gcl_SimpleWater.c"),
+    # Render: cizimi dusuk bir cozunurlukte yapip ekrana gerer (PS2
+    # emulatorlerinin "internal resolution" ayari). Goruntuyu URETMEZ -
+    # Raylib.BeginDrawing/EndDrawing'i devralir, yani cizim yapan taraf
+    # hala Raylib.dll'dir; bu yuzden burada yalnizca GL durumuna
+    # DOKUNMAYAN bir yol izlenir ve RT'ye yonlendirme Raylib.dll'in kendi
+    # sembolleri uzerinden yapilir (bkz. gcl_Render.c). Cagrilari import
+    # library uzerinden cozer: hicbir sembolu statik link ETMEZ.
+    ("RaylibRender", "_SRC/Modules/gcl_Render.c"),
 ]
 
 # ---------- Başlıksız (headless) regresyon testleri ----------
@@ -1722,6 +1730,72 @@ def _live_runtime_root() -> Path:
     return Path.home() / ".local" / "lib" / "gnuchan"
 
 
+def _live_application_dir() -> Path:
+    """Where a .desktop file goes so a launcher can see it.
+
+    This is the directory the freedesktop specification names for a program
+    installed for one user, and it is one of the two a program launcher reads
+    (the other is /usr/share/applications, used when running as root). GCL
+    writes its entry here because being installed is not the same as being
+    findable: a program with no .desktop file is a program a launcher cannot
+    offer, however well it runs from a terminal.
+    """
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return Path("/usr/share/applications")
+    return Path.home() / ".local" / "share" / "applications"
+
+
+def _desktop_entry_path() -> Path:
+    return _live_application_dir() / "gcl.desktop"
+
+
+def write_desktop_entry(launcher: Path, install_dir: Path) -> None:
+    """Write the .desktop file that makes GCL findable.
+
+    GnuChanRunner (the session's program launcher) lists what it starts by
+    reading the applications directories and nowhere else. `gcl` was installed,
+    on PATH, and runnable — and absent from that list, because nothing had
+    ever written an entry for it. This is that entry; it is what makes the
+    program appear, and its absence is the whole of the fault.
+
+    Exec is written as an ABSOLUTE path rather than the bare name. The
+    launcher starts programs with execvp(), which searches PATH, and a
+    session's PATH is not the shell's: _ensure_path_in_shell() adds
+    ~/.local/bin to the rc file of the shell that ran the install, and a
+    session started without reading that file would not have it. An absolute
+    path resolves whatever the PATH happens to be.
+
+    Icon points at the copied PNG rather than a name, so no icon-theme cache
+    has to be refreshed for the entry to be right.
+    """
+    content = (
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=GCL\n"
+        "GenericName=GCL IDE\n"
+        "Comment=Write and run GCL, Lua and Python\n"
+        f"Exec={launcher}\n"
+        f"Icon={install_dir / 'gcl.png'}\n"
+        "Terminal=false\n"
+        "Categories=Development;IDE;\n"
+        "Keywords=gcl;ide;editor;code;\n"
+        "StartupNotify=true\n"
+    )
+
+    directory = _live_application_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    entry = directory / "gcl.desktop"
+    entry.write_text(content, encoding="utf-8")
+    print(f"[gcl] desktop entry: {entry}", flush=True)
+
+
+def remove_desktop_entry() -> None:
+    entry = _desktop_entry_path()
+    if entry.exists() or entry.is_symlink():
+        entry.unlink()
+        print(f"[gcl] removed: {entry}", flush=True)
+
+
 def _ensure_path_in_shell(bin_dir: Path) -> None:
     shell_file = Path.home() / ".bashrc"
     if os.environ.get("SHELL", "").endswith("zsh"):
@@ -1772,6 +1846,16 @@ def install_gcl_system() -> None:
             install_dir.unlink()
     shutil.copytree(build_dir, install_dir, dirs_exist_ok=True)
 
+    # The icon the desktop entry names, copied beside the runtime so the
+    # entry's Icon= is an absolute path that exists. A bare name would need an
+    # icon-theme cache refreshed before anything showed it; a path shows it at
+    # once.
+    if DEFAULT_ICON_PNG.exists():
+        try:
+            shutil.copy2(DEFAULT_ICON_PNG, install_dir / "gcl.png")
+        except OSError as e:
+            print(f"[gcl] warning: icon not copied: {e}", flush=True)
+
     bin_dir.mkdir(parents=True, exist_ok=True)
     launcher = bin_dir / "gcl"
     if launcher.exists() or launcher.is_symlink():
@@ -1782,10 +1866,21 @@ def install_gcl_system() -> None:
     launcher.symlink_to(install_dir / "gcl")
     _ensure_path_in_shell(bin_dir)
 
+    # The desktop entry is what makes the install FINDABLE, not merely present:
+    # GnuChanRunner lists what it starts by reading the applications
+    # directories, and a program with no entry there is a program it cannot
+    # offer. Writing it here is the whole fix for "gcl is not in the launcher".
+    if os_name() == "gnuLinux":
+        write_desktop_entry(launcher, install_dir)
+    else:
+        print("[gcl] (no .desktop entry written: that is a Linux thing)", flush=True)
+
     print(f"[gcl] installed: {launcher}", flush=True)
     print(f"[gcl] runtime: {install_dir}", flush=True)
     print(f"[gcl] shell PATH: {bin_dir}", flush=True)
     print("[gcl] artık terminalde `gcl` komutu kullanılabilir", flush=True)
+    if os_name() == "gnuLinux":
+        print("[gcl] artık program başlatıcıda `GCL` olarak görünür", flush=True)
 
 
 def uninstall_gcl_system() -> None:
@@ -1794,6 +1889,11 @@ def uninstall_gcl_system() -> None:
 
     launcher = _live_user_bin_dir() / "gcl"
     installed = _live_runtime_root() / "gcl"
+
+    # The desktop entry goes with the program it names. Leaving it behind would
+    # leave a launcher offering an entry whose Exec points at a file that is no
+    # longer there — a program that fails to start and gives no reason.
+    remove_desktop_entry()
 
     for path in (launcher, installed):
         if path.is_symlink() or path.exists():
