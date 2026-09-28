@@ -103,13 +103,13 @@ uniform vec4 fogShape;
 
 // Doku sRGB kodludur; isik hesabi lineer uzayda yapilmali.
 vec3 srgb_to_linear(vec3 c) {
-    return pow(c, vec3(2.2));
+    return c*c;
 }
 
 // Ekrana yazmadan once tekrar sRGB'ye kodla. Beyaz isik + beyaz ton ile bu
 // islem okunan texel'in AYNISINI geri verir, yani doku rengi korunur.
 vec3 linear_to_srgb(vec3 c) {
-    return pow(c, vec3(1.0/2.2));
+    return sqrt(c);
 }
 
 // Tek bir isigin yayilma ve parlama katkisi. `lightDot` ve `specular`
@@ -144,8 +144,14 @@ void accumulate_light(int index, vec3 normal, vec3 viewDir,
     // eklemek (raylib'in stok ornegi boyle yapar) uc kanali esit yukseltir ve
     // dokuyu agartir; bu yuzden ayri bir vektorde biriktirilir.
     if (NdotL > 0.0) {
-        float specCo = pow(max(0.0, dot(viewDir, reflect(-lightDir, normal))),
-                           SPECULAR_SHININESS);
+        /* PARLAMA, USTEL YERINE KAREDEN. `pow(x, 48)` llvmpipe'da
+           exp2(log2(x)*48) demektir ve piksel basina bes kez odenir; kare
+           zinciri ayni vurguyu ~12. kuvvette verir ve yalnizca carpimdir. */
+        float s    = max(0.0, dot(viewDir, reflect(-lightDir, normal)));
+        float s2   = s*s;
+        float s4   = s2*s2;
+        float s8   = s4*s4;
+        float specCo = s8*s4;
         specular += lights[index].color.rgb*(specCo*atten);
     }
 }

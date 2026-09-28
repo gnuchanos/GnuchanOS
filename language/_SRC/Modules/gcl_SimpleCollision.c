@@ -110,6 +110,11 @@ RaylibSimpleCollision.MoveAndSlide(PLAYER, dx, dy, dz, maxSlides, MESH1, MESH2, 
 #define COL_GRID_CELL 4.0
 #define COL_GRID_MAX  512
 
+/* SUPURMELI COZUMDE tek karede en fazla kac adim. Tavan, sonsuz donguye ve
+   asiri hizda kare basina binlerce cozume karsi korur; 64 adim x 0.3 m = 19 m
+   tek karede, ki bu hicbir oynanabilir sahneye sigmaz. */
+#define COL_MAX_SWEEP_STEPS 64
+
 enum {
     S_POS_X = 0, S_POS_Y, S_POS_Z,
     S_ROT_X, S_ROT_Y, S_ROT_Z,
@@ -134,6 +139,22 @@ enum {
 };
 
 static double g_slot[COL_SLOT_COUNT];
+
+/* ONCEKI KARENIN AYAK YUKSEKLIGI — tunnel korumasi icin.
+
+   NEDEN SART: cozum YALNIZCA ORTUSME arar. Oyuncu hizli duserse tek karede
+   yuzeyin USTUNDEN ALTINA gecebilir; o anda kapsul hicbir ucgenle KESISMEZ,
+   resolve_pass "temas yok" der ve oyuncu arazinin ICINDEN gecer. Bu tam
+   olarak "fps dusunce laptopta terrain collision calismiyor" diye bildirilen
+   hal: FPS dustukce dt buyur, adim yaricapi asar ve gecis baslar.
+
+   HIZ SINIRI TEK BASINA COZMEZ: yercekimi hizi sinirsiz buyutur. dt 1/30'da
+   kilitli olsa bile ~1 saniyelik dususten sonra adim 0.3 m'yi asar. Cozum,
+   hareketi YARICAP BOYUNDA adimlara bolup HER adimda cozmektir (swept
+   collision): boylece kapsul yuzeye her zaman en fazla bir yaricap yaklasir
+   ve temas KACIRILAMAZ. Deger, ilk karede supurme yapilmasin diye cok
+   asagidan baslar. */
+static double g_last_feet_y = -1.0e30;
 
 /* ---------- 3B vektor yardimcilari ---------- */
 
@@ -737,7 +758,8 @@ static void terrain_buffer_ensure(int handle) {
 
 static double fn_terrain_collision(int argc, const char **argv) {
     ColCapsule cap;
-    int handle;
+    double feet_now, feet_prev, step_y;
+    int handle, steps;
 
     read_player(argc, argv);
     handle = (argc > COL_PLAYER_SLOTS + T_HANDLE)
@@ -745,10 +767,51 @@ static double fn_terrain_collision(int argc, const char **argv) {
 
     terrain_buffer_ensure(handle);
 
-    player_capsule(&cap);
-    for (int i = 0; i < COL_SOLVE_ITERS; i++) {
-        if (!resolve_pass(&g_terrain_tris, &cap, NULL)) break;
+    /* ---------- SUPURMELI (SWEPT) DIKEY COZUM ----------
+
+       FPS modulu dikey hareketi ZATEN uygulamis olarak gelir (bkz.
+       gcl_raylib_fps.c: y += vel*dt). Bu hareket tek karede yaricaptan
+       buyukse kapsul yuzeyi iskalar ve ICINDEN gecer. Bu yuzden bu kareki
+       dikey FARK, yaricaptan buyuk olmayan adimlara bolunur ve HER adimda
+       cozulur.
+
+       Cozumun yaptigi itme bir sonraki adima TASINIR — konum dogrudan
+       yuvalarda tutuldugu icin — boylece kapsul yuzeyin altina itemez.
+       Yukari hareket de (ziplama) ayni yoldan gecer; tavan varsa kapsul ona
+       carpip durur.
+
+       Ilk karede onceki konum yoktur; supurme yerine tek cozum yapilir, cunku
+       oyuncu zaten yuzeyin ustunde baslar. */
+    feet_now  = g_slot[S_POS_Y];
+    feet_prev = g_last_feet_y;
+
+    if (feet_prev > -1.0e29) {
+        double dy  = feet_now - feet_prev;
+        double ady = (dy < 0.0) ? -dy : dy;
+
+        steps = (int)(ady / (double)COL_PLAYER_RADIUS) + 1;
+        if (steps < 1) steps = 1;
+        if (steps > COL_MAX_SWEEP_STEPS) steps = COL_MAX_SWEEP_STEPS;
+
+        /* Onceki konumdan basla ve adim adim ilerle. */
+        g_slot[S_POS_Y] = feet_prev;
+        step_y = dy / (double)steps;
+
+        for (int s = 0; s < steps; s++) {
+            g_slot[S_POS_Y] += step_y;
+            player_capsule(&cap);
+            for (int i = 0; i < COL_SOLVE_ITERS; i++) {
+                if (!resolve_pass(&g_terrain_tris, &cap, NULL)) break;
+            }
+        }
+    } else {
+        player_capsule(&cap);
+        for (int i = 0; i < COL_SOLVE_ITERS; i++) {
+            if (!resolve_pass(&g_terrain_tris, &cap, NULL)) break;
+        }
     }
+
+    g_last_feet_y = g_slot[S_POS_Y];
 
     build_camera();
     return 0.0;

@@ -59,8 +59,13 @@ except Exception:
 
 ROOT = Path(__file__).resolve().parent                 # language/
 REPO_ROOT = ROOT.parent                                 # d:/GnuchanOS
-BUILD_ROOT = ROOT / "build"                            # language/build
 TEMP_ROOT = REPO_ROOT / "_temp"
+# Build output goes under _temp/, NOT under language/build/. Everything this
+# script produces - the compiler output, and the generated embed sources below -
+# is temporary by definition, and _temp/ is ignored by git. While the output
+# lived in the tree, running this script changed tracked files and `git pull`
+# then refused to run until those changes were merged or stashed.
+BUILD_ROOT = TEMP_ROOT / "language-build"
 
 
 def os_name() -> str:
@@ -89,12 +94,21 @@ FREEFONT_URL = "https://ftp.gnu.org/gnu/freefont/freefont-ttf-20120503.zip"
 FREEFONT_DIR = _plat_temp() / "FreeFont"
 # REAL source directory is language/_SRC (not src/). Linux is case-sensitive: src/IDE vs _SRC/ide
 # and that difference breaks the build, so all paths use _SRC/ with the correct case.
-FREEFONT_EMBED = ROOT / "_SRC" / "embed_freemono.c"
+#
+# The embedded font and icon are BUILD OUTPUT, not source: they are byte arrays
+# generated from a downloaded TTF and from assets/icon.png on every build. They
+# are written under _temp/ so a build never dirties the working tree. While they
+# lived in language/_SRC/ and were tracked, every run rewrote a tracked file and
+# `git pull` refused to run until that change was merged or stashed - the
+# "merge first, then pull" message this move exists to stop. _temp/ is ignored
+# by git, so nothing generated here can ever be mistaken for a change.
+GENERATED_DIR = TEMP_ROOT / "generated"
+FREEFONT_EMBED = GENERATED_DIR / "embed_freemono.c"
 
 # Default project icon (gnuchan logo). `gcl -new` writes this PNG to the new project's
 # assets/icon.png; it also becomes the exe icon during build (gcl_icon.c).
 DEFAULT_ICON_PNG = REPO_ROOT / "assets" / "icon.png"
-ICON_EMBED = ROOT / "_SRC" / "embed_icon.c"
+ICON_EMBED = GENERATED_DIR / "embed_icon.c"
 
 # ---------- Program (CLI) sources — the IDE moved to a separate DLL (Programs/ide.dll) ----------
 GCL_SRCS = [
@@ -114,7 +128,7 @@ GCL_SRCS = [
     "_SRC/GCL/SimpleRunner/gcl_terminal.c",
     "_SRC/gcl_os.c",
     "_SRC/gcl_icon.c",
-    "_SRC/embed_icon.c",
+    str(ICON_EMBED),                 # generated under _temp/ (see GENERATED_DIR)
     "_SRC/gcl_main.c",
 ]
 
@@ -151,8 +165,8 @@ IDE_SRCS = [
     "_SRC/build/gcbundle_reader.c",
     "_SRC/build/gcbundle_pack.c",
     "_SRC/build/gcbundle_build.c",
-    "_SRC/embed_freemono.c",
-    "_SRC/embed_icon.c",
+    str(FREEFONT_EMBED),             # generated under _temp/ (see GENERATED_DIR)
+    str(ICON_EMBED),                 # generated under _temp/ (see GENERATED_DIR)
     "_SRC/gcl_os.c",
     "_SRC/gcl_icon.c",
 ]
@@ -1439,7 +1453,7 @@ def build_gcl() -> Path:
     # Programs/ide.so is generated only when the language/_SRC/ide/ + _SRC/build/ sources exist in the repo.
     # embed_freemono.c / embed_icon.c are generated automatically (embed_font()/embed_icon());
     # even if they are not tracked in CI, they appear during the build, so they are excluded.
-    generated = {"_SRC/embed_freemono.c", "_SRC/embed_icon.c"}
+    generated = {str(FREEFONT_EMBED), str(ICON_EMBED)}
     missing_ide = [s for s in IDE_SRCS
                    if s not in generated and not (ROOT / s).exists()]
     if not missing_ide:

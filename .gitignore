@@ -23,8 +23,17 @@ _temp/
 language/tests/*
 
 !language/tests/
-# GCL build output (language/build/)
+# Build output. Every makefile.py in this repository writes its product under
+# _temp/ (already ignored above), so nothing here should ever be produced in the
+# tree again. The entries below are the OLD output locations plus the generated
+# sources that used to be written into language/_SRC/: they are listed so that a
+# tree which still has them - or a stale build run - cannot dirty the working
+# directory and block `git pull` with "merge first".
 language/build/
+language/_SRC/embed_freemono.c
+language/_SRC/embed_icon.c
+gnuchan_softwares/gcl_WM/build/
+gnuchan_softwares/gcl_DM/build/
 # ── GCL test temp files (_NOTES/) ──────────────────────────
 language/_NOTES/t_*.gcsf
 language/_NOTES/t_*.gcsf.c

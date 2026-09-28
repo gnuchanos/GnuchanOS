@@ -69,11 +69,11 @@ uniform vec4 fogShape;
 // ---------------------------------------------------------------------------
 
 vec3 srgb_to_linear(vec3 c) {
-    return pow(c, vec3(2.2));
+    return c*c;
 }
 
 vec3 linear_to_srgb(vec3 c) {
-    return pow(c, vec3(1.0/2.2));
+    return sqrt(c);
 }
 
 void accumulate_light(int index, vec3 normal, vec3 viewDir,
@@ -98,8 +98,14 @@ void accumulate_light(int index, vec3 normal, vec3 viewDir,
     lightDot += lights[index].color.rgb*(NdotL*atten);
 
     if (NdotL > 0.0) {
-        float specCo = pow(max(0.0, dot(viewDir, reflect(-lightDir, normal))),
-                           SPECULAR_SHININESS);
+        /* PARLAMA, USTEL YERINE KAREDEN. `pow(x, 48)` llvmpipe'da
+           exp2(log2(x)*48) demektir ve piksel basina bes kez odenir; kare
+           zinciri ayni vurguyu ~12. kuvvette verir ve yalnizca carpimdir. */
+        float s    = max(0.0, dot(viewDir, reflect(-lightDir, normal)));
+        float s2   = s*s;
+        float s4   = s2*s2;
+        float s8   = s4*s4;
+        float specCo = s8*s4;
         specular += lights[index].color.rgb*(specCo*atten);
     }
 }

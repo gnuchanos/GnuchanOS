@@ -88,11 +88,15 @@
 #define GCL_SKY_NOISE_A \
 "float gclHash(vec2 p)\n" \
 "{\n" \
-"    return fract(sin(dot(p, vec2(127.1, 311.7)))*43758.5453123);\n" \
+"    vec3 p3 = fract(vec3(p.xyx)*0.1031);\n" \
+"    p3 += dot(p3, p3.yzx + 33.33);\n" \
+"    return fract((p3.x + p3.y)*p3.z);\n" \
 "}\n" \
 "float gclHash3(vec3 p)\n" \
 "{\n" \
-"    return fract(sin(dot(p, vec3(127.1, 311.7, 74.7)))*43758.5453123);\n" \
+"    vec3 p3 = fract(p*0.1031);\n" \
+"    p3 += dot(p3, p3.zyx + 31.32);\n" \
+"    return fract((p3.x + p3.y)*p3.z);\n" \
 "}\n" \
 "float gclNoise(vec2 p)\n" \
 "{\n" \
@@ -109,20 +113,20 @@
 "{\n" \
 "    float v = 0.0;\n" \
 "    float a = 0.5;\n" \
-"    for (int i = 0; i < 5; i++)\n" \
+"    for (int i = 0; i < 3; i++)\n" \
 "    {\n" \
 "        v += a*gclNoise(p);\n" \
 "        p = p*2.03 + 17.3;\n" \
 "        a *= 0.5;\n" \
 "    }\n" \
-"    return v;\n" \
+"    return v*1.107;\n" \
 "}\n" \
 "float gclFbmLod(vec2 p, float detail)\n" \
 "{\n" \
 "    float v = 0.0;\n" \
 "    float w = 0.0;\n" \
 "    float a = 0.5;\n" \
-"    for (int i = 0; i < 5; i++)\n" \
+"    for (int i = 0; i < 3; i++)\n" \
 "    {\n" \
 "        float k = (i == 0) ? 1.0 : detail;\n" \
 "        v += a*k*gclNoise(p);\n" \
@@ -232,7 +236,7 @@
 "    float detail = 1.0 - smoothstep(3.0, 11.0, dist);\n" \
 "    float reach  = 1.0 - smoothstep(10.0, 22.0, dist);\n" \
 "    if (reach <= 0.001) return vec4(0.0);\n" \
-"    float n  = gclFbmLod(q, detail)*0.62 + gclFbmLod(q*2.6, detail)*0.38;\n" \
+"    float n  = gclFbmLod(q, detail);\n" \
 "    vec3  white = vec3(0.98, 0.99, 1.00);\n" \
 "    vec3  night = vec3(0.16, 0.19, 0.28);\n" \
 "    vec3  body  = mix(night, white, day);\n" \
@@ -269,7 +273,11 @@
 "    float dn    = pow(clamp(-h, 0.0, 1.0), skyParams.y);\n" \
 "    vec3  c     = (h >= 0.0) ? mix(skyHorizon, skyTop, up)\n" \
 "                            : mix(skyHorizon, skyBottom, dn);\n" \
-"    float hz    = pow(1.0 - clamp(abs(h), 0.0, 1.0), 10.0);\n" \
+"    float hz0   = 1.0 - clamp(abs(h), 0.0, 1.0);\n" \
+"    float hz2   = hz0*hz0;\n" \
+"    float hz4   = hz2*hz2;\n" \
+"    float hz8   = hz4*hz4;\n" \
+"    float hz    = hz8*hz2;\n" \
 "    c += skyHorizon*hz*bandParams.w;\n" \
 "    vec3  bandN = normalize(vec3(0.42, 0.55, -0.72));\n" \
 "    vec3  bandE = normalize(cross(bandN, vec3(0.0, 1.0, 0.0)));\n" \
@@ -279,17 +287,19 @@
 "    float dust  = gclFbm(vec2(dot(d, bandE), dot(d, bandF))*3.2);\n" \
 "    float milky = band*(0.30 + 0.85*dust);\n" \
 "    c += starColor*milky*bandParams.x*night;\n" \
-"    float e0, e1, e2;\n" \
-"    vec3  t0, t1, t2;\n" \
+"    float e0, e1;\n" \
+"    vec3  t0, t1;\n" \
 "    gclStarLayer(d, starParams.y*0.62, 0.895, 0.30,  3.0, time, e0, t0);\n" \
 "    gclStarLayer(d, starParams.y*1.45, 0.800, 0.20, 17.0, time, e1, t1);\n" \
-"    gclStarLayer(d, starParams.y*3.05, 0.700, 0.13, 41.0, time, e2, t2);\n" \
 "    float boost = 1.0 + 1.8*band;\n" \
-"    vec3  stars = t0*e0*1.00 + t1*e1*0.62 + t2*e2*0.34;\n" \
+"    vec3  stars = t0*e0*1.00 + t1*e1*0.62;\n" \
 "    c += stars*starColor*starParams.z*boost*night;\n" \
 "    float sd   = dot(d, sunDir);\n" \
 "    float disc = smoothstep(sunParams.y, sunParams.x, sd);\n" \
-"    float glow = pow(max(sd, 0.0), 12.0)*sunParams.z*(1.0 - 0.72*night);\n" \
+"    float sg2  = max(sd, 0.0);\n" \
+"    float sg4  = sg2*sg2;\n" \
+"    float sg8  = sg4*sg4;\n" \
+"    float glow = sg8*sg4*sunParams.z*(1.0 - 0.72*night);\n" \
 "    c += sunColor*(disc + glow);\n" \
 "    float layer = clamp(d.y*cloudParams.z, 0.0, 1.0);\n" \
 "    if (layer > 0.001 && cloudParams.w > 0.001)\n" \

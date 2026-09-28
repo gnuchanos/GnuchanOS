@@ -33,7 +33,11 @@ except Exception:
     pass
 
 ROOT = Path(__file__).resolve().parent
-BUILD = ROOT / "build"
+# Build output goes under _temp/, not into the source tree. A build is not a
+# change to the project, and while the binary was written to ROOT/build/ every
+# run left it behind for git to notice. _temp/ is ignored, so the working tree
+# stays exactly as it was cloned.
+BUILD = ROOT.parent.parent / "_temp" / "gcl_WM-build"
 
 PROGRAM = "GnuChanWM"
 BIN_DIR = Path("/usr/local/bin")

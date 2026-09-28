@@ -109,7 +109,7 @@ _0_point_light.Draw(); # draw glow cube for check where is the light
 /* Cekirdegin etrafina cizilen ic ice kabuk sayisi, en dis kabugun cekirdege
    gore buyume katsayisi ve kabuklarin tepe katki siddeti. Kabuklar buyurken
    alfasi duser: disa dogru sonumlenen yumusak bir hale olusur - "glow". */
-#define GLOW_SHELLS      8
+#define GLOW_SHELLS      3
 #define GLOW_GROW        3.0f
 #define GLOW_ALPHA       16
 

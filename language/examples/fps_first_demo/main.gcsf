@@ -13,7 +13,7 @@
 
 
 int main() {
-    Raylib.InitWindow(1600, 900, "GCL Project");
+    Raylib.InitWindow(1024, 768, "GCL Project");
 
     #// skybox
     RaylibSKYBOX.Skybox sky = RaylibSKYBOX.CreateSimpleSkybox();
