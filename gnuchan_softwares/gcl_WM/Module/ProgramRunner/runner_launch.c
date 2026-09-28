@@ -39,13 +39,25 @@
    started rather than one it is holding. */
 static void child_detach(Display *display) {
     if (display) {
-        /* XCloseDisplay flushes any request still queued, which in a forked
-           child is a request the parent also thinks it made: the child must
-           not send anything, so the connection is closed with the buffer
-           thrown away. XCloseDisplay on a display whose buffer is empty is
-           exactly that, and the launcher flushes after every draw, so the
-           buffer is empty here. */
-        XCloseDisplay(display);
+        /* The socket is closed, and XCloseDisplay is deliberately NOT called.
+           The two are not the same thing, and the difference is the whole of
+           this function.
+
+           XCloseDisplay frees the display structure — its screens, its
+           extensions, its buffers — and a forked child holds a copy of that
+           structure, not one of its own. Calling it here means the child
+           walking and freeing memory the parent is still using, and it is
+           exactly the sequence the Xlib manual warns against after a fork:
+           the child can fault inside Xlib and never reach the exec below.
+           That is a launcher that closes and starts nothing, which is what
+           this did.
+
+           close(ConnectionNumber()) is the documented way to drop the
+           connection in a child: it releases the socket and touches nothing
+           else. The descriptor is the child's own copy — closing it cannot
+           close the parent's — and no request is written, so the parent's
+           stream stays exactly as the parent left it. */
+        close(ConnectionNumber(display));
     }
 
     setsid();
@@ -73,31 +85,98 @@ static pid_t launch_words(Display *display, char *const argv[]) {
         return -1;
     }
     if (pid == 0) {
+        /* A copy of stderr is kept for one message, and that copy is the whole
+           reason this line exists: child_detach() points stderr at /dev/null,
+           so a program that cannot be run — a command that is not installed, a
+           path that is wrong — fails with nothing said anywhere. That is a
+           launcher that "does nothing when you press Enter", which is a fault
+           nobody can act on. The copy is closed as soon as the message is
+           written, and nothing else is ever sent to it.
+
+           The message is built and written by hand rather than with printf,
+           because this is between fork and exec: the child shares the parent's
+           stdio buffers and must not touch them. */
+        int report = dup(STDERR_FILENO);
+
         child_detach(display);
+
         execvp(argv[0], argv);
-        /* execvp only returns on failure. _exit rather than exit, because the
-           child shares the parent's buffers and exit would flush them a second
-           time. */
+
+        /* execvp only returns on failure. */
+        if (report >= 0) {
+            char message[512];
+            int length = snprintf(message, sizeof(message),
+                                  "gnuchanrunner: cannot run '%s': %s\n",
+                                  argv[0], strerror(errno));
+            if (length > 0) {
+                size_t written = (size_t)length < sizeof(message)
+                               ? (size_t)length : sizeof(message) - 1;
+                ssize_t ignored = write(report, message, written);
+                (void)ignored;
+            }
+            close(report);
+        }
+
+        /* _exit rather than exit, because the child shares the parent's
+           buffers and exit would flush them a second time. */
         _exit(127);
     }
     return pid;
 }
 
+/* Whether a program can be found on PATH, or at the path it was written with.
+   A bare name is searched for, which is what a terminal in a .desktop file is;
+   a name with a slash is used as it is. */
+static int program_exists(const char *name) {
+    if (!name || !name[0]) {
+        return 0;
+    }
+    if (strchr(name, '/')) {
+        return access(name, X_OK) == 0;
+    }
+    const char *path = getenv("PATH");
+    if (!path) {
+        return 0;
+    }
+    char buffer[4096];
+    const char *start = path;
+    size_t name_length = strlen(name);
+    while (*start) {
+        const char *end = strchr(start, ':');
+        size_t dir_length = end ? (size_t)(end - start) : strlen(start);
+        if (dir_length + name_length + 2 < sizeof(buffer)) {
+            memcpy(buffer, start, dir_length);
+            buffer[dir_length] = '/';
+            memcpy(buffer + dir_length + 1, name, name_length + 1);
+            if (access(buffer, X_OK) == 0) {
+                return 1;
+            }
+        }
+        if (!end) {
+            break;
+        }
+        start = end + 1;
+    }
+    return 0;
+}
+
 const char *runner_launch_terminal(void) {
     const char *from_environment = getenv("TERMINAL");
-    if (from_environment && from_environment[0]) {
-        /* Answered only when it is a name that can be run: a $TERMINAL left
-           over from another session and since uninstalled must fall through to
-           the candidates below rather than leave a program unable to start. */
-        if (strchr(from_environment, '/')) {
-            if (access(from_environment, X_OK) == 0) {
-                return from_environment;
-            }
-        } else {
-            return from_environment;    /* execvp will find it or not */
-        }
+    /* $TERMINAL is answered only when it names something that can actually be
+       run: a value left over from another session and since uninstalled must
+       fall through to the candidates below rather than leave a program with no
+       terminal to start in. */
+    if (from_environment && from_environment[0] &&
+        program_exists(from_environment)) {
+        return from_environment;
     }
 
+    /* The candidates are tried in order and the first one this machine really
+       has is the answer. Returning candidates[0] without looking — which is
+       what this did — names a terminal that may not be installed at all; the
+       program is then handed to a terminal that does not exist and nothing
+       happens, which is the same "nothing happened" as a bad command and much
+       harder to explain. */
     static const char *const candidates[] = {
         "x-terminal-emulator",
         "gnome-terminal",
@@ -109,12 +188,9 @@ const char *runner_launch_terminal(void) {
         NULL,
     };
     for (int i = 0; candidates[i]; i++) {
-        /* The candidates are all names without a slash, found through PATH,
-           which is what a session's terminal is. Checking the path here would
-           mean writing a PATH walk for a decision execvp makes anyway, so the
-           first candidate is taken and a machine that has none gets the same
-           "nothing happened" a bad command gives. */
-        return candidates[i];
+        if (program_exists(candidates[i])) {
+            return candidates[i];
+        }
     }
     return NULL;
 }
