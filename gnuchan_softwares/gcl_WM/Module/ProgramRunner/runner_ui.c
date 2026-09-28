@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
@@ -351,18 +352,44 @@ static void handle_key(RunnerUi *ui, XKeyEvent *key) {
 
 /* --- the window ----------------------------------------------------------- */
 
-/* Take the keyboard and the pointer, and say whether the keyboard was taken.
-   A keyboard that could not be grabbed is not fatal — the launcher still works
-   with the pointer, and the keys go where they were going — but it is worth
-   knowing about, because it is the one failure that makes typing do something
-   else. */
+/* Take the keyboard and the pointer for as long as the launcher is up.
+ *
+ * The input focus is set first, and that is the part that was missing. The
+ * window is override-redirect, so GnuChanWM — the window manager on this
+ * desktop — never sees it in its frame table and never focuses it. Without
+ * XSetInputFocus here the keys keep going to whatever had the keyboard before
+ * the launcher opened: the arrow keys move something else's list, and the
+ * launcher sits in front taking nothing. Setting it is the launcher's own job
+ * because there is no window manager going to do it.
+ *
+ * The grabs come next, and both are retried. A grab is refused with
+ * GrabNotViewable while the server is still finishing the map, and with
+ * AlreadyGrabbed while another client is holding one for a moment — both are
+ * states that pass, and a launcher that gave up on the first refusal is a
+ * launcher whose keyboard does not work. The retries are a few hundred
+ * milliseconds in the worst case, which is shorter than it takes to move a
+ * hand to the keyboard.
+ */
 static int grab_input(RunnerUi *ui) {
-    XGrabPointer(ui->display, ui->window, False,
-                 ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-                 GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
-    int status = XGrabKeyboard(ui->display, ui->window, False,
-                               GrabModeAsync, GrabModeAsync, CurrentTime);
-    return status == GrabSuccess;
+    XSetInputFocus(ui->display, ui->window, RevertToPointerRoot, CurrentTime);
+    XSync(ui->display, False);
+
+    int keyboard = GrabNotViewable;
+    for (int attempt = 0; attempt < 20; attempt++) {
+        XGrabPointer(ui->display, ui->window, False,
+                     ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+                     GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+        keyboard = XGrabKeyboard(ui->display, ui->window, False,
+                                 GrabModeAsync, GrabModeAsync, CurrentTime);
+        if (keyboard == GrabSuccess) {
+            return 1;
+        }
+        usleep(10000);
+    }
+    fprintf(stderr,
+            "gnuchanrunner: the keyboard could not be grabbed (%d); "
+            "typing will go to whatever had the focus\n", keyboard);
+    return 0;
 }
 
 static void ungrab_input(RunnerUi *ui) {
@@ -445,7 +472,13 @@ int runner_ui_open(RunnerUi *ui, const char *config_path) {
        nothing and then growing. */
     refresh(ui);
     XMapRaised(ui->display, ui->window);
-    XFlush(ui->display);
+    /* The window has to be on screen before the keyboard is grabbed. XFlush
+       only sends the map request and returns; the window is still unmapped on
+       the server when the grab arrives, and a grab on an unmapped window is
+       refused with GrabNotViewable. XSync waits for the map to have happened,
+       which is what makes the grab below succeed the first time rather than
+       relying on its retries. */
+    XSync(ui->display, False);
 
     grab_input(ui);
     runner_draw(ui);
@@ -468,14 +501,27 @@ int runner_ui_run(RunnerUi *ui) {
             break;
 
         case ButtonPress:
-            /* A click on a row chooses it and runs it; a click anywhere else
-               dismisses the launcher. This is what makes it feel like a
-               launcher rather than a window that has to be closed: a click on
-               the desktop is "I did not mean it". */
+            /* A click on a row chooses it and runs it; a click outside the
+               window dismisses the launcher, which is what makes a click on
+               the desktop mean "I did not mean it".
+
+               A click INSIDE the window that is not on a row does nothing at
+               all, and the query line is the case that matters: it is the line
+               the typing goes to, and a person who clicks it is aiming at the
+               launcher, not asking it to go away. Closing on that click was
+               the fault — the one place in the window that most looks like it
+               should be clicked was the one place that dismissed it.
+
+               Only the left button is read. A right or middle click is not a
+               choice and must not be read as one. */
+            if (event.xbutton.button != Button1) {
+                break;
+            }
             if (event.xbutton.x >= 0 && event.xbutton.x < ui->width &&
-                event.xbutton.y >= 0 && event.xbutton.y < ui->height &&
-                event.xbutton.y >= ui->style.row_height) {
-                choose_clicked_row(ui, event.xbutton.y);
+                event.xbutton.y >= 0 && event.xbutton.y < ui->height) {
+                if (event.xbutton.y >= ui->style.row_height) {
+                    choose_clicked_row(ui, event.xbutton.y);
+                }
             } else {
                 ui->running = 0;
                 ui->launch_selected = -1;
