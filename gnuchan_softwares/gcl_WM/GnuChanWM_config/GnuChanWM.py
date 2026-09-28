@@ -105,6 +105,7 @@ gcl_themes.Theme_cursor(
 
 
 default_terminal = "xterm"
+GnuChanRunner = "GnuChanRunner"
 
 super_key1 = "Mod1"  # Alt
 super_key2 = "Mod2"  # NumLock, on most keyboards
@@ -117,6 +118,7 @@ super_key3 = "Mod3"  # unused on most keyboards
 # the window used before this one.
 gcl_keys.all = [
     gcl_key.MultiKey(keys=[super_key1, "return"], action=gcl_spawn.RunProgram(command=default_terminal)),
+    gcl_key.MultiKey(keys=[super_key1, "r"], action=gcl_spawn.RunProgram(command=GnuChanRunner)),
     gcl_key.MultiKey(keys=[super_key1, "F4"], action=gcl_window.Close()),
     gcl_key.MultiKey(keys=[super_key1, "Tab"], action=gcl_window.Switch()),
 ]
