@@ -787,7 +787,7 @@ const GclNativeMember gcl_native_db_Raylib[] = {
     {"UnloadFontData", "void", "int glyphSet", "textfont", "Unload font chars info data (RAM)", NF_FUNC},
     {"UnloadFont", "void", "int font", "textfont", "Unload font from GPU memory (VRAM)", NF_FUNC},
     {"ExportFontAsCode", "int", "int font, gcChar fileName", "textfont", "Export font as code file, returns true on success", NF_FUNC},
-    {"DrawFPS", "void", "int posX, int posY", "textfont", "Draw current FPS", NF_FUNC},
+    {"DrawFPS", "void", "int posX, int posY, int color", "textfont", "Draw current FPS (color optional: defaults to raylib's LIME)", NF_FUNC},
     {"DrawText", "void", "gcChar text, int posX, int posY, int fontSize, Color color", "textfont", "Draw text (using default font)", NF_FUNC},
     {"DrawTextEx", "void", "Font font, gcChar text, Vector2 position, float fontSize, float spacing, Color tint", "textfont", "Draw text using font and additional parameters", NF_FUNC},
     {"DrawTextPro", "void", "int font, gcChar text, float positionx, float positiony, float originx, float originy, float rotation, float fontSize, float spacing, Color tint", "textfont", "Draw text using Font and pro parameters (rotation)", NF_FUNC},

@@ -457,6 +457,88 @@ void wm_frame_raise(WmCore *core, WmFrame *frame) {
     XFlush(core->display);
 }
 
+/* ---------- size hints: the steps a client asks to be resized in ----------
+
+   A terminal has no size in pixels; it has a grid, and the grid is whole
+   character cells. It says so in WM_NORMAL_HINTS: a BASE size, which is the
+   window's own chrome, and an INCREMENT, which is one cell. A window manager
+   that ignores those numbers and gives the window whatever width the pointer
+   asks for produces a size that is not a whole number of cells. The terminal
+   draws the cells that fit and leaves the strip past the last one exactly as
+   it was — and nothing the program can print reaches that strip, so no
+   `clear` and no full-screen program ever repaints it. The text that stood
+   there when the window had a different size then stays on the screen for the
+   life of the window. Snapping to the hints is what keeps the window a whole
+   number of cells.
+
+   The hints are read from the client on every motion rather than cached: a
+   program may change them at any time — a terminal does when its font
+   changes — and one round trip during a drag is nothing beside the resize
+   itself.
+
+   These live here, above their first caller, because two different paths snap:
+   a drag (frame_resize_drag) and a cl (frame_clamp_to_workarea). */
+typedef struct {
+    int base_width;
+    int base_height;
+    int width_inc;
+    int height_inc;
+    int min_width;
+    int min_height;
+} WmSizeHints;
+
+static void frame_read_size_hints(WmCore *core, WmFrame *frame,
+                                  WmSizeHints *hints) {
+    XSizeHints raw;
+    long supplied = 0;
+
+    memset(hints, 0, sizeof(*hints));
+    hints->width_inc = 1;
+    hints->height_inc = 1;
+
+    if (!XGetWMNormalHints(core->display, frame->client, &raw, &supplied)) {
+        return;
+    }
+
+    /* The increments are counted FROM the base. A program that names a base
+       gives it in PBaseSize; one that gives only a minimum means the minimum
+       is the base, which is what the ICCCM says the minimum stands for. */
+    if (supplied & PBaseSize) {
+        hints->base_width = raw.base_width;
+        hints->base_height = raw.base_height;
+    } else if (supplied & PMinSize) {
+        hints->base_width = raw.min_width;
+        hints->base_height = raw.min_height;
+    }
+    if ((supplied & PResizeInc) && raw.width_inc > 0 && raw.height_inc > 0) {
+        hints->width_inc = raw.width_inc;
+        hints->height_inc = raw.height_inc;
+    }
+    if (supplied & PMinSize) {
+        hints->min_width = raw.min_width;
+        hints->min_height = raw.min_height;
+    }
+}
+
+/* The size nearest to `value` that the hints allow. `base` is where the
+   increments are counted from (0 for a program that named none — a multiple of
+   the increment FROM ZERO is then the grid), `increment` is one step, and
+   `minimum` is what the manager will not go below. A value already at or under
+   the base is left alone: it is the smallest size the client describes and
+   snapping it would round it below that. */
+static int frame_hint_size(int value, int base, int increment, int minimum) {
+    int steps;
+
+    if (increment > 1 && value > base) {
+        steps = (value - base + increment / 2) / increment;
+        value = base + steps * increment;
+    }
+    if (value < minimum) {
+        value = minimum;
+    }
+    return value;
+}
+
 /* Keep a frame inside the workarea after the client asks to be resized.
  *
  * A client may ask to be bigger than the desktop — the raylib demo opens at
@@ -503,6 +585,25 @@ static void frame_clamp_to_workarea(WmCore *core, WmFrame *frame) {
     }
     if (frame->client_height > room_height) {
         frame->client_height = room_height;
+    }
+
+    /* A size cut down to the workarea is cut to whatever the room happens to
+       be, which is not a whole number of the client's cells — see the note
+       above WmSizeHints. The same strip then appears at the right and bottom
+       edge as when a drag asks for a size off the grid, so the result is
+       snapped here too. It is snapped DOWN (never past the workarea), which is
+       why the increment is subtracted rather than added. */
+    {
+        WmSizeHints hints;
+        frame_read_size_hints(core, frame, &hints);
+        if (hints.width_inc > 1 && frame->client_width > hints.base_width) {
+            int steps = (frame->client_width - hints.base_width) / hints.width_inc;
+            frame->client_width = hints.base_width + steps * hints.width_inc;
+        }
+        if (hints.height_inc > 1 && frame->client_height > hints.base_height) {
+            int steps = (frame->client_height - hints.base_height) / hints.height_inc;
+            frame->client_height = hints.base_height + steps * hints.height_inc;
+        }
     }
 
     /* Pull the frame back so its right and bottom edges stay inside the area.
@@ -1169,12 +1270,12 @@ static void frame_begin_resize(WmCore *core, WmFrame *frame,
     XGrabPointer(core->display, frame->frame, False,
                  PointerMotionMask | ButtonReleaseMask,
                  GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
-    XFlush(core->display);
 }
 
 /* One motion of a resize, from the pointer's absolute place. */
 static void frame_resize_drag(WmCore *core, WmFrame *frame,
                               int pointer_x, int pointer_y) {
+    WmSizeHints hints;
     int dx = pointer_x - frame->resize_pointer_x;
     int dy = pointer_y - frame->resize_pointer_y;
 
@@ -1182,42 +1283,47 @@ static void frame_resize_drag(WmCore *core, WmFrame *frame,
     int y = frame->resize_y;
     int width = frame->resize_width;
     int height = frame->resize_height;
+    int moving_left = (frame->resize_edges & WM_RESIZE_LEFT) != 0;
+    int moving_top = (frame->resize_edges & WM_RESIZE_TOP) != 0;
 
     /* A side that is moving takes its share of the motion; the opposite side
        stays where it was. A left or top edge therefore moves the frame's
        origin as well as its size, which is the whole difference between
        growing a window and growing it outwards. */
-    if (frame->resize_edges & WM_RESIZE_LEFT) {
-        int wanted = frame->resize_width - dx;
-        if (wanted < WM_RESIZE_MIN_WIDTH) {
-            dx = frame->resize_width - WM_RESIZE_MIN_WIDTH;
-            wanted = WM_RESIZE_MIN_WIDTH;
-        }
-        x = frame->resize_x + dx;
-        width = wanted;
+    if (moving_left) {
+        width = frame->resize_width - dx;
     } else if (frame->resize_edges & WM_RESIZE_RIGHT) {
         width = frame->resize_width + dx;
-        if (width < WM_RESIZE_MIN_WIDTH) {
-            width = WM_RESIZE_MIN_WIDTH;
-        }
     }
-
-    if (frame->resize_edges & WM_RESIZE_TOP) {
-        int wanted = frame->resize_height - dy;
-        if (wanted < WM_RESIZE_MIN_HEIGHT) {
-            dy = frame->resize_height - WM_RESIZE_MIN_HEIGHT;
-            wanted = WM_RESIZE_MIN_HEIGHT;
-        }
-        y = frame->resize_y + dy;
-        height = wanted;
+    if (moving_top) {
+        height = frame->resize_height - dy;
     } else if (frame->resize_edges & WM_RESIZE_BOTTOM) {
         height = frame->resize_height + dy;
-        if (height < WM_RESIZE_MIN_HEIGHT) {
-            height = WM_RESIZE_MIN_HEIGHT;
-        }
     }
 
-    (void)core;
+    /* The pointer's size is snapped to the grid the client asked for before it
+       is applied, so the window is never a fraction of a cell — see the note
+       above WmSizeHints. A client that named no increments has one pixel as
+       its step and passes through unchanged. */
+    frame_read_size_hints(core, frame, &hints);
+    width = frame_hint_size(width, hints.base_width, hints.width_inc,
+                            hints.min_width > WM_RESIZE_MIN_WIDTH
+                                ? hints.min_width : WM_RESIZE_MIN_WIDTH);
+    height = frame_hint_size(height, hints.base_height, hints.height_inc,
+                             hints.min_height > WM_RESIZE_MIN_HEIGHT
+                                 ? hints.min_height : WM_RESIZE_MIN_HEIGHT);
+
+    /* The origin follows from the size for an edge that is moving: the
+       OPPOSITE edge is the one that has to stay still. Done after the snapping
+       so a left or top edge cannot drift by whatever the snapping rounded
+       away. */
+    if (moving_left) {
+        x = frame->resize_x + (frame->resize_width - width);
+    }
+    if (moving_top) {
+        y = frame->resize_y + (frame->resize_height - height);
+    }
+
     frame->x = x;
     frame->y = y;
     frame->client_width = width;
@@ -1361,6 +1467,27 @@ static void frame_event(WmCore *core, XEvent *event) {
         if (!frame) {
             break;
         }
+        if (frame->dragging || frame->resizing) {
+            /* COALESCE. The pointer reports every step it takes and the server
+               queues them all, so one drag across the screen arrives as dozens
+               of motion events, every one of them stale by the time it is read.
+               Applying each one resizes the window, repaints the title bar, and
+               — through the ConfigureNotify — makes the program inside redraw
+               its whole content: dozens of times over for one visible movement,
+               with the window trailing the hand by the whole backlog. That
+               backlog is the lag of a resize drag. Only the newest position
+               matters, so the queued ones are taken off the queue and dropped
+               here and the work is done once.
+
+               Matched by WINDOW, so another window's motion events are left
+               alone: a drag owns the pointer, and the events it owns are the
+               ones for the window its grab was taken on. */
+            XEvent newer;
+            while (XCheckTypedWindowEvent(core->display, event->xmotion.window,
+                                          MotionNotify, &newer)) {
+                *event = newer;
+            }
+        }
         if (frame->dragging) {
             int x = frame->drag_frame_x +
                     (event->xmotion.x_root - frame->drag_pointer_x);
@@ -1385,9 +1512,18 @@ static void frame_event(WmCore *core, XEvent *event) {
         break;
     }
     case Expose: {
-        WmFrame *frame = wm_frame_find_by_frame(core, event->xexpose.window);
-        if (frame) {
-            wm_frame_draw(core, frame);
+        /* Exposes arrive in a RUN — a resize or a raise queues one per exposed
+           rectangle — and `count` is how many more are already waiting for
+           this window. Drawing for each of them draws the whole frame once per
+           rectangle, and only the last one covers them all, so only that one
+           draws. During a resize drag this is the difference between one
+           repaint and a dozen per motion. */
+        if (event->xexpose.count == 0) {
+            WmFrame *frame =
+                wm_frame_find_by_frame(core, event->xexpose.window);
+            if (frame) {
+                wm_frame_draw(core, frame);
+            }
         }
         break;
     }

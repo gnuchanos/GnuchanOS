@@ -133,13 +133,14 @@ int main() {
         #// Terrain Collision (arazi + zemin tabani)
         RaylibSimpleCollision.TerrainCollision(PLAYER, Terrain);
 
-        #// KAPSUL move_and_slide: Godot'un CharacterBody3D.move_and_slide() gibi.
-        #// Oyuncu, Height uzunlugunda ve 0.3 yaricapinda DIMDIK bir kapsuldur.
-        #// Dikey/hareket hizi FPS + TerrainCollision'dan gelir; burada kutuya
-        #// karsi ust uste binme cozulur ve temas boyunca KAYILIR. Ilk arguman
-        #// hareket vektorudur (dx, dy, dz); FPS zaten ilerlettigi icin 0,0,0
-        #// verilir ve yalnizca cozulme (slide) uygulanir.
-        RaylibSimpleCollision.MoveAndSlide(PLAYER, 0, 0, 0, 4, CUBE);
+        #// KUTU CARPISMASI: kapsul, kutunun UCGENLERINE karsi cozulur.
+        #// Oyuncu Height uzunlugunda ve 0.3 yaricapinda DIMDIK bir kapsuldur.
+        #// Ucgenler kullanim noktasinda Position/Rotate/Scale uygulanmis olarak
+        #// gelir (gcl_simplemesh_triangle), yani CUBE.Rotate.y = 45 ile
+        #// DONDURULMUS kutu DOGRU temsil edilir. Hareket argumani yoktur:
+        #// konumu FPS ve TerrainCollision ilerletir, burasi yalnizca kutunun
+        #// icinde kalmis kapsulu disari iter.
+        RaylibSimpleCollision.SimpleBoxCollision(PLAYER, CUBE);
 
         #// skybox update
         SUN.Update();
@@ -191,7 +192,7 @@ int main() {
         water.DrawUnderwaterEffect();
 
         #// UI
-        Raylib.DrawFPS(10, 10);
+        Raylib.DrawFPS(10, 10, Raylib.WHITE);
 
 
         Raylib.EndDrawing();

@@ -1,6 +1,6 @@
 /*
 RaylibSimpleCollision.TerrainCollision(PLAYER, Terrain);
-RaylibSimpleCollision.MoveAndSlide(PLAYER, dx, dy, dz, maxSlides, MESH1, MESH2, ...);
+RaylibSimpleCollision.SimpleBoxCollision(PLAYER, MESH1, MESH2, ...);
 */
 
 /* Backend.
@@ -35,11 +35,12 @@ RaylibSimpleCollision.MoveAndSlide(PLAYER, dx, dy, dz, maxSlides, MESH1, MESH2, 
    yatay olur; oyuncu duvara tirmanamaz, boyunca KAYAR. Yurunebilir bir egimde
    itme yukaridir; oyuncu yurur.
 
-   MOVE_AND_SLIDE: hareket KUCUK ADIMLARA bolunur (adim siniri = yaricap, yoksa
-   ince bir duvar tunellenir); her adimda carpisma cozulur ve KALAN hareketin
-   temas normali boyunca olan bileseni silinir (projection). Oyuncu duvara
-   carpinca dik bilesen yenir, TEGET bileseni kalir — duvar boyunca kayma tam
-   olarak budur.
+   SIMPLEBOXCOLLISION, ayni sekil cozumunu verilen MESH'lerin ucgenlerine
+   uygular. Ucgenler DUNYA uzayinda, Position/Rotate/Scale uygulanmis olarak
+   gelir (gcl_simplemesh_triangle), yani DONDURULMUS bir kutu da dogru temsil
+   edilir. Raylib'in CheckCollisionBoxes'i yalnizca eksen-hizali kutularla
+   calisir ve dondurulmus bir kutuyu yanlis temsil ederdi; bu yuzden burada
+   kullanilmaz.
 
    Sekil cozumu ucgen verisine ihtiyac duyar; ucgenlerin sahibi
    RaylibSimpleMesh.dll'dir ve oradan DUNYA uzayinda alinir
@@ -82,12 +83,6 @@ RaylibSimpleCollision.MoveAndSlide(PLAYER, dx, dy, dz, maxSlides, MESH1, MESH2, 
    hafif egimler bile tirmanilamaz hale gelir. */
 #define COL_COS_SLOPE 0.7071
 
-/* Adim siniri = yaricap (bkz. move_and_slide). Kalan hareket bundan kucukse
-   dongu biter. */
-#define COL_MIN_STEP      1.0e-6
-
-#define COL_MAX_SLIDE_STEPS 8     /* tek cagrida en fazla kac kayma adimi */
-#define COL_DEF_SLIDE_STEPS 4     /* maxSlides verilmezse                 */
 #define COL_MAX_COLLIDERS   8     /* tek cagrida en fazla kac mesh        */
 
 /* Cozulme gecisi: her gecisde EN DERIN temas bulunup uygulanir, sonra kapsul
@@ -283,8 +278,8 @@ typedef struct {
 
    NEDEN: resolve_pass her cagride butun kumeyi tarar ve AABB testini her
    ucgen icin yapar. fps_first_demo'da arazi 41.454 ucgendir ve resolve_pass
-   kare basina COL_SOLVE_ITERS (6) kez, MoveAndSlide'da ayrica her adimda
-   cagrilir; yani kare basina yuz binlerce AABB testi. Oysa oyuncunun o karede
+   kare basina COL_SOLVE_ITERS (6) kez cagrilir; yani kare basina yuz binlerce
+   AABB testi. Oysa oyuncunun o karede
    dokunabilecegi ucgen sayisi birkac douzendir.
 
    Y KOVALANMAZ. Yalnizca X ve Z bolunur, ucgenin Y araligi ne olursa olsun
@@ -293,9 +288,9 @@ typedef struct {
    altindaki oyuncu onu bulamaz. X/Z bolmesi bu dogrulugu BOZMAZ; yalnizca
    ayni sutundaki az sayida ucgen fazladan test edilir.
 
-   Izgara YALNIZCA ARAZININ onbelleginde kurulur. Scratch kume (MoveAndSlide'in
-   collider'lari) kucuktur ve her karede degisir; ona izgara kurmak, kazanci
-   kurma maliyetine yedirir. */
+   Izgara YALNIZCA ARAZININ onbelleginde kurulur. Scratch kume
+   (SimpleBoxCollision'in collider'lari) kucuktur ve her karede degisir; ona
+   izgara kurmak, kazanci kurma maliyetine yedirir. */
 typedef struct {
     int *items;      /* bu hucredeki ucgen indeksleri */
     int  count;
@@ -318,11 +313,11 @@ typedef struct {
 } TriBuffer;
 
 /* IKI AYRI KUME. `g_tris` bir CAGRI icindeki collider'larin scratch tamponudur
-   (MoveAndSlide onu doldurur). `g_terrain_tris` ise ARAZININ ONBELLEGIDIR ve
-   cagrilar arasinda YASAR. Tek global dizi uzerinden calisildigi surece ikisi
-   birbirini ezerdi: MoveAndSlide'in doldurdugu kume bir sonraki karede
-   TerrainCollision'in onbellegini silerdi. resolve_pass hangi kumeyle
-   calisacagini bu yuzden ARGUMANLA alir. */
+   (SimpleBoxCollision onu doldurur). `g_terrain_tris` ise ARAZININ
+   ONBELLEGIDIR ve cagrilar arasinda YASAR. Tek global dizi uzerinden
+   calisildigi surece ikisi birbirini ezerdi: SimpleBoxCollision'in doldurdugu
+   kume bir sonraki karede TerrainCollision'in onbellegini silerdi.
+   resolve_pass hangi kumeyle calisacagini bu yuzden ARGUMANLA alir. */
 static TriBuffer g_tris;          /* scratch: bir cagrinin collider'lari */
 static TriBuffer g_terrain_tris;  /* ARAZI onbellegi (kalici)            */
 static int       g_terrain_handle = -2;   /* -2 = henuz toplanmadi       */
@@ -817,31 +812,28 @@ static double fn_terrain_collision(int argc, const char **argv) {
     return 0.0;
 }
 
-/* ---------- MoveAndSlide(player, dx, dy, dz, maxSlides, MESH...) ----------
+/* ---------- SimpleBoxCollision(player, MESH...) ----------
 
-   DUZLESMIS ARGUMAN DUZENI: 27 oyuncu yuvasi | dx,dy,dz | maxSlides |
-   ardindan HER collider icin 12 yuva (Mesh struct'i). Collider sayisi
-   degiskendir; hic verilmezse cagri yalnizca hareketi uygular.
+   OYUNCU KAPSULU, verilen MESH'LERIN UCGENLERINE karsi cozulur. Ucgenler
+   gcl_simplemesh_triangle'dan DUNYA uzayinda, Position/Rotate/Scale
+   uygulanmis olarak gelir; dondurulmus bir kutu (or. Rotate.y = 45) bu yuzden
+   DOGRU temsil edilir. Raylib'in CheckCollisionBoxes'i yalnizca eksen-hizali
+   kutularla calisir ve dondurulmus bir kutuyu yanlis temsil ederdi; bu yuzden
+   burada kullanilmaz.
 
-   Hareket adimlara bolunur, her adimda cozulur ve kalan hareketin her temas
-   normali boyunca olan bileseni silinir. Bu, duvar boyunca kaymanin tanimidir
-   ve Godot'un move_and_slide'i ile ayni sonucu verir. */
-static double fn_move_and_slide(int argc, const char **argv) {
+   DUZLESMIS ARGUMAN DUZENI: 27 oyuncu yuvasi | ardindan HER collider icin
+   12 yuva (Mesh struct'i). Collider sayisi degiskendir.
+
+   HAREKET ARGUMANI YOKTUR: bu bir COZULME cagrisidir, hareket ettirme degil.
+   Oyuncunun konumunu FPS ve TerrainCollision ilerletir; burada yalnizca
+   kutunun icinde kalmis bir kapsul DISARI itilir. */
+static double fn_simple_box_collision(int argc, const char **argv) {
     ColCapsule cap;
-    double motion[3], remaining[3];
-    int max_slides, base = COL_PLAYER_SLOTS + 4, k;
+    int base = COL_PLAYER_SLOTS, k;
 
-    if (argc < COL_PLAYER_SLOTS + 4) return 0.0;
+    if (argc < COL_PLAYER_SLOTS + COL_BOX_SLOTS) return 0.0;
 
     read_player(argc, argv);
-
-    motion[0] = num_arg(argc, argv, COL_PLAYER_SLOTS + 0);
-    motion[1] = num_arg(argc, argv, COL_PLAYER_SLOTS + 1);
-    motion[2] = num_arg(argc, argv, COL_PLAYER_SLOTS + 2);
-
-    max_slides = (int)num_arg(argc, argv, COL_PLAYER_SLOTS + 3);
-    if (max_slides <= 0) max_slides = COL_DEF_SLIDE_STEPS;
-    if (max_slides > COL_MAX_SLIDE_STEPS) max_slides = COL_MAX_SLIDE_STEPS;
 
     /* Collider'lari topla: her 12'lik blok bir Mesh struct'idir. Bunlar
        HAREKET EDEBILIR (tasinmis bir kutu), bu yuzden her cagride yeniden
@@ -863,58 +855,10 @@ static double fn_move_and_slide(int argc, const char **argv) {
 
     player_capsule(&cap);
 
-    /* ONCE AYRIMA: hareket sifir olsa bile kapsul bir ucgenin icinde kalmis
-       olabilir; hareketten BAGIMSIZ olarak disari cikarilir. */
+    /* COZULME PASS'LERI: bir itme kapsulu ikinci bir yuzeye sokabilir, bu
+       yuzden tek gecis yetmez (Godot da iteratiftir). */
     for (int i = 0; i < COL_SOLVE_ITERS; i++) {
         if (!resolve_pass(&g_tris, &cap, NULL)) break;
-    }
-
-    remaining[0] = motion[0];
-    remaining[1] = motion[1];
-    remaining[2] = motion[2];
-
-    for (int step = 0; step < max_slides; step++) {
-        double len = vlen(remaining);
-        double dir[3], adv;
-        double normals[COL_SOLVE_ITERS][3];
-        int    hit_count = 0;
-
-        if (len < COL_MIN_STEP) break;
-
-        vscale(dir, remaining, 1.0 / len);
-        adv = (len < COL_PLAYER_RADIUS) ? len : COL_PLAYER_RADIUS;
-
-        g_slot[S_POS_X] += dir[0] * adv;
-        g_slot[S_POS_Y] += dir[1] * adv;
-        g_slot[S_POS_Z] += dir[2] * adv;
-        remaining[0] -= dir[0] * adv;
-        remaining[1] -= dir[1] * adv;
-        remaining[2] -= dir[2] * adv;
-
-        player_capsule(&cap);
-
-        /* Bu dilimin temaslarini coz; her itmenin normalini sakla. */
-        for (int i = 0; i < COL_SOLVE_ITERS; i++) {
-            double n[3];
-            if (!resolve_pass(&g_tris, &cap, n)) break;
-            if (hit_count < COL_SOLVE_ITERS) vcopy(normals[hit_count], n);
-            hit_count++;
-        }
-
-        if (hit_count == 0) continue;   /* dilim serbest gecti */
-
-        /* KAYMA: kalan hareketin, her temas normali boyunca ICERI dogru olan
-           bilesenini sil. Disari dogru bir bilesen zaten engellenmiyordur. */
-        for (int i = 0; i < hit_count && i < COL_SOLVE_ITERS; i++) {
-            double d = remaining[0] * normals[i][0]
-                     + remaining[1] * normals[i][1]
-                     + remaining[2] * normals[i][2];
-            if (d < 0.0) {
-                remaining[0] -= normals[i][0] * d;
-                remaining[1] -= normals[i][1] * d;
-                remaining[2] -= normals[i][2] * d;
-            }
-        }
     }
 
     build_camera();
@@ -932,9 +876,9 @@ static double fn_last_slot(int argc, const char **argv) {
 #define E(NAME, STR) {STR, fn_##NAME}
 
 static const GclNativeEntry g_entries[] = {
-    E(terrain_collision, "TerrainCollision"),
-    E(move_and_slide,    "MoveAndSlide"),
-    E(last_slot,         "LastSlot"),
+    E(terrain_collision,    "TerrainCollision"),
+    E(simple_box_collision, "SimpleBoxCollision"),
+    E(last_slot,            "LastSlot"),
 };
 
 GCL_EXPORT const GclNativeEntry *gcl_raylibsimplecollision_get_functions(int *count) {

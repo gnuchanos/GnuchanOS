@@ -2707,7 +2707,24 @@ static double fn_UnloadFontData(int argc,const char**argv){
 }
 static double fn_UnloadFont(int argc,const char**argv){ UnloadFont(get_font(ii(argv[0]))); return 0.0; }
 static double fn_ExportFontAsCode(int argc,const char**argv){ return ExportFontAsCode(get_font(ii(argv[0])),ss(argv[1]))?1.0:0.0; }
-static double fn_DrawFPS(int argc,const char**argv){ DrawFPS(ii(argv[0]),ii(argv[1])); return 0.0; }
+/* DrawFPS(posX, posY[, color])
+ *
+ * raylib'in kendi DrawFPS'i rengi SABIT tutar (LIME, bkz. rtext.c) ve renk
+ * argumani ALMAZ; bu yuzden imzasi iki argumandir. Burada renk ISTEGE BAGLI
+ * ucuncu arguman olarak alinir: verilirse sayac istenen renkte cizilir,
+ * verilmezse raylib'in kendi cagrisina dusulur ve gorunum aynen korunur.
+ *
+ * Metin bicimi raylib ile AYNI tutulur: "%2i FPS", yazi boyu 20. Farkli bir
+ * bicim kullanmak, ayni sayaci iki ayri yerde iki farkli sekilde gosterirdi;
+ * ikinci argumanin uzerine yazilan bir renk bunu degistirmemelidir. */
+static double fn_DrawFPS(int argc,const char**argv){
+    if (argc >= 3) {
+        DrawText(TextFormat("%2i FPS", GetFPS()), ii(argv[0]), ii(argv[1]), 20, ci(argv,2));
+    } else {
+        DrawFPS(ii(argv[0]),ii(argv[1]));
+    }
+    return 0.0;
+}
 static double fn_DrawText(int argc,const char**argv){ DrawText(ss(argv[0]),ii(argv[1]),ii(argv[2]),ii(argv[3]),ci(argv,4)); return 0.0; }
 static double fn_DrawTextEx(int argc,const char**argv){ DrawTextEx(get_font(ii(argv[0])),ss(argv[1]),v2_arg(argv,2),ff(argv[4]),ff(argv[5]),ci(argv,6)); return 0.0; }
 static double fn_DrawTextPro(int argc,const char**argv){ DrawTextPro(get_font(ii(argv[0])),ss(argv[1]),v2_arg(argv,2),v2_arg(argv,4),ff(argv[6]),ff(argv[7]),ff(argv[8]),ci(argv,9)); return 0.0; }
