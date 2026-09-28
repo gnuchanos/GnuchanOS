@@ -70,6 +70,7 @@ SOURCES = (
     "wm_input.c",
     "wm_keys.c",
     "wm_workspace.c",
+    "wm_tray.c",
     "GnuChanWM.c",
 )
 HEADERS = (
@@ -77,6 +78,7 @@ HEADERS = (
     "wm_theme.h",
     "wm_config.h", "wm_config_parser.h",
     "wm_workspace.h", "wm_desktop.h", "wm_image.h",
+    "wm_tray.h",
 )
 
 FALLBACK_TERMINAL = "xterm"

@@ -26,11 +26,16 @@
 
 static const char *LOG_PATH = "/tmp/gnuchandm.log";
 
-static volatile sig_atomic_t stop_requested = 0;
-
+/* The stop request lives in the core, not in a local here, because it has to
+   be answered in two places that are not this function: the event loop below
+   and the wait for a running session in dm_session.c. A local flag was only
+   ever read at the top of the loop, so a SIGTERM that arrived while the
+   greeter was blocked — in XNextEvent, or waiting for a session — was set and
+   then never looked at again until the block happened to end on its own. That
+   is a greeter systemd has to SIGKILL at a reboot. */
 static void handle_signal(int signum) {
     (void)signum;
-    stop_requested = 1;
+    dm_core_request_stop();
 }
 
 /* Login first: it lays the screen out, and the input module's hit-testing reads
@@ -126,7 +131,7 @@ int main(int argc, char **argv) {
 
     fprintf(stderr, "gnuchandm: ready\n");
 
-    while (core.running && !stop_requested) {
+    while (core.running && !dm_core_stop_requested()) {
         dm_core_step(&core);
         if (core.action != DM_ACTION_NONE) act(&core);
     }

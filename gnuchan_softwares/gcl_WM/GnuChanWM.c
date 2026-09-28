@@ -68,6 +68,13 @@ static void register_modules(WmCore *core) {
        settings pushed into the running X server. After the menu, because both
        answer the same button and the menu has to see its press first. */
     wm_register(core, &wm_input_module);
+    /* The tray, before the first program starts: claiming the tray selection
+       is what tells a program where to put its icon, and a program that looked
+       before the claim found no tray and does not look again — it is found by
+       the MANAGER announcement the claim sends. Registering it here, ahead of
+       autostart, is what makes the session's own first program able to dock
+       rather than having to be told to look a second time. */
+    wm_register(core, &wm_tray_module);
     /* Last: it opens the first terminal, and by then the keys are already
        grabbed and the desktop is already painted, so the window it opens is
        managed by a session that is completely up rather than one still

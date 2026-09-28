@@ -144,6 +144,7 @@ extern const WmModule wm_theme_module;    /* wm_theme.c   */
 extern const WmModule wm_config_module;   /* wm_config_file.c */
 extern const WmModule wm_workspace_module;/* wm_workspace.c   */
 extern const WmModule wm_input_module;    /* wm_input.c   */
+extern const WmModule wm_tray_module;     /* wm_tray.c    */
 
 /* wm_menu.c — open the desktop's menu at a point on the screen, and say
    whether one is already up. Public because the menu is the desktop's answer

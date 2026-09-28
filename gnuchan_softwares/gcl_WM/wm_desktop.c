@@ -20,12 +20,18 @@
  * a clock at the right edge whether the label beside it is two words or
  * twenty.
  *
- * One widget is not text at all. The group box is the list of the programs
- * that are open, drawn as their own icons, and a click on one of them goes to
- * that window — see bar_collect_icons() and the WM_WIDGET_GROUP_BOX branch of
- * the drawing loop. It is placed in the strip like every other widget, so a
- * config that wants the open windows in the middle of the bar writes the group
- * box in the middle of the list and gets them there.
+ * One widget is not text at all. The group box is the system tray: the place a
+ * program that keeps running with no window of its own — a chat client, a
+ * music player, Steam — leaves an icon, and the place a click on that icon
+ * reaches the program itself. The widget is only the room; the icons are live
+ * windows of other processes, put there by wm_tray.c. It is placed in the
+ * strip like every other widget, so a config that wants the tray in the middle
+ * of the bar writes the group box in the middle of the list and gets it there.
+ *
+ * The tray is one window and not one per bar, so the bar tells it where the
+ * group box ended up on each repaint: wm_tray_begin() before a bar is drawn,
+ * wm_tray_place() from the group box's own cell, and wm_tray_finish() after
+ * every bar — which puts the tray away when no bar drew a group box at all.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +45,7 @@
 #include "wm_core.h"
 #include "wm_frame.h"
 #include "wm_image.h"
+#include "wm_tray.h"
 #include "wm_workspace.h"
 
 /* The room a widget's text gets on either side of it. */
@@ -388,47 +395,6 @@ static Cursor desktop_make_cursor(WmCore *core) {
    be — a widget's symbol is the config's own string and can be anything. */
 #define WM_LAYOUT_CELL_LENGTH 16
 
-/* The gap between two window icons in the group box. */
-#define WM_ICON_GAP 2
-
-/* Where each open window's icon was last drawn on the bar, so a click on the
-   bar is turned back into the window it landed on. Filled by desktop_bar()
-   from the same numbers the drawing uses, so a click always lands on what was
-   drawn — the same rule the desktop menu follows. */
-typedef struct BarIconBox {
-    int x, y, width, height;
-    Window client;
-    /* Which bar the box was drawn on. A press is delivered to one bar's own
-       window, and each bar has its boxes in its own coordinates — so the
-       window is part of the match, or a press on the top bar would be tested
-       against the bottom bar's icons at the same x. */
-    Window bar;
-} BarIconBox;
-
-static BarIconBox bar_icon_boxes[WM_MAX_FRAMES];
-static int bar_icon_count = 0;
-
-/* The windows the group box lists: every open window on the current
-   workspace, in the frame table's order. A minimised window is not on the
-   screen, so it is not listed — the switcher key is what reaches it. Filled
-   once per bar repaint, so the measuring pass and the drawing pass walk the
-   same list and cannot disagree about how many icons there are. */
-static WmFrame *bar_icon_frames[WM_MAX_FRAMES];
-static int bar_icon_total = 0;
-
-static void bar_collect_icons(WmCore *core) {
-    bar_icon_total = 0;
-    for (int i = 0; i < core->frame_count && i < WM_MAX_FRAMES; i++) {
-        WmFrame *frame = &core->frames[i];
-        if (frame->minimized) {
-            continue;
-        }
-        if (frame->workspace != core->current_workspace) {
-            continue;
-        }
-        bar_icon_frames[bar_icon_total++] = frame;
-    }
-}
 
 /* The cells of a layout widget, one per workspace, and the number each cell
    stands for.
@@ -497,27 +463,6 @@ static int bar_layout_gap(const WmWidget *widget) {
     return widget->gap > 0 ? widget->gap : WM_BAR_PADDING;
 }
 
-/* The width a group box's separator takes, or 0 when the widget named none.
-   The mark is text in the widget's own font, so it is measured the same way
-   every other label on the bar is — which is what lets the measuring pass and
-   the drawing pass agree about how wide the box is. */
-static int bar_separator_width(WmCore *core, const WmWidget *widget,
-                               XftFont *font) {
-    if (!widget->separator[0] || !font) {
-        return 0;
-    }
-    return wm_style_text_width(core->display, font, widget->separator);
-}
-
-/* The room between two icons of a group box: the plain gap when the widget
-   drew no separator, and the gap, the mark and the gap again when it did. The
-   mark is never flush against an icon — a "|" touching an icon reads as part
-   of it — so it is given the bar's own spacing on either side. */
-static int bar_icon_gap(WmCore *core, const WmWidget *widget, XftFont *font) {
-    int separator = bar_separator_width(core, widget, font);
-    return separator > 0 ? WM_ICON_GAP + separator + WM_ICON_GAP : WM_ICON_GAP;
-}
-
 /* What a widget shows, in a buffer. This is the one place a widget's kind
    becomes words, so the layout below never has to know which kind it is looking
    at — it measures what this produced and draws it. The group box produces
@@ -531,8 +476,9 @@ static void bar_widget_label(const WmWidget *widget, char *out,
            workspace can be drawn unlike the rest. See bar_layout_cells(). */
         break;
     case WM_WIDGET_GROUP_BOX:
-        /* Words are not what this widget is for; it is the open windows' own
-           icons. See the WM_WIDGET_GROUP_BOX branch of the drawing loop. */
+        /* Words are not what this widget is for; it is the tray, and the
+           icons in it are live windows of other processes. See the
+           WM_WIDGET_GROUP_BOX branch of the drawing loop. */
         break;
     case WM_WIDGET_TEXT_BOX:
         snprintf(out, size, "%s", widget->text);
@@ -783,20 +729,13 @@ static void bar_draw_horizontal(WmCore *core, const WmBar *bar, Window window,
                 needed += widths[i];
             }
         } else if (widget->kind == WM_WIDGET_GROUP_BOX) {
-            /* The open windows' icons, laid out one after another with a gap
-               between them, and the widget's separator drawn in each gap when
-               it named one. The box is exactly as wide as they take and no
-               wider, so an empty desktop leaves it at nothing rather than as
-               a stub of bar with no meaning. The separator's room is measured
-               in — one between each pair, and none after the last — so the box
-               is as wide as it draws. */
-            if (bar_icon_total > 0) {
-                int gap = bar_icon_gap(core, widget, fonts[i]);
-                widths[i] = bar_icon_total * WM_ICON_SIZE +
-                            (bar_icon_total - 1) * gap;
-            } else {
-                widths[i] = 0;
-            }
+            /* The tray. Its width is the room the docked icons take, which is
+               zero when nothing is docked: an empty tray leaves the bar's
+               strip alone rather than holding open a gap for an icon that may
+               never come. The thickness it is measured against is the bar's
+               own height, so the icons it counts and the icons it later draws
+               are the same size. */
+            widths[i] = wm_tray_extent(core, height);
             needed += widths[i];
         } else if (widget->kind == WM_WIDGET_CURRENT_LAYOUT) {
             layout_cell_count[i] = bar_layout_cells(
@@ -879,69 +818,14 @@ static void bar_draw_horizontal(WmCore *core, const WmBar *bar, Window window,
                 cursor += cell + gap;
             }
         } else if (widget->kind == WM_WIDGET_GROUP_BOX) {
-            /* The open windows, as their own icons: one per program, centred
-               in the strip, each recorded in bar_icon_boxes so a click on it
-               can be turned back into that window. A window that published no
-               icon — which is most bare X programs, xterm among them — is
-               drawn as the first letter of its title instead, in the widget's
-               own colour: a row of gaps would say nothing at all, and a letter
-               at least names the window. */
-            int icon_y = (height - WM_ICON_SIZE) / 2;
-            int gap = bar_icon_gap(core, widget, fonts[i]);
-            int separator = bar_separator_width(core, widget, fonts[i]);
-            unsigned long icon_colour = bar_colour(core, widget->foreground,
-                                                   core->style.text);
-            unsigned long sep_colour =
-                bar_colour(core, widget->separator_color,
-                           bar_colour(core, widget->foreground,
-                                      core->style.text));
-            int sep_baseline =
-                (height + (fonts[i] ? fonts[i]->ascent : 8) -
-                 (fonts[i] ? fonts[i]->descent : 2)) / 2;
-            int cursor = x + WM_ICON_GAP / 2;
-            for (int k = 0; k < bar_icon_total && k < WM_MAX_FRAMES; k++) {
-                WmFrame *frame = bar_icon_frames[k];
-                if (!wm_frame_draw_icon(core, frame, canvas, cursor, icon_y,
-                                        WM_ICON_SIZE) && fonts[i]) {
-                    char letter[2] = { '?', '\0' };
-                    unsigned char first = (unsigned char)frame->name[0];
-                    /* A printable first character only: a title beginning with
-                       a control byte would draw as nothing, so it falls back to
-                       the question mark above. */
-                    if (frame->has_name && first >= 0x20 && first != 0x7f) {
-                        letter[0] = (char)first;
-                    }
-                    int letter_width = wm_style_text_width(core->display,
-                                                           fonts[i], letter);
-                    wm_style_text(core->display, core->screen, canvas,
-                                  fonts[i],
-                                  cursor + (WM_ICON_SIZE - letter_width) / 2,
-                                  sep_baseline, letter, icon_colour);
-                }
-                if (bar_icon_count < WM_MAX_FRAMES) {
-                    bar_icon_boxes[bar_icon_count].x = cursor;
-                    bar_icon_boxes[bar_icon_count].y = icon_y;
-                    bar_icon_boxes[bar_icon_count].width = WM_ICON_SIZE;
-                    bar_icon_boxes[bar_icon_count].height = WM_ICON_SIZE;
-                    bar_icon_boxes[bar_icon_count].client = frame->client;
-                    bar_icon_boxes[bar_icon_count].bar = window;
-                    bar_icon_count++;
-                }
-                cursor += WM_ICON_SIZE;
-                /* The mark between this icon and the next, not after the last
-                   one: a trailing "|" would read as a separator with nothing
-                   on its right. The advance is the same gap the measuring pass
-                   used, so the icons stay where they were measured. */
-                if (k + 1 < bar_icon_total) {
-                    if (separator > 0 && fonts[i]) {
-                        wm_style_text(core->display, core->screen, canvas,
-                                      fonts[i], cursor + WM_ICON_GAP,
-                                      sep_baseline, widget->separator,
-                                      sep_colour);
-                    }
-                    cursor += gap;
-                }
-            }
+            /* The tray. Nothing is drawn for it here: the icons are live
+               windows of other processes, and the dock they sit in is placed
+               over this cell — the cell only has to be the right size and the
+               right colour, both of which are done above. The colour the cell
+               was filled with is what the dock is given, so the strip behind
+               the icons is the bar's own strip. */
+            wm_tray_place(core, window, 0 /* horizontal */, x, 0,
+                          width, height, background);
         } else if (labels[i][0] && fonts[i]) {
             unsigned long foreground = bar_colour(core, widget->foreground,
                                                   core->style.text);
@@ -1021,13 +905,12 @@ static void bar_draw_vertical(WmCore *core, const WmBar *bar, Window window,
                 needed += extents[i];
             }
         } else if (widget->kind == WM_WIDGET_GROUP_BOX) {
-            if (bar_icon_total > 0) {
-                int gap = bar_icon_gap(core, widget, fonts[i]);
-                extents[i] = bar_icon_total * WM_ICON_SIZE +
-                             (bar_icon_total - 1) * gap;
-            } else {
-                extents[i] = 0;
-            }
+            /* The tray, down a vertical bar: the icons stack, so the room it
+               asks for is the room they take along the bar's own axis. It is
+               measured against the bar's WIDTH here, which is its thickness on
+               a bar that runs top to bottom — the same rule the horizontal
+               case follows with the other axis. */
+            extents[i] = wm_tray_extent(core, width);
             needed += extents[i];
         } else if (widget->kind == WM_WIDGET_CURRENT_LAYOUT) {
             layout_cell_count[i] = bar_layout_cells(
@@ -1083,59 +966,11 @@ static void bar_draw_vertical(WmCore *core, const WmBar *bar, Window window,
                 cursor += line + gap;
             }
         } else if (widget->kind == WM_WIDGET_GROUP_BOX) {
-            int gap = bar_icon_gap(core, widget, fonts[i]);
-            int separator = bar_separator_width(core, widget, fonts[i]);
-            unsigned long icon_colour = bar_colour(core, widget->foreground,
-                                                   core->style.text);
-            unsigned long sep_colour =
-                bar_colour(core, widget->separator_color,
-                           bar_colour(core, widget->foreground,
-                                      core->style.text));
-            int cursor = y + WM_ICON_GAP / 2;
-            for (int k = 0; k < bar_icon_total && k < WM_MAX_FRAMES; k++) {
-                WmFrame *frame = bar_icon_frames[k];
-                int icon_x = (width - WM_ICON_SIZE) / 2;
-                if (!wm_frame_draw_icon(core, frame, canvas, icon_x, cursor,
-                                        WM_ICON_SIZE) && fonts[i]) {
-                    char letter[2] = { '?', '\0' };
-                    unsigned char first = (unsigned char)frame->name[0];
-                    if (frame->has_name && first >= 0x20 && first != 0x7f) {
-                        letter[0] = (char)first;
-                    }
-                    int letter_width = wm_style_text_width(core->display,
-                                                           fonts[i], letter);
-                    int line = fonts[i]->ascent + fonts[i]->descent;
-                    wm_style_text(core->display, core->screen, canvas,
-                                  fonts[i],
-                                  (width - letter_width) / 2,
-                                  cursor + (WM_ICON_SIZE - line) / 2 +
-                                      fonts[i]->ascent,
-                                  letter, icon_colour);
-                }
-                if (bar_icon_count < WM_MAX_FRAMES) {
-                    bar_icon_boxes[bar_icon_count].x = icon_x;
-                    bar_icon_boxes[bar_icon_count].y = cursor;
-                    bar_icon_boxes[bar_icon_count].width = WM_ICON_SIZE;
-                    bar_icon_boxes[bar_icon_count].height = WM_ICON_SIZE;
-                    bar_icon_boxes[bar_icon_count].client = frame->client;
-                    bar_icon_boxes[bar_icon_count].bar = window;
-                    bar_icon_count++;
-                }
-                cursor += WM_ICON_SIZE;
-                if (k + 1 < bar_icon_total) {
-                    if (separator > 0 && fonts[i]) {
-                        int sep_width = wm_style_text_width(core->display,
-                                                            fonts[i],
-                                                            widget->separator);
-                        wm_style_text(core->display, core->screen, canvas,
-                                      fonts[i], (width - sep_width) / 2,
-                                      cursor + WM_ICON_GAP +
-                                          fonts[i]->ascent,
-                                      widget->separator, sep_colour);
-                    }
-                    cursor += gap;
-                }
-            }
+            /* The tray, as on a horizontal bar: placed over this cell, its
+               icons laid out by the tray itself in the direction the bar runs.
+               Nothing is drawn here — the icons are other processes' windows. */
+            wm_tray_place(core, window, 1 /* vertical */, 0, y,
+                          width, extent, background);
         } else if (labels[i][0] && fonts[i]) {
             unsigned long foreground = bar_colour(core, widget->foreground,
                                                   core->style.text);
@@ -1173,13 +1008,13 @@ static void desktop_bar(WmCore *core) {
         count = 0;
     }
 
-    /* Which windows the group box lists, worked out once before any bar is
-       drawn so every bar's measuring and drawing passes agree about how many
-       icons there are. The boxes a click is matched against are collected from
-       all bars at once, and the window each was drawn on is part of the record
-       so a press on one bar is never read as a press on another. */
-    bar_collect_icons(core);
-    bar_icon_count = 0;
+    /* The tray is told to expect a place before any bar is drawn and to put
+       itself away if none gives it one. A bar whose widgets include a group
+       box calls wm_tray_place() for the cell it lands in, which both moves the
+       dock and marks the tray as wanted; a session whose bars have no group
+       box never calls it, and wm_tray_finish() then takes the dock off the
+       screen rather than leaving it where the last config put it. */
+    wm_tray_begin(core);
 
     for (int i = 0; i < count; i++) {
         const WmBar *bar = &core->config.bars[i];
@@ -1198,6 +1033,8 @@ static void desktop_bar(WmCore *core) {
         }
         bar_window = None;
     }
+
+    wm_tray_finish(core);
 }
 
 /* --- painting ------------------------------------------------------------- */
@@ -1325,31 +1162,6 @@ static int desktop_init(WmCore *core) {
     return 0;
 }
 
-/* A press on the bar. The only thing on it that is a target is a window icon,
-   so a press is turned back into the window it landed on and that window is
-   activated; a press on any other part of the bar does nothing, because the
-   rest of the bar is not a control. */
-static void desktop_bar_press(WmCore *core, XButtonEvent *press) {
-    for (int i = 0; i < bar_icon_count; i++) {
-        BarIconBox *box = &bar_icon_boxes[i];
-        /* The box's own bar is part of the match: a press is delivered to one
-           bar's window, and two bars can have a box at the same x — the top
-           bar's third icon and the bottom bar's third icon. Without the window
-           in the test, a press on one would activate the other's window. */
-        if (box->bar != press->window) {
-            continue;
-        }
-        if (press->x >= box->x && press->x < box->x + box->width &&
-            press->y >= box->y && press->y < box->y + box->height) {
-            WmFrame *frame = wm_frame_find(core, box->client);
-            if (frame) {
-                wm_frame_activate(core, frame);
-            }
-            return;
-        }
-    }
-}
-
 static void desktop_event(WmCore *core, XEvent *event) {
     if (wm_desktop_is_bar_window(event->xany.window)) {
         if (event->type == Expose) {
@@ -1359,10 +1171,11 @@ static void desktop_event(WmCore *core, XEvent *event) {
             desktop_bar(core);
             return;
         }
-        if (event->type == ButtonPress) {
-            desktop_bar_press(core, &event->xbutton);
-            return;
-        }
+        /* A press on the bar is not this module's business any more. The one
+           thing on the bar that was a target was a window's icon, and the
+           icons are the tray's now: they are windows of their own, so a click
+           on one is delivered to the program that owns it and never reaches
+           the bar at all. There is nothing left here to hit-test. */
     }
 
     switch (event->type) {
@@ -1442,8 +1255,6 @@ static void desktop_cleanup(WmCore *core) {
     }
     wm_image_free(core, &desktop_image);
     bar_colour_count = 0;
-    bar_icon_total = 0;
-    bar_icon_count = 0;
 
     for (int i = 0; i < WM_CONFIG_MAX_BARS; i++) {
         if (bar_windows[i] != None) {

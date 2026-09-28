@@ -12,9 +12,11 @@
  */
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -24,6 +26,19 @@
 #include "dm_core.h"
 
 static DmModuleList g_modules;
+
+/* Set by the signal handler, read wherever the greeter waits. Only a flag of
+   this exact type may be written from a handler; it is file-static because
+   there is one greeter per machine. */
+static volatile sig_atomic_t g_stop_requested = 0;
+
+void dm_core_request_stop(void) {
+    g_stop_requested = 1;
+}
+
+int dm_core_stop_requested(void) {
+    return g_stop_requested != 0;
+}
 
 static int core_x_error(Display *display, XErrorEvent *error) {
     char text[256];
@@ -332,6 +347,28 @@ void dm_core_wake_screen(DmCore *core) {
 
 void dm_core_step(DmCore *core) {
     XEvent event;
+
+    /* Wait for the next event on the connection with select() rather than
+       blocking in XNextEvent, and take the wait as the stop check.
+     *
+     * XNextEvent blocks inside read(); a signal interrupts that read, and Xlib
+       calls it again, so the greeter never comes back to look at the flag and
+       a SIGTERM sent while it sits at the login screen — which is how systemd
+       stops it at a reboot or a shutdown — is lost until the next key is
+       pressed. A select() on the connection returns early on a signal, so the
+       flag set by the handler is seen here within one step. On any failure,
+       including the EINTR a signal causes, the step returns without reading an
+       event; the loop above it checks the flag and ends the session. */
+    int fd = ConnectionNumber(core->display);
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(fd, &readable);
+
+    int ready = select(fd + 1, &readable, NULL, NULL, NULL);
+    if (ready < 0 || XPending(core->display) == 0) {
+        return;
+    }
+
     XNextEvent(core->display, &event);
 
     if (event.type == ConfigureNotify) {

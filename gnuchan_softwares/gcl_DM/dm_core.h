@@ -154,6 +154,18 @@ void dm_core_redraw(DmCore *core);
 
 void dm_core_shutdown(DmCore *core);
 
+/* Ask the greeter to stop, and ask whether it has been asked.
+ *
+ * A stop is asked for from a signal handler — SIGTERM from systemd at a
+ * logout, a reboot or a shutdown, or SIGINT from a terminal — and it has to be
+ * answered everywhere the greeter waits, not only at the top of its loop. The
+ * wait for a running session and the event loop both block on something that
+ * returns early on a signal and is then retried, which is what used to swallow
+ * the request, so the request is one flag here that both of them read rather
+ * than a local the entry point owns alone. */
+void dm_core_request_stop(void);
+int  dm_core_stop_requested(void);
+
 /* Put the screen back the way a login screen needs it.
  *
  * The screensaver's timer and the monitor's power saving belong to the X

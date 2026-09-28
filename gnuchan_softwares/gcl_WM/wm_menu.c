@@ -34,6 +34,7 @@
 #include "wm_core.h"
 #include "wm_desktop.h"
 #include "wm_spawn.h"
+#include "wm_tray.h"
 
 /* The distances the drawing is built from, so nothing has to be restated in
    two places when one of them changes. */
@@ -154,6 +155,7 @@ static int run_program(char *const argv[]) {
 static int window_belongs_to_manager(WmCore *core, Window window) {
     if (window == core->check_window ||
         wm_desktop_is_bar_window(window) ||
+        wm_tray_is_window(window) ||
         window == wm_config_error_window()) {
         return 1;
     }

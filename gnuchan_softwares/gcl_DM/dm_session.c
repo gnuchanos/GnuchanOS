@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <grp.h>
 #include <pwd.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -209,11 +210,51 @@ int dm_session_start(DmCore *core, const char *username) {
     }
 
     /* The parent — the greeter, waiting for the session to end, then back to
-       the login screen. */
+       the login screen.
+     *
+     * The wait has to be interruptible by the request to stop, and that is the
+     * whole reason it is not a plain waitpid loop. While a session is running
+     * the greeter is blocked here and nowhere else, so this is the ONLY place
+     * a SIGTERM sent during a session can be noticed — and SIGTERM is exactly
+     * what systemd sends at a reboot, a shutdown, and a logout. A loop that
+     * only retried on EINTR swallowed it: the system asked the greeter to
+     * stop, the greeter was inside a blocking wait, the signal came back as
+     * EINTR, and the code waited again. systemd then waited out its whole
+     * stop timeout on a unit that was never going to answer and only a reboot
+     * the user ran by hand, followed by a logout, ever got the machine down.
+     *
+     * So on every EINTR the flag is read. When it is set the session is ended
+     * here: the child is the leader of its own session (setsid in the child),
+     * so signalling its process group reaches the session's whole tree, and
+     * then the wait continues until it is actually gone. The loop is left the
+     * moment the session is reaped, whether it ended on its own or was ended
+     * for the machine's sake. */
     dm_form_clear_password(core);
     int status = 0;
-    while (waitpid(pid, &status, 0) < 0) {
-        if (errno != EINTR) break;
+    int ended = 0;
+    int asked_to_stop = 0;
+    while (!ended) {
+        pid_t done = waitpid(pid, &status, 0);
+        if (done == pid) {
+            ended = 1;
+        } else if (done < 0 && errno == EINTR) {
+            if (dm_core_stop_requested() && !asked_to_stop) {
+                asked_to_stop = 1;
+                fprintf(stderr,
+                        "gnuchandm: asked to stop; ending the session\n");
+                kill(-pid, SIGTERM);
+            }
+        } else if (done < 0) {
+            /* Not EINTR and not the child: there is nothing left to wait for. */
+            break;
+        }
+    }
+
+    /* Asked to stop means the greeter is going with the machine, so the screen
+       is not taken back: there is no login screen to come back to, and the
+       window is torn down by the shutdown below rather than shown. */
+    if (dm_core_stop_requested()) {
+        return 0;
     }
 
     /* Say how the session ended: a session that dies in a second is the
