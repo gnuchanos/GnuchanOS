@@ -58,6 +58,13 @@ static void register_modules(WmCore *core) {
     wm_register(core, &wm_manage_module);
     wm_register(core, &wm_frame_module);
     wm_register(core, &wm_focus_module);
+    /* The switcher: it reads the frame table and the focus order the two
+       modules above fill, so it comes after them. It is registered before the
+       keys module because both grab on the root, and the switcher's key is a
+       gesture rather than a binding — see wm_switcher.c — so it takes its grab
+       first and the table below cannot take the same combination away from
+       it. */
+    wm_register(core, &wm_switcher_module);
     wm_register(core, &wm_keys_module);
     /* The menu takes the desktop's own button, so it comes after the desktop
        has claimed the root and before the first terminal is opened: the menu
@@ -116,12 +123,13 @@ int main(int argc, char **argv) {
             printf("usage: GnuChanWM [--version] [--help]\n"
                    "\n"
                    "Starts the GnuchanOS window manager. Alt+Enter opens the\n"
-                   "default terminal, Alt+Tab moves to the next window, and\n"
-                   "Alt+F4 closes the focused one. The title bar's buttons\n"
-                   "minimise, maximise and close, and the desktop's own\n"
-                   "button opens the session menu. It is meant to be started\n"
-                   "by a display manager session, not from inside another\n"
-                   "session.\n");
+                   "default terminal, Alt+` shows every open window as a\n"
+                   "picture with its name under it and letting go of Alt\n"
+                   "brings the chosen one forward, and Alt+F4 closes the\n"
+                   "focused one. The title bar's buttons minimise, maximise\n"
+                   "and close, and the desktop's own button opens the\n"
+                   "session menu. It is meant to be started by a display\n"
+                   "manager session, not from inside another session.\n");
             return 0;
         }
     }

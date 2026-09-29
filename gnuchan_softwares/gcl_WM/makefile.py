@@ -64,6 +64,8 @@ SOURCES = (
     "wm_image.c",
     "wm_manage.c",
     "wm_focus.c",
+    "wm_switcher.c",
+    "wm_switcher_view.c",
     "wm_spawn.c",
     "wm_autostart.c",
     "wm_menu.c",
@@ -78,7 +80,7 @@ HEADERS = (
     "wm_theme.h",
     "wm_config.h", "wm_config_parser.h",
     "wm_workspace.h", "wm_desktop.h", "wm_image.h",
-    "wm_tray.h",
+    "wm_tray.h", "wm_switcher.h",
 )
 
 FALLBACK_TERMINAL = "xterm"
