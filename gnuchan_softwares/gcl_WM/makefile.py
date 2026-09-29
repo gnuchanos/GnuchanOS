@@ -66,6 +66,7 @@ SOURCES = (
     "wm_focus.c",
     "wm_switcher.c",
     "wm_switcher_view.c",
+    "wm_compositor.c",
     "wm_spawn.c",
     "wm_autostart.c",
     "wm_menu.c",
@@ -80,7 +81,7 @@ HEADERS = (
     "wm_theme.h",
     "wm_config.h", "wm_config_parser.h",
     "wm_workspace.h", "wm_desktop.h", "wm_image.h",
-    "wm_tray.h", "wm_switcher.h",
+    "wm_tray.h", "wm_switcher.h", "wm_compositor.h",
 )
 
 FALLBACK_TERMINAL = "xterm"
@@ -201,6 +202,25 @@ def imlib2_headers_present() -> bool:
     return header_present("Imlib2.h")
 
 
+def compositor_headers_present() -> bool:
+    """Whether the compositor's three headers are here.
+
+    One check for three packages, because the module cannot do anything with
+    any two of them: taking a window's pixels away from the server (Composite)
+    without being told when the program drew again (Damage) leaves the picture
+    frozen, and without Render there is no way to draw it back scaled — which
+    is what the window was taken for. Asking for all three is what keeps a
+    machine from building a compositor that shows one frame and stops.
+
+    They are the WM's own dependency and not the session's. A server that does
+    not implement the extensions is found out at start-up, and every window
+    then behaves as it did before the module existed — see wm_compositor.c.
+    """
+    return (header_present("X11/extensions/Xcomposite.h") and
+            header_present("X11/extensions/Xdamage.h") and
+            header_present("X11/extensions/Xrender.h"))
+
+
 def program_exists(name: str) -> bool:
     if "/" in name:
         return os.access(name, os.X_OK)
@@ -234,6 +254,13 @@ def ensure_build_dependencies() -> None:
     # Its header is in a package of its own; libx11-dev does not pull it in.
     if not imlib2_headers_present():
         needed.append("libimlib2-dev")
+    # The compositor's three, which are what one window's content is scaled
+    # with. Each header is in a package of its own and libx11-dev pulls in none
+    # of them; they are asked for together because all three are needed before
+    # any of it works — see compositor_headers_present().
+    if not compositor_headers_present():
+        needed.extend(("libxcomposite-dev", "libxdamage-dev",
+                       "libxrender-dev"))
     if shutil.which("gcc") is None:
         needed.append("build-essential")
     if shutil.which("pkg-config") is None:
@@ -268,22 +295,32 @@ def x11_flags() -> tuple[list[str], list[str]]:
     for together because Xft's own header includes freetype's: pkg-config is
     what knows where that lives, and a machine whose freetype is somewhere
     unusual is exactly the case these flags exist for. The fallback names the
-    two libraries and freetype's include directory directly, for a machine with
-    no pkg-config, and is right on every Debian where the development packages
-    are installed.
+    libraries and freetype's include directory directly, for a machine with no
+    pkg-config, and is right on every Debian where the development packages are
+    installed.
+
+    The last three are the compositor's, and they are what one window's content
+    is scaled with: xcomposite to take a window's pixels away from the server,
+    xdamage to be told when the program has drawn again, and xrender to draw
+    the picture at the size the frame is. They are dependencies of the build
+    and not of the session — a server that lacks the extensions answers so at
+    start-up and every window behaves as it did before (see wm_compositor.c).
     """
     pkg_config = shutil.which("pkg-config")
     if pkg_config is not None:
         cflags = run([pkg_config, "--cflags",
-                      "x11", "xft", "xcursor", "imlib2"],
+                      "x11", "xft", "xcursor", "imlib2",
+                      "xcomposite", "xdamage", "xrender"],
                      capture=True)
         libs = run([pkg_config, "--libs",
-                    "x11", "xft", "xcursor", "imlib2"],
+                    "x11", "xft", "xcursor", "imlib2",
+                    "xcomposite", "xdamage", "xrender"],
                    capture=True)
         if cflags.returncode == 0 and libs.returncode == 0:
             return cflags.stdout.split(), libs.stdout.split()
     return (["-I/usr/include", "-I/usr/include/freetype2"],
-            ["-lX11", "-lXft", "-lXcursor", "-lImlib2"])
+            ["-lX11", "-lXft", "-lXcursor", "-lImlib2",
+             "-lXcomposite", "-lXdamage", "-lXrender"])
 
 
 def check_sources() -> None:

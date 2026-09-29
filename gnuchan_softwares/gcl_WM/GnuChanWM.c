@@ -55,6 +55,14 @@ static void register_modules(WmCore *core) {
     wm_register(core, &wm_workspace_module);
     wm_register(core, &wm_theme_module);
     wm_register(core, &wm_desktop_module);
+    /* The compositor, before the frame and before manage, and the order is not
+       arbitrary: it is what is told a scaled window changed size. That notice
+       throws away the pixmap the window used to be, and it has to happen
+       BEFORE anything draws — manage's ConfigureNotify calls wm_frame_sync,
+       which draws. Registered after either of them, the first draw after a
+       resize would be from a pixmap the server has already thrown away, and
+       the window would show a torn or missing picture for a frame. */
+    wm_register(core, &wm_compositor_module);
     wm_register(core, &wm_manage_module);
     wm_register(core, &wm_frame_module);
     wm_register(core, &wm_focus_module);
@@ -123,13 +131,31 @@ int main(int argc, char **argv) {
             printf("usage: GnuChanWM [--version] [--help]\n"
                    "\n"
                    "Starts the GnuchanOS window manager. Alt+Enter opens the\n"
-                   "default terminal, Alt+` shows every open window as a\n"
-                   "picture with its name under it and letting go of Alt\n"
-                   "brings the chosen one forward, and Alt+F4 closes the\n"
-                   "focused one. The title bar's buttons minimise, maximise\n"
-                   "and close, and the desktop's own button opens the\n"
-                   "session menu. It is meant to be started by a display\n"
-                   "manager session, not from inside another session.\n");
+                   "default terminal, and Alt+F4 closes the focused one.\n"
+                   "\n"
+                   "Hold Alt and press ` to switch windows: every open window\n"
+                   "appears as a picture with its name under it, the arrow\n"
+                   "keys walk the grid while the key is held, and letting the\n"
+                   "key go brings the chosen window forward. A left click on a\n"
+                   "picture chooses it as well, and Escape leaves the choice\n"
+                   "unmade.\n"
+                   "\n"
+                   "Super+S fits the focused window's content into it: a\n"
+                   "program that ignores being resized is drawn smaller rather\n"
+                   "than cut off, so nothing of it is hidden. Super+S again\n"
+                   "puts it back. Clicks in a fitted window move the pointer\n"
+                   "to where the program expects it, which is visible; the key\n"
+                   "is for a game played with a pad or a keyboard.\n"
+                   "\n"
+                   "Super+1..N goes to a workspace and Super+Shift+1..N sends\n"
+                   "the focused window to one and stays where you are. How\n"
+                   "many there are is what the settings script's layout widget\n"
+                   "asks for.\n"
+                   "\n"
+                   "The title bar's buttons minimise, maximise and close, and\n"
+                   "the desktop's own button opens the session menu. It is\n"
+                   "meant to be started by a display manager session, not from\n"
+                   "inside another session.\n");
             return 0;
         }
     }

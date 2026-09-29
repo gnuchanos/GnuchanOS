@@ -4,9 +4,14 @@
  *
  * This is what Alt+` opens, and it is the thing every desktop has and this one
  * did not: pressing the key shows the open windows as small pictures with the
- * name under each, pressing it again moves to the next one, and letting the
- * modifier go brings the chosen one forward. Holding the modifier is what
- * keeps it up — the switcher is not a window that stays, it is a gesture.
+ * name under each, the arrows walk the grid while the key is held, and letting
+ * the key go brings the chosen one forward. Holding the key is what keeps it
+ * up — the switcher is not a window that stays, it is a gesture.
+ *
+ * The modifier is only what the key is pressed with. It may be let go at any
+ * time: a hand that opens the switcher with Alt and then reaches for the
+ * arrows lets Alt go on the way, and the gesture deliberately does not end
+ * there. What ends it is the key itself.
  *
  * The two halves are deliberately in two files:
  *
@@ -72,17 +77,25 @@ typedef struct WmSwitcher {
 
 /* --- the switcher (wm_switcher.c) ----------------------------------------- */
 
-/* Open it, or move to the next window if it is already open. This one entry
-   point is what the key binding calls: the first press of the gesture opens
-   the switcher and every later one steps it, which is why there is no
-   separate "next". Returns 1 when a switcher is up afterwards, 0 when there
-   was nothing to switch between. */
+/* Open it, or move to the next window if it is already open.
+ *
+ * A second call while it is open means "next" and nothing else: it is the path
+ * an arrow key takes, and the path a press of the switcher's own key takes
+ * when the module chooses to pass it on. The key that OPENS the switcher does
+ * not step it — see wm_switcher.c — because a held key repeats, and stepping
+ * on every repeat would walk the choice across the grid while the hand was
+ * still deciding where to send it.
+ *
+ * Returns 1 when a switcher is up afterwards, 0 when there was nothing to
+ * switch between. */
 int  wm_switcher_open(WmCore *core);
 
-/* Move the choice by `step`, wrapping round at both ends. */
+/* Move the choice by `step`, wrapping round at both ends. This is what the
+   arrow keys call, and what a second call of wm_switcher_open() lands on. */
 void wm_switcher_advance(WmCore *core, int step);
 
-/* Bring the chosen window forward and take the switcher down. */
+/* Bring the chosen window forward and take the switcher down. Called when the
+   switcher's own key is released, and when a picture is clicked. */
 void wm_switcher_commit(WmCore *core);
 
 /* Take the switcher down and leave the focus where it was. */
@@ -98,7 +111,7 @@ void wm_switcher_raise(WmCore *core);
 /* Lay the grid out, read the pictures off the screen, make the overlay and put
    it up. Called once, at the start of a gesture: the pictures are a snapshot
    of the desktop as it was when the key was pressed, and are not read again
-   while the modifier is held. */
+   while the gesture lasts. */
 int  wm_switcher_view_open(WmCore *core, WmSwitcher *switcher);
 
 /* Draw it again, for a choice that moved. */
@@ -123,10 +136,10 @@ void   wm_switcher_overlay_raise(void);
 
 /* --- the module ------------------------------------------------------------ */
 
-/* The module owns the gesture's input: the keys while the modifier is held,
-   the click that chooses, and the release that confirms. It is registered
-   beside the keys module and does nothing at all until a switch has been
-   asked for. */
+/* The module owns the gesture's input: the arrows while it is up, the click
+   that chooses, and the release of its own key that confirms. It is registered
+   beside the keys module and does nothing at all until a switch has been asked
+   for. */
 extern const WmModule wm_switcher_module;
 
 #endif /* GNUCHANWM_SWITCHER_H */

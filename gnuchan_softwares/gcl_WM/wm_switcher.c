@@ -11,33 +11,36 @@
  *                  switch key did, and a switcher that opened on the window
  *                  the user was already in would be a switcher whose first
  *                  press does nothing.
- *   pressed again  the choice moves on, wrapping at the end
- *   released       the chosen window comes forward and the switcher goes
+ *   arrows         the choice walks the grid, wrapping at both ends, for as
+ *                  long as the switcher is up.
+ *   released       letting the switcher's own key go brings the chosen window
+ *                  forward.
  *   left clicked   on a picture: that window comes forward
  *   Escape         nothing comes forward
  *
  * The keyboard and the pointer are both held for the length of the gesture.
- * The keyboard because the release of the modifier is what confirms the
- * choice, and a release is not something a passive grab on one key delivers;
- * the pointer because a click has to land on a picture rather than on whatever
- * is underneath it.
+ * The keyboard because what ends it is a key release, and a release is not
+ * something a passive grab on one combination delivers; the pointer because a
+ * click has to land on a picture rather than on whatever is underneath it.
  *
- * --- the modifier ---------------------------------------------------------
+ * --- what confirms it -----------------------------------------------------
  *
- * The gesture is bound to Alt+` and to Super+` , and either modifier being let
- * go is what confirms it. Which one is being held is read from the key
- * release: a KeyRelease of a key that was down when the switcher opened. That
- * is a broader test than "the release of the exact modifier the grab was taken
- * for", and it is the right one — a user who opens the switcher with Alt and
- * then presses and releases Super should not have the switcher confirmed by a
- * key they were not holding when it opened.
+ * Letting go of the switcher's own key, and nothing else. It is the key the
+ * hand is already on — it is the one that opened the switcher — so releasing
+ * it is the least a person can do to say "this one", and pressing it chooses
+ * nothing, which is what lets a hand walk the grid with the arrows and change
+ * its mind as many times as it likes.
  *
- * The one thing the test has to survive is auto-repeat: a held modifier is
- * reported by the server as a release and a press, over and over, and taking
- * the first of those releases as "the hand let go" would confirm the choice
- * the instant the key went down. The release is therefore only believed when
- * the press that follows it is not already waiting in the queue — see
- * release_is_repeat().
+ * The release of the MODIFIER is deliberately not a confirm. A hand that opens
+ * the switcher with Alt and then reaches for the arrows lets Alt go on the
+ * way, and a switcher that ended there would end before the choice had been
+ * made.
+ *
+ * The one thing the release has to survive is auto-repeat: a held key is
+ * reported by the server as a release and a press over and over, so taking the
+ * first of those releases as a hand letting go would end the switcher on the
+ * very press that opened it. A release is only believed when the press that
+ * follows it is not already waiting in the queue — see release_is_repeat().
  */
 #include <stdio.h>
 #include <string.h>
@@ -56,8 +59,9 @@
 #define WM_SWITCHER_KEYSYM XK_grave
 
 /* The modifiers the gesture answers to: Alt and Super, the two this desktop
-   uses for everything else. Both are grabbed, and the one that is actually
-   held is worked out from the event's own state. */
+   uses for everything else. Either of them opens the switcher and both are
+   grabbed; which one is held matters to nothing after that, because letting a
+   modifier go is not what ends the gesture — the key below is. */
 static const unsigned int SWITCHER_MODIFIERS[] = { Mod1Mask, Mod4Mask };
 #define SWITCHER_MODIFIER_COUNT \
     ((unsigned int)(sizeof(SWITCHER_MODIFIERS) / sizeof(SWITCHER_MODIFIERS[0])))
@@ -65,12 +69,6 @@ static const unsigned int SWITCHER_MODIFIERS[] = { Mod1Mask, Mod4Mask };
 /* The one switcher. One exists, so its state lives here rather than on the
    core — see wm_switcher.h. */
 static WmSwitcher switcher;
-
-/* The modifiers that were down when the gesture started, so a modifier the
-   user was not holding cannot confirm it. Read from the opening press's own
-   state with the lock bits taken off, which is what `state & ~(LockMask |
-   Mod2Mask)` is everywhere else in this manager. */
-static unsigned int held_modifiers = 0;
 
 /* Whether the keyboard and the pointer are held. Tracked separately from
    switcher.open because the two are not the same claim: an open switcher with
@@ -183,8 +181,8 @@ static void list_build(WmCore *core) {
 
 /* --- the input ------------------------------------------------------------ */
 
-/* Whether a release of a modifier is really the hand letting go, rather than
-   the release half of the server's auto-repeat.
+/* Whether a release is really the hand letting go of the key, rather than the
+   release half of the server's auto-repeat.
  *
  * A held key with auto-repeat on is reported as a release and a press in the
  * same instant, over and over. The two are told apart by looking for the press
@@ -208,23 +206,15 @@ static int release_is_repeat(WmCore *core, XKeyEvent *release) {
     return 1;
 }
 
-/* Whether the key that was released is one of the modifiers the gesture was
-   opened with. A key that was not down when the switcher opened is not one
-   letting go of it. */
-static int release_confirms(XKeyEvent *release) {
-    unsigned int modifier = release->state & (ShiftMask | ControlMask |
-                                              Mod1Mask | Mod2Mask |
-                                              Mod3Mask | Mod4Mask | Mod5Mask);
-    return (held_modifiers & modifier) != 0;
-}
-
 /* Take the keyboard and the pointer for the length of the gesture.
  *
- * The keyboard is what makes the release of the modifier reach us at all: a
- * passive grab on one key combination delivers that combination's presses and
- * the releases of its own key, and the release of Alt is neither. While the
- * explicit grab is held every key is delivered here, which is the only way to
- * hear the hand let go.
+ * The keyboard is what makes the key's RELEASE reach us at all. A passive grab
+ * on one combination delivers that combination's presses and the releases of
+ * its own key — but the key here is `, and the combination is Alt+` , and the
+ * press of ` arrives as a KeyPress of the grabbed combination while the
+ * release it needs is only delivered while the modifier is still down. Since
+ * what ends the gesture is letting go of `, and the hand may already have let
+ * go of Alt by then, the keyboard is held outright for the length of it.
  *
  * Both are taken asynchronously, so neither freezes the server: a grab that
  * took the keyboard in sync mode would hold it until this manager answered,
@@ -267,8 +257,10 @@ int wm_switcher_open(WmCore *core) {
         return 0;
     }
 
-    /* Already up: every press after the first moves the choice, which is what
-       holding the key means. */
+    /* Already up. The arrows do not come through here — they go straight to
+       wm_switcher_advance — so this is only reached if something asks for the
+       switcher while it is already showing, and "show me the next one" is the
+       only reading of that which means anything. */
     if (switcher.open) {
         wm_switcher_advance(core, 1);
         return 1;
@@ -415,14 +407,15 @@ static int switcher_init(WmCore *core) {
     memset(&switcher, 0, sizeof(switcher));
     switcher.selected = -1;
     input_held = 0;
-    held_modifiers = 0;
     switcher_grab(core, 1);
     return 0;
 }
 
 /* Whether a key event is the gesture's own key, by keysym rather than by
    keycode: a layout that moves ` to another key still opens the switcher from
-   the key that writes it. */
+   the key that writes it. Both the press and the release are matched this way,
+   so the key that opened the switcher is the key that closes it whatever the
+   layout puts it on. */
 static int is_switcher_key(XKeyEvent *key) {
     KeySym symbol = XLookupKeysym(key, 0);
     return symbol == WM_SWITCHER_KEYSYM;
@@ -433,26 +426,21 @@ static void switcher_key_press(WmCore *core, XKeyEvent *key) {
         if (!is_switcher_key(key)) {
             return;
         }
-        /* The modifiers held at this instant are the ones the gesture is made
-           of. Taken with the lock bits off, so CapsLock being on does not make
-           the release test below impossible to satisfy. */
-        held_modifiers = key->state & (ShiftMask | ControlMask | Mod1Mask |
-                                       Mod2Mask | Mod3Mask | Mod4Mask |
-                                       Mod5Mask);
-        held_modifiers &= ~(LockMask | Mod2Mask);
         wm_switcher_open(core);
         return;
     }
 
-    /* Up: the same key again moves the choice on, which is what holding it
-       does — the server's own auto-repeat turns a held key into a stream of
-       presses, and each one steps the switcher. */
+    /* Up already. The switcher's own key does nothing more: a press of it
+       chooses nothing — the release is what chooses — and a held key repeats,
+       so stepping on every press would walk the choice across the grid on its
+       own while the hand was deciding where to send it. */
     if (is_switcher_key(key)) {
-        wm_switcher_advance(core, 1);
         return;
     }
-    /* Tab and the arrows as well, so the gesture works from the keys a hand
-       is already on. */
+    /* The arrows walk the grid, and Tab comes along because it is a key the
+       hand is already on and means the same thing here. Which of them is
+       pressed decides nothing; the release of the key that opened the
+       switcher is what does. */
     switch (XLookupKeysym(key, 0)) {
     case XK_Tab:
     case XK_Down:
@@ -479,16 +467,17 @@ static void switcher_event(WmCore *core, XEvent *event) {
         break;
 
     case KeyRelease:
-        /* The hand letting go of the modifier is what confirms the choice,
-           and that is the whole point of holding the keyboard: a passive grab
-           on one combination would never deliver this. A release that is the
-           other half of the server's auto-repeat is not a hand letting go —
-           see release_is_repeat() — and neither is the release of a key that
-           was not down when the gesture started. */
+        /* Letting go of the switcher's own key is what brings the chosen
+           window forward, and that is the whole point of holding the
+           keyboard: a passive grab on one combination would never deliver a
+           release at all. Every other release is passed over, the modifier's
+           included — a hand moving from Alt to the arrows lets Alt go on the
+           way, and a switcher that ended there would end before the choice
+           had been made. */
         if (!switcher.open) {
             break;
         }
-        if (!release_confirms(&event->xkey)) {
+        if (!is_switcher_key(&event->xkey)) {
             break;
         }
         if (release_is_repeat(core, &event->xkey)) {

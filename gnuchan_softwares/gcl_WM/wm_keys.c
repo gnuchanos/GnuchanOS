@@ -35,6 +35,7 @@
 #include <X11/keysym.h>
 
 #include "wm_core.h"
+#include "wm_compositor.h"
 #include "wm_desktop.h"
 #include "wm_frame.h"
 #include "wm_spawn.h"
@@ -100,6 +101,26 @@ static void action_switch_window(WmCore *core, const char *command) {
     }
 }
 
+/* Fit the focused window's content into its frame, or stop doing it.
+ *
+ * This is the key for a program that will not resize: the frame can be made
+ * small but the program goes on drawing at its own size, so most of it is
+ * outside the frame and gone. With this on, the window is put back to the size
+ * it drew at and the picture of it is fitted into the frame instead — the
+ * whole interface, smaller. See wm_compositor.h for the mechanism and what it
+ * costs.
+ *
+ * A window the server cannot do this to, or one that cannot be scaled at all,
+ * is left exactly as it was and says so in the log. Nothing about the desktop
+ * changes for it, which is the property that makes the key safe to press. */
+static void action_toggle_scaling(WmCore *core, const char *command) {
+    (void)command;
+    WmFrame *frame = wm_frame_find(core, core->focused);
+    if (frame) {
+        wm_frame_toggle_scaling(core, frame);
+    }
+}
+
 /* Ctrl+Alt+R: read the settings script again, whatever it looks like on disk.
  *
  * This is the by-hand path, and it is deliberately not the same as the idle
@@ -134,10 +155,17 @@ static void action_reload_config(WmCore *core, const char *command) {
  * number written twice, and the two would drift. What the script decides is
  * how many there are; this decides what reaching them looks like.
  *
+ * Super+Shift+1 is the other half of the same idea: it sends the focused
+ * window to that workspace and leaves the user where they are. The two reads
+ * of the number are the two things a hand does with a desk — go to it, or put
+ * something on it — and they are bound together here so a session with four
+ * workspaces has four of each rather than one set that stops where the other
+ * carries on.
+ *
  * Each number needs its own function, because a key action takes no workspace
  * argument — the grabbed key is a function pointer and nothing else. That is
- * what the table below is: one function per workspace, and MOD4+1..N pointed
- * at them. */
+ * what the tables below are: one function per workspace for each of the two
+ * things, and MOD4 and MOD4+SHIFT pointed at them. */
 #define WM_WORKSPACE_KEY_MAX 12
 
 static void action_workspace_0(WmCore *core, const char *command) { (void)command; wm_workspace_switch(core, 0); }
@@ -158,6 +186,29 @@ static const KeyAction WORKSPACE_ACTIONS[WM_WORKSPACE_KEY_MAX] = {
     action_workspace_3,  action_workspace_4,  action_workspace_5,
     action_workspace_6,  action_workspace_7,  action_workspace_8,
     action_workspace_9,  action_workspace_10, action_workspace_11,
+};
+
+/* Super+Shift+1..N: send the focused window to that workspace and stay here.
+   The same twelve numbers as above, and the mirror image of them — one set
+   goes to a desk, the other sends something to it. */
+static void action_move_to_0(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 0); }
+static void action_move_to_1(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 1); }
+static void action_move_to_2(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 2); }
+static void action_move_to_3(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 3); }
+static void action_move_to_4(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 4); }
+static void action_move_to_5(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 5); }
+static void action_move_to_6(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 6); }
+static void action_move_to_7(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 7); }
+static void action_move_to_8(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 8); }
+static void action_move_to_9(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 9); }
+static void action_move_to_10(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 10); }
+static void action_move_to_11(WmCore *core, const char *command) { (void)command; wm_workspace_move(core, 11); }
+
+static const KeyAction WORKSPACE_MOVE_ACTIONS[WM_WORKSPACE_KEY_MAX] = {
+    action_move_to_0,  action_move_to_1,  action_move_to_2,
+    action_move_to_3,  action_move_to_4,  action_move_to_5,
+    action_move_to_6,  action_move_to_7,  action_move_to_8,
+    action_move_to_9,  action_move_to_10, action_move_to_11,
 };
 
 /* The keysym for the number key that reaches a workspace: Super+1 is XK_1,
@@ -193,11 +244,27 @@ static const KeyBinding BUILT_IN[] = {
     { Mod4Mask, XK_F4,     action_close_focused,  "" },
     { Mod1Mask, XK_Tab,    action_switch_window,  "" },
     { Mod4Mask, XK_Tab,    action_switch_window,  "" },
+    { Mod4Mask, XK_s,      action_toggle_scaling, "" },
+    /* Last, and it has to stay last: keys_init() adds this one entry when the
+       script DID bind something, because it is the way back from a script that
+       bound nothing usable. Anything added below it would take its place. */
     { ControlMask | Mod1Mask, XK_r, action_reload_config, "" },
 };
 
 #define BUILT_IN_COUNT (sizeof(BUILT_IN) / sizeof(BUILT_IN[0]))
-#define MAX_BINDINGS ((int)(WM_CONFIG_MAX_BINDINGS + BUILT_IN_COUNT))
+
+/* The room the table needs: the script's own bindings, the built-in ones that
+   stand behind them, and the two sets of workspace keys the session's number
+   of desks is bound from.
+ *
+ * The workspace keys are counted here and not left out, and that is the fix
+ * for a table that used to be able to overflow without saying so: the loop
+ * that adds them stops at this ceiling, so a session that bound the script's
+ * full 64 AND had twelve workspaces would have the last of the move keys
+ * dropped silently — a Super+Shift+N that looks bound and is not. Counting
+ * them makes the ceiling the truth. */
+#define MAX_BINDINGS \
+    ((int)(WM_CONFIG_MAX_BINDINGS + BUILT_IN_COUNT + 2 * WM_WORKSPACE_KEY_MAX))
 
 /* The bindings the session actually has, and how many. Filled at start-up
    from the script when it binds keys, and from the table above when it does
@@ -296,6 +363,49 @@ static int add_config_binding(WmCore *core, const WmBinding *binding) {
     return 0;
 }
 
+/* Add one workspace key: `workspace`'s number, under `modifiers`, doing
+   `actions[workspace]`.
+ *
+ * A combination the script already bound is left alone. The script's table is
+ * what a person wrote down, and a built-in convenience does not get to take a
+ * key out from under it — what these two sets guarantee is that a desk is
+ * always reachable and always somewhere a window can be sent, which is the
+ * floor a session needs, not a ceiling on what it may bind.
+ *
+ * A keysym X has no key for ends the set rather than being skipped: the
+ * numbers run in order from 1, so there is no number past the one it cannot
+ * find that it would find either. */
+static void add_workspace_binding(int workspace, unsigned int modifiers,
+                                  const KeyAction *actions) {
+    KeySym keysym;
+    int taken = 0;
+
+    if (binding_count >= MAX_BINDINGS) {
+        return;
+    }
+    keysym = workspace_keysym(workspace);
+    if (keysym == NoSymbol) {
+        return;
+    }
+
+    for (int i = 0; i < binding_count; i++) {
+        if (bindings[i].keysym == keysym &&
+            bindings[i].modifiers == modifiers) {
+            taken = 1;
+            break;
+        }
+    }
+    if (taken) {
+        return;
+    }
+
+    bindings[binding_count].modifiers = modifiers;
+    bindings[binding_count].keysym = keysym;
+    bindings[binding_count].action = actions[workspace];
+    bindings[binding_count].command[0] = '\0';
+    binding_count++;
+}
+
 /* --- grabbing -------------------------------------------------------------- */
 
 /* Grab every binding on the root. A grab that fails because another client
@@ -317,38 +427,19 @@ static int keys_init(WmCore *core) {
         bindings[binding_count++] = BUILT_IN[BUILT_IN_COUNT - 1];
     }
 
-    /* Super+1..N, one per workspace the script asked for. They are added after
-       the script's own bindings so a script that bound Super+1 to something
-       else keeps it: the script's table is what a person wrote, and it wins
-       over a built-in convenience. What this guarantees is that a workspace
-       is always reachable, which is the floor a session needs — and the count
-       comes from the config, so a session with four numbers has four keys and
+    /* Super+1..N and Super+Shift+1..N, one pair per workspace the script asked
+       for. They are added after the script's own bindings so a script that
+       bound Super+1 to something else keeps it: the script's table is what a
+       person wrote, and it wins over a built-in convenience. What this
+       guarantees is that a desk is always reachable and always a place a
+       window can be sent, which is the floor a session needs — and the count
+       comes from the config, so a session with four numbers has four pairs and
        not six. */
     int workspace_count = wm_workspace_count(core);
     for (int i = 0; i < workspace_count && i < WM_WORKSPACE_KEY_MAX; i++) {
-        if (binding_count >= MAX_BINDINGS) {
-            break;
-        }
-        KeySym keysym = workspace_keysym(i);
-        if (keysym == NoSymbol) {
-            break;
-        }
-        int taken = 0;
-        for (int j = 0; j < binding_count; j++) {
-            if (bindings[j].keysym == keysym &&
-                bindings[j].modifiers == Mod4Mask) {
-                taken = 1;
-                break;
-            }
-        }
-        if (taken) {
-            continue;
-        }
-        bindings[binding_count].modifiers = Mod4Mask;
-        bindings[binding_count].keysym = keysym;
-        bindings[binding_count].action = WORKSPACE_ACTIONS[i];
-        bindings[binding_count].command[0] = '\0';
-        binding_count++;
+        add_workspace_binding(i, Mod4Mask, WORKSPACE_ACTIONS);
+        add_workspace_binding(i, Mod4Mask | ShiftMask,
+                              WORKSPACE_MOVE_ACTIONS);
     }
 
     for (int i = 0; i < binding_count; i++) {

@@ -34,6 +34,7 @@
 #include <unistd.h>
 
 #include "wm_core.h"
+#include "wm_compositor.h"
 #include "wm_desktop.h"
 #include "wm_frame.h"
 #include "wm_workspace.h"
@@ -310,6 +311,22 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
     XFillRectangle(display, target, core->gc, 0, 0,
                    (unsigned int)width, (unsigned int)height);
 
+    /* The window's content, when it is being drawn scaled. It goes over the
+       border band exactly where the client sits — the same rectangle
+       frame_apply() puts the client in — so the picture and the border agree
+       about where the window is. When the compositor has nothing to draw the
+       band is left showing, which is the frame's own colour rather than a
+       hole.
+
+       This is here and not in the XCopyArea below because the copy is of the
+       buffer onto the window: the content has to be in the buffer to be
+       copied, and this is where the buffer is filled. */
+    if (frame->scaled) {
+        wm_compositor_draw(core, frame->client, target,
+                           frame->border, WM_TITLE_HEIGHT,
+                           frame->client_width, frame->client_height);
+    }
+
     /* The bar. */
     XSetForeground(display, core->gc, style->panel);
     XFillRectangle(display, target, core->gc, 0, 0,
@@ -369,9 +386,19 @@ void wm_frame_draw_all(WmCore *core) {
 /* Tell the client what it actually got. A reparenting window manager is
    required to do this: the client asked for a position and a size and the
    manager gave it a different position, and a toolkit that watches for the
-   change draws nothing until it hears about it. */
+   change draws nothing until it hears about it.
+ *
+ * A scaled window is not told anything, and that is not an omission: it was
+ * never resized. Telling it a size it does not have — the frame's, smaller
+ * than the client — would make a program that DOES listen resize itself to fit
+ * a picture that is already being made to fit it, and the two would fight.
+ * The client keeps believing it is the size it asked for, which is true. */
 static void frame_notify_configure(WmCore *core, WmFrame *frame) {
     XEvent event;
+
+    if (frame->scaled) {
+        return;
+    }
     memset(&event, 0, sizeof(event));
     event.xconfigure.type = ConfigureNotify;
     event.xconfigure.display = core->display;
@@ -394,10 +421,22 @@ static void frame_apply(WmCore *core, WmFrame *frame) {
     XMoveResizeWindow(core->display, frame->frame, frame->x, frame->y,
                       (unsigned int)frame_width(frame),
                       (unsigned int)frame_height(frame));
-    XMoveResizeWindow(core->display, frame->client,
-                      frame->border, WM_TITLE_HEIGHT,
-                      (unsigned int)frame->client_width,
-                      (unsigned int)frame->client_height);
+
+    /* A scaled window is put back at its corner and NOT resized. Its content
+       is drawn at the size its program chose and fitted to the frame, so
+       resizing it here would be resizing the very thing being scaled — and
+       the whole problem is that the program ignores the resize and draws at
+       its own size anyway. Moving it is all that is left to do: the picture
+       of it is then drawn into the frame by wm_frame_draw. */
+    if (frame->scaled) {
+        XMoveWindow(core->display, frame->client,
+                    frame->border, WM_TITLE_HEIGHT);
+    } else {
+        XMoveResizeWindow(core->display, frame->client,
+                          frame->border, WM_TITLE_HEIGHT,
+                          (unsigned int)frame->client_width,
+                          (unsigned int)frame->client_height);
+    }
     wm_frame_draw(core, frame);
 }
 
@@ -624,6 +663,16 @@ static void frame_clamp_to_workarea(WmCore *core, WmFrame *frame) {
 }
 
 void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
+    /* A scaled window's frame is the user's to size, not the client's. The
+       client is being drawn at the size it chose and the frame is fitted to
+       it, so a client that asks to be resized is asking for the one thing
+       that would undo the scaling — its content would then be drawn at a size
+       nobody is scaling from. The request is dropped here rather than acted
+       on, and the window keeps the size the hand gave it. */
+    if (frame->scaled) {
+        return;
+    }
+
     if (width > 1) {
         frame->client_width = width;
     }
@@ -664,6 +713,32 @@ void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
 void wm_frame_sync(WmCore *core, WmFrame *frame) {
     XWindowAttributes attributes;
     if (!XGetWindowAttributes(core->display, frame->client, &attributes)) {
+        return;
+    }
+
+    /* A scaled window resizes itself as much as it likes: the content is drawn
+       at whatever size the program chose, and that size is what is scaled FROM.
+       So the client's new size is taken as the window's NATURAL size — the size
+       its content is drawn at — and the frame is not touched. Its own picture
+       is not thrown away here either: the compositor watches ConfigureNotify
+       for the same client and drops the pixmap it can no longer use, which is
+       where that belongs, because the pixmap is its to keep.
+
+       Nothing is returned early even when neither moved nor resized is set for
+       a scaled window, because the compositor still has to be asked to draw it
+       again. */
+    if (frame->scaled) {
+        if (attributes.width > 1) {
+            frame->natural_width = attributes.width;
+        }
+        if (attributes.height > 1) {
+            frame->natural_height = attributes.height;
+        }
+        /* A move is not taken from a scaled window: it believes it is a window
+           on the root, and the frame is where it actually is. Letting its own
+           idea of where it is move the frame would let a program that draws
+           wherever it likes drag its own title bar around. */
+        wm_frame_draw(core, frame);
         return;
     }
 
@@ -858,6 +933,64 @@ void wm_frame_activate(WmCore *core, WmFrame *frame) {
     wm_focus_set(core, frame->client);
 }
 
+/* --- fitting a window's content into it ----------------------------------- */
+
+int wm_frame_is_scaled(const WmFrame *frame) {
+    return frame ? frame->scaled : 0;
+}
+
+void wm_frame_toggle_scaling(WmCore *core, WmFrame *frame) {
+    if (!core || !frame) {
+        return;
+    }
+
+    if (frame->scaled) {
+        /* Off. The window goes back to being the server's to draw, and it is
+           given the frame's size first so the swap happens at the size the
+           user was looking at — rather than the window jumping back to the
+           size it asked for when it opened, which is the size the frame was
+           built to avoid. */
+        wm_compositor_unscale(core, frame->client);
+        frame->scaled = 0;
+        frame_apply(core, frame);
+        frame_notify_configure(core, frame);
+        XSync(core->display, False);
+        wm_frame_draw(core, frame);
+        return;
+    }
+
+    /* On. What is being given up has to be said: the window is about to be
+       drawn at the size it chose rather than the size of the frame, and the
+       hand that pressed the key may have expected the frame to stay exactly as
+       it is. It does — the frame is not touched — but what is inside it
+       changes, and that is the whole of the feature. */
+    if (wm_compositor_scale(core, frame->client) != 0) {
+        fprintf(stderr, "gnuchanwm: this window cannot be scaled to its frame; "
+                        "it is left as it was.\n");
+        return;
+    }
+
+    frame->scaled = 1;
+
+    /* The window is put back to the size its content is drawn at. It is moved
+       and resized directly rather than through frame_apply(), which skips the
+       resize for a scaled window: the resize is wanted here, once, to undo the
+       clamping the frame has been doing since the window opened. Everything
+       after this goes the other way — the frame is fitted to the window. */
+    XMoveResizeWindow(core->display, frame->client,
+                      frame->border, WM_TITLE_HEIGHT,
+                      (unsigned int)frame->natural_width,
+                      (unsigned int)frame->natural_height);
+    XSync(core->display, False);
+
+    /* The window has to have drawn at its new size before the picture of it is
+       anything but the old frame, so it is drawn now and drawn again by the
+       damage the client sends as it paints. */
+    wm_frame_draw(core, frame);
+    fprintf(stderr, "gnuchanwm: '%s' is now drawn fitted to its frame\n",
+            frame->has_name && frame->name[0] ? frame->name : "window");
+}
+
 /* --- creating and destroying ---------------------------------------------- */
 
 WmFrame *wm_frame_create(WmCore *core, Window client) {
@@ -886,6 +1019,12 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
     frame->x = attributes.x;
     frame->y = attributes.y;
     frame->border = style_border_width(core);
+
+    /* The size the client asked for, kept before the workarea cuts anything
+       off it. This is the size the content is drawn at, and the size scaling
+       puts the window back to — see wm_frame_toggle_scaling(). */
+    frame->natural_width = frame->client_width;
+    frame->natural_height = frame->client_height;
 
     /* A window is kept clear of the bar and inside the desktop. The screen's
        top-left corner is not where a window belongs when a bar is along the
@@ -1059,6 +1198,17 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
 }
 
 void wm_frame_destroy(WmCore *core, WmFrame *frame, int client_gone) {
+    /* A window that was being drawn scaled is given back to the server before
+       anything else. Leaving it redirected would leave it in the one state
+       this module exists to avoid: a window nobody draws. It is done here and
+       not left for the compositor's own cleanup because the client may outlive
+       the frame — a reparented window is put back on the root below, and it
+       has to be the server's again when it gets there. */
+    if (frame->scaled) {
+        wm_compositor_unscale(core, frame->client);
+        frame->scaled = 0;
+    }
+
     /* The icon is this process's pixmap, not the client's, so it does not go
        away with the client and is freed here by the code that made it. */
     wm_frame_free_icon(core, frame);
@@ -1359,6 +1509,47 @@ static void frame_allow_sync_grab(WmCore *core, XButtonEvent *press) {
     }
 }
 
+/* Put the pointer where a click on a scaled window actually is.
+ *
+ * A scaled window is drawn bigger than the frame showing it: the picture is
+ * fitted to the frame, so the point the user aimed at is not the point inside
+ * the window. The press arrives with the pointer where the hand left it, and
+ * the program is about to be handed that coordinate — which is the wrong one,
+ * by the same ratio the picture is scaled by. Half a window's width out at
+ * half size.
+ *
+ * The pointer is therefore moved to the other end of the scale before the
+ * press is replayed, so the program receives the coordinate it would have
+ * received if it had been the size of the frame all along.
+ *
+ * Two things follow, and both are worth saying plainly rather than leaving to
+ * be discovered: the pointer VISIBLY JUMPS, because it has to be somewhere and
+ * the only place the program will look is its own coordinates; and the jump is
+ * between clicks, so this is a feature for a game played with a pad or a
+ * keyboard, not for one played by pointing. That is the honest cost of fitting
+ * a window that does not want to be fitted, and it is why the key is a
+ * deliberate press rather than something done to every window. */
+static void frame_warp_click(WmCore *core, WmFrame *frame, XButtonEvent *press) {
+    int client_x = press->x;
+    int client_y = press->y;
+
+    wm_compositor_unscale_point(frame->client,
+                                frame->client_width, frame->client_height,
+                                press->x, press->y, &client_x, &client_y);
+    if (client_x == press->x && client_y == press->y) {
+        return;     /* it is drawn at its own size; the point is the point */
+    }
+
+    /* Where that point is on the screen: the frame's corner, plus the frame's
+       own chrome — the client sits at (border, WM_TITLE_HEIGHT) inside it —
+       plus the point inside the window. */
+    int root_x = frame->x + frame->border + client_x;
+    int root_y = frame->y + WM_TITLE_HEIGHT + client_y;
+
+    XWarpPointer(core->display, None, core->root, 0, 0, 0, 0, root_x, root_y);
+    XSync(core->display, False);
+}
+
 static void frame_event(WmCore *core, XEvent *event) {
     switch (event->type) {
     case ButtonPress: {
@@ -1427,6 +1618,14 @@ static void frame_event(WmCore *core, XEvent *event) {
         if (clicked) {
             wm_focus_set(core, clicked->client);
             wm_frame_raise(core, clicked);
+            /* A scaled window is not where it looks, so the pointer is put
+               where the program will look before the press is replayed. It is
+               done here and not earlier because this is the only path that
+               hands a press to the program: a click the manager answers itself
+               never reaches the program and needs no correction. */
+            if (clicked->scaled) {
+                frame_warp_click(core, clicked, &event->xbutton);
+            }
             XAllowEvents(core->display, ReplayPointer, event->xbutton.time);
             XFlush(core->display);
             break;

@@ -36,6 +36,20 @@ int wm_workspace_count(const WmCore *core);
    the rest, and move the keyboard off a window that is no longer on screen. */
 void wm_workspace_switch(WmCore *core, int workspace);
 
+/* Move the focused window to another workspace, and stay where the user is.
+ *
+ * The window is not followed: it leaves this screen and is reached again with
+ * wm_workspace_switch(), which is what Super+N is for. Sending a window away
+ * and being carried along with it would make one key do two things, and the
+ * second of them is not what a hand sending a window somewhere is asking for —
+ * it is arranging the desks it is not on, not walking to them.
+ *
+ * Nothing happens when no window has the focus, when the target is the
+ * workspace the window is already on, or when the number is not one the
+ * session has. The keyboard moves to the most recently used window that is
+ * still here, because the window it was on has just left. */
+void wm_workspace_move(WmCore *core, int workspace);
+
 /* Move `steps` workspaces forward (or back, with a negative count), wrapping
    round at both ends. This is what the wheel and a "next workspace" key ask
    for: a person reaching for the next desktop does not know its number, and

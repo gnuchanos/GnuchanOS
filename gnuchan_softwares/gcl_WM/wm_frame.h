@@ -157,6 +157,25 @@ typedef struct WmFrame {
     int maximized;       /* 1 while the client fills the screen              */
     int workspace;       /* which desktop this window is on (wm_workspace.h) */
 
+    /* The size the client asked for when it opened, before the workarea cut
+       it down. It is the size the window's CONTENT is drawn at, and it is the
+       only record of it: the frame's own client_width is what is shown, and
+       the client's own size is not asked for because a program that ignores
+       resizes has usually been told a smaller number than it is drawing at.
+     *
+     * A 1600x900 game on a 1366x768 screen is clamped to the screen when it
+     * opens, and the frame remembers the 1600x900 here. That is what scaling
+     * puts the window back to — see wm_frame_toggle_scaling(). */
+    int natural_width;
+    int natural_height;
+
+    /* 1 while the client's content is drawn scaled into the frame rather than
+       by the client itself — see wm_compositor.h. While it is set the client
+       is NOT resized to the frame and is not told it was, because the whole
+       point is that it goes on drawing at its own size; only the picture of
+       it is fitted to the frame. */
+    int scaled;
+
     /* Where the frame was before it was maximised, so the same button puts it
        back. Only meaningful while maximized is set. */
     int restore_x, restore_y;
@@ -256,6 +275,22 @@ int wm_frame_draw_icon(WmCore *core, WmFrame *frame, Drawable target,
 /* Bring the frame back in step with a client that moved or resized itself.
    Called when the server reports the client changed. */
 void wm_frame_sync(WmCore *core, WmFrame *frame);
+
+/* Fit the window's content into the frame, or stop doing it.
+ *
+ * On: the client is put back to the size it asked for when it opened, which is
+ * the size its content is drawn at, and its pixels are taken from the server
+ * and drawn scaled into whatever the frame is. The frame can then be dragged
+ * smaller and nothing is hidden — the whole of the content is still there,
+ * drawn smaller.
+ *
+ * Off: the client is given the frame's size again and drawn by the server, as
+ * every other window is.
+ *
+ * Nothing happens when the server cannot do it; the frame is left alone and
+ * the window behaves exactly as it did before. */
+void wm_frame_toggle_scaling(WmCore *core, WmFrame *frame);
+int  wm_frame_is_scaled(const WmFrame *frame);
 
 /* --- drawing -------------------------------------------------------------- */
 

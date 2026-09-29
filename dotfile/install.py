@@ -6,7 +6,12 @@ from re import purge
 
 important_things = [
     "rfkill",
-    "ntpsec"
+    "ntpsec",
+    "deluge-gtk",
+    "deluge",
+    "python3-libtorrent",
+    "python3-setuptools",
+    "deluged"
 
 ]
 
