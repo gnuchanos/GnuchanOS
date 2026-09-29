@@ -178,7 +178,20 @@ static const GclNativeField f_fps[] = {
        her kare biraz daha buyurdu.
 
        Kosma (SHIFT) genislemesini modul ekler: cikis = CameraFOV + boost. */
-    {"CameraFOV","float"}
+    {"CameraFOV","float"},
+    /* `PLAYER.MouseSensitivity = 2;` — FARE HASSASIYETI carpani.
+
+       CameraSpeed'ten AYRI bir alandir ve bu AYRIM SARTTIR: CameraSpeed
+       YURUME hizinin carpanidir (WASD ile saniyede kac birim), fare donusune
+       hic dokunmaz. Ikisi tek alanda tutulsaydi "fareyi hizlandir" istegi
+       yurumeyi de hizalandirir, "yurumeyi yavaslat" istegi bakisi
+       agirlastirirdi. Kullanici bunu yasadI: CameraSpeed = 101 yazdi ve
+       BAKIS hic degismedi.
+
+       1.0 = varsayilan (eski sabit FPS_LOOK_SPEED). 2.0 = iki kat hizli
+       bakis. 0 ya da negatif deger varsayilana doner: donmayan bir fare bir
+       ayar degil bir hatadir. */
+    {"MouseSensitivity","float"}
 };
 static const GclNativeField f_terrainmaterial[] = {
     {"Texture","int"}, {"Color","int"}

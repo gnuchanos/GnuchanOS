@@ -76,9 +76,9 @@ RaylibSimpleCollision.SimpleBoxCollision(PLAYER, MESH1, MESH2, ...);
    Tasimak ZORUNLUDUR, cunku TerrainCollision `Move()`ten SONRA cagrilir:
    yapragi dusuren bir collision modulu, script'in her kare yazdigi ayari
    sifira cevirirdi. */
-#define COL_PLAYER_SLOTS  29
+#define COL_PLAYER_SLOTS  30
 #define COL_BOX_SLOTS     12   /* the Mesh struct: Material + Handle + transform */
-#define COL_SLOT_COUNT    29
+#define COL_SLOT_COUNT    30
 
 #define COL_DEG2RAD       0.017453292519943295
 
@@ -137,7 +137,9 @@ enum {
     /* 27 ve 28. yapraklar; bu modul yalnizca TASIR (bkz. COL_PLAYER_SLOTS
        notu). Kamera kurulumu bunlari OKUMAZ ve YAZMAZ. */
     S_CAM_SPEED,
-    S_CAMERA_FOV
+    S_CAMERA_FOV,
+    /* 29. yaprak (fare hassasiyeti); bu modul yalnizca TASIR. */
+    S_MOUSE_SENS
 };
 
 enum { T_TEXTURE = 0, T_COLOR, T_HANDLE };
@@ -839,7 +841,7 @@ static double fn_terrain_collision(int argc, const char **argv) {
    kutularla calisir ve dondurulmus bir kutuyu yanlis temsil ederdi; bu yuzden
    burada kullanilmaz.
 
-   DUZLESMIS ARGUMAN DUZENI: COL_PLAYER_SLOTS (29) oyuncu yuvasi | ardindan
+   DUZLESMIS ARGUMAN DUZENI: COL_PLAYER_SLOTS (30) oyuncu yuvasi | ardindan
    HER collider icin 12 yuva (Mesh struct'i). Collider sayisi degiskendir.
 
    HAREKET ARGUMANI YOKTUR: bu bir COZULME cagrisidir, hareket ettirme degil.

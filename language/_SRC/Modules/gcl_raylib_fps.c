@@ -115,7 +115,7 @@ Raylib.EndMode3D(void);
 #include <stdlib.h>
 #include <string.h>
 
-#define FPS_SLOT_COUNT       29
+#define FPS_SLOT_COUNT       30
 #define FPS_STATE_SLOTS      16   /* player state: Position..Right */
 #define FPS_DEFAULT_HEIGHT   1.8f /* "camera is like a human head" */
 #define FPS_DEFAULT_GRAVITY  9.8f
@@ -130,7 +130,14 @@ Raylib.EndMode3D(void);
 #define FPS_DEFAULT_CAM_SPEED 1.0f
 #define FPS_CAM_SPEED_MAX     20.0f /* ust sinir: isinlanma degil yurume */
 #define FPS_JUMP_SPEED       6.0f /* impulse of SPACE, in units per second */
+/* Fare hassasiyetinin VARSAYILANI. Artik bir sabit DEGIL: yalnizca
+   `MouseSensitivity` hic yazilmadiginda gecerli olan degerdir. Alanin
+   kendisi slot 29'dur ve script onu degistirebilir. */
 #define FPS_LOOK_SPEED       0.15f
+/* Ust sinir. Sinirsiz birakmak bir kilitlenme yoludur (1e300 * delta) ve
+   cok buyuk bir deger bakisi kullanilamaz yapar. 20 = varsayilanin ~133
+   kati; hala oynanabilir. */
+#define FPS_LOOK_SPEED_MAX   20.0f
 #define FPS_PITCH_LIMIT      89.0f
 #define FPS_DEG2RAD          0.017453292519943295
 
@@ -221,7 +228,10 @@ enum {
     /* SCRIPT'IN istedigi gorus alani, DERECE (slot 28). Slot 25'teki
        S_CAM_FOVY modulun YAYINLADIGI degerdir; ikisi ayri tutulur ki
        yayinlanan deger girdi sanilmasin (bkz. apply_fovy). */
-    S_CAMERA_FOV
+    S_CAMERA_FOV,
+    /* FARE HASSASIYETI carpani (slot 29). `look_speed()` bunu okur.
+       S_CAM_SPEED'ten AYRI: o YURUME hizidir, bu BAKIS hizidir. */
+    S_MOUSE_SENS
 };
 
 static double g_slot[FPS_SLOT_COUNT];
@@ -280,6 +290,11 @@ static void read_player(int argc, const char **argv) {
     if (!(g_slot[S_CAM_SPEED] > 0.0)) g_slot[S_CAM_SPEED] = FPS_DEFAULT_CAM_SPEED;
     if (g_slot[S_CAM_SPEED] > (double)FPS_CAM_SPEED_MAX)
         g_slot[S_CAM_SPEED] = (double)FPS_CAM_SPEED_MAX;
+    /* MouseSensitivity de ayni kurala tabidir: yazilmamissa ya da anlamsizsa
+       (0 / negatif) varsayilana doner, ust sinirda kirpilir. */
+    if (!(g_slot[S_MOUSE_SENS] > 0.0)) g_slot[S_MOUSE_SENS] = (double)FPS_LOOK_SPEED;
+    if (g_slot[S_MOUSE_SENS] > (double)FPS_LOOK_SPEED_MAX)
+        g_slot[S_MOUSE_SENS] = (double)FPS_LOOK_SPEED_MAX;
 }
 
 /* CameraSpeed: hareket hizinin carpani, tek okuma noktasi.
@@ -800,8 +815,18 @@ static double fn_look(int argc, const char **argv) {
        yuzden asagi fare (delta.y > 0) asagi bakmali, yani pitch AZALMALI:
        pitch > 0 yukari bakar (build_camera: ty = ey + sin(pitch) * 10). */
     Vector2 delta = GetMouseDelta();
-    g_slot[S_ROT_X] -= (double)delta.x * FPS_LOOK_SPEED;
-    g_slot[S_ROT_Y] -= (double)delta.y * FPS_LOOK_SPEED;
+    /* FARE HASSASIYETI BURADAN OKUNUR. Eskiden sabit FPS_LOOK_SPEED
+       kullaniliyordu ve script onu degistiremiyordu: `CameraSpeed = 101`
+       yazan bir el BAKISI hic degistiremiyordu, cunku CameraSpeed YURUME
+       hizidir. Alan slot 29'dur (S_MOUSE_SENS). */
+    {
+        double sens = g_slot[S_MOUSE_SENS];
+        if (!(sens > 0.0)) sens = (double)FPS_LOOK_SPEED;
+        if (sens > (double)FPS_LOOK_SPEED_MAX) sens = (double)FPS_LOOK_SPEED_MAX;
+        g_slot[S_ROT_X] -= (double)delta.x * sens;
+        g_slot[S_ROT_Y] -= (double)delta.y * sens;
+    }
+    /* Yukaridaki blok iki ekseni birlikte uygular; bu satir kaldirildi. */
     if (g_slot[S_ROT_Y] >  FPS_PITCH_LIMIT) g_slot[S_ROT_Y] =  FPS_PITCH_LIMIT;
     if (g_slot[S_ROT_Y] < -FPS_PITCH_LIMIT) g_slot[S_ROT_Y] = -FPS_PITCH_LIMIT;
 

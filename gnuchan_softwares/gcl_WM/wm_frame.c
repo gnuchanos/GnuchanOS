@@ -1056,13 +1056,42 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
         frame->y = 0;
     }
 
-    /* THE CLIENT'S SIZE IS NOT TOUCHED. A program is given the size it asked
-       for, even when that is larger than the screen: the part that does not
-       fit is off the screen, which the user fixes by moving the window. This
-       used to be cut down to the workarea, and a program that ignores a resize
-       (a GL game drawing at a fixed size) then drew outside its own frame —
-       the bottom and the right of it were simply gone. See the note above
-       frame_clamp_to_workarea(). */
+    /* PENCERE EKRANA SIGDIRILIR.
+
+       ESKI DAVRANIS VE NEDEN YANLISTI: pencere, program ne istediyse O
+       boyutta birakiliyordu; ekrana sigmayan kisim ekranin disinda kaliyordu
+       ve "kullanici pencereyi kaydirip gorur" varsayiliyordu. Bu varsayim
+       X'te TUTMAZ: ekranin disina tasan pikseller icin X sunucusu arka bellek
+       tutmaz, pencere yukari kaydirildiginda o bolge icin Expose uretilmez ve
+       alt kenar — BORDER'I DAHIL — bos/siyah kalir. Kullanici bunu "pencerenin
+       alti siliniyor, scale yapana kadar duzelmiyor" diye bildirdi ve
+       gozlem TAM OLARAK dogru: olceklenmis bir pencerenin cercevesi elle
+       kucultuldugu icin ekrana sigar ve sorun gorunmez.
+
+       Neden boyut kirpmak SIMDI dogru: eski not "GL oyunu kendi boyutunda
+       cizmeye devam eder" diyordu, ama bu ancak pencere EKRANDAN BUYUK
+       birakilirsa sorun olur. Ekrana sigdirilan bir pencerede cerceve de
+       kuculur; icerik cerceveye sigar ve hicbir sey disarida kalmaz. Zaten
+       bunu yapmayan bir program icin OLCEKLEME anahtari var
+       (wm_frame_toggle_scaling) ve o yol da ekrana sigdirmanin USTUNE kurulur.
+
+       Kirpilan sey YALNIZCA buyukluktur; programin kendi bildirdigi natural
+       boyut da AYNI sayiya cekilir, yoksa sonradan acilan olcekleme pencereyi
+       yeniden ekranin disina tasirdi. */
+    if (frame->client_width + 2 * frame->border > area_width) {
+        frame->client_width = area_width - 2 * frame->border;
+    }
+    if (frame->client_height + WM_TITLE_HEIGHT + frame->border > area_height) {
+        frame->client_height = area_height - WM_TITLE_HEIGHT - frame->border;
+    }
+    if (frame->client_width < 1) {
+        frame->client_width = 1;
+    }
+    if (frame->client_height < 1) {
+        frame->client_height = 1;
+    }
+    frame->natural_width = frame->client_width;
+    frame->natural_height = frame->client_height;
 
     frame->frame = XCreateSimpleWindow(
         core->display, core->root, frame->x, frame->y,

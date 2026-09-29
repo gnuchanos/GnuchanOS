@@ -11,11 +11,21 @@
         ALTINA iniyor mu? Iniyorsa piksel su altidir; inmiyorsa kuru kalir.
         Yarim batmisken ekranin bir kismi su altinda, gerisi normal olur.
 
-     2. HAFIF BLUR — 9 ornekli, kucuk yaricapli yumusatma.
+     2. DALGALANMA (UW_WARP) — goruntu, dalga alaninin EGIMIYLE bukulur.
+        Gormenin en tanidik isareti: suyun icinde her sey hafifce akar.
 
-     3. MAVI TON — sahne acik maviye cekilir. KARARTMAZ, tonlar.
+     3. BLUR + KROMATIK SAPMA — bes ornekli yumusatma; kirmizi ve mavi
+        kanallar ZIT yonlere kaydirilir (su bir prizma gibi davranir).
 
-     4. SAYDAMLIK — alfa = suya giris siddeti. Kuru pikselde alfa 0'dir,
+     4. SOGURMA (UW_ABSORB) — kirmizi, yesil ve maviden ONCE sogurulur;
+        derinlik arttikca goruntu koyulasmakla kalmaz, MAVIYE KAYAR.
+
+     5. MAVI TON — sahne su paletine cekilir. KARARTMAZ, tonlar.
+
+     6. KURSAGI (UW_CAUSTIC) — dalga merceklerinin yuzey altinda biraktigi
+        parlak aglar; ag dalga alaninin KENDISINDEN turetilir.
+
+     7. SAYDAMLIK — alfa = suya giris siddeti. Kuru pikselde alfa 0'dir,
         yani orada sahne AYNEN kalir.
 
    DALGA ALANI: 3B yuzeyle BIREBIR ayni formul (gcl_water_shader.h:
@@ -75,6 +85,31 @@
 #define UW_BLUR  2.4
 #define UW_TINT  0.55
 #define UW_LIGHT 0.10
+
+/* UW_WARP: dalgalanmanin genligi, EKRAN ORANI. Su altinda goruntu, yuzeyin
+   egimiyle bukulur; gormenin en tanidik isareti budur. 0.012 = ekranin
+   ~%1.2'si; okunurlugu bozmadan "suyun icindeyim" dedirten deger.
+
+   UW_CHROMA: kromatik sapma, PIKSEL. Kirmizi ve mavi kanallar farkli
+   bukulur, cunku su bir prizma gibi davranir. 2 piksel: fark edilir ama
+   goruntuyu dagitmaz.
+
+   UW_ABSORB: sogurma. Kirmizi, suda ILK sogurulan renktir; derinlik
+   arttikca goruntu maviye kayar. Bu yalnizca bir ton DEGIL, kanal bazli bir
+   kayiptir - bu yuzden ayri bir katsayidir.
+
+   UW_CAUSTIC: kursagi parlakligi. Su yuzeyinden gecen isik, dalga
+   mercekleriyle yogunlasip parlak aglar birakir.
+
+   BU DORT SAYI, SHADER GOVDESINDEKI DORT #define ILE AYNI OLMAK ZORUNDADIR.
+   Govde C makrolarini GOREMEZ (ardisik string literaline acilir), bu yuzden
+   degerler orada AYRICA yazilir; buradaki blok onlarin AYNASIDIR, ikinci bir
+   ayar yeri DEGIL. Ikisi ayrisirsa yorum YALAN soyler: burasi 0.012 derken
+   govdede 0.0100 kalmasi tam olarak bu hataydi. */
+#define UW_WARP   0.0100
+#define UW_CHROMA 2.0
+#define UW_ABSORB 0.45
+#define UW_CAUSTIC 0.55
 
 /* VERTEX ASAMASI. raylib'in cizim partisi uzerinden gecer. */
 #define UNDERWATER_VERTEX_SRC \
@@ -137,11 +172,15 @@
 "#define UW_BLUR  2.4\n" \
 "#define UW_TINT  0.55\n" \
 "#define UW_LIGHT 0.10\n" \
+"#define UW_WARP    0.0100\n" \
+"#define UW_CHROMA  2.0\n" \
+"#define UW_ABSORB  0.45\n" \
+"#define UW_CAUSTIC 0.55\n" \
 "/* ---------- DALGA ALANI ----------\n" \
 "\n" \
 "   3B su yuzeyiyle AYNI formul (bkz. gcl_water_shader.h: gclWaterWave):\n" \
 "   ayni yonler, ayni frekans katlari, ayni faz. */\n" \
-"void gclUwWave(vec2 p, float t, out float h)\n" \
+"float gclUwWave(vec2 p, float t)\n" \
 "{\n" \
 "    vec2 d1 = normalize(vec2( 1.00,  0.28));\n" \
 "    vec2 d2 = normalize(vec2(-0.36,  1.00));\n" \
@@ -149,7 +188,7 @@
 "    float p1 = dot(p, d1)*(1.00*uwFreq) + t*(0.90*uwSpeed);\n" \
 "    float p2 = dot(p, d2)*(1.73*uwFreq) + t*(1.27*uwSpeed);\n" \
 "    float p3 = dot(p, d3)*(2.41*uwFreq) + t*(1.61*uwSpeed);\n" \
-"    h = 1.00*sin(p1) + 0.62*sin(p2) + 0.34*sin(p3);\n" \
+"    return 1.00*sin(p1) + 0.62*sin(p2) + 0.34*sin(p3);\n" \
 "}\n" \
 "void main(void)\n" \
 "{\n" \
@@ -176,8 +215,7 @@
 "       Mesafeler carpanla buyur (1.5, 2.5, 4.3 ... ~1900): yakin plandan\n" \
 "       ufka kadar tek geciste taranir. Sabit kisa bir mesafe yetmezdi,\n" \
 "       cunku ufka yakin isinlar yuzeye cok uzakta yaklasir. */\n" \
-"    float wh;\n" \
-"    gclUwWave(uwCamPos.xz, uwTime, wh);\n" \
+"    float wh = gclUwWave(uwCamPos.xz, uwTime);\n" \
 "    float camF = uwCamPos.y - (uwSurfaceY + wh*uwAmp);\n" \
 "    float wet  = 0.0;\n" \
 "    if (camF < 0.05) {\n" \
@@ -185,8 +223,7 @@
 "        float t    = 1.5;\n" \
 "        for (int i = 0; i < 16; ++i) {\n" \
 "            vec3  p = uwCamPos + dir*t;\n" \
-"            float h2;\n" \
-"            gclUwWave(p.xz, uwTime, h2);\n" \
+"            float h2 = gclUwWave(p.xz, uwTime);\n" \
 "            float f = p.y - (uwSurfaceY + h2*uwAmp);\n" \
 "            if (f < minF) minF = f;\n" \
 "            t *= 1.7;\n" \
@@ -198,29 +235,63 @@
 "    }\n" \
 "    float amt = sub*wet;\n" \
 "    if (amt <= 0.004) { GCL_FRAG = vec4(GCL_TEX(texture0, uv).rgb, 0.0); return; }\n" \
-"    /* ---------- 1. HAFIF BLUR ----------\n" \
+"    /* ---------- 1. DALGALANMA ----------\n" \
 "\n" \
-"       9 ornek. Yaricap KUCUK: goruntu okunur kalmali. */\n" \
-"    float r   = UW_BLUR*px.x;\n" \
-"    vec2  off = vec2(r, r);\n" \
-"    vec3 acc = vec3(0.0);\n" \
-"    acc += GCL_TEX(texture0, uv).rgb*4.0;\n" \
-"    acc += GCL_TEX(texture0, uv + vec2( off.x, 0.0)).rgb*2.0;\n" \
-"    acc += GCL_TEX(texture0, uv + vec2(-off.x, 0.0)).rgb*2.0;\n" \
-"    acc += GCL_TEX(texture0, uv + vec2(0.0,  off.y)).rgb*2.0;\n" \
-"    acc += GCL_TEX(texture0, uv + vec2(0.0, -off.y)).rgb*2.0;\n" \
-"    acc += GCL_TEX(texture0, uv + vec2( off.x,  off.y)).rgb;\n" \
-"    acc += GCL_TEX(texture0, uv + vec2(-off.x,  off.y)).rgb;\n" \
-"    acc += GCL_TEX(texture0, uv + vec2( off.x, -off.y)).rgb;\n" \
-"    acc += GCL_TEX(texture0, uv + vec2(-off.x, -off.y)).rgb;\n" \
-"    vec3 col = acc/16.0;\n" \
-"    /* ---------- 2. MAVI TON ----------\n" \
+"       Goruntuyu dalga alaninin EGIMI buker. Egim, alanin iki komsu\n" \
+"       noktadaki farkiyla olculur (merkezi fark): boylece bukme, 3B\n" \
+"       yuzeyin o noktadaki egimiyle AYNI yonu ve AYNI fazi tasir.\n" \
+"\n" \
+"       UW_WARP kucuk tutulur cunku egim 8'e kadar cikabilir (uc sinusun\n" \
+"       frekans katsayilarinin toplami). Ham deger dogrudan uygulansaydi\n" \
+"       goruntu ekranin ~%10'u kadar kayar ve okunmaz hale gelirdi. */\n" \
+"    float e = 0.35;\n" \
+"    float hx1 = gclUwWave(uwCamPos.xz + vec2(e, 0.0), uwTime);\n" \
+"    float hx0 = gclUwWave(uwCamPos.xz - vec2(e, 0.0), uwTime);\n" \
+"    float hy1 = gclUwWave(uwCamPos.xz + vec2(0.0, e), uwTime);\n" \
+"    float hy0 = gclUwWave(uwCamPos.xz - vec2(0.0, e), uwTime);\n" \
+"    vec2  warp = vec2(hx1 - hx0, hy1 - hy0)*UW_WARP*amt;\n" \
+"    vec2  wuv  = uv + warp;\n" \
+"    /* ---------- 2. BLUR + KROMATIK SAPMA ----------\n" \
+"\n" \
+"       Bes ornekli yumusatma ve kanal bazli kaydirma TEK geciste: yesil\n" \
+"       bulanik tabandan, kirmizi ile mavi ise ZIT yonlerdeki\n" \
+"       orneklerden gelir. Su bir prizma gibi davranir; kanallari ayri\n" \
+"       ayri bukmek, tek bir ortak kaydirmadan daha inandiricidir ve\n" \
+"       maliyeti yalnizca iki ek ornektir. */\n" \
+"    float r    = UW_BLUR*px.x;\n" \
+"    vec3  blur = GCL_TEX(texture0, wuv).rgb*0.40\n" \
+"               + GCL_TEX(texture0, wuv + vec2( r, 0.0)).rgb*0.15\n" \
+"               + GCL_TEX(texture0, wuv + vec2(-r, 0.0)).rgb*0.15\n" \
+"               + GCL_TEX(texture0, wuv + vec2(0.0,  r)).rgb*0.15\n" \
+"               + GCL_TEX(texture0, wuv + vec2(0.0, -r)).rgb*0.15;\n" \
+"    vec2  ca   = vec2(UW_CHROMA*px.x, 0.0)*amt;\n" \
+"    vec3  col  = vec3(GCL_TEX(texture0, wuv + ca).r,\n" \
+"                      blur.g,\n" \
+"                      GCL_TEX(texture0, wuv - ca).b);\n" \
+"    /* ---------- 3. SOGURMA ----------\n" \
+"\n" \
+"       Su, kirmiziyi yesilden ve maviden ONCE sogurur. Bu yuzden\n" \
+"       derinlik arttikca goruntu yalnizca koyulasmaz, MAVIYE KAYAR.\n" \
+"       Kanal bazli bu kayip duz bir ton karisimi DEGILDIR; ikisi\n" \
+"       birlikte kullanilir. */\n" \
+"    col.r *= 1.0 - UW_ABSORB*amt;\n" \
+"    col.g *= 1.0 - UW_ABSORB*0.35*amt;\n" \
+"    /* ---------- 4. MAVI TON ----------\n" \
 "\n" \
 "       Hedef renk su paletinden secilip AYDINLATILIR; boylece ton\n" \
 "       eklerken goruntu KARARMAZ. */\n" \
 "    vec3 tint = mix(uwShallow, uwDeep, 0.45 + 0.35*uv.y);\n" \
 "    tint = mix(tint, vec3(1.0), UW_LIGHT);\n" \
 "    col = mix(col, tint, UW_TINT*amt);\n" \
+"    /* ---------- 5. KURSAGI (CAUSTIC) ----------\n" \
+"\n" \
+"       Su yuzeyinden gecen isik, dalga mercekleriyle yogunlasip yuzeyin\n" \
+"       altinda parlak aglar birakir. Ag dalga alaninin KENDISINDEN\n" \
+"       turetilir: ayni alan hem yuzeyi buker hem kursagi cizer, boylece\n" \
+"       ikisi hicbir zaman hizasiz kalmaz. */\n" \
+"    float cuv = gclUwWave(wuv*6.0 + vec2(uwTime*0.08, uwTime*0.05), uwTime*0.60);\n" \
+"    float caustic = pow(clamp(cuv*0.35 + 0.5, 0.0, 1.0), 3.0);\n" \
+"    col += tint*caustic*(UW_CAUSTIC*amt);\n" \
 "    /* EKRAN BEYAZA VARAMAZ. Ton karisimi tek basina yeterli degil:\n" \
 "       sahnenin kendisi (gokyuzu, gunesli arazi) zaten 1.0 olabilir ve\n" \
 "       blur onu yayar. Tavan, su altinda DUZ BEYAZ ihtimalini kapatir. */\n" \

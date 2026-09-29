@@ -3241,16 +3241,16 @@ static const GclNativeSlotMap g_native_slot_maps[] = {
        Bu yuzden burasi, SharedPipeline/gcl_native_types.c'deki `f_fps` yaprak
        sayisi ve iki modulun kendi slot sayaclariyla BIREBIR ayni olmalidir:
 
-         29 = FPS yapraklari (Position..Right=16, Camera=11,
-                              CameraSpeed=1, CameraFOV=1)
+         30 = FPS yapraklari (Position..Right=16, Camera=11,
+                              CameraSpeed=1, CameraFOV=1, MouseSensitivity=1)
 
-       CameraSpeed ve CameraFOV iki modulde de TASINIR, islenmez: karari
-       RaylibFPS verir (bkz. gcl_raylib_fps.c), RaylibSimpleCollision yalnizca
-       aynen yayinlar. TerrainCollision `Move()`ten SONRA cagrildigi icin
-       collision'in bu yapraklari DUSURMESI, script'in yazdigi ayarlari sifira
-       cevirirdi. */
-    { "FPS",     "RaylibFPS",             29 },
-    { "FPS",     "RaylibSimpleCollision", 29 },
+       CameraSpeed, CameraFOV ve MouseSensitivity iki modulde de TASINIR,
+       islenmez: karari RaylibFPS verir (bkz. gcl_raylib_fps.c),
+       RaylibSimpleCollision yalnizca aynen yayinlar. TerrainCollision
+       `Move()`ten SONRA cagrildigi icin collision'in bu yapraklari DUSURMESI,
+       script'in yazdigi ayarlari sifira cevirirdi. */
+    { "FPS",     "RaylibFPS",             30 },
+    { "FPS",     "RaylibSimpleCollision", 30 },
     { "Terrain", "RaylibSimpleMesh",       3 },
     /* RaylibSimpleMesh.Mesh, registered under its QUALIFIED name in
        SharedPipeline/gcl_native_types.c because the bare "Mesh" there already
