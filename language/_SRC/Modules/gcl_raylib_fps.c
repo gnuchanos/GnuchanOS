@@ -61,6 +61,7 @@ RaylibFPS.Camera # there is no height only player height camera is like human he
 
 PLAYER.CameraSpeed = 1;
 PLAYER.CameraFOV = 90;
+PLAYER.CameraMoveSpeed = 0.5;
 
 Raylib.BeginMode3D(CurrentCamera);
 Raylib.EndMode3D(void);
@@ -84,8 +85,9 @@ Raylib.EndMode3D(void);
       19 CamTgtX 20 CamTgtY 21 CamTgtZ
       22 CamUpX  23 CamUpY  24 CamUpZ
       25 CamFovy 26 CamProjection
-      27 CamSpeed                                movement speed multiplier
+      27 CamMoveSpeed                            movement speed multiplier
       28 CameraFOV                               field of view, DEGREES
+      29 CamSpeed                                camera TURN (mouse look) speed
 
    Slots 16..26 are Player.Camera: the Eye/Target/Up/fovy/projection values
    the script hands to Raylib.BeginMode3D().
@@ -121,23 +123,27 @@ Raylib.EndMode3D(void);
 #define FPS_DEFAULT_GRAVITY  9.8f
 #define FPS_DEFAULT_FOVY     60.0f
 #define FPS_MOVE_SPEED       5.0f /* units per second */
-/* CameraSpeed: hareket HIZININ CARPANI. 1.0 = belgelenmis hiz (karada 5.0,
-   suda 3.2 birim/sn); 2.0 = iki kat, 0.5 = yari. Hiz DEGIL carpan olmasi
-   bilinclidir: script `CameraSpeed = 1` yazdiginda davranis aynen kalir.
+/* CameraMoveSpeed: YURUME HIZININ CARPANI (slot 27). 1.0 = belgelenmis hiz
+   (karada 5.0, suda 3.2 birim/sn); 2.0 = iki kat, 0.5 = yari. Hiz DEGIL
+   carpan olmasi bilinclidir: script `CameraMoveSpeed = 1` yazdiginda
+   davranis aynen kalir.
 
    Varsayilan 1.0'dir; 0 ya da negatif bir deger bu varsayilana doner
    (bkz. read_player), cunku duran bir oyuncu bir ayar degil bir hatadir. */
-#define FPS_DEFAULT_CAM_SPEED 1.0f
-#define FPS_CAM_SPEED_MAX     20.0f /* ust sinir: isinlanma degil yurume */
+#define FPS_DEFAULT_MOVE_SPEED 1.0f
+#define FPS_MOVE_SPEED_MAX     20.0f /* ust sinir: isinlanma degil yurume */
 #define FPS_JUMP_SPEED       6.0f /* impulse of SPACE, in units per second */
-/* Fare hassasiyetinin VARSAYILANI. Artik bir sabit DEGIL: yalnizca
-   `MouseSensitivity` hic yazilmadiginda gecerli olan degerdir. Alanin
-   kendisi slot 29'dur ve script onu degistirebilir. */
-#define FPS_LOOK_SPEED       0.15f
+/* CameraSpeed: KAMERANIN DONME (BAKIS) HIZININ CARPANI (slot 29). Bu bir
+   sabit DEGIL, yalnizca `CameraSpeed` hic yazilmadiginda gecerli olan
+   varsayilandir. 0.15 = fare deltasinin dogrudan dereceye cevrim orani.
+
+   DIKKAT - ADI `FPS_DEFAULT_MOVE_SPEED` ILE KARISTIRILMAMALIDIR: yukaridaki
+   yurumeyi olcekler, bu bakisi. */
+#define FPS_DEFAULT_TURN_SPEED 0.15f
 /* Ust sinir. Sinirsiz birakmak bir kilitlenme yoludur (1e300 * delta) ve
    cok buyuk bir deger bakisi kullanilamaz yapar. 20 = varsayilanin ~133
    kati; hala oynanabilir. */
-#define FPS_LOOK_SPEED_MAX   20.0f
+#define FPS_TURN_SPEED_MAX   20.0f
 #define FPS_PITCH_LIMIT      89.0f
 #define FPS_DEG2RAD          0.017453292519943295
 
@@ -173,16 +179,22 @@ Raylib.EndMode3D(void);
 
 /* Bir karenin sayilacagi EN BUYUK sure (saniye). GetFrameTime() bir takilma,
    bir sayfa hatasi ya da cok yavas bir GPU yuzunden buyuk donebilir; bu deger
-   olmadan tek karede dt=0.2 cikar ve hareket integrator'u oyuncuyu 30 cm'lik
-   kapsulun yaricapindan COK daha fazla ilerletir. Collision yalnizca ORTUSME
-   cozer (supurme yok); adim yaricaptan buyukse kapsul yuzeyi iskalayip
-   ICINDEN gecer — "karakter zeminin icinden geciyor" tam olarak budur.
+   olmadan tek karede dt=0.2 cikar ve tek bir karede metrelerce yol alinir.
+   GM965 gibi 10-15 FPS'lik bir GPU'da bu, oyunun yavaslamasi degil, DOGRU
+   kalmasi demektir: dt kirpilinca hareket kisalir ama siçrama olmaz.
 
-   Oyuncu 5 m/sn yurur, dusme hizi ~9.8 m/sn'ye kadar cikar. 1/30 sn'de
-   (0.0333) en kotu dusme adimi 0.33 m'dir; kapsul yaricapi 0.3 m. Adim
-   yaricapi asmaz, yani yuzey her zaman yakalanir. GM965 gibi 10-15 FPS'lik
-   bir GPU'da bu, oyunun yavaslamasi degil, DOGRU kalmasi demektir: dt
-   kirpilinca hareket kisalir ama fizik bozulmaz. */
+   BU BIR TUNNEL KORUMASI DEGILDIR — o iddia burada YANLIS duruyordu. "Adim
+   yaricapi asmaz" diyordu; asiyor. Carpma carpanlariyla en kotu hal:
+   5.0 (yurume) x 20 (CameraMoveSpeed tavan) x 1.75 (kosma) x 0.0333 =
+   5.83 m'lik YATAY adim, kapsul yaricapi 0.3 m. Kirpma yalnizca SISIRILMIS
+   dt'yi sinirlar; mesru bir ayar (ya da yercekimiyle 1 saniyelik dusus)
+   adimi yaricapin ustune cikarir.
+
+   GERCEK KORUMA COLLISION'DADIR: hareket, yaricap boyunda adimlara bolunup
+   her adimda cozulur (swept collision, bkz. gcl_SimpleCollision.c:
+   swept_resolve). Kirpmanin isi yalnizca fizigin bu supurmeyi makul sayida
+   adimda yapabilmesini saglamaktir; dt sinirsiz buyurse supurme adim tavani
+   yuzunden seyrekleşir. */
 #define FPS_MAX_DELTA          0.0333f
 
 /* ---------- YUZME (Half-Life modeli) ----------
@@ -224,14 +236,18 @@ enum {
     S_CAM_TGT_X, S_CAM_TGT_Y, S_CAM_TGT_Z,
     S_CAM_UP_X, S_CAM_UP_Y, S_CAM_UP_Z,
     S_CAM_FOVY, S_CAM_PROJECTION,
-    S_CAM_SPEED,
+    /* YURUME hizinin carpani (slot 27, `PLAYER.CameraMoveSpeed`). Adi
+       `S_MOVE_SPEED`: bu sayi kamerayi DONDURMEZ, WASD adimini olcekler. */
+    S_MOVE_SPEED,
     /* SCRIPT'IN istedigi gorus alani, DERECE (slot 28). Slot 25'teki
        S_CAM_FOVY modulun YAYINLADIGI degerdir; ikisi ayri tutulur ki
        yayinlanan deger girdi sanilmasin (bkz. apply_fovy). */
     S_CAMERA_FOV,
-    /* FARE HASSASIYETI carpani (slot 29). `look_speed()` bunu okur.
-       S_CAM_SPEED'ten AYRI: o YURUME hizidir, bu BAKIS hizidir. */
-    S_MOUSE_SENS
+    /* KAMERANIN DONME (BAKIS) hizinin carpani (slot 29,
+       `PLAYER.CameraSpeed`). `turn_speed()` bunu okur ve `fn_look` fare
+       deltasini bununla olcekler. S_MOVE_SPEED'ten AYRI: o YURUME hizidir,
+       bu BAKIS hizidir. */
+    S_TURN_SPEED
 };
 
 static double g_slot[FPS_SLOT_COUNT];
@@ -287,24 +303,33 @@ static void read_player(int argc, const char **argv) {
     if (!(g_slot[S_GRAVITY] > 0.0))  g_slot[S_GRAVITY] = FPS_DEFAULT_GRAVITY;
     if (!(g_slot[S_CAM_FOVY] > 0.0))  g_slot[S_CAM_FOVY]  = FPS_DEFAULT_FOVY;
     if (!(g_slot[S_CAMERA_FOV] > 0.0)) g_slot[S_CAMERA_FOV] = FPS_DEFAULT_FOVY;
-    if (!(g_slot[S_CAM_SPEED] > 0.0)) g_slot[S_CAM_SPEED] = FPS_DEFAULT_CAM_SPEED;
-    if (g_slot[S_CAM_SPEED] > (double)FPS_CAM_SPEED_MAX)
-        g_slot[S_CAM_SPEED] = (double)FPS_CAM_SPEED_MAX;
-    /* MouseSensitivity de ayni kurala tabidir: yazilmamissa ya da anlamsizsa
+    if (!(g_slot[S_MOVE_SPEED] > 0.0)) g_slot[S_MOVE_SPEED] = FPS_DEFAULT_MOVE_SPEED;
+    if (g_slot[S_MOVE_SPEED] > (double)FPS_MOVE_SPEED_MAX)
+        g_slot[S_MOVE_SPEED] = (double)FPS_MOVE_SPEED_MAX;
+    /* CameraSpeed de ayni kurala tabidir: yazilmamissa ya da anlamsizsa
        (0 / negatif) varsayilana doner, ust sinirda kirpilir. */
-    if (!(g_slot[S_MOUSE_SENS] > 0.0)) g_slot[S_MOUSE_SENS] = (double)FPS_LOOK_SPEED;
-    if (g_slot[S_MOUSE_SENS] > (double)FPS_LOOK_SPEED_MAX)
-        g_slot[S_MOUSE_SENS] = (double)FPS_LOOK_SPEED_MAX;
+    if (!(g_slot[S_TURN_SPEED] > 0.0)) g_slot[S_TURN_SPEED] = (double)FPS_DEFAULT_TURN_SPEED;
+    if (g_slot[S_TURN_SPEED] > (double)FPS_TURN_SPEED_MAX)
+        g_slot[S_TURN_SPEED] = (double)FPS_TURN_SPEED_MAX;
 }
 
-/* CameraSpeed: hareket hizinin carpani, tek okuma noktasi.
+/* CameraMoveSpeed: YURUME hizinin carpani, tek okuma noktasi.
 
    Slot'a yazilmis bir deger yoksa (bu alani hic yazmamis eski bir script)
    varsayilana doner; boylece alanin eklenmesi hicbir sahneyi yavaslatmaz. */
-static float camera_speed(void) {
-    double s = g_slot[S_CAM_SPEED];
-    if (!(s > 0.0)) return FPS_DEFAULT_CAM_SPEED;
-    if (s > (double)FPS_CAM_SPEED_MAX) return FPS_CAM_SPEED_MAX;
+static float move_speed(void) {
+    double s = g_slot[S_MOVE_SPEED];
+    if (!(s > 0.0)) return FPS_DEFAULT_MOVE_SPEED;
+    if (s > (double)FPS_MOVE_SPEED_MAX) return FPS_MOVE_SPEED_MAX;
+    return (float)s;
+}
+
+/* CameraSpeed: KAMERA DONME (BAKIS) hizinin carpani, tek okuma noktasi.
+   `fn_look` fare deltasini bununla olcekler. */
+static float turn_speed(void) {
+    double s = g_slot[S_TURN_SPEED];
+    if (!(s > 0.0)) return FPS_DEFAULT_TURN_SPEED;
+    if (s > (double)FPS_TURN_SPEED_MAX) return FPS_TURN_SPEED_MAX;
     return (float)s;
 }
 
@@ -682,12 +707,13 @@ static double fn_move(int argc, const char **argv) {
        collision (yalnizca ortusme cozer) yuzeyi iskalar ve oyuncu zeminin
        icinden gecer. Bkz. FPS_MAX_DELTA. */
     if (dt > FPS_MAX_DELTA) dt = FPS_MAX_DELTA;
-    /* CameraSpeed olcegi BURADA uygulanir ve tek yerdedir: karada yurume adimi
-       de, suda yuzme adimi da ayni carpani kullanir, boylece "hizli" bir ayar
-       su kenarinda aniden degismez. Ziplama (FPS_JUMP_SPEED) KAPSAM DISIDIR:
-       o bir hiz ayari degil, yer cekimine karsi bir ITKIDIR. */
-    float cam_spd = camera_speed();
-    float step = FPS_MOVE_SPEED * cam_spd * dt;
+    /* CameraMoveSpeed olcegi BURADA uygulanir ve tek yerdedir: karada yurume
+       adimi da, suda yuzme adimi da ayni carpani kullanir, boylece "hizli"
+       bir ayar su kenarinda aniden degismez. Ziplama (FPS_JUMP_SPEED) KAPSAM
+       DISIDIR: o bir hiz ayari degil, yer cekimine karsi bir ITKIDIR.
+       DIKKAT: `fn_look` bu carpani KULLANMAZ; bakis ayri bir alandir. */
+    float move_spd = move_speed();
+    float step = FPS_MOVE_SPEED * move_spd * dt;
 
     float fx, fz, rx, rz;
     basis(&fx, &fz, &rx, &rz);
@@ -743,7 +769,7 @@ static double fn_move(int argc, const char **argv) {
 
         if (g_swimming_now) {
             swim_move(dt, key_fwd, key_bwd, dir_x, dir_z, dir_len, boost,
-                      water.surface, cam_spd);
+                      water.surface, move_spd);
             return 0.0;
         }
     }
@@ -815,18 +841,14 @@ static double fn_look(int argc, const char **argv) {
        yuzden asagi fare (delta.y > 0) asagi bakmali, yani pitch AZALMALI:
        pitch > 0 yukari bakar (build_camera: ty = ey + sin(pitch) * 10). */
     Vector2 delta = GetMouseDelta();
-    /* FARE HASSASIYETI BURADAN OKUNUR. Eskiden sabit FPS_LOOK_SPEED
-       kullaniliyordu ve script onu degistiremiyordu: `CameraSpeed = 101`
-       yazan bir el BAKISI hic degistiremiyordu, cunku CameraSpeed YURUME
-       hizidir. Alan slot 29'dur (S_MOUSE_SENS). */
+    /* KAMERA DONME HIZI BURADAN OKUNUR (slot 29, `PLAYER.CameraSpeed`).
+       `turn_speed()` varsayilani ve ust siniri uygular; iki eksen birlikte
+       olceklenir. */
     {
-        double sens = g_slot[S_MOUSE_SENS];
-        if (!(sens > 0.0)) sens = (double)FPS_LOOK_SPEED;
-        if (sens > (double)FPS_LOOK_SPEED_MAX) sens = (double)FPS_LOOK_SPEED_MAX;
-        g_slot[S_ROT_X] -= (double)delta.x * sens;
-        g_slot[S_ROT_Y] -= (double)delta.y * sens;
+        float turn = turn_speed();
+        g_slot[S_ROT_X] -= (double)delta.x * (double)turn;
+        g_slot[S_ROT_Y] -= (double)delta.y * (double)turn;
     }
-    /* Yukaridaki blok iki ekseni birlikte uygular; bu satir kaldirildi. */
     if (g_slot[S_ROT_Y] >  FPS_PITCH_LIMIT) g_slot[S_ROT_Y] =  FPS_PITCH_LIMIT;
     if (g_slot[S_ROT_Y] < -FPS_PITCH_LIMIT) g_slot[S_ROT_Y] = -FPS_PITCH_LIMIT;
 

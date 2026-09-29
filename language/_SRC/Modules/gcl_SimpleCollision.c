@@ -121,7 +121,9 @@ RaylibSimpleCollision.SimpleBoxCollision(PLAYER, MESH1, MESH2, ...);
 
 /* SUPURMELI COZUMDE tek karede en fazla kac adim. Tavan, sonsuz donguye ve
    asiri hizda kare basina binlerce cozume karsi korur; 64 adim x 0.3 m = 19 m
-   tek karede, ki bu hicbir oynanabilir sahneye sigmaz. */
+   TEK KAREDE, ki bu hicbir oynanabilir sahneye sigmaz. Tavan asilirsa yalnizca
+   ARADAKI TARAMA SEYREKLER; son adim hedefe tam oturduugu icin isinlanma
+   kaybolmaz (bkz. swept_resolve). */
 #define COL_MAX_SWEEP_STEPS 64
 
 enum {
@@ -134,12 +136,13 @@ enum {
     S_CAM_TGT_X, S_CAM_TGT_Y, S_CAM_TGT_Z,
     S_CAM_UP_X, S_CAM_UP_Y, S_CAM_UP_Z,
     S_CAM_FOVY, S_CAM_PROJECTION,
-    /* 27 ve 28. yapraklar; bu modul yalnizca TASIR (bkz. COL_PLAYER_SLOTS
-       notu). Kamera kurulumu bunlari OKUMAZ ve YAZMAZ. */
-    S_CAM_SPEED,
-    S_CAMERA_FOV,
-    /* 29. yaprak (fare hassasiyeti); bu modul yalnizca TASIR. */
-    S_MOUSE_SENS
+    /* 27..29. yapraklar; bu modul yalnizca TASIR (bkz. COL_PLAYER_SLOTS
+       notu). Kamera kurulumu bunlari OKUMAZ ve YAZMAZ. Adlar FPS moduluyle
+       aynidir ama YALNIZCA okunurluk icindir: bu modul hangi yuvada ne
+       oldugunu bilmek zorunda degil, hepsini aynen geri yayinlar. */
+    S_MOVE_SPEED,      /* 27: CameraMoveSpeed — yurume carpani */
+    S_CAMERA_FOV,      /* 28: CameraFOV       — gorus alani   */
+    S_TURN_SPEED       /* 29: CameraSpeed     — bakis carpani */
 };
 
 enum { T_TEXTURE = 0, T_COLOR, T_HANDLE };
@@ -155,21 +158,32 @@ enum {
 
 static double g_slot[COL_SLOT_COUNT];
 
-/* ONCEKI KARENIN AYAK YUKSEKLIGI — tunnel korumasi icin.
+/* ONCEKI KARENIN TAM KONUMU — tunnel korumasi icin.
 
-   NEDEN SART: cozum YALNIZCA ORTUSME arar. Oyuncu hizli duserse tek karede
-   yuzeyin USTUNDEN ALTINA gecebilir; o anda kapsul hicbir ucgenle KESISMEZ,
-   resolve_pass "temas yok" der ve oyuncu arazinin ICINDEN gecer. Bu tam
-   olarak "fps dusunce laptopta terrain collision calismiyor" diye bildirilen
-   hal: FPS dustukce dt buyur, adim yaricapi asar ve gecis baslar.
+   NEDEN SART: cozum YALNIZCA ORTUSME arar. Oyuncu tek karede yaricaptan
+   (0.3 m) fazla yol alirsa kapsul ince bir yuzeyin USTUNDEN ALTINA gecebilir;
+   o anda hicbir ucgenle KESISMEZ, resolve_pass "temas yok" der ve oyuncu
+   arazinin ICINDEN gecer. Bu tam olarak "cok hizli kosunca terrain icinden
+   geciyor" diye bildirilen haldir: `CameraMoveSpeed` buyudukce adim yaricapi
+   asar.
 
-   HIZ SINIRI TEK BASINA COZMEZ: yercekimi hizi sinirsiz buyutur. dt 1/30'da
-   kilitli olsa bile ~1 saniyelik dususten sonra adim 0.3 m'yi asar. Cozum,
-   hareketi YARICAP BOYUNDA adimlara bolup HER adimda cozmektir (swept
-   collision): boylece kapsul yuzeye her zaman en fazla bir yaricap yaklasir
-   ve temas KACIRILAMAZ. Deger, ilk karede supurme yapilmasin diye cok
-   asagidan baslar. */
-static double g_last_feet_y = -1.0e30;
+   UC EKSEN DE SUPURULUR. Eskiden yalnizca Y supuruluyordu ve bu, hatanin
+   yarisini gizliyordu: hizli DUSUSTE zemin yakalaniyordu ama hizli YATAY
+   KOSUDA tepelerin, sirtlarin ve duvarlarin icinden geciliyordu. Artik
+   onceki konumun uc bileseni de tutulur ve hareket, TOPLAM yerdeğistirmeye
+   gore yaricap boyunda adimlara bolunur — capraz kosarken X ve Z'nin bileskesi
+   de yaricapi asmaz. Boylece kapsul yuzeye her zaman en fazla bir yaricap
+   yaklasir ve temas KACIRILAMAZ (swept collision); ayrinti: swept_resolve.
+
+   KAYIT IKI AYRI KANALDA tutulur, cunku iki cagri da KENDI geometrisine karsi
+   supurur: `g_last_pos` arazi icin, `g_box_pos` kutular icin. Tek kayit
+   paylasilsaydi ikinci cagri, birincinin biraktigi konumu "onceki" sanar ve
+   kendi hareket acisini sifir bulurdu — g_tris / g_terrain_tris ayriminin
+   aynisi, konum tarafinda. */
+static double g_last_pos[3] = { 0.0, 0.0, 0.0 };
+static double g_box_pos[3]  = { 0.0, 0.0, 0.0 };
+static int    g_last_pos_valid = 0;
+static int    g_box_pos_valid  = 0;
 
 /* ---------- 3B vektor yardimcilari ---------- */
 
@@ -742,6 +756,71 @@ static void build_camera(void) {
     g_slot[S_CAM_PROJECTION] = 0;   /* CAMERA_PERSPECTIVE */
 }
 
+/* Oyuncunun konumunu yuwalardan okur. */
+static void read_pos(double *out) {
+    out[0] = g_slot[S_POS_X];
+    out[1] = g_slot[S_POS_Y];
+    out[2] = g_slot[S_POS_Z];
+}
+
+/* ---------- SUPURMELI (SWEPT) COZUM ----------
+
+   Hareket, yaricaptan buyuk olmayan adimlara bolunur ve HER adimda cozulur.
+   Adim boyu TOPLAM yerdeğistirmeye gore secilir, tek bir eksene gore degil:
+   capraz kosarken X ve Z'nin bileskesi de yaricapi asmamalidir. Eskiden
+   yalnizca Y supuruluyordu; yatay kosu bu yuzden hic korunmuyordu.
+
+   Itme BIR SONRAKI ADIMA TASINIR: konum dogrudan yuvalarda tutuldugu ve her
+   adim `+=` ile ilerledigi icin, bir adimda yapilan itme sonraki adimin
+   baslangici olur. Aksi halde kapsul yuzeyin altina dogru itemezdi.
+
+   Adim tavani (COL_MAX_SWEEP_STEPS) cok buyuk bir sicramada cozunurlugu
+   dusurur ama SON NOKTA her zaman hedefe TAM oturur (adimlar `from + delta *
+   s/steps` uzerinden ilerler ve son adim `to`ya iner), yani isinlanma
+   kaybolmaz; yalnizca aradaki tarama seyreklesir. */
+static void swept_resolve(const TriBuffer *buf,
+                          const double from[3], const double to[3]) {
+    ColCapsule cap;
+    double delta[3], step[3], dist;
+    int steps;
+
+    vsub(delta, to, from);
+    dist = vlen(delta);
+
+    steps = (int)(dist / (double)COL_PLAYER_RADIUS) + 1;
+    if (steps < 1) steps = 1;
+    if (steps > COL_MAX_SWEEP_STEPS) steps = COL_MAX_SWEEP_STEPS;
+
+    step[0] = delta[0] / (double)steps;
+    step[1] = delta[1] / (double)steps;
+    step[2] = delta[2] / (double)steps;
+
+    g_slot[S_POS_X] = from[0];
+    g_slot[S_POS_Y] = from[1];
+    g_slot[S_POS_Z] = from[2];
+
+    for (int s = 0; s < steps; s++) {
+        g_slot[S_POS_X] += step[0];
+        g_slot[S_POS_Y] += step[1];
+        g_slot[S_POS_Z] += step[2];
+        player_capsule(&cap);
+        for (int i = 0; i < COL_SOLVE_ITERS; i++) {
+            if (!resolve_pass(buf, &cap, NULL)) break;
+        }
+    }
+}
+
+/* Tek konumda cozum: supurulecek onceki konum yoksa (ilk kare) kullanilir.
+   Bir itme kapsulu ikinci bir yuzeye sokabildigi icin iteratiftir (Godot da
+   oyle yapar). */
+static void resolve_here(const TriBuffer *buf) {
+    ColCapsule cap;
+    player_capsule(&cap);
+    for (int i = 0; i < COL_SOLVE_ITERS; i++) {
+        if (!resolve_pass(buf, &cap, NULL)) break;
+    }
+}
+
 /* ---------- TerrainCollision(player, terrain) ----------
 
    Arazi de bir UCGEN KUMESIDIR; kapsul ona ayni sekilde carpistirilir.
@@ -772,9 +851,8 @@ static void terrain_buffer_ensure(int handle) {
 }
 
 static double fn_terrain_collision(int argc, const char **argv) {
-    ColCapsule cap;
-    double feet_now, feet_prev, step_y;
-    int handle, steps;
+    double to[3];
+    int handle;
 
     read_player(argc, argv);
     handle = (argc > COL_PLAYER_SLOTS + T_HANDLE)
@@ -782,51 +860,20 @@ static double fn_terrain_collision(int argc, const char **argv) {
 
     terrain_buffer_ensure(handle);
 
-    /* ---------- SUPURMELI (SWEPT) DIKEY COZUM ----------
+    /* FPS modulu TUM hareket zincirini (WASD + yercekimi + ziplama) ZATEN
+       uygulamis olarak gelir (bkz. gcl_raylib_fps.c: x/z += step, y += vel*dt).
+       Bu yerdegistirme tek karede yaricaptan buyukse kapsul ince bir yuzeyi
+       iskalar ve ICINDEN gecer.
 
-       FPS modulu dikey hareketi ZATEN uygulamis olarak gelir (bkz.
-       gcl_raylib_fps.c: y += vel*dt). Bu hareket tek karede yaricaptan
-       buyukse kapsul yuzeyi iskalar ve ICINDEN gecer. Bu yuzden bu kareki
-       dikey FARK, yaricaptan buyuk olmayan adimlara bolunur ve HER adimda
-       cozulur.
-
-       Cozumun yaptigi itme bir sonraki adima TASINIR — konum dogrudan
-       yuvalarda tutuldugu icin — boylece kapsul yuzeyin altina itemez.
-       Yukari hareket de (ziplama) ayni yoldan gecer; tavan varsa kapsul ona
-       carpip durur.
-
-       Ilk karede onceki konum yoktur; supurme yerine tek cozum yapilir, cunku
+       Ilk karede supurulecek onceki konum yoktur; tek cozum yapilir, cunku
        oyuncu zaten yuzeyin ustunde baslar. */
-    feet_now  = g_slot[S_POS_Y];
-    feet_prev = g_last_feet_y;
+    read_pos(to);
 
-    if (feet_prev > -1.0e29) {
-        double dy  = feet_now - feet_prev;
-        double ady = (dy < 0.0) ? -dy : dy;
+    if (g_last_pos_valid) swept_resolve(&g_terrain_tris, g_last_pos, to);
+    else                  resolve_here(&g_terrain_tris);
 
-        steps = (int)(ady / (double)COL_PLAYER_RADIUS) + 1;
-        if (steps < 1) steps = 1;
-        if (steps > COL_MAX_SWEEP_STEPS) steps = COL_MAX_SWEEP_STEPS;
-
-        /* Onceki konumdan basla ve adim adim ilerle. */
-        g_slot[S_POS_Y] = feet_prev;
-        step_y = dy / (double)steps;
-
-        for (int s = 0; s < steps; s++) {
-            g_slot[S_POS_Y] += step_y;
-            player_capsule(&cap);
-            for (int i = 0; i < COL_SOLVE_ITERS; i++) {
-                if (!resolve_pass(&g_terrain_tris, &cap, NULL)) break;
-            }
-        }
-    } else {
-        player_capsule(&cap);
-        for (int i = 0; i < COL_SOLVE_ITERS; i++) {
-            if (!resolve_pass(&g_terrain_tris, &cap, NULL)) break;
-        }
-    }
-
-    g_last_feet_y = g_slot[S_POS_Y];
+    read_pos(g_last_pos);
+    g_last_pos_valid = 1;
 
     build_camera();
     return 0.0;
@@ -848,7 +895,7 @@ static double fn_terrain_collision(int argc, const char **argv) {
    Oyuncunun konumunu FPS ve TerrainCollision ilerletir; burada yalnizca
    kutunun icinde kalmis bir kapsul DISARI itilir. */
 static double fn_simple_box_collision(int argc, const char **argv) {
-    ColCapsule cap;
+    double to[3];
     int base = COL_PLAYER_SLOTS, k;
 
     if (argc < COL_PLAYER_SLOTS + COL_BOX_SLOTS) return 0.0;
@@ -873,13 +920,22 @@ static double fn_simple_box_collision(int argc, const char **argv) {
         }
     }
 
-    player_capsule(&cap);
+    /* Bu cagri da KENDI geometrisine karsi SUPURUR. Kutular kucuk ve
+       konumlari hizla degisebildigi icin atlanirsa ayni isinlanma burada da
+       olurdu: oyuncu tek karede kutunun obur tarafina gecer, kapsul hicbir
+       ucgenle kesisMez ve kutu SESSIZCE yok sayilirdi.
 
-    /* COZULME PASS'LERI: bir itme kapsulu ikinci bir yuzeye sokabilir, bu
-       yuzden tek gecis yetmez (Godot da iteratiftir). */
-    for (int i = 0; i < COL_SOLVE_ITERS; i++) {
-        if (!resolve_pass(&g_tris, &cap, NULL)) break;
-    }
+       `g_box_pos` ayri tutulur cunku bu fonksiyon TerrainCollision ile ayni
+       karede, AYNI konumla degil, KENDI ilerlemesiyle cagrilir; tek kayit
+       paylasilsa ikisi birbirinin "onceki konumunu" yerdi
+       (bkz. g_last_pos / g_box_pos notu). */
+    read_pos(to);
+
+    if (g_box_pos_valid) swept_resolve(&g_tris, g_box_pos, to);
+    else                 resolve_here(&g_tris);
+
+    read_pos(g_box_pos);
+    g_box_pos_valid = 1;
 
     build_camera();
     return 0.0;

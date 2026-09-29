@@ -51,18 +51,22 @@ int main() {
     #// fps player
     RaylibFPS.FPS PLAYER;
     Raylib.Camera3D CurrentCamera = PLAYER.Camera;
-    PLAYER.CameraSpeed = 101;
     PLAYER.CameraFOV = 90;
 
-    #// FARE HASSASIYETI — CameraSpeed'ten AYRI BIR AYARDIR.
+    #// IKI AYRI HIZ — ADLARI BENZER, ISI FARKLI.
     #//
-    #// CameraSpeed YURUME hizinin carpanidir (WASD ile saniyede kac birim);
-    #// fare donusune hic dokunmaz. Bu yuzden `CameraSpeed = 101` yazmak
-    #// bakisi HIC hizlandirmaz - yalnizca yurumeyi hizlandirir.
+    #//   CameraSpeed      = KAMERANIN DONME hizi (fare). "Bakisim agir."
+    #//   CameraMoveSpeed  = YURUME hizi carpani (WASD). "Cok yavas yuruyorum."
     #//
-    #// 1.0 = varsayilan bakis. 2.0 = iki kat hizli. 0 ya da negatif deger
-    #// varsayilana doner (donmayan bir fare bir ayar degil bir hatadir).
-    PLAYER.MouseSensitivity = 2.0f;
+    #// Ikisi tek alanda tutulsaydi "fareyi hizlandir" istegi yurumeyi de
+    #// hizalandirir, "yurumeyi yavaslat" istegi bakisi agirlastirirdi. Bu
+    #// yuzden ayridirlar ve YUVA NUMARALARI FARKLIDIR (29 ve 27).
+    #//
+    #// Ikisi de carpan: 1.0 = belgelenmis hiz, 2.0 = iki kat. 0 ya da
+    #// negatif deger varsayilana doner; donmayan bir fare ve duran bir
+    #// oyuncu birer ayar degil, birer hatadir.
+    PLAYER.CameraSpeed     = 1.0f;  # bakis (fare)
+    PLAYER.CameraMoveSpeed = 1.0f;  # yurume (WASD)
     
     PLAYER.Position.x = 0;
     PLAYER.Position.z = 0;

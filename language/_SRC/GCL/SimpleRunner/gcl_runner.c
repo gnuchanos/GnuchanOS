@@ -3242,9 +3242,9 @@ static const GclNativeSlotMap g_native_slot_maps[] = {
        sayisi ve iki modulun kendi slot sayaclariyla BIREBIR ayni olmalidir:
 
          30 = FPS yapraklari (Position..Right=16, Camera=11,
-                              CameraSpeed=1, CameraFOV=1, MouseSensitivity=1)
+                              CameraMoveSpeed=1, CameraFOV=1, CameraSpeed=1)
 
-       CameraSpeed, CameraFOV ve MouseSensitivity iki modulde de TASINIR,
+       CameraMoveSpeed, CameraFOV ve CameraSpeed iki modulde de TASINIR,
        islenmez: karari RaylibFPS verir (bkz. gcl_raylib_fps.c),
        RaylibSimpleCollision yalnizca aynen yayinlar. TerrainCollision
        `Move()`ten SONRA cagrildigi icin collision'in bu yapraklari DUSURMESI,

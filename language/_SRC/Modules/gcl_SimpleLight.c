@@ -111,7 +111,10 @@ _0_point_light.Draw(); # draw glow cube for check where is the light
    alfasi duser: disa dogru sonumlenen yumusak bir hale olusur - "glow". */
 #define GLOW_SHELLS      3
 #define GLOW_GROW        3.0f
-#define GLOW_ALPHA       16
+/* EN IC KABUGUN katkisi. Disa dogru `k*k` ile soner; EN DIS kabuk
+   GLOW_ALPHA/(GLOW_SHELLS^2) kadar, yani SIFIRDAN BUYUK kalir - bkz.
+   fn_draw'daki dongu notu. */
+#define GLOW_ALPHA       110
 
 /* CEKIRDEK KUTUNUN TOPLAMALI KATKISI. 255 IDI VE YANLISTI.
 
@@ -127,11 +130,24 @@ _0_point_light.Draw(); # draw glow cube for check where is the light
    her sey kirpilir ve ne isik rengi ne de kutu sekli kalir - "isik bir
    beyazlik gibi patliyor" goruntusunun sebebi budur.
 
-   Butce 255'in ALTINDA tutulur; PARLAK bir sahnenin (gokyuzu, su) uzerine
-   binen pay da hesaba katilir. Yeni toplam ~90/255: karanlik sahnede net bir
-   hale, aydinlik sahnede bile BEYAZA VARMAYAN bir katki. */
-#define GLOW_ALPHA       16
-#define GLOW_CORE_ALPHA  55
+   ESKI DEGER (55) FAZLA KISIKTI: cekirdek %22 alfayla ciziliyordu, yani
+   kupun ICINI goruyordunuz - "point light kublari transparan" sikayeti
+   tam olarak budur. Butceyi 255'in altina indirmek dogruydu; ama alfa 55'e
+   dusurulunce halenin de cekirdegin de gorunurlugu bitti.
+
+   YENI DENGE. Toplamali katki (alfa/255) merkezde:
+       cekirdek : 110/255 = 0.43
+       kabuklar : (110 + 49 + 12)/255 = 0.67
+       ---------------------------------------------------
+       merkez   : 1.10  -> hafifce kirpilir, ISIK RENGINE oturur
+   Merkez doyar (katı gorunur), ama HALO doymaz:
+       0.5 - 0.83 birim : 0.67  (net hale)
+       0.83 - 1.17      : 0.24
+       1.17 - 1.50      : 0.05  (soluk kenar)
+   Yani "saf beyaz blob" olmaz: sonum EGIMI korunur, cunku kirpilma yalnizca
+   en merkezde olur. Beyaz isikta merkez beyaz, KIRMIZI isikta merkez KIRMIZI
+   kalir - isik rengi kaybolmaz. */
+#define GLOW_CORE_ALPHA  110
 
 /* Gece dogrudan isigin sonme bandi. `sunDir`in Y bileseni gece negatiftir;
    negatif isik vektoru taban yuzunde `dot(normal, light) > 0` yapar ve kubun
@@ -834,14 +850,25 @@ static double fn_draw(int argc, const char **argv) {
        gibi gorunurdu. */
     glow_begin();
 
-    for (int i = GLOW_SHELLS; i >= 1; i--) {
-        float t     = (float)i / (float)GLOW_SHELLS;  /* 1 = en dis kabuk */
+    /* `k` ESKI HALIYLE `1 - i/GLOW_SHELLS` IDI VE EN DIS KABUGU OLDURUYORDU.
+
+       i = GLOW_SHELLS iken t = 1 ve k = 0 cikiyordu; alfa `GLOW_ALPHA*k*k`
+       oldugu icin en dis kabuk HER ZAMAN a = 0 aliyor ve `continue` ile
+       ATLANIYORDU. Geriye cekirdegin hemen etrafinda iki ince kabuk (alfa 7
+       ve 1) kaliyordu: hale yoktu, yalnizca kucuk ve soluk bir kare vardi.
+       "Glow olmuyor" sikayetinin sebebi bu carpikliktir.
+
+       Yeni esleme en dis kabugu SIFIRDAN BUYUK tutar:
+           j = GLOW_SHELLS-1 : k = 1/3, alfa = GLOW_ALPHA/9
+           j = 0             : k = 1  , alfa = GLOW_ALPHA
+       Boylece ic ice uc kabuk da cizilir ve disa dogru gercekten soner. */
+    for (int j = GLOW_SHELLS - 1; j >= 0; j--) {
+        float t     = (float)(j + 1) / (float)GLOW_SHELLS;  /* 1 = en dis kabuk */
         float side  = SUN_DEBUG_CUBE * (1.0f + (GLOW_GROW - 1.0f) * t);
-        float k     = 1.0f - t;                       /* 1 = cekirdek */
+        float k     = 1.0f - (float)j / (float)GLOW_SHELLS; /* 1 = en ic kabuk */
         int   a     = (int)((float)GLOW_ALPHA * k * k);
         Color shell = c;
 
-        if (a <= 0) continue;
         shell.a = (unsigned char)(a > 255 ? 255 : a);
         draw_cube(at, side, shell);
     }

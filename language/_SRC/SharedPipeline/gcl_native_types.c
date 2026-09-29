@@ -164,11 +164,22 @@ static const GclNativeField f_fps[] = {
     {"Height","float"}, {"Gravity","float"}, {"IsGravityOn","int"},
     {"Forward","float"}, {"Backward","float"}, {"Left","float"}, {"Right","float"},
     {"Camera","Camera3D"},
-    /* SONDA olmak zorunda: su iki alan modulun slot tablosunda 27 ve 28'dir ve
+    /* SONDA olmak zorunda: su alanlar modulun slot tablosunda 27..29'dur ve
        kameranin 16..26 araligini KAYDIRMAMALIDIR. Sira, alan listesi ile
        gcl_raylib_fps.c'deki LastSlot kanali arasinda BIREBIR olmak
        zorundadir (bkz. oradaki slot tablosu). */
-    {"CameraSpeed","float"},
+    /* `PLAYER.CameraMoveSpeed = 0.5;` — YURUME hizinin CARPANI (slot 27).
+
+       ADI ONEMLIDIR. Bu alan KAMERAYI DONDURMEZ; WASD ile saniyede kac birim
+       gidildigini olcekler. Eskiden `CameraSpeed` adiyla geciyordu ve bu ad
+       yanilticiydi: kullanici "fareyle bakis hizim" sanip `CameraSpeed = 101`
+       yazdi, bakis ise HIC degismedi. Kamerayi ceviren alan asagidaki
+       `CameraSpeed`tir (slot 29).
+
+       1.0 = belgelenmis hiz (karada 5.0, suda 3.2 birim/sn); 2.0 = iki kat,
+       0.5 = yari. Hiz DEGIL carpan olmasi bilinclidir. 0 ya da negatif deger
+       varsayilana doner: duran bir oyuncu bir ayar degil bir hatadir. */
+    {"CameraMoveSpeed","float"},
     /* `PLAYER.CameraFOV = 90;` — script'in ISTEDIGI gorus alani, DERECE.
 
        Kameranin `fovy` alaniyla (ustteki Camera3D icinde) AYNI SEY DEGILDIR:
@@ -179,19 +190,23 @@ static const GclNativeField f_fps[] = {
 
        Kosma (SHIFT) genislemesini modul ekler: cikis = CameraFOV + boost. */
     {"CameraFOV","float"},
-    /* `PLAYER.MouseSensitivity = 2;` — FARE HASSASIYETI carpani.
+    /* `PLAYER.CameraSpeed = 2;` — KAMERANIN DONME (BAKIS) HIZI carpani
+       (slot 29). Fare hareketinin yaw/pitch'e cevrilme oranidir.
 
-       CameraSpeed'ten AYRI bir alandir ve bu AYRIM SARTTIR: CameraSpeed
-       YURUME hizinin carpanidir (WASD ile saniyede kac birim), fare donusune
-       hic dokunmaz. Ikisi tek alanda tutulsaydi "fareyi hizlandir" istegi
-       yurumeyi de hizalandirir, "yurumeyi yavaslat" istegi bakisi
-       agirlastirirdi. Kullanici bunu yasadI: CameraSpeed = 101 yazdi ve
-       BAKIS hic degismedi.
+       YURUME hizindan AYRI bir alandir ve bu AYRIM SARTTIR:
+       `CameraMoveSpeed` (yukarida, slot 27) kac birim/sn yurundugunu soyler
+       (WASD); bu alan kac derece donuldugunu (fare). Ikisi tek alanda
+       tutulsaydi "fareyi hizlandir" istegi yurumeyi de hizalandirir,
+       "yurumeyi yavaslat" istegi bakisi agirlastirirdi.
 
-       1.0 = varsayilan (eski sabit FPS_LOOK_SPEED). 2.0 = iki kat hizli
-       bakis. 0 ya da negatif deger varsayilana doner: donmayan bir fare bir
-       ayar degil bir hatadir. */
-    {"MouseSensitivity","float"}
+       ADI BU YUZDEN `CameraSpeed`: kamerayi GERCEKTEN ceviren ayar budur;
+       `CameraSpeed = 101` yazan bir el BAKISI hizlandirmak istemistir ve
+       dogru adresi burasidir.
+
+       1.0 = varsayilan bakis. 2.0 = iki kat
+       hizli bakis. 0 ya da negatif deger varsayilana doner: donmayan bir
+       fare bir ayar degil bir hatadir. */
+    {"CameraSpeed","float"}
 };
 static const GclNativeField f_terrainmaterial[] = {
     {"Texture","int"}, {"Color","int"}
