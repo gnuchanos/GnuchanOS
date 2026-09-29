@@ -235,6 +235,18 @@ static SkyStore      g_sky[SKY_MAX];
 static Mesh          g_dome;
 static Material      g_dome_material;
 static int           g_shader_ready = 0;
+/* Bir kez denendi mi? Bkz. gcl_SimpleWater.c: g_shader_tried — AYNI kusur
+   burada da vardi ve burada daha da pahaliydi.
+
+   `sky_ready()` basarisiz oldugunda `g_shader_ready` 0 kaliyordu, yani
+   cizim her cagrildiginda (HER KAREDE) bastan deniyordu. Ve bu yolun basi
+   yalnizca bir derleme degil: `sky_dome_build()` mesh'i sifirdan ayiriyor,
+   `UploadMesh()` onu GPU'ya yolluyor (VAO/VBO), sonra shader deneniyordu.
+   Derleme tutmadiginda kubbe her karede yeniden ayirilip yeniden yukleniyor
+   ve hicbiri serbest birakilmiyordu — saniyede onlarca VAO/VBO sizintisi ve
+   ayni sayida derleyici hatasi. Surucu kaynagi bir kez reddettiyse bir daha
+   kabul etmez; bir kez dene, olmadiysa vazgec. */
+static int           g_shader_tried = 0;
 
 /* Kubbeye has GLSL program. RaylibShader'in programindan AYRI tutulur, cunku
    gokyuzu BeginShaderMode blogunun DISINDA cizilir (bkz. basliktaki cizim
@@ -538,6 +550,12 @@ static void sky_shader_cache_locations(void) {
    yalnizca ClearBackground'in rengi gorunur. */
 static int sky_ready(void) {
     if (g_shader_ready) return 1;
+    /* Basarisizlik KALICIDIR: bayrak denemeden SONRA, sonuc ne olursa olsun
+       kaldirilir; aksi halde kubbe ve GPU yuklemesi her karede yinelenir
+       (bkz. g_shader_tried notu). */
+    if (g_shader_tried) return 0;
+    g_shader_tried = 1;
+
     if (sky_dome_build() == 0) return 0;
 
     /* CPU mesh'i -> GPU. Ikinci arguman 0: kubbe her karede ayni, dinamik
@@ -546,6 +564,8 @@ static int sky_ready(void) {
 
     g_sky_shader = load_sky_shader(glsl_version());
     if (g_sky_shader.id == 0) {
+        fprintf(stderr, "gnuchanwm[skybox]: the sky shader did not compile "
+                        "(GLSL %d); the sky will not be drawn\n", glsl_version());
         sky_dome_free(&g_dome);
         return 0;
     }

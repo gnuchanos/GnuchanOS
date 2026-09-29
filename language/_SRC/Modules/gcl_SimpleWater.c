@@ -283,6 +283,16 @@ static double     g_slot[WATER_SLOT_COUNT];
 /* ---------- YUZEY SHADER'I ---------- */
 static Shader g_shader;
 static int    g_shader_ready = 0;
+/* Bir kez denendi mi? `ready` "calisiyor", bu ise "denendi" demektir.
+
+   AYRI TUTULMASININ SEBEBi: derleme basarisiz oldugunda `ready` 0 kalir ve
+   eski kod her karede YENIDEN deniyordu. Kamera suyun altindayken bu saniyede
+   onlarca basarisiz derleme demekti: her denemede bir vertex shader nesnesi
+   yaratilip hic serbest birakilmiyor (program olusmadigi icin), log 33 karede
+   984 satira cikiyordu. Surucu bir shader'i reddettiyse AYNI kaynakla bir daha
+   kabul etmez; denemeyi tekrarlamak yalnizca kaynak tuketir. */
+static int    g_shader_tried = 0;
+static char   g_shader_fail[128] = "";
 static int    g_loc_time = -1, g_loc_viewpos = -1;
 static int    g_loc_shallow = -1, g_loc_deep = -1;
 static int    g_loc_wave = -1, g_loc_surf = -1, g_loc_foam = -1;
@@ -295,6 +305,9 @@ static int    g_loc_fog_color = -1, g_loc_fog_params = -1, g_loc_fog_shape = -1;
 /* ---------- DOLGU SHADER'I ---------- */
 static Shader g_uw_shader;
 static int    g_uw_ready = 0;
+/* Bkz. g_shader_tried: su alti perdesi de bir kez denenir. */
+static int    g_uw_tried = 0;
+static char   g_uw_fail[128] = "";
 static int uw_loc_res = -1, uw_loc_time = -1;
 static int uw_loc_shallow = -1, uw_loc_deep = -1;
 static int uw_loc_submerge = -1;
@@ -865,11 +878,27 @@ static void underwater_locations(void) {
 
 /* Shader'lar yalnizca BIR KEZ, ilk cizimde kurulur: o anda GL baglami zaten
    aciktir, cunku su ancak pencerenin icinde cizilebilir. Derlenemezse 0 doner
-   ve cagri sessizce cikar (pencere disi bir cizim cokmemeli). */
+   ve cagri sessizce cikar (pencere disi bir cizim cokmemeli).
+
+   BASARISIZLIK KALICIDIR: `tried` bayragi derleme denendikten SONRA, sonuc ne
+   olursa olsun kaldirilir. Surucu ayni kaynagi ikinci kez de reddeder; her
+   karede yeniden denemek yalnizca basarisiz derleme basina bir GL nesnesi
+   sizdirir ve log'u doldurur (bkz. g_shader_tried notu). Bir kez dene, olmadiysa
+   vazgec — gercek hata ILK denemede zaten log'a yazildi. */
 static int water_shader_ready(void) {
     if (g_shader_ready) return 1;
+    if (g_shader_tried) return 0;
+    g_shader_tried = 1;
+
     g_shader = build_shader(WATER_VERTEX_SRC, WATER_FRAGMENT_SRC, water_glsl_version());
-    if (g_shader.id == 0) return 0;
+    if (g_shader.id == 0) {
+        snprintf(g_shader_fail, sizeof(g_shader_fail),
+                 "the water surface shader did not compile (GLSL %d)",
+                 water_glsl_version());
+        fprintf(stderr, "gnuchanwm[water]: %s; the surface will not be drawn\n",
+                g_shader_fail);
+        return 0;
+    }
     water_shader_locations();
     g_shader_ready = 1;
     return 1;
@@ -877,9 +906,22 @@ static int water_shader_ready(void) {
 
 static int underwater_ready(void) {
     if (g_uw_ready) return 1;
+    if (g_uw_tried) return 0;
+    g_uw_tried = 1;
+
     g_uw_shader = build_shader(UNDERWATER_VERTEX_SRC, UNDERWATER_FRAGMENT_SRC,
                                water_glsl_version());
-    if (g_uw_shader.id == 0) return 0;
+    if (g_uw_shader.id == 0) {
+        /* Bu, ekran perdesinin derlenemedigi an. Tek satir yazilir ve bir daha
+           DENENMEZ; asil derleyici hatasi surucu tarafindan zaten ayrintili
+           olarak basilmistir. */
+        snprintf(g_uw_fail, sizeof(g_uw_fail),
+                 "the underwater screen shader did not compile (GLSL %d)",
+                 water_glsl_version());
+        fprintf(stderr, "gnuchanwm[water]: %s; the underwater effect is off "
+                        "for this session\n", g_uw_fail);
+        return 0;
+    }
     underwater_locations();
     g_uw_ready = 1;
     return 1;

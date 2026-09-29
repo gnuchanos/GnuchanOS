@@ -106,10 +106,12 @@
 "#if __VERSION__ >= 300\n" \
 "    #define GCL_FRAG gclFragColor\n" \
 "    #define GCL_VIN in\n" \
+"    #define GCL_TEX texture\n" \
 "out vec4 gclFragColor;\n" \
 "#else\n" \
 "    #define GCL_FRAG gl_FragColor\n" \
 "    #define GCL_VIN varying\n" \
+"    #define GCL_TEX texture2D\n" \
 "#endif\n" \
 "#ifdef GL_ES\n" \
 "precision highp float;\n" \
@@ -195,22 +197,22 @@
 "        wet = occ*camU;\n" \
 "    }\n" \
 "    float amt = sub*wet;\n" \
-"    if (amt <= 0.004) { GCL_FRAG = vec4(texture(texture0, uv).rgb, 0.0); return; }\n" \
+"    if (amt <= 0.004) { GCL_FRAG = vec4(GCL_TEX(texture0, uv).rgb, 0.0); return; }\n" \
 "    /* ---------- 1. HAFIF BLUR ----------\n" \
 "\n" \
 "       9 ornek. Yaricap KUCUK: goruntu okunur kalmali. */\n" \
 "    float r   = UW_BLUR*px.x;\n" \
 "    vec2  off = vec2(r, r);\n" \
 "    vec3 acc = vec3(0.0);\n" \
-"    acc += texture(texture0, uv).rgb*4.0;\n" \
-"    acc += texture(texture0, uv + vec2( off.x, 0.0)).rgb*2.0;\n" \
-"    acc += texture(texture0, uv + vec2(-off.x, 0.0)).rgb*2.0;\n" \
-"    acc += texture(texture0, uv + vec2(0.0,  off.y)).rgb*2.0;\n" \
-"    acc += texture(texture0, uv + vec2(0.0, -off.y)).rgb*2.0;\n" \
-"    acc += texture(texture0, uv + vec2( off.x,  off.y)).rgb;\n" \
-"    acc += texture(texture0, uv + vec2(-off.x,  off.y)).rgb;\n" \
-"    acc += texture(texture0, uv + vec2( off.x, -off.y)).rgb;\n" \
-"    acc += texture(texture0, uv + vec2(-off.x, -off.y)).rgb;\n" \
+"    acc += GCL_TEX(texture0, uv).rgb*4.0;\n" \
+"    acc += GCL_TEX(texture0, uv + vec2( off.x, 0.0)).rgb*2.0;\n" \
+"    acc += GCL_TEX(texture0, uv + vec2(-off.x, 0.0)).rgb*2.0;\n" \
+"    acc += GCL_TEX(texture0, uv + vec2(0.0,  off.y)).rgb*2.0;\n" \
+"    acc += GCL_TEX(texture0, uv + vec2(0.0, -off.y)).rgb*2.0;\n" \
+"    acc += GCL_TEX(texture0, uv + vec2( off.x,  off.y)).rgb;\n" \
+"    acc += GCL_TEX(texture0, uv + vec2(-off.x,  off.y)).rgb;\n" \
+"    acc += GCL_TEX(texture0, uv + vec2( off.x, -off.y)).rgb;\n" \
+"    acc += GCL_TEX(texture0, uv + vec2(-off.x, -off.y)).rgb;\n" \
 "    vec3 col = acc/16.0;\n" \
 "    /* ---------- 2. MAVI TON ----------\n" \
 "\n" \

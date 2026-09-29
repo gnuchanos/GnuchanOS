@@ -995,8 +995,37 @@ static const RenderHooks *render_hooks(void) {
     return g_render.begin ? &g_render : NULL;
 }
 
+/* ---------- GLSL SURUMU: PENCERE ACILIRKEN BIR KEZ OLULUR ----------
+
+   Baglamin konustugu GLSL surumu SUREC BOYUNCA DEGISMEZ — pencere bir kez
+   acilir ve onunla birlikte gelen baglam da odur. Bu yuzden soru burada, tam
+   pencere acildigi anda, BIR KEZ sorulur ve saklanir.
+
+   NEDEN SAKLANIR: bu sayiyi hem GCL uyesi (`Raylib.GetGLSLVersion`) hem de
+   kendi GLSL programini kuran moduller (RaylibSKYBOX, RaylibSimpleWater)
+   okur. Her okuma `rlGetVersion()` cagirsa, ayni soru surec boyunca yuzlerce
+   kez sorulur ve — daha kotusu — bir modul pencere acilmadan ONCE sorarsa
+   yanit (henuz baglam yokken) yanlis olur ve o modul yanlis surumle derlemeye
+   calisir. Tek olcum, tek kaynak: hep ayni sayi. */
+static int g_glsl_version = 0;   /* 0 = henuz olculmedi */
+
+static int glsl_version_probe(void) {
+    switch (rlGetVersion()) {
+    case RL_OPENGL_21:    return 120;
+    case RL_OPENGL_33:    return 330;
+    case RL_OPENGL_43:    return 330;
+    case RL_OPENGL_ES_20: return 100;
+    case RL_OPENGL_ES_30: return 300;
+    default:              return 120;   /* en dar kume, en genis uyumluluk */
+    }
+}
+
 static double fn_InitWindow(int argc,const char**argv){
-    InitWindow(ii(argv[0]),ii(argv[1]),ss(argv[2])); return 0.0;
+    InitWindow(ii(argv[0]),ii(argv[1]),ss(argv[2]));
+    /* Baglam artik acik: surum SIMDI ve BIR KEZ olulur, sonra butun surec
+       boyunca bu deger okunur. */
+    g_glsl_version = glsl_version_probe();
+    return 0.0;
 }
 /* Kapanmadan ONCE RT serbest birakilir: GL kaynaklari pencere yokken
    silinemez, ve unutulursa surucude sizinti kalir. */
@@ -1295,14 +1324,11 @@ static double fn_GetFPS(int argc,const char**argv){(void)argc;(void)argv;return 
    Ikinci bir kopya tutmak yerine soru buradan sorulur; boylece GCL'in gordugu
    surum ile modullerin derledigi surum ayrisamaz. */
 GCL_EXPORT int gcl_raylib_glsl_version(void) {
-    switch (rlGetVersion()) {
-    case RL_OPENGL_21:    return 120;
-    case RL_OPENGL_33:    return 330;
-    case RL_OPENGL_43:    return 330;
-    case RL_OPENGL_ES_20: return 100;
-    case RL_OPENGL_ES_30: return 300;
-    default:              return 120;   /* en dar kume, en genis uyumluluk */
-    }
+    /* Pencere acildiysa InitWindow'da olculen deger; olculmediyse (pencere
+       disi bir sorgu, ya da beklenmedik bir cagri sirasi) simdi olulur ama
+       SAKLANMAZ — pencere acilirken dogru deger zaten yazilacak. */
+    if (g_glsl_version != 0) return g_glsl_version;
+    return glsl_version_probe();
 }
 
 static double fn_GetGLSLVersion(int argc,const char**argv){
