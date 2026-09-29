@@ -53,6 +53,7 @@
 #include <Imlib2.h>
 
 #include "wm_core.h"
+#include "wm_compositor.h"
 #include "wm_frame.h"
 #include "wm_style.h"
 #include "wm_switcher.h"
@@ -641,7 +642,26 @@ int wm_switcher_view_open(WmCore *core, WmSwitcher *switcher) {
        are of anything: the overlay covers the screen, so a read taken after it
        went up would find the overlay over every window it is picturing — a
        grid of pictures of the grid. */
+    /* The scaled windows are put back under the server for the length of the
+       read, and this is the second thing the order above is about.
+     *
+     * A picture is read off the ROOT — that is what makes it a picture of what
+       the user was looking at rather than of whatever the program chose to
+       keep — and a redirected window is not in the root's pixels at all. Read
+       as things stand, every scaled window would be a hole in the grid with
+       the desktop showing through it.
+     *
+     * Between the two calls those windows are the server's again and are drawn
+     * at their own size rather than fitted to their frames, so what is read is
+     * the window's own content at the size it draws itself — which is the right
+     * picture, and only its proportions in the cell are the cell's business.
+     *
+     * Both calls are safe when nothing is scaled and when the server cannot do
+     * this at all: they return having done nothing, which is what lets this be
+     * unconditional rather than a test. */
+    wm_compositor_suspend(core);
     pictures_build(core, switcher);
+    wm_compositor_resume(core);
 
     XMapRaised(core->display, view.window);
     XSync(core->display, False);

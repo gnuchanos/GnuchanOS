@@ -139,7 +139,14 @@ def ensure_root() -> None:
     step("Needs root; re-running through sudo")
     environment = dict(os.environ)
     environment[ELEVATED_VARIABLE] = "1"
-    os.execvpe(sudo, [sudo, sys.executable, str(Path(__file__).resolve())], environment)
+    # The arguments are carried across, and that is not tidiness: without them
+    # the re-run falls back to the default action, so `build` asked for on a
+    # machine that is missing a package would come back as a full install —
+    # packages, binary and session entry — which is not what was asked for and
+    # not something the person who typed it can tell has happened.
+    os.execvpe(sudo, [sudo, sys.executable,
+                      str(Path(__file__).resolve()), *sys.argv[1:]],
+               environment)
 
 
 def is_debian() -> bool:
@@ -175,7 +182,49 @@ def x11_headers_present() -> bool:
 
 
 def xft_headers_present() -> bool:
-    return header_present("X11/Xft/Xft.h", ("/usr/include/freetype2",))
+    """Whether Xft's header can be preprocessed.
+
+    The freetype include directory is passed because Xft's own header includes
+    ft2build.h on its third line. That means a machine with libxft-dev and no
+    freetype reports BOTH packages missing, and that is not a false report: no
+    file of this window manager compiles in that state, and installing both is
+    what fixes it. The two packages are still listed separately — see
+    missing_build_dependencies() — so a machine that has one and not the other
+    is told which.
+    """
+    return header_present("X11/Xft/Xft.h", freetype_includes())
+
+
+def freetype_includes() -> tuple[str, ...]:
+    """Where freetype keeps its headers, which is not /usr/include.
+
+    freetype.pc is what knows, and the layout Debian uses is the fallback for a
+    machine without pkg-config. The paths come back bare, the way
+    header_present() wants them; pkg-config writes them with the -I attached,
+    so it is taken off here rather than passed on and prepended a second time.
+    """
+    pkg_config = shutil.which("pkg-config")
+    if pkg_config is not None:
+        result = run([pkg_config, "--cflags-only-I", "freetype2"],
+                     capture=True)
+        if result.returncode == 0:
+            paths = tuple(word[2:] for word in result.stdout.split()
+                          if word.startswith("-I"))
+            if paths:
+                return paths
+    return ("/usr/include/freetype2",)
+
+
+def freetype_headers_present() -> bool:
+    """Whether freetype's header is here.
+
+    This is not optional and it is easy to be missing: Xft's own header
+    includes ft2build.h, so a machine with libxft-dev and no freetype cannot
+    compile a single file of this window manager — every one of them reaches
+    Xft through wm_style.h. It is its own check because it is its own package,
+    and it is the one whose headers do not live beside the others.
+    """
+    return header_present("ft2build.h", freetype_includes())
 
 
 def xcursor_headers_present() -> bool:
@@ -237,34 +286,52 @@ def apt_install(packages: tuple[str, ...]) -> bool:
     return run(command, environment=apt_environment()).returncode == 0
 
 
-def ensure_build_dependencies() -> None:
+def missing_build_dependencies() -> list[str]:
+    """Which packages this machine is missing to build the window manager.
+
+    Each entry is chosen by asking the compiler about the HEADER the package
+    provides rather than by looking for a file, so a machine whose headers are
+    somewhere unusual is judged by whether the build would actually work.
+
+    The packages are listed separately and not bundled because they are needed
+    for different things and a person reading the list wants to know which:
+    libx11-dev is every window and every key, libxft-dev the text on the bar,
+    libfreetype-dev is what Xft's own header includes — Xft cannot be compiled
+    against without it, so it is not the optional extra its name suggests —
+    libxcursor-dev the themed pointer, libimlib2-dev the wallpaper, and the
+    last three are the compositor's, which is what one window's content is
+    fitted into its frame with.
+    """
     needed: list[str] = []
-    if not x11_headers_present():
-        needed.append("libx11-dev")
-    # Xft is what the text is drawn with, and its header is in a package of
-    # its own that libx11-dev does not pull in. freetype and fontconfig, which
-    # Xft's own header includes, come with it as dependencies.
-    if not xft_headers_present():
-        needed.append("libxft-dev")
-    # Xcursor is what a theme's cursor is loaded through. Its header is in a
-    # package of its own; libx11-dev does not pull it in.
-    if not xcursor_headers_present():
-        needed.append("libxcursor-dev")
-    # Imlib2 is what the wallpaper is read and drawn with, the way feh does it.
-    # Its header is in a package of its own; libx11-dev does not pull it in.
-    if not imlib2_headers_present():
-        needed.append("libimlib2-dev")
-    # The compositor's three, which are what one window's content is scaled
-    # with. Each header is in a package of its own and libx11-dev pulls in none
-    # of them; they are asked for together because all three are needed before
-    # any of it works — see compositor_headers_present().
-    if not compositor_headers_present():
-        needed.extend(("libxcomposite-dev", "libxdamage-dev",
-                       "libxrender-dev"))
     if shutil.which("gcc") is None:
         needed.append("build-essential")
     if shutil.which("pkg-config") is None:
         needed.append("pkg-config")
+    if not x11_headers_present():
+        needed.append("libx11-dev")
+    if not xft_headers_present():
+        needed.append("libxft-dev")
+    # freetype is its own check and its own package because Xft's header
+    # includes ft2build.h: without it NOT ONE file of this window manager
+    # compiles, since every one of them reaches Xft through wm_style.h. It is
+    # also the one whose headers do not live beside the others, so a machine
+    # that looks complete can still be missing it.
+    if not freetype_headers_present():
+        needed.append("libfreetype-dev")
+    if not xcursor_headers_present():
+        needed.append("libxcursor-dev")
+    if not imlib2_headers_present():
+        needed.append("libimlib2-dev")
+    # The compositor's three. They are asked for together because all three are
+    # needed before any of it works — see compositor_headers_present().
+    if not compositor_headers_present():
+        needed.extend(("libxcomposite-dev", "libxdamage-dev",
+                       "libxrender-dev"))
+    return needed
+
+
+def ensure_build_dependencies() -> None:
+    needed = missing_build_dependencies()
     if not needed:
         return
     step("Installing the build dependencies")
@@ -318,7 +385,9 @@ def x11_flags() -> tuple[list[str], list[str]]:
                    capture=True)
         if cflags.returncode == 0 and libs.returncode == 0:
             return cflags.stdout.split(), libs.stdout.split()
-    return (["-I/usr/include", "-I/usr/include/freetype2"],
+    fallback_includes = ["-I/usr/include"]
+    fallback_includes += ["-I" + path for path in freetype_includes()]
+    return (fallback_includes,
             ["-lX11", "-lXft", "-lXcursor", "-lImlib2",
              "-lXcomposite", "-lXdamage", "-lXrender"])
 
@@ -331,6 +400,12 @@ def check_sources() -> None:
 
 def build() -> Path:
     check_sources()
+    # The dependencies are checked here and not only by install_everything(),
+    # and that is the whole point of `build`: it is the action a person runs to
+    # find out whether the code compiles, and an answer of "cannot find
+    # ft2build.h" is not an answer to that question. Asking for the packages it
+    # needs is part of answering it. A machine that has them skips all of this.
+    ensure_build_dependencies()
     BUILD.mkdir(parents=True, exist_ok=True)
     output = BUILD / PROGRAM
 
