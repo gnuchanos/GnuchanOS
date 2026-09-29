@@ -349,6 +349,15 @@ static int       g_uw_frame_h = 0;
    bolumundedir. */
 static Image load_screen_image(void);
 
+/* Doku kurma/tazeleme/serbest birakma DA DLL'den cozulur; govdeleri asagida,
+   "EKRAN OKUMA VE BLIT" bolumundedir. Burada ONCE bildirilirler cunku
+   `uw_frame_refresh` dosyada onlardan once gelir. Gerekce: bkz. o bolumdeki
+   "DOKU CAGRI LARI DA DLL'DEN" notu - statik kopyadan cagrilan `UpdateTexture`
+   sessizce hicbir sey yapmiyordu ve ekranda ilk kare donuyordu. */
+static Texture2D texture_from_image(Image img);
+static void      update_texture(Texture2D tex, const void *pixels);
+static void      unload_texture(Texture2D tex);
+
 /* Kareyi dokuya tazele. Doku hazir degilse/boyut degistiyse yeniden kurar.
    Donus: 1 = doku kullanilabilir. */
 static int uw_frame_refresh(int w, int h) {
@@ -392,8 +401,8 @@ static int uw_frame_refresh(int w, int h) {
         ih = img.height;
 
         if (g_uw_frame.id == 0 || g_uw_frame_w != iw || g_uw_frame_h != ih) {
-            if (g_uw_frame.id != 0) UnloadTexture(g_uw_frame);
-            g_uw_frame = LoadTextureFromImage(img);
+            unload_texture(g_uw_frame);
+            g_uw_frame = texture_from_image(img);
             UnloadImage(img);   /* dokuya kopyalandi; Image artik gerekmez */
             if (g_uw_frame.id == 0) return 0;
             g_uw_frame_w = iw;
@@ -401,7 +410,10 @@ static int uw_frame_refresh(int w, int h) {
             return 1;
         }
 
-        UpdateTexture(g_uw_frame, img.data);
+        /* TAZELEME AYNI DLL DURUMUNDAN. Statik kopyadan cagrildiginda bu satir
+           sessizce hicbir sey yapmiyordu ve ekranda ilk yakalanan kare
+           kaliyordu - bkz. texture_from_image notu. */
+        update_texture(g_uw_frame, img.data);
         UnloadImage(img);
         return 1;
     }
@@ -625,6 +637,48 @@ typedef int   (*GclIntVoidFn)(void);
 typedef void  (*GclVoidVoidFn)(void);
 typedef void  (*GclDrawTextureProFn)(Texture2D, Rectangle, Rectangle,
                                      Vector2, float, Color);
+
+/* DOKU CAGRI LARI DA DLL'DEN. "EKRAN DONUYOR" HATASININ ASIL KAYNAGI BURASIYDI.
+
+   Ustteki okuma (`LoadImageFromScreen`) DLL'den cozulmustu ama `uw_frame_refresh`
+   dokuyu KURARKEN ve TAZELERKEN hala modulun STATIK `libraylib.a` kopyasini
+   kullaniyordu: `LoadTextureFromImage`, `UpdateTexture`, `UnloadTexture`.
+
+   Sonuc, tam olarak bildirilen hal: perde ACILDIGI ANDA bir kez kare okunur,
+   dokuya yazilir ve BIR DAHA GUNCELLENMEZ. Statik kopyanin `UpdateTexture`i
+   DLL'in actigi dokuyu kendi rlgl durumundan cozer; iki durum ayrildigi icin
+   guncelleme SESSIZCE basarisiz olur - hata donmez, yalnizca yazmaz. Ekranda
+   SUYA GIRILEN ANDAKI kare kalir ve ancak sudan cikinca (perde kapaninca)
+   kaybolur. Bildirilen "sudan cikana kadar ayni frame ekranda kaliyor" hali
+   tam olarak budur.
+
+   Kural dosyanin basinda zaten yazili: "TUM RAYLIB CAGRILARI DLL'DEN
+   COZULUR". Bu uc cagri o kuralin son istisnasiydi; kapatiliyor. */
+typedef Texture2D (*GclTextureFromImageFn)(Image);
+typedef void      (*GclUpdateTextureFn)(Texture2D, const void *);
+typedef void      (*GclUnloadTextureFn)(Texture2D);
+
+static Texture2D texture_from_image(Image img) {
+    static GclTextureFromImageFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclTextureFromImageFn)raylib_symbol("LoadTextureFromImage"); }
+    return fn ? fn(img) : LoadTextureFromImage(img);
+}
+
+static void update_texture(Texture2D tex, const void *pixels) {
+    static GclUpdateTextureFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclUpdateTextureFn)raylib_symbol("UpdateTexture"); }
+    if (fn) fn(tex, pixels); else UpdateTexture(tex, pixels);
+}
+
+static void unload_texture(Texture2D tex) {
+    static GclUnloadTextureFn fn = NULL;
+    static int tried = 0;
+    if (tex.id == 0) return;
+    if (!tried) { tried = 1; fn = (GclUnloadTextureFn)raylib_symbol("UnloadTexture"); }
+    if (fn) fn(tex); else UnloadTexture(tex);
+}
 
 static int render_width(void) {
     static GclIntVoidFn fn = NULL;
@@ -1572,8 +1626,13 @@ static double fn_draw(int argc, const char **argv) {
     {
         Matrix saved_mv   = rlGetMatrixModelview();
         Matrix saved_proj = rlGetMatrixProjection();
-        int    rw = GetRenderWidth();
-        int    rh = GetRenderHeight();
+        /* OLCU DLL'DEN. `GetRenderWidth/Height` statik kopyadan cagrildiginda
+           DLL'in rlgl durumunu gormez: RaylibRender acikken dogru cevap RT
+           olcusudur ve onu yalnizca DLL bilir (bkz. render_width notu). Ayni
+           sayi `fn_underwater_effect` icinde de kullanilir; ikisi ayrisirsa
+           perde ekrani tam kaplamaz. */
+        int    rw = render_width();
+        int    rh = render_height();
 
         if (rw > 0 && rh > 0) {
             rlOrtho(0.0, (double)rw, (double)rh, 0.0, 0.0, 1.0);
@@ -1917,12 +1976,29 @@ static double fn_fps_is_swimming(int argc, const char **argv) {
 
 #define E(NAME, STR) {STR, fn_##NAME}
 
+/* `DrawUnderwaterEffect` — ARTIK BIR NO-OP (API KORUNUR, CIFT UYGULAMA OLMAZ).
+
+   Perde artik `Draw()`in ICINDE, yuzey cizildikten hemen sonra uygulanir
+   (bkz. fn_draw sonundaki birlesik cagri). AYRI BIR CAGRININ YERI YOKTUR:
+   ayni karede iki kez calisirsa perde de iki kez uygulanir - ikinci gecis,
+   birincinin yazdigi su tonunu da okuyup uzerine bir kez daha biner ve
+   goruntu gereginden koyu cikar.
+
+   Uye yine de TABLODA KALIR: eski bir script (ve bu depodaki fps demo'su)
+   hala `water.DrawUnderwaterEffect()` cagirir ve ad cozulemezse calisma
+   zamani hata basar. Cagri artik sessizce yok sayilir; efekt `Draw()`
+   tarafindan zaten uygulanmistir. */
+static double fn_draw_underwater_member(int argc, const char **argv) {
+    (void)argc; (void)argv;
+    return 0.0;
+}
+
 static const GclNativeEntry g_entries[] = {
     E(create_water,        "CreateSimpleWaterFromOBJ"),
     E(unload_water,        "UnloadSimpleWaterFromOBJ"),
     E(update,              "Update"),
     E(draw,                "Draw"),
-    E(underwater_effect,   "DrawUnderwaterEffect"),
+    E(draw_underwater_member, "DrawUnderwaterEffect"),
     E(fps_in_water,        "FPS_InWater"),
     E(fps_is_swimming,     "FPS_IsSwimming"),
     E(color,               "Color"),

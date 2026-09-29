@@ -536,8 +536,9 @@ void wm_frame_raise(WmCore *core, WmFrame *frame) {
    changes — and one round trip during a drag is nothing beside the resize
    itself.
 
-   These live here, above their first caller, because two different paths snap:
-   a drag (frame_resize_drag) and a cl (frame_clamp_to_workarea). */
+   These live here, above their first caller: the drag (frame_resize_drag) is
+   the one path that snaps. It is not frame_clamp_to_workarea() any more - that
+   one no longer decides a size at all, only a place. */
 typedef struct {
     int base_width;
     int base_height;
@@ -599,21 +600,29 @@ static int frame_hint_size(int value, int base, int increment, int minimum) {
     return value;
 }
 
-/* Keep a frame inside the workarea after the client asks to be resized.
+/* Keep a frame's TITLE BAR reachable after the client asks to be resized.
  *
- * A client may ask to be bigger than the desktop — the raylib demo opens at
- * 1600x900 on a 1366x768 screen — and the frame it lives in belongs to the
- * manager, so it is the manager that has to refuse. The client's size is held
- * to the room the workarea leaves once the frame's own chrome is taken off,
- * and a frame that would then stick out past the right or bottom edge is
- * pulled back inside. A client that asks for a size it can have is left
- * exactly as it asked, because a manager that resizes a window the program
- * placed deliberately makes every program's own geometry meaningless.
+ * THE SIZE IS NOT TOUCHED — and that is the correction. This function used to
+ * hold the client's size to the workarea, and it was wrong for exactly the
+ * case it was written for. A program may ask to be bigger than the screen (the
+ * raylib demo opens at 1600x900 on a 1366x768 display); shrinking the CLIENT
+ * is not how a window manager answers that. A program that listens rearranges
+ * itself and never notices, but a program that does NOT — a GL game, anything
+ * drawing at a fixed size — goes on drawing at the size it chose, so the frame
+ * shrank and the content did not: the right-hand side and the bottom of the
+ * window were outside it and simply not there. The buttons were gone, the map
+ * was gone. That is a window that looks broken, and only the scaling key
+ * (wm_frame_toggle_scaling) could put it right.
  *
- * This is the counterpart of the clamp wm_frame_create() already does when a
- * window first opens; without it a window was clamped once at creation and
- * could grow straight off the screen the next time it called resize, which is
- * what an InitWindow(1600, 900) does. */
+ * Every window manager lets a program open the size it asked for; the part
+ * that does not fit is off the screen and the user moves the window to see it.
+ * That is what this does now.
+ *
+ * What is still worth doing is keeping the window from being LOST: a frame
+ * whose title bar is off the top or the left cannot be grabbed and dragged
+ * back, so it is pulled in by as much as it takes. A window that is merely
+ * larger than the screen is left where it is — there is no place to put it
+ * where both edges are inside, and moving it would only hide more of it. */
 static void frame_clamp_to_workarea(WmCore *core, WmFrame *frame) {
     int screen_width = core->width > 1 ? core->width
                                        : DisplayWidth(core->display,
@@ -625,54 +634,20 @@ static void frame_clamp_to_workarea(WmCore *core, WmFrame *frame) {
     int area_y = 0;
     int area_width = 0;
     int area_height = 0;
-    int room_width;
-    int room_height;
 
     wm_config_workarea(&core->config, screen_width, screen_height,
                        &area_x, &area_y, &area_width, &area_height);
 
-    room_width = area_width - 2 * frame->border;
-    room_height = area_height - WM_TITLE_HEIGHT - frame->border;
-    if (room_width < 1) {
-        room_width = 1;
-    }
-    if (room_height < 1) {
-        room_height = 1;
-    }
-
-    if (frame->client_width > room_width) {
-        frame->client_width = room_width;
-    }
-    if (frame->client_height > room_height) {
-        frame->client_height = room_height;
-    }
-
-    /* A size cut down to the workarea is cut to whatever the room happens to
-       be, which is not a whole number of the client's cells — see the note
-       above WmSizeHints. The same strip then appears at the right and bottom
-       edge as when a drag asks for a size off the grid, so the result is
-       snapped here too. It is snapped DOWN (never past the workarea), which is
-       why the increment is subtracted rather than added. */
-    {
-        WmSizeHints hints;
-        frame_read_size_hints(core, frame, &hints);
-        if (hints.width_inc > 1 && frame->client_width > hints.base_width) {
-            int steps = (frame->client_width - hints.base_width) / hints.width_inc;
-            frame->client_width = hints.base_width + steps * hints.width_inc;
-        }
-        if (hints.height_inc > 1 && frame->client_height > hints.base_height) {
-            int steps = (frame->client_height - hints.base_height) / hints.height_inc;
-            frame->client_height = hints.base_height + steps * hints.height_inc;
-        }
-    }
-
-    /* Pull the frame back so its right and bottom edges stay inside the area.
-       Only the overflow is taken back, so a window that already fits is not
-       moved by the clamping. */
-    if (frame->x + frame_width(frame) > area_x + area_width) {
+    /* Pull the frame back so its right and bottom edges stay inside the area —
+       but only when the frame is small enough to fit. A window larger than the
+       screen has no position at which both edges are inside, and taking the
+       overflow off its left would move it further off than it already was. */
+    if (frame_width(frame) <= area_width &&
+        frame->x + frame_width(frame) > area_x + area_width) {
         frame->x = area_x + area_width - frame_width(frame);
     }
-    if (frame->y + frame_height(frame) > area_y + area_height) {
+    if (frame_height(frame) <= area_height &&
+        frame->y + frame_height(frame) > area_y + area_height) {
         frame->y = area_y + area_height - frame_height(frame);
     }
     if (frame->x < area_x) {
@@ -700,9 +675,11 @@ void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
     if (height > 1) {
         frame->client_height = height;
     }
-    /* A resize the client asked for is a request, not an order: it is held
-       inside the workarea before it is applied, exactly as an opening window
-       is. This is what stops a program from growing its frame off the screen. */
+    /* The SIZE is not held to anything: a program is given the size it asked
+       for. Only the frame's PLACE is pulled back, and only so its title bar
+       stays reachable — see frame_clamp_to_workarea(). Clamping the size here
+       is what made a program that ignores resizes (a GL game) draw outside its
+       own frame, with the bottom and the right of the window gone. */
     frame_clamp_to_workarea(core, frame);
     frame_apply(core, frame);
     frame_notify_configure(core, frame);
@@ -802,9 +779,9 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
         frame->y = attributes.y - WM_TITLE_HEIGHT;
     }
 
-    /* A client that resized itself goes through the same clamp a requested
-       resize does: it may not make its frame bigger than the workarea, nor
-       leave it hanging off the edge of the screen. */
+    /* A client that resized itself goes through the same place-only clamp a
+       requested resize does: its size is its own, its title bar is kept
+       reachable. */
     frame_clamp_to_workarea(core, frame);
     /* frame_apply moves the client back to (frame->border, WM_TITLE_HEIGHT)
        as well as resizing it, so the placement and the resize are one call. */
@@ -995,9 +972,9 @@ void wm_frame_toggle_scaling(WmCore *core, WmFrame *frame) {
 
     /* The window is put back to the size its content is drawn at. It is moved
        and resized directly rather than through frame_apply(), which skips the
-       resize for a scaled window: the resize is wanted here, once, to undo the
-       clamping the frame has been doing since the window opened. Everything
-       after this goes the other way — the frame is fitted to the window. */
+       resize for a scaled window: the resize is wanted here, once, to put the
+       window back to the size its content is drawn at. Everything after this
+       goes the other way — the frame is fitted to the window. */
     XMoveResizeWindow(core->display, frame->client,
                       frame->border, WM_TITLE_HEIGHT,
                       (unsigned int)frame->natural_width,
@@ -1041,23 +1018,24 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
     frame->y = attributes.y;
     frame->border = style_border_width(core);
 
-    /* The size the client asked for, kept before the workarea cuts anything
-       off it. This is the size the content is drawn at, and the size scaling
-       puts the window back to — see wm_frame_toggle_scaling(). */
+    /* The size the client asked for: the size its content is drawn at, and the
+       size scaling puts the window back to — see wm_frame_toggle_scaling().
+       The size is no longer cut down to the workarea on the way in, so for a
+       window that has not resized itself since, this IS its size; a window
+       that does resize itself has this updated by wm_frame_sync(). */
     frame->natural_width = frame->client_width;
     frame->natural_height = frame->client_height;
 
-    /* A window is kept clear of the bar and inside the desktop. The screen's
-       top-left corner is not where a window belongs when a bar is along the
-       top: the frame's title bar would open underneath the strip and the window
-       could not be dragged out from under it. Nor should a window open larger
-       than the area it is being put in — a client that asks for the whole
-       screen is asking for something the bar has already taken.
+    /* A window's TITLE BAR is kept clear of the bar and on the screen. The
+       screen's top-left corner is not where a window belongs when a bar is
+       along the top: the frame's title bar would open underneath the strip and
+       the window could not be dragged out from under it.
 
        Only a window that would land outside is moved. A window that fits where
        it asked to be is left exactly there, because a manager that repositions
        a window the user's program placed deliberately is a manager that makes
-       every program's own saved geometry meaningless. */
+       every program's own saved geometry meaningless. The SIZE is not touched
+       — see the note below. */
     int area_x = 0;
     int area_y = 0;
     int area_width = 0;
@@ -1078,16 +1056,13 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
         frame->y = 0;
     }
 
-    /* The frame's own chrome is part of what has to fit, so the room left for
-       the client is the area less the title bar and the two side borders. */
-    int room_width = area_width - 2 * frame->border;
-    int room_height = area_height - WM_TITLE_HEIGHT - frame->border;
-    if (room_width > 1 && frame->client_width > room_width) {
-        frame->client_width = room_width;
-    }
-    if (room_height > 1 && frame->client_height > room_height) {
-        frame->client_height = room_height;
-    }
+    /* THE CLIENT'S SIZE IS NOT TOUCHED. A program is given the size it asked
+       for, even when that is larger than the screen: the part that does not
+       fit is off the screen, which the user fixes by moving the window. This
+       used to be cut down to the workarea, and a program that ignores a resize
+       (a GL game drawing at a fixed size) then drew outside its own frame —
+       the bottom and the right of it were simply gone. See the note above
+       frame_clamp_to_workarea(). */
 
     frame->frame = XCreateSimpleWindow(
         core->display, core->root, frame->x, frame->y,

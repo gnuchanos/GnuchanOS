@@ -3235,8 +3235,22 @@ static int fill_native_from_last_slot(Runner *r, const char *var_name,
    yapilir, cunku ayni PLAYER degiskenini iki ayri modul guncelleyebilir
    (RaylibFPS.Move/Look ve RaylibSimpleCollision.TerrainCollision). */
 static const GclNativeSlotMap g_native_slot_maps[] = {
-    { "FPS",     "RaylibFPS",             27 },
-    { "FPS",     "RaylibSimpleCollision", 27 },
+    /* SAYI, tipin skaler yaprak sayisidir ve IKI MODUL DE onu yayinlamak
+       zorundadir. `store_slots_into_var` bunu `n != count` ile karsilastirir ve
+       TUTMAZSA GERI YAZMAYI TAMAMEN IPTAL EDER — oyuncu hic guncellenmez.
+       Bu yuzden burasi, SharedPipeline/gcl_native_types.c'deki `f_fps` yaprak
+       sayisi ve iki modulun kendi slot sayaclariyla BIREBIR ayni olmalidir:
+
+         29 = FPS yapraklari (Position..Right=16, Camera=11,
+                              CameraSpeed=1, CameraFOV=1)
+
+       CameraSpeed ve CameraFOV iki modulde de TASINIR, islenmez: karari
+       RaylibFPS verir (bkz. gcl_raylib_fps.c), RaylibSimpleCollision yalnizca
+       aynen yayinlar. TerrainCollision `Move()`ten SONRA cagrildigi icin
+       collision'in bu yapraklari DUSURMESI, script'in yazdigi ayarlari sifira
+       cevirirdi. */
+    { "FPS",     "RaylibFPS",             29 },
+    { "FPS",     "RaylibSimpleCollision", 29 },
     { "Terrain", "RaylibSimpleMesh",       3 },
     /* RaylibSimpleMesh.Mesh, registered under its QUALIFIED name in
        SharedPipeline/gcl_native_types.c because the bare "Mesh" there already

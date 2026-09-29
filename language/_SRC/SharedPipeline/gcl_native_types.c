@@ -163,7 +163,22 @@ static const GclNativeField f_fps[] = {
     {"Position","Vector3"}, {"Rotate","Vector3"}, {"LookAt","Vector3"},
     {"Height","float"}, {"Gravity","float"}, {"IsGravityOn","int"},
     {"Forward","float"}, {"Backward","float"}, {"Left","float"}, {"Right","float"},
-    {"Camera","Camera3D"}
+    {"Camera","Camera3D"},
+    /* SONDA olmak zorunda: su iki alan modulun slot tablosunda 27 ve 28'dir ve
+       kameranin 16..26 araligini KAYDIRMAMALIDIR. Sira, alan listesi ile
+       gcl_raylib_fps.c'deki LastSlot kanali arasinda BIREBIR olmak
+       zorundadir (bkz. oradaki slot tablosu). */
+    {"CameraSpeed","float"},
+    /* `PLAYER.CameraFOV = 90;` — script'in ISTEDIGI gorus alani, DERECE.
+
+       Kameranin `fovy` alaniyla (ustteki Camera3D icinde) AYNI SEY DEGILDIR:
+       bu bir GIRISTIR, kamera alani ise modulun yayinladigi CIKISTIR. Ikisi
+       ayri yuvalarda tutulur cunku ayni yuvada olsalardi modulun yazdigi deger
+       bir sonraki karenin "script ne istedi" cevabi olarak geri gelir ve FOV
+       her kare biraz daha buyurdu.
+
+       Kosma (SHIFT) genislemesini modul ekler: cikis = CameraFOV + boost. */
+    {"CameraFOV","float"}
 };
 static const GclNativeField f_terrainmaterial[] = {
     {"Texture","int"}, {"Color","int"}

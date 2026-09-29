@@ -51,6 +51,8 @@ int main() {
     #// fps player
     RaylibFPS.FPS PLAYER;
     Raylib.Camera3D CurrentCamera = PLAYER.Camera;
+    PLAYER.CameraSpeed = 1;
+    PLAYER.CameraFOV = 90;
     
     PLAYER.Position.x = 0;
     PLAYER.Position.z = 0;

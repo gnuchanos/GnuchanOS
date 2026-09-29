@@ -62,9 +62,23 @@ RaylibSimpleCollision.SimpleBoxCollision(PLAYER, MESH1, MESH2, ...);
 #include <stdlib.h>
 #include <string.h>
 
-#define COL_PLAYER_SLOTS  27
+/* Oyuncu tipinin skaler yaprak sayisi. `FPS` tipi (bkz.
+   SharedPipeline/gcl_native_types.c: f_fps) ve RaylibFPS modulu ile BIREBIR
+   ayni olmak zorundadir: runner, bir uye cagrisinda degiskenin TUM
+   yapraklarini argv olarak gecirir ve cagri dondugunde ayni sirayi LastSlot
+   kanalindan geri yazar (bkz. gcl_runner.c: store_slots_into_var). Sayi
+   TUTMAZSA geri yazma tamamen iptal olur (`n != count` -> return 0) ve oyuncu
+   hic guncellenmez.
+
+   27. (CameraSpeed) ve 28. (CameraFOV) yapraklar bu modulde YALNIZCA TASINIR:
+   okunur, g_slot'ta tutulur, aynen geri yayinlanir. Karari (bkz.
+   gcl_raylib_fps.c) ve varsayilani o modul verir; burada islenmezler.
+   Tasimak ZORUNLUDUR, cunku TerrainCollision `Move()`ten SONRA cagrilir:
+   yapragi dusuren bir collision modulu, script'in her kare yazdigi ayari
+   sifira cevirirdi. */
+#define COL_PLAYER_SLOTS  29
 #define COL_BOX_SLOTS     12   /* the Mesh struct: Material + Handle + transform */
-#define COL_SLOT_COUNT    27
+#define COL_SLOT_COUNT    29
 
 #define COL_DEG2RAD       0.017453292519943295
 
@@ -119,7 +133,11 @@ enum {
     S_CAM_POS_X, S_CAM_POS_Y, S_CAM_POS_Z,
     S_CAM_TGT_X, S_CAM_TGT_Y, S_CAM_TGT_Z,
     S_CAM_UP_X, S_CAM_UP_Y, S_CAM_UP_Z,
-    S_CAM_FOVY, S_CAM_PROJECTION
+    S_CAM_FOVY, S_CAM_PROJECTION,
+    /* 27 ve 28. yapraklar; bu modul yalnizca TASIR (bkz. COL_PLAYER_SLOTS
+       notu). Kamera kurulumu bunlari OKUMAZ ve YAZMAZ. */
+    S_CAM_SPEED,
+    S_CAMERA_FOV
 };
 
 enum { T_TEXTURE = 0, T_COLOR, T_HANDLE };
@@ -821,8 +839,8 @@ static double fn_terrain_collision(int argc, const char **argv) {
    kutularla calisir ve dondurulmus bir kutuyu yanlis temsil ederdi; bu yuzden
    burada kullanilmaz.
 
-   DUZLESMIS ARGUMAN DUZENI: 27 oyuncu yuvasi | ardindan HER collider icin
-   12 yuva (Mesh struct'i). Collider sayisi degiskendir.
+   DUZLESMIS ARGUMAN DUZENI: COL_PLAYER_SLOTS (29) oyuncu yuvasi | ardindan
+   HER collider icin 12 yuva (Mesh struct'i). Collider sayisi degiskendir.
 
    HAREKET ARGUMANI YOKTUR: bu bir COZULME cagrisidir, hareket ettirme degil.
    Oyuncunun konumunu FPS ve TerrainCollision ilerletir; burada yalnizca

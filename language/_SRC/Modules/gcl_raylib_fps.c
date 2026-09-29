@@ -59,6 +59,9 @@ RaylibFPS.Height # camera height
 # note: it's camera name not eye or eye height
 RaylibFPS.Camera # there is no height only player height camera is like human head default is 1.8
 
+PLAYER.CameraSpeed = 1;
+PLAYER.CameraFOV = 90;
+
 Raylib.BeginMode3D(CurrentCamera);
 Raylib.EndMode3D(void);
 */
@@ -81,9 +84,16 @@ Raylib.EndMode3D(void);
       19 CamTgtX 20 CamTgtY 21 CamTgtZ
       22 CamUpX  23 CamUpY  24 CamUpZ
       25 CamFovy 26 CamProjection
+      27 CamSpeed                                movement speed multiplier
+      28 CameraFOV                               field of view, DEGREES
 
    Slots 16..26 are Player.Camera: the Eye/Target/Up/fovy/projection values
-   the script hands to Raylib.BeginMode3D(). */
+   the script hands to Raylib.BeginMode3D().
+
+   28 GIRISTIR, 25 CIKISTIR. Script `PLAYER.CameraFOV = 90` yazar; modul 25'e
+   `CameraFOV + kosma genisligi` yayinlar. Ikisi AYNI yuvada tutulsaydi
+   yayinlanan deger bir sonraki karenin girdisi olur ve FOV her kare biraz
+   daha buyurdu (bkz. apply_fovy). */
 
 #include "gcl_module.h"
 
@@ -105,12 +115,20 @@ Raylib.EndMode3D(void);
 #include <stdlib.h>
 #include <string.h>
 
-#define FPS_SLOT_COUNT       27
+#define FPS_SLOT_COUNT       29
 #define FPS_STATE_SLOTS      16   /* player state: Position..Right */
 #define FPS_DEFAULT_HEIGHT   1.8f /* "camera is like a human head" */
 #define FPS_DEFAULT_GRAVITY  9.8f
 #define FPS_DEFAULT_FOVY     60.0f
 #define FPS_MOVE_SPEED       5.0f /* units per second */
+/* CameraSpeed: hareket HIZININ CARPANI. 1.0 = belgelenmis hiz (karada 5.0,
+   suda 3.2 birim/sn); 2.0 = iki kat, 0.5 = yari. Hiz DEGIL carpan olmasi
+   bilinclidir: script `CameraSpeed = 1` yazdiginda davranis aynen kalir.
+
+   Varsayilan 1.0'dir; 0 ya da negatif bir deger bu varsayilana doner
+   (bkz. read_player), cunku duran bir oyuncu bir ayar degil bir hatadir. */
+#define FPS_DEFAULT_CAM_SPEED 1.0f
+#define FPS_CAM_SPEED_MAX     20.0f /* ust sinir: isinlanma degil yurume */
 #define FPS_JUMP_SPEED       6.0f /* impulse of SPACE, in units per second */
 #define FPS_LOOK_SPEED       0.15f
 #define FPS_PITCH_LIMIT      89.0f
@@ -198,7 +216,12 @@ enum {
     S_CAM_POS_X, S_CAM_POS_Y, S_CAM_POS_Z,
     S_CAM_TGT_X, S_CAM_TGT_Y, S_CAM_TGT_Z,
     S_CAM_UP_X, S_CAM_UP_Y, S_CAM_UP_Z,
-    S_CAM_FOVY, S_CAM_PROJECTION
+    S_CAM_FOVY, S_CAM_PROJECTION,
+    S_CAM_SPEED,
+    /* SCRIPT'IN istedigi gorus alani, DERECE (slot 28). Slot 25'teki
+       S_CAM_FOVY modulun YAYINLADIGI degerdir; ikisi ayri tutulur ki
+       yayinlanan deger girdi sanilmasin (bkz. apply_fovy). */
+    S_CAMERA_FOV
 };
 
 static double g_slot[FPS_SLOT_COUNT];
@@ -225,12 +248,10 @@ static float  g_crouch    = 0.0f;
 /* Sprint blend: 0 = walking fovy, 1 = the full sprint fovy. Blended for the
    same reason — a fovy that snaps reads as a glitch, not as acceleration. */
 static float  g_sprint    = 0.0f;
-/* The fovy the SCRIPT asked for, kept apart from the value this module
-   publishes. The read-back channel copies the slots into the player struct, so
-   the widened fovy comes straight back in as the next frame's base; without
-   this split it would grow by FPS_RUN_FOVY_BOOST on every single frame. */
-static float  g_base_fovy = FPS_DEFAULT_FOVY;
-static float  g_sent_fovy = 0.0f;
+/* SENTETIK FOV KOPYASI KALDIRILDI. Eskiden fovy tek bir yuvada (25) yasiyordu
+   ve modul yayinladigi degeri geri okumamak icin `g_sent_fovy` golgesini
+   tutuyordu. Artik script'in istedigi deger AYRI bir yuvada (28, S_CAMERA_FOV)
+   durur; 25 asla 28'i etkilemez ve golge GEREKSIZDIR (bkz. apply_fovy). */
 /* Same idea for the player HEIGHT. Height is the camera height AND the body
    length: ducking means publishing a SMALLER Height, not moving a private
    offset the script can never see. The value the script asked for is kept here
@@ -254,7 +275,22 @@ static void read_player(int argc, const char **argv) {
     for (int i = 0; i < FPS_SLOT_COUNT; i++) g_slot[i] = arg(argc, argv, i);
     if (!(g_slot[S_HEIGHT] > 0.0))   g_slot[S_HEIGHT]  = FPS_DEFAULT_HEIGHT;
     if (!(g_slot[S_GRAVITY] > 0.0))  g_slot[S_GRAVITY] = FPS_DEFAULT_GRAVITY;
-    if (!(g_slot[S_CAM_FOVY] > 0.0)) g_slot[S_CAM_FOVY] = FPS_DEFAULT_FOVY;
+    if (!(g_slot[S_CAM_FOVY] > 0.0))  g_slot[S_CAM_FOVY]  = FPS_DEFAULT_FOVY;
+    if (!(g_slot[S_CAMERA_FOV] > 0.0)) g_slot[S_CAMERA_FOV] = FPS_DEFAULT_FOVY;
+    if (!(g_slot[S_CAM_SPEED] > 0.0)) g_slot[S_CAM_SPEED] = FPS_DEFAULT_CAM_SPEED;
+    if (g_slot[S_CAM_SPEED] > (double)FPS_CAM_SPEED_MAX)
+        g_slot[S_CAM_SPEED] = (double)FPS_CAM_SPEED_MAX;
+}
+
+/* CameraSpeed: hareket hizinin carpani, tek okuma noktasi.
+
+   Slot'a yazilmis bir deger yoksa (bu alani hic yazmamis eski bir script)
+   varsayilana doner; boylece alanin eklenmesi hicbir sahneyi yavaslatmaz. */
+static float camera_speed(void) {
+    double s = g_slot[S_CAM_SPEED];
+    if (!(s > 0.0)) return FPS_DEFAULT_CAM_SPEED;
+    if (s > (double)FPS_CAM_SPEED_MAX) return FPS_CAM_SPEED_MAX;
+    return (float)s;
 }
 
 /* Feet position + player height = eye position.
@@ -269,19 +305,17 @@ static void eye_position(float *x, float *y, float *z) {
     *z = (float)g_slot[S_POS_Z];
 }
 
-/* Publish the camera fovy: the script's value plus the sprint widening.
+/* Kameranin fovy'sini yayinla: script'in `CameraFOV`u + kosma genisligi.
 
-   The base is remembered module-side because the read-back channel copies the
-   slots into the player struct, so the widened value would come straight back
-   in as the next frame's base and the fovy would climb on every frame. Only a
-   value this module did NOT publish can have come from the script, and that is
-   the one that updates the base. */
+   GIRIS (28) ve CIKIS (25) AYRI YUVALARDADIR. Eskiden tek yuvaydi ve modul,
+   yayinladigi genis fovy geri beslenip her kare buyumesin diye `g_sent_fovy`
+   diye bir golge kopya tutuyordu. Ayri yuva bunu gereksiz kilar: read-back
+   kanali yalnizca 25'e yazar, script 28'e kendi degerini yazar ve iki yuva
+   birbirini hic gormez. O yuzden golge kopya kaldirildi. */
 static void apply_fovy(void) {
-    float incoming = (float)g_slot[S_CAM_FOVY];
-    if (!(incoming > 0.0f)) incoming = FPS_DEFAULT_FOVY;
-    if (fabsf(incoming - g_sent_fovy) > 0.001f) g_base_fovy = incoming;
-    g_slot[S_CAM_FOVY] = (double)(g_base_fovy + FPS_RUN_FOVY_BOOST * g_sprint);
-    g_sent_fovy = (float)g_slot[S_CAM_FOVY];
+    double incoming = g_slot[S_CAMERA_FOV];
+    if (!(incoming > 0.0)) incoming = (double)FPS_DEFAULT_FOVY;
+    g_slot[S_CAM_FOVY] = incoming + (double)(FPS_RUN_FOVY_BOOST * g_sprint);
 }
 
 /* Blend the stance towards whatever is held this frame.
@@ -566,14 +600,14 @@ static void leave_water(void) {
    yuzmeyi birakir. */
 static void swim_move(float dt, int key_fwd, int key_bwd,
                       float dir_x, float dir_z, float dir_len,
-                      float boost, float surface_y) {
+                      float boost, float surface_y, float spd) {
     (void)surface_y;
     float k = FPS_SWIM_DRAG * dt;
     if (k > 1.0f) k = 1.0f;
 
     /* --- yatay: ayni yon vektoru, yuzme hiziyla --- */
     if (dir_len > 0.0f) {
-        float step = FPS_SWIM_MOVE_SPEED * dt;
+        float step = FPS_SWIM_MOVE_SPEED * spd * dt;
         g_slot[S_POS_X] += (double)(dir_x * step * boost);
         g_slot[S_POS_Z] += (double)(dir_z * step * boost);
     }
@@ -582,11 +616,11 @@ static void swim_move(float dt, int key_fwd, int key_bwd,
     {
         float look_up  = sinf(rad(g_slot[S_ROT_Y]));  /* +1 yukari, -1 asagi */
         float wish     = (float)(key_fwd - key_bwd);  /* W:+1, S:-1          */
-        float target_y = look_up * wish * FPS_SWIM_MOVE_SPEED;
+        float target_y = look_up * wish * FPS_SWIM_MOVE_SPEED * spd;
 
-        if (IsKeyDown(KEY_SPACE)) target_y += FPS_SWIM_UP_SPEED;
+        if (IsKeyDown(KEY_SPACE)) target_y += FPS_SWIM_UP_SPEED * spd;
         if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL))
-            target_y -= FPS_SWIM_DOWN_SPEED;
+            target_y -= FPS_SWIM_DOWN_SPEED * spd;
 
         g_vel_y += (target_y - g_vel_y) * k;
     }
@@ -633,7 +667,12 @@ static double fn_move(int argc, const char **argv) {
        collision (yalnizca ortusme cozer) yuzeyi iskalar ve oyuncu zeminin
        icinden gecer. Bkz. FPS_MAX_DELTA. */
     if (dt > FPS_MAX_DELTA) dt = FPS_MAX_DELTA;
-    float step = FPS_MOVE_SPEED * dt;
+    /* CameraSpeed olcegi BURADA uygulanir ve tek yerdedir: karada yurume adimi
+       de, suda yuzme adimi da ayni carpani kullanir, boylece "hizli" bir ayar
+       su kenarinda aniden degismez. Ziplama (FPS_JUMP_SPEED) KAPSAM DISIDIR:
+       o bir hiz ayari degil, yer cekimine karsi bir ITKIDIR. */
+    float cam_spd = camera_speed();
+    float step = FPS_MOVE_SPEED * cam_spd * dt;
 
     float fx, fz, rx, rz;
     basis(&fx, &fz, &rx, &rz);
@@ -689,7 +728,7 @@ static double fn_move(int argc, const char **argv) {
 
         if (g_swimming_now) {
             swim_move(dt, key_fwd, key_bwd, dir_x, dir_z, dir_len, boost,
-                      water.surface);
+                      water.surface, cam_spd);
             return 0.0;
         }
     }

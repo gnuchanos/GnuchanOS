@@ -173,15 +173,18 @@ typedef struct WmFrame {
      * act of having seen it. */
     int moved;
 
-    /* The size the client asked for when it opened, before the workarea cut
-       it down. It is the size the window's CONTENT is drawn at, and it is the
-       only record of it: the frame's own client_width is what is shown, and
-       the client's own size is not asked for because a program that ignores
-       resizes has usually been told a smaller number than it is drawing at.
-     *
-     * A 1600x900 game on a 1366x768 screen is clamped to the screen when it
-     * opens, and the frame remembers the 1600x900 here. That is what scaling
-     * puts the window back to — see wm_frame_toggle_scaling(). */
+    /* The size the client's CONTENT is drawn at. It is kept as its own number
+       because the frame's client_width is what is SHOWN, and the two can part
+       company: a program that ignores a resize has drawn at its own size while
+       the frame holds a different one, so the client's own size cannot be
+       asked for — it would report what it was told, not what it painted.
+
+       A window now opens at the size it asked for, even one larger than the
+       screen, so for a window that has not resized itself since, this equals
+       client_width. It still earns its place for a window that HAS resized
+       itself: wm_frame_sync() updates this from the client's own attributes,
+       and it is the number scaling puts the window back to. See
+       wm_frame_toggle_scaling(). */
     int natural_width;
     int natural_height;
 
