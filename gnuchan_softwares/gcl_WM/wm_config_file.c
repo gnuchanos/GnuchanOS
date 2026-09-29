@@ -428,6 +428,54 @@ static void set_bar(const Script *script, WmConfig *config,
 
 /* --- the other statements ------------------------------------------------- */
 
+/* gcl_Switcher.<name> = "#..." — one colour of the Alt+` overlay.
+ *
+ * Written as assignments rather than calls, the way the desktop's wallpaper and
+ * flat colour are, because the seven describe one surface rather than one call
+ * with arguments. The name after the dot is matched WHOLE against the seven the
+ * overlay draws with: a substring match would make `background_colour` fill in
+ * `background`, and a colour meant for the switcher and misspelled would then
+ * be a colour nobody ever sees. A name that matches none is reported for the
+ * same reason.
+ *
+ * Each one lands in the config as text; wm_config_apply() turns them into
+ * pixels, because a colour name needs a display to become one and this reader
+ * has none. */
+static void set_switcher_colour(const Script *script, WmConfig *config,
+                                const WmStatement *statement) {
+    const char *dot = strchr(statement->target, '.');
+    const char *name = dot ? dot + 1 : "";
+    char *destination = NULL;
+    char text[WM_CONFIG_TEXT_LENGTH];
+
+    if (strcmp(name, "background") == 0) {
+        destination = config->switcher_background;
+    } else if (strcmp(name, "panel") == 0) {
+        destination = config->switcher_panel;
+    } else if (strcmp(name, "cell_border") == 0) {
+        destination = config->switcher_cell_border;
+    } else if (strcmp(name, "select_border") == 0) {
+        destination = config->switcher_select_border;
+    } else if (strcmp(name, "text") == 0) {
+        destination = config->switcher_text;
+    } else if (strcmp(name, "select_text") == 0) {
+        destination = config->switcher_select_text;
+    } else if (strcmp(name, "field") == 0) {
+        destination = config->switcher_field;
+    }
+
+    if (!destination) {
+        fprintf(stderr,
+                "gnuchanwm: config: gcl_Switcher.%s is not a colour the "
+                "switcher has; the ones it has are background, panel, "
+                "cell_border, select_border, text, select_text and field\n",
+                name);
+        return;
+    }
+    value_text(script, &statement->value, text, sizeof(text));
+    copy_text(destination, WM_CONFIG_TEXT_LENGTH, text);
+}
+
 static void set_border_colours(WmConfig *config, const WmStatement *statement) {
     /* The script passes its one value as the only argument, so it is
        positional: set_active_window_border_color("#c369ff") and
@@ -470,6 +518,14 @@ static void set_border_colours(WmConfig *config, const WmStatement *statement) {
     } else if (strcmp(statement->target,
                       "gcl_Window.set_inactive_window_border_color") == 0) {
         copy_text(config->inactive_border, sizeof(config->inactive_border), text);
+    } else if (strcmp(statement->target,
+                      "gcl_Window.set_moved_window_border_color") == 0) {
+        /* The third border colour, for a window that has just been sent to
+           another workspace. It is read here with the other two because it is
+           set the same way — one positional colour argument — and because a
+           script that names all three should see them read by one function
+           rather than two. See WmConfig.moved_border. */
+        copy_text(config->moved_border, sizeof(config->moved_border), text);
     }
 }
 
@@ -770,6 +826,12 @@ static void walk(Script *script, WmConfig *config,
                 value_text(script, &statement->value,
                            config->desktop_background_color,
                            sizeof(config->desktop_background_color));
+            } else if (strncmp(statement->target, "gcl_Switcher.", 13) == 0) {
+                /* The Alt+` overlay's own colours. They are assignments and
+                   not a call for the same reason the two above are: they
+                   describe one surface, and there is no list of arguments to
+                   give them. See set_switcher_colour(). */
+                set_switcher_colour(script, config, statement);
             }
             remember_assignment(script, statement);
             continue;
@@ -835,6 +897,11 @@ void wm_config_defaults(WmConfig *config) {
        desktop the code was written against. */
     copy_text(config->active_border, sizeof(config->active_border), "#c77dff");
     copy_text(config->inactive_border, sizeof(config->inactive_border), "#32143f");
+    /* The third border colour. It is written out here as well as in the
+       palette so the shipped script and this default cannot drift: a person
+       reading either should see the same orange, and a machine with no script
+       should get the same colour a script that named none would. */
+    copy_text(config->moved_border, sizeof(config->moved_border), "#ff8a3d");
     config->border_width = 2;
 
     /* Empty: "look at $TERMINAL, then at the usual terminals", which is what a
@@ -955,6 +1022,19 @@ int wm_config_load(WmConfig *config, const char *path) {
        one. */
     parsed.desktop_background_image[0] = '\0';
     parsed.desktop_background_color[0] = '\0';
+
+    /* The switcher's seven are cleared here for the same reason and by the
+       same rule: they are written as assignments, so the way to ask for the
+       default back is to stop writing one. A colour left over from the read
+       before would be a switcher that cannot be reset by editing the file,
+       which is exactly the fault the two above are cleared to avoid. */
+    parsed.switcher_background[0] = '\0';
+    parsed.switcher_panel[0] = '\0';
+    parsed.switcher_cell_border[0] = '\0';
+    parsed.switcher_select_border[0] = '\0';
+    parsed.switcher_text[0] = '\0';
+    parsed.switcher_select_text[0] = '\0';
+    parsed.switcher_field[0] = '\0';
 
     /* The notes are last read's, not this one's: they are collected while the
        file is walked below, and a note left over from a script the user has
@@ -1268,6 +1348,47 @@ void wm_config_apply(WmCore *core) {
             wm_style_colour(core->display, core->screen,
                             core->config.inactive_border,
                             core->style.border_unfocused);
+    }
+    /* The third colour, and the reason it is resolved here with the other two:
+       a frame is drawn with all three of these at draw time, so a script that
+       changed only this one has to reach the windows already on screen the
+       same way a change to either of the others does. The fallback is the
+       palette's own orange (wm_style.c), which is what a script that never
+       names this colour keeps. */
+    if (core->config.moved_border[0]) {
+        core->style.border_moved =
+            wm_style_colour(core->display, core->screen,
+                            core->config.moved_border,
+                            core->style.border_moved);
+    }
+
+    /* The switcher's seven, resolved the same way and for the same reason: the
+       overlay is drawn from the style at draw time, so a script that changed
+       one has to reach the running desktop. Each falls back to the palette's
+       own value (wm_style.c), which is what a script that names none of them
+       keeps — so the overlay a person gets is the one they had before any of
+       this was configurable. */
+    {
+        struct {
+            const char *written;
+            unsigned long *resolved;
+        } switcher[] = {
+            { core->config.switcher_background,    &core->style.switcher_background    },
+            { core->config.switcher_panel,         &core->style.switcher_panel         },
+            { core->config.switcher_cell_border,   &core->style.switcher_cell_border   },
+            { core->config.switcher_select_border, &core->style.switcher_select_border },
+            { core->config.switcher_text,          &core->style.switcher_text          },
+            { core->config.switcher_select_text,   &core->style.switcher_select_text   },
+            { core->config.switcher_field,         &core->style.switcher_field         },
+        };
+        for (unsigned int i = 0; i < sizeof(switcher) / sizeof(switcher[0]); i++) {
+            if (switcher[i].written[0]) {
+                *switcher[i].resolved =
+                    wm_style_colour(core->display, core->screen,
+                                    switcher[i].written,
+                                    *switcher[i].resolved);
+            }
+        }
     }
     if (core->config.border_width > 0) {
         core->style.border_width = core->config.border_width;

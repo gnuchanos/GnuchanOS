@@ -67,6 +67,20 @@ void wm_tray_place(WmCore *core, Window bar, int vertical, int x, int y,
    icons stay visible over the strip they sit in. */
 void wm_tray_raise(WmCore *core);
 
+/* Put the dock directly above the bar it was placed against, and below every
+   other window.
+ *
+ * This is the one that keeps a tray icon on the bar. `raise` above says "over
+   the strip it sits in", and the way to be over the strip and not over the
+   screen is to be stacked against the bar rather than lifted to the top: the
+   dock and the bar are both the root's children, so the top of the stack is
+   where the windows are.
+ *
+ * Called from wm_desktop_lower_bar(), after the bars have been put at the
+ * bottom, so the order is settled in one place: bar lowest, dock on the bar,
+ * windows above both. */
+void wm_tray_lower(WmCore *core);
+
 /* Forget where the last frame put the tray, and put it away again if nothing
    put it back. The pair is the bar's own drawing saying "this is where the
    group box is this time" and "and if there was no group box, the tray is not

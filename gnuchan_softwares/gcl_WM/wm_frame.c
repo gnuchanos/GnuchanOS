@@ -289,6 +289,25 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
     int height = frame_height(frame);
     int focused = (core->focused == frame->client);
 
+    /* Three colours, in an order that says what matters: the keyboard first,
+       then the mark, then the ordinary unfocused window.
+     *
+     *   focused          the window the user is typing in, which is the one
+     *                    thing that must never be ambiguous
+     *   moved            a window that has just been sent to another desk and
+     *                    not looked at since — see WmFrame.moved
+     *   else             a window that is neither
+     *
+     * A window cannot be both focused and marked: focusing it is what clears
+     * the mark (wm_focus_set), because focusing it is the act of having found
+     * it again. The test is written the other way round anyway — focused
+     * first — so that a frame whose mark has not been cleared yet still shows
+     * the colour the user is looking for. */
+    unsigned long border_colour =
+        focused ? style->border
+                : (frame->moved ? style->border_moved
+                                : style->border_unfocused);
+
     frame_ensure_buffer(core, frame, width, height);
     Drawable target = frame->buffer != None ? frame->buffer : frame->frame;
 
@@ -306,8 +325,7 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
        whatever the server left there - which is the stray line that appeared
        while only a one-pixel outline was drawn and the band beside it was left
        untouched. No pixel of the frame is left to the server now. */
-    XSetForeground(display, core->gc,
-                   focused ? style->border : style->border_unfocused);
+    XSetForeground(display, core->gc, border_colour);
     XFillRectangle(display, target, core->gc, 0, 0,
                    (unsigned int)width, (unsigned int)height);
 
@@ -332,9 +350,12 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
     XFillRectangle(display, target, core->gc, 0, 0,
                    (unsigned int)width, WM_TITLE_HEIGHT);
 
-    /* The line under it that says which window is active. */
-    XSetForeground(display, core->gc,
-                   focused ? style->accent : style->accent_dim);
+    /* The line under it that says which window is active. It follows the band
+       above — the same three cases, the same colour — so a frame reads as one
+       mark rather than a coloured border with an unrelated stripe in it. The
+       band alone is two pixels and is the first thing lost against a busy
+       window; the stripe is what carries the colour across the title bar. */
+    XSetForeground(display, core->gc, border_colour);
     XFillRectangle(display, target, core->gc, 0, WM_TITLE_HEIGHT - 2,
                    (unsigned int)width, 2);
 

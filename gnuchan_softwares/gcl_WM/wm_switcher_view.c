@@ -34,6 +34,16 @@
  *   rectangle and renders it into the cell at the size the cell is, which is
  *   the one part of this that is easier to read than the alternative.
  *
+ *   The root is still where the pixels come from, but the window being
+ *   pictured is RAISED above the others for the instant its rectangle is
+ *   read, and the whole stacking order is put back afterwards. This is not a
+ *   refinement, it is what makes the picture a picture of that window: a read
+ *   of the root returns what is on TOP at that rectangle, so two windows in
+ *   the same place — which is most of them, most of the time — gave two
+ *   IDENTICAL cells holding the same fragment of the topmost one. A grid of
+ *   the same picture repeated, with nothing in it to tell one terminal from
+ *   another. Raising is what makes each cell that window and no other.
+ *
  * A window that is minimised is not on the screen at all, so there is nothing
  * to read: it is drawn as its own icon instead, which is what wm_icon.c read
  * from _NET_WM_ICON when the window opened. A window whose picture could not
@@ -248,9 +258,9 @@ static int picture_read(WmCore *core, const WmSwitcherCell *cell,
     }
 
     /* The background first, so a picture whose proportions leave room at the
-       sides is letterboxed against the panel rather than against whatever the
-       server had in the pixmap. */
-    XSetForeground(core->display, core->gc, core->style.panel);
+       sides is letterboxed against the switcher's own panel rather than
+       against whatever the server had in the pixmap. */
+    XSetForeground(core->display, core->gc, core->style.switcher_panel);
     XFillRectangle(core->display, target, core->gc, 0, 0,
                    (unsigned int)width, (unsigned int)height);
 
@@ -292,16 +302,59 @@ static int picture_read(WmCore *core, const WmSwitcherCell *cell,
     return 1;
 }
 
+/* Put every child of the root back into the stacking order it had.
+ *
+ * XRestackWindows takes the list TOP to bottom and XQueryTree hands it back
+ * BOTTOM to top, so the array is reversed before it is given back. Without
+ * that the desktop would be turned upside down — the bar would end up over
+ * every window it is meant to sit under — which is a worse fault than the one
+ * being fixed.
+ *
+ * A window destroyed between the query and this call is reported by the error
+ * handler and skipped by the server; the list is taken microseconds earlier,
+ * so that is a window closing at the exact moment the switcher opens, and the
+ * rest of the order is still restored. */
+static void stacking_restore(WmCore *core, Window *order,
+                             unsigned int count) {
+    if (!order || count == 0) {
+        return;
+    }
+    for (unsigned int i = 0; i < count / 2; i++) {
+        Window swap = order[i];
+        order[i] = order[count - 1 - i];
+        order[count - 1 - i] = swap;
+    }
+    XRestackWindows(core->display, order, (int)count);
+    XSync(core->display, False);
+}
+
 /* Build every cell's picture. Called once, before the overlay is mapped: the
    screen still shows the desktop, and every read would otherwise find the
-   overlay over the very windows it is picturing. */
+   overlay over the very windows it is picturing.
+ *
+ * Each window is raised before its rectangle is read — see the note at the top
+ * of this file for why that is not optional — and the order everything was in
+ * is put back when the last one has been read. The raises are never seen: the
+ * overlay is mapped after this returns and covers the screen for the whole of
+ * the gesture, so the only thing the user can see is the pictures. */
 static void pictures_build(WmCore *core, WmSwitcher *switcher) {
+    Window root_return;
+    Window parent_return;
+    Window *order = NULL;
+    unsigned int order_count = 0;
+
+    XQueryTree(core->display, core->root, &root_return, &parent_return,
+               &order, &order_count);
+
     for (int i = 0; i < switcher->count && i < WM_SWITCHER_MAX_CELLS; i++) {
         Pixmap pixmap;
 
         view.pictures[i] = None;
         if (switcher->cells[i].minimized) {
             continue;   /* nothing on the screen to read; the icon stands in */
+        }
+        if (switcher->cells[i].frame == None) {
+            continue;
         }
 
         pixmap = XCreatePixmap(core->display, core->root,
@@ -312,12 +365,26 @@ static void pictures_build(WmCore *core, WmSwitcher *switcher) {
         if (pixmap == None) {
             continue;
         }
+
+        /* Above everything, and waited for, so the read below finds this
+           window and not whichever of its neighbours happened to be there.
+           The wait is a round trip per window and is not optional: without it
+           the read is queued behind the raise and pictures the order from
+           before it. */
+        XRaiseWindow(core->display, switcher->cells[i].frame);
+        XSync(core->display, False);
+
         if (picture_read(core, &switcher->cells[i], view.cell_width,
                          view.picture_height, pixmap)) {
             view.pictures[i] = pixmap;
         } else {
             XFreePixmap(core->display, pixmap);
         }
+    }
+
+    stacking_restore(core, order, order_count);
+    if (order) {
+        XFree(order);
     }
 }
 
@@ -428,17 +495,22 @@ static void draw_cell(WmCore *core, const WmSwitcher *switcher, int index) {
     int chosen = index == switcher->selected;
     int hovered = index == view.hover;
     XftFont *font = core->style.font;
-    unsigned long border = chosen ? core->style.accent
-                                  : core->style.panel_edge;
+    /* The cell's frame, in the switcher's own two colours — see WmStyle. The
+       chosen cell's is the one the eye has to land on, so it is the one the
+       script is most likely to want set apart from the rest. */
+    unsigned long border = chosen ? core->style.switcher_select_border
+                                  : core->style.switcher_cell_border;
 
     if (index < 0 || index >= switcher->count || index >= view.count) {
         return;
     }
     cell_origin(index, &x, &y);
 
-    /* The cell's body. The panel colour first, so a picture with room at the
-       sides sits on the panel and not on the desktop behind it. */
-    XSetForeground(core->display, core->gc, core->style.panel);
+    /* The cell's body. The switcher's own panel colour first, so a picture
+       with room at the sides sits on something the script chose for pictures
+       and not on the desktop's own background — which is chosen to sit behind
+       windows, and is the wrong question here. */
+    XSetForeground(core->display, core->gc, core->style.switcher_panel);
     XFillRectangle(core->display, view.window, core->gc, x, y,
                    (unsigned int)view.cell_width,
                    (unsigned int)view.cell_height);
@@ -469,7 +541,7 @@ static void draw_cell(WmCore *core, const WmSwitcher *switcher, int index) {
         if (!drawn) {
             /* Nothing to show: the cell keeps the panel colour it was filled
                with, so the name under it is not floating on nothing. */
-            XSetForeground(core->display, core->gc, core->style.field);
+            XSetForeground(core->display, core->gc, core->style.switcher_field);
             XFillRectangle(core->display, view.window, core->gc,
                            x + 8, y + 8,
                            (unsigned int)(view.cell_width - 16),
@@ -483,7 +555,7 @@ static void draw_cell(WmCore *core, const WmSwitcher *switcher, int index) {
        mistakable for the chosen one, which is the whole reason the choice is
        drawn the way it is. */
     if (hovered && !chosen) {
-        XSetForeground(core->display, core->gc, core->style.field);
+        XSetForeground(core->display, core->gc, core->style.switcher_field);
         XFillRectangle(core->display, view.window, core->gc,
                        x + 1, y + view.picture_height,
                        (unsigned int)(view.cell_width - 2),
@@ -503,7 +575,8 @@ static void draw_cell(WmCore *core, const WmSwitcher *switcher, int index) {
         int text_width = wm_style_text_width(core->display, font, label);
         wm_style_text(core->display, core->screen, view.window, font,
                       x + (view.cell_width - text_width) / 2, baseline, label,
-                      chosen ? core->style.accent : core->style.text);
+                      chosen ? core->style.switcher_select_text
+                             : core->style.switcher_text);
     }
 
     /* The frame, last so it sits over the picture. Two pixels for the chosen
@@ -535,7 +608,7 @@ void wm_switcher_view_show(WmCore *core, WmSwitcher *switcher) {
        rather than a picture of the screen, and that is what makes the chosen
        cell stand out: a switcher drawn over a faded screenshot is a switcher
        whose cells have to compete with what is behind them. */
-    XSetForeground(core->display, core->gc, core->style.background);
+    XSetForeground(core->display, core->gc, core->style.switcher_background);
     XFillRectangle(core->display, view.window, core->gc, 0, 0,
                    (unsigned int)core->width, (unsigned int)core->height);
 
@@ -546,7 +619,7 @@ void wm_switcher_view_show(WmCore *core, WmSwitcher *switcher) {
 
     /* The panel the grid sits on, so the cells read as one arrangement rather
        than as pictures dropped on the desktop. */
-    XSetForeground(core->display, core->gc, core->style.panel);
+    XSetForeground(core->display, core->gc, core->style.switcher_panel);
     XFillRectangle(core->display, view.window, core->gc,
                    view.origin_x - WM_SWITCHER_GAP,
                    view.origin_y - WM_SWITCHER_GAP,
@@ -619,7 +692,7 @@ int wm_switcher_view_open(WmCore *core, WmSwitcher *switcher) {
 
     memset(&attributes, 0, sizeof(attributes));
     attributes.override_redirect = True;
-    attributes.background_pixel = core->style.background;
+    attributes.background_pixel = core->style.switcher_background;
     attributes.border_pixel = 0;
     /* The overlay takes no input of its own: the keyboard and the pointer are
        held explicitly for the length of the gesture, and an event mask here

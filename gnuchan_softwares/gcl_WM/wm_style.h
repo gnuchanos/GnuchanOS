@@ -43,6 +43,38 @@ typedef struct WmStyle {
     unsigned long border;        /* #c77dff - a focused window's border      */
     unsigned long border_unfocused; /* #32143f - any other window's          */
 
+    /* #ff8a3d - a window that has just been sent to another workspace with
+       Super+Shift+N. It is a third colour on purpose and not a shade of either
+       of the two above: it has to be readable as "this one moved" without
+       being mistakable for "this one has the keyboard", which is what the
+       accent means, or for an ordinary unfocused window.
+     *
+     * The mark stays until the window is focused again — see wm_frame.h's
+     * `moved` — so a hand that has sent three windows to three desks can
+     * still see which three they were after the fact. The script sets it with
+     * gcl_Window.set_moved_window_border_color(...). */
+    unsigned long border_moved;
+
+    /* The switcher's own palette, because the overlay (Alt+`) is a surface of
+       its own and is not read the way a title bar is. A picture of a window is
+       the biggest thing on it, and the colour behind that picture has to be
+       quiet enough that a terminal's own colours still read as that terminal —
+       which is not a thing the desktop's background can be asked to be, since
+       the desktop background is chosen to sit behind windows and not behind
+       pictures of them.
+     *
+     * Each one is drawn somewhere in wm_switcher_view.c and the script sets
+     * them with gcl_Switcher.<name> = "#...". The defaults below are what the
+     * switcher looked like before they were configurable, so a script that
+     * names none of them gets exactly the overlay it always had. */
+    unsigned long switcher_background;     /* behind the whole grid          */
+    unsigned long switcher_panel;          /* the panel, and a cell's body   */
+    unsigned long switcher_cell_border;    /* a cell's own frame             */
+    unsigned long switcher_select_border;  /* the chosen cell's frame        */
+    unsigned long switcher_text;           /* a cell's name                  */
+    unsigned long switcher_select_text;    /* the chosen cell's name         */
+    unsigned long switcher_field;          /* a hovered caption, empty cell  */
+
     XftFont *font;               /* the one font the desktop draws in        */
 
     int border_width;            /* the frame drawn around a window          */

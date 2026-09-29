@@ -190,17 +190,27 @@ void wm_workspace_move(WmCore *core, int workspace) {
         return;
     }
 
-    /* The window's workspace changes and the USER's does not: that is the
-       whole difference between this and a switch. core->current_workspace is
-       deliberately left alone, so the window leaves this screen rather than
-       the user following it. */
+    /* The window is tagged with the desk it is going to, and marked as having
+       been put there. The mark is what the frame draws it in a colour of its
+       own for — see wm_frame_draw — so a hand that has sent three windows to
+       three desks can still see which they were after the fact. It is cleared
+       when the window is next focused, because by then the user has found it
+       again and the mark has done its job. */
     frame->workspace = workspace;
+    frame->moved = 1;
 
-    /* The focused window has just left, and the frame may have to be hidden if
-       it was on another desk to begin with. workspace_settle() does both, and
-       the workspace it is given is the one the user is still looking at — so
-       the keyboard lands on something that is still on screen. */
-    workspace_settle(core, core->current_workspace);
+    /* And the user goes with it. This is the half that makes the key worth
+       pressing: a window sent to a desk the user is not on is a window that
+       vanished, and the next thing they do is switch to find it. Doing both is
+       what every desktop's "move to workspace N" does, and leaving the second
+       half out is what made this one feel like the window had been lost.
+
+       wm_workspace_switch() is what does the rest — the map and unmap, the
+       keyboard, the bar — and it is called rather than repeated here so a move
+       and a switch cannot come to differ in any of it. It returns early for
+       the desk the user is already on, which is the case where the window went
+       to where they already were. */
+    wm_workspace_switch(core, workspace);
 
     fprintf(stderr, "gnuchanwm: window '%s' moved to workspace %d of %d\n",
             frame->has_name && frame->name[0] ? frame->name : "window",

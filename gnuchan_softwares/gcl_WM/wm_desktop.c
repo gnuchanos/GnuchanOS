@@ -635,6 +635,20 @@ void wm_desktop_lower_bar(WmCore *core) {
         }
     }
     XFlush(core->display);
+
+    /* The tray follows the bar down, and stops there.
+     *
+     * The dock is the root's child like the bar is, and the icons in it are
+     * other processes' windows drawn over the strip. Left to itself the dock
+     * went to the TOP of the stack — which is where the windows are — and an
+     * icon was then drawn over whatever terminal happened to be beside the
+     * bar. Putting it directly above the bar is what "on the bar, under the
+     * windows" means in one stacking order, and it has to happen after the
+     * lowering above or the bar would come down over its own tray.
+     *
+     * A no-op when there is no dock, or when no bar drew a group box this
+     * time, so a session with no tray is not made to do anything. */
+    wm_tray_lower(core);
 }
 
 /* Whether a window is one of the desktop's own bars. The menu asks this before

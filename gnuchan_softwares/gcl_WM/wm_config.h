@@ -216,6 +216,45 @@ typedef struct WmConfig {
     char inactive_border[WM_CONFIG_TEXT_LENGTH];
     int border_width;
 
+    /* gcl_Window.set_moved_window_border_color("#ff8a3d"): the border a window
+       is drawn in for as long as it is marked as having been sent to another
+       workspace. Super+Shift+N tags the window with the desk it is going to
+       AND marks it — see wm_workspace_move() — and this is the colour that
+       mark is drawn in, so a hand that has sent three windows to three desks
+       can still tell which three they were afterwards.
+     *
+     * It is a setting of its own rather than a shade of the active border,
+     * because the two mean different things: the active border says "the
+     * keyboard is here", and this one says "this window was just moved". A
+     * desktop that wants them the same colour writes the same string twice.
+     *
+     * Empty keeps the palette's own value (wm_style.c), which is an orange
+     * that is neither of the two other border colours. The mark is cleared
+     * when the window is next focused, because by then it has been found. */
+    char moved_border[WM_CONFIG_TEXT_LENGTH];
+
+    /* The switcher's own colours: the overlay Alt+` puts up. They are written
+       as assignments — `gcl_Switcher.background = "#..."` — the same way the
+       desktop's wallpaper and flat colour are, because they describe one
+       surface rather than one call with arguments.
+     *
+     * They are separate from the desktop's palette on purpose. The overlay is
+       not a title bar: most of it is a picture of a window, and the colour
+       around that picture has to be quiet enough for a terminal's own colours
+       to still read as that terminal. A desktop's background is chosen to sit
+       behind windows; this is chosen to sit behind pictures of them, and the
+       two are not the same question.
+     *
+     * Empty keeps the palette's own value (wm_style.c), so a script that names
+     * none of them gets the switcher it always had. */
+    char switcher_background[WM_CONFIG_TEXT_LENGTH];
+    char switcher_panel[WM_CONFIG_TEXT_LENGTH];
+    char switcher_cell_border[WM_CONFIG_TEXT_LENGTH];
+    char switcher_select_border[WM_CONFIG_TEXT_LENGTH];
+    char switcher_text[WM_CONFIG_TEXT_LENGTH];
+    char switcher_select_text[WM_CONFIG_TEXT_LENGTH];
+    char switcher_field[WM_CONFIG_TEXT_LENGTH];
+
     /* gcl_Window.background_color = "#27022b": the flat colour the desktop is
        painted in when no wallpaper is named — or when the one named cannot be
        read. It is what the root window's background is set to, which is the

@@ -155,6 +155,22 @@ void wm_focus_set(WmCore *core, Window window) {
     core->focused = window;
     XSetInputFocus(core->display, window, RevertToPointerRoot, CurrentTime);
 
+    /* A window that has just been focused is no longer "the one you sent
+       away". Super+Shift+N marks a window so it can be found again on the desk
+       it went to — see WmFrame.moved — and focusing it is exactly the act of
+       having found it, so the mark comes off here.
+     *
+     * It is cleared before the redraw below rather than after, because that
+     * redraw is what puts the border back to the ordinary colour: clearing it
+     * afterwards would leave the mark on screen until something else happened
+     * to repaint the window. */
+    {
+        WmFrame *arrived = wm_frame_find(core, window);
+        if (arrived && arrived->moved) {
+            arrived->moved = 0;
+        }
+    }
+
     /* The window just focused is now the most recently used one, so it goes to
        the front of the order before anything reads it. */
     focus_history_push(core, window);

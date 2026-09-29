@@ -157,6 +157,22 @@ typedef struct WmFrame {
     int maximized;       /* 1 while the client fills the screen              */
     int workspace;       /* which desktop this window is on (wm_workspace.h) */
 
+    /* 1 while the window is drawn in the "just moved" border colour — set by
+       wm_workspace_move() when Super+Shift+N sends the window to another desk,
+       and cleared by wm_focus_set() the next time the window is focused.
+     *
+     * It exists so a hand that has sent three windows to three desks can still
+     * tell which three they were. Without it the only sign was that the window
+     * had gone, and by the time the user followed it there was nothing on
+     * screen to say whether this was the one they sent or one that had been
+     * there all along. The colour itself is gcl_Window's
+     * set_moved_window_border_color, resolved into WmStyle.border_moved.
+     *
+     * It is cleared on focus rather than on a timer: the mark means "you have
+     * not seen this window since you sent it", and focusing it is exactly the
+     * act of having seen it. */
+    int moved;
+
     /* The size the client asked for when it opened, before the workarea cut
        it down. It is the size the window's CONTENT is drawn at, and it is the
        only record of it: the frame's own client_width is what is shown, and

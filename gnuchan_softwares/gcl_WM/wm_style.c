@@ -35,6 +35,19 @@ int wm_style_load(WmStyle *style, Display *display, int screen) {
     style->accent_dim       = wm_style_colour(display, screen, "#7b2cbf", white);
     style->border           = wm_style_colour(display, screen, "#c77dff", white);
     style->border_unfocused = wm_style_colour(display, screen, "#32143f", black);
+    style->border_moved     = wm_style_colour(display, screen, "#ff8a3d", white);
+
+    /* The switcher's own palette. The defaults are what the overlay was drawn
+       in before any of it was configurable, so a script that names none of the
+       seven gets exactly the switcher it always had — the same rule the two
+       border colours above follow. */
+    style->switcher_background    = wm_style_colour(display, screen, "#1a0b2e", black);
+    style->switcher_panel         = wm_style_colour(display, screen, "#32143f", black);
+    style->switcher_cell_border   = wm_style_colour(display, screen, "#7b2cbf", white);
+    style->switcher_select_border = wm_style_colour(display, screen, "#c77dff", white);
+    style->switcher_text          = wm_style_colour(display, screen, "#e0c3fc", white);
+    style->switcher_select_text   = wm_style_colour(display, screen, "#c77dff", white);
+    style->switcher_field         = wm_style_colour(display, screen, "#241033", black);
 
     style->border_width = 2;
 

@@ -89,6 +89,12 @@ static int tray_icon_count = 0;
    is then put away rather than left where it last was. */
 static int tray_placed = 0;
 
+/* The bar the dock was last placed against. Kept because the dock has to be
+   stacked immediately ABOVE that bar and not above the screen: both are the
+   root's children, and "above the bar" is a place in the stacking order that
+   needs the bar to name. See wm_tray_lower(). */
+static Window tray_bar = None;
+
 /* The visual and depth the dock and its icons are drawn at, and the colormap
    that goes with them. The colormap is made here when the visual is not the
    screen's own, and it is this process's to free: one made and forgotten is a
@@ -475,10 +481,14 @@ void wm_tray_place(WmCore *core, Window bar, int vertical, int x, int y,
     XSetWindowBackground(core->display, tray_window, background);
     XClearWindow(core->display, tray_window);
 
-    /* Above the bar: the dock is the root's child while the bar sits at the
-       bottom of the stack, so without this the bar's strip would cover the
-       icons. */
-    XRaiseWindow(core->display, tray_window);
+    /* The dock remembers the bar it belongs to and is left where it is put by
+       wm_tray_lower(), which runs after every bar has been drawn and lowered.
+       Raising it to the top here — which is what this used to do — put the
+       icons over every WINDOW on the screen: the dock and the bar are both the
+       root's children, so "above the bar" is a few places from the bottom of
+       the stack, and the top of it is where the windows are. An icon floating
+       over a terminal is what that mistake looks like. */
+    tray_bar = bar;
     XMapWindow(core->display, tray_window);
 
     tray_layout(core, vertical, width, height, vertical ? width : height);
@@ -514,7 +524,50 @@ void wm_tray_raise(WmCore *core) {
     if (!core || tray_window == None || !tray_placed) {
         return;
     }
-    XRaiseWindow(core->display, tray_window);
+    /* Above the bar and no higher. This is called when a bar is redrawn and
+       when the switcher's overlay goes up, and in both cases the dock has to
+       be over the strip it sits in — not over the windows, which is what
+       raising it to the top of the stack would do. */
+    wm_tray_lower(core);
+}
+
+/* Put the dock directly above the bar it belongs to, and under everything
+   else.
+ *
+ * This is the whole of what keeps a tray icon on the bar rather than floating
+ * over the window beside it. The dock is a child of the root, like the bar and
+ * like every window, so its place is a place in one stacking order: directly
+ * above the bar and below the first window, which is what "on the bar" means.
+ *
+ * XConfigureWindow with a sibling and a stack mode is the one call that says
+ * "immediately above this window" rather than "at the top" or "at the bottom".
+ * XRaiseWindow cannot express it, and that is why every fix built on raising
+ * the dock ended up with the icons over a terminal.
+ *
+ * Called after the bars have been drawn and lowered, from
+ * wm_desktop_lower_bar(), so the order is settled once rather than being
+ * fought over by the drawing code: the bar is put at the bottom, the dock is
+ * put on top of the bar, and the windows stay above both. */
+void wm_tray_lower(WmCore *core) {
+    XWindowChanges changes;
+
+    if (!core || tray_window == None || !tray_placed) {
+        return;
+    }
+    if (tray_bar == None || wm_desktop_is_bar_window(tray_bar) == 0) {
+        /* No bar to sit above — it was never placed this time round, or the
+           bar it was placed against is gone. The dock goes to the bottom,
+           which is the one place that is never over a window. */
+        XLowerWindow(core->display, tray_window);
+        XFlush(core->display);
+        return;
+    }
+
+    memset(&changes, 0, sizeof(changes));
+    changes.sibling = tray_bar;
+    changes.stack_mode = Above;
+    XConfigureWindow(core->display, tray_window,
+                     CWSibling | CWStackMode, &changes);
     XFlush(core->display);
 }
 
@@ -611,6 +664,7 @@ static void tray_cleanup(WmCore *core) {
         tray_window = None;
     }
     tray_placed = 0;
+    tray_bar = None;
     XFlush(core->display);
 }
 

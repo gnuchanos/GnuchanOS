@@ -6,12 +6,40 @@ gcl_Window.set_active_window_border_color("#d400ff")
 gcl_Window.set_inactive_window_border_color("#450552")
 gcl_Window.set_window_border_width(2)
 
+# The border of a window that has just been sent to another workspace with
+# Alt+Shift+N. It is a third colour and not a shade of either of the two above,
+# because it says a third thing: "this window was moved, and you have not looked
+# at it since". The accent above means "the keyboard is here" and the inactive
+# colour means "nothing in particular", so a window marked with this one is
+# neither of those and must not be mistakable for either.
+#
+# It stays on until the window is focused again, which is the act of having
+# found it — so a hand that has sent three windows to three desks can still tell
+# which three they were.
+gcl_Window.set_moved_window_border_color("#00e5a0")
+
 # The desktop wallpaper, drawn behind every window with Imlib2, the way feh
 # draws one. This is not the bar's picture: a wallpaper belongs behind the
 # whole desktop, not inside one strip of it. Empty keeps the flat desktop
 # colour.
 # gcl_Window.background_color = "#27022b"
 gcl_Window.BackgroundImage = "~/.config/GnuChanWM/bg.png"
+
+# The Alt+` window switcher, which is a surface of its own and is therefore
+# coloured on its own. Every one of these falls back to the desktop's palette
+# when it is not written, so commenting one out is how you get the default back.
+#
+# They are separate from the desktop's colours because the switcher is mostly a
+# picture of a window: the colour around that picture has to be quiet enough for
+# a terminal's own colours to still read as that terminal, which is not what a
+# desktop background is chosen for.
+gcl_Switcher.background    = "#0d0512"   # behind the whole grid
+gcl_Switcher.panel         = "#1b0c22"   # the panel, and the cells' bodies
+gcl_Switcher.cell_border   = "#7b2cbf"   # every cell's frame
+gcl_Switcher.select_border = "#d400ff"   # the chosen cell's frame
+gcl_Switcher.text          = "#e0c3fc"   # every cell's name
+gcl_Switcher.select_text   = "#d400ff"   # the chosen cell's name
+gcl_Switcher.field         = "#2a1035"   # a hovered caption, an empty cell
 
 # gcl_BAR.call(...) may be written more than once: each call is one bar, so a
 # script can put a bar along the top, another along the bottom, and a small one
