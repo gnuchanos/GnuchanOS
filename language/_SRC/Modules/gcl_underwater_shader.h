@@ -83,6 +83,10 @@
    gorunmesinin sebebi buydu. Ton, suyun KENDI rengi olmali; beyaz serpme
    yalnizca goruntunun gomulmesini engelleyecek kadar tutulur. */
 #define UW_BLUR  2.4
+/* UW_TINT / UW_LIGHT: su tonunun siddeti ve tona eklenen beyaz.
+   Ikisi de 0.70 / 0.32'ye cikarildi ve YANLISTI: ekran "hayvan gibi beyaz
+   parladi" ve suyun dibinde on gorunmez oldu. Ton suyun rengini ANLATIR,
+   ekrani yakmaz; 0.55 / 0.10 belgelenmis ve dogru degerlerdir. */
 #define UW_TINT  0.55
 #define UW_LIGHT 0.10
 
@@ -215,8 +219,24 @@
 "       Mesafeler carpanla buyur (1.5, 2.5, 4.3 ... ~1900): yakin plandan\n" \
 "       ufka kadar tek geciste taranir. Sabit kisa bir mesafe yetmezdi,\n" \
 "       cunku ufka yakin isinlar yuzeye cok uzakta yaklasir. */\n" \
+"    /* ---------- YUZME KILIDI: KAMERA SANAL OLARAK YUZEYIN ALTINDA ----------\n" \
+"\n" \
+"       BURASI \"SU ALTINA GIRIYORUM AMA HICBIR SEY OLMUYOR\" HATASININ KOKU.\n" \
+"\n" \
+"       Fizik, YUZME modunda kafayi SU YUZEYINE KILITLER (bkz.\n" \
+"       gcl_raylib_fps.c: swim_move -> `max_feet = surface - Height`).\n" \
+"       Yani kamera yuzeyin TAM USTUNDE kalir; `camF` hicbir zaman\n" \
+"       negatife inmez ve asagidaki `camF < 0.05` kapisi HIC ACILMAZ.\n" \
+"       Oyuncu suyun icinde, gogsune kadar batmis olsa bile ekranda\n" \
+"       TEK BIR su alti pikseli olusmaz - bildirilen hal TAM OLARAK budur.\n" \
+"\n" \
+"       Cozum: oyuncu suyun ICINDEYKEN (uwSubmerge > 0) kamerayi yuzeyin\n" \
+"       ALTINDA SAY. Pay KUCUK tutulur (0.35 m): gorunen yuzey yalnizca\n" \
+"       +-1.96*uwAmp = ~0.06 m gezingi icin bu pay fazlasiyla yeterli,\n" \
+"       buyuk bir pay kamerayi suyun COK altina koyar ve kenarda bile her\n" \
+"       isin suya girip ekrani tumden kaplar. */\n" \
 "    float wh = gclUwWave(uwCamPos.xz, uwTime);\n" \
-"    float camF = uwCamPos.y - (uwSurfaceY + wh*uwAmp);\n" \
+"    float camF = uwCamPos.y - (uwSurfaceY + wh*uwAmp) - uwSubmerge*0.35;\n" \
 "    float wet  = 0.0;\n" \
 "    if (camF < 0.05) {\n" \
 "        float minF = 1.0e9;\n" \

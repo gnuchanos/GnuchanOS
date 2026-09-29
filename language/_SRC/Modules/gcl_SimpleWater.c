@@ -347,7 +347,7 @@ static int       g_uw_frame_h = 0;
 /* Ekran okuma YARDIMCISI, tanimindan ONCE burada bildirilir: `uw_frame_refresh`
    dosyada ondan once gelir. Govdesi asagida, "EKRAN OKUMA VE BLIT"
    bolumundedir. */
-static Image load_screen_image(void);
+static Image load_screen_image_at(int w, int h);
 
 /* Doku kurma/tazeleme/serbest birakma DA DLL'den cozulur; govdeleri asagida,
    "EKRAN OKUMA VE BLIT" bolumundedir. Burada ONCE bildirilirler cunku
@@ -392,7 +392,27 @@ static int uw_frame_refresh(int w, int h) {
        "su yuzeyi ekranda kaliyor, goruntu dondu" halinin ikinci sebebi. */
     {
         int iw, ih;
-        img = load_screen_image();
+        /* OKUMA, RENDER OLCUSUYLE YAPILIR - PENCERE OLCUSUYLE DEGIL.
+
+           BURASI "SUYUN ALTI BOMBOS / MAGARA GIBI" HATASININ KOKU.
+
+           `LoadImageFromScreen()` raylib'in ICINDE su cagriyi yapar:
+
+               rlReadScreenPixels(GetScreenWidth(), GetScreenHeight())
+
+           `GetScreenWidth()` PENCERE olcusunu dondurur (rcore.c:
+           `CORE.Window.screen.width`), cizim yuzeyini DEGIL. RaylibRender
+           acikken cizim 320x240'lik bir RENDER TEXTURE'a gider, pencere ise
+           640x480 (tam ekranda cok daha buyuk) kalir.
+
+           Sonuc: okuma RT'nin DISINA tasar. Buyuk bolum bos/cop kalir ve
+           sahne kosede sikisir - ekran "bomboş, magara gibi" gorunur. Tam
+           olarak bildirilen hal.
+
+           Dogru okuma `rlReadScreenPixels(w, h)` ile, YANI RENDER OLCUSUYLE
+           yapilir; `w`/`h` yukaridan, `render_width/height`'ten gelir. rlgl
+           zaten bagli FBO'yu (RT'yi) okur, boyutunu da biz veririz. */
+        img = load_screen_image_at(w, h);
         if (!img.data || img.width <= 0 || img.height <= 0) {
             if (img.data) UnloadImage(img);
             return 0;
@@ -635,6 +655,8 @@ static const char *resolve_file(const char *file) {
 typedef Image (*GclScreenImageFn)(void);
 typedef int   (*GclIntVoidFn)(void);
 typedef void  (*GclVoidVoidFn)(void);
+/* Ham okuma: VERILEN olcude okur (bkz. load_screen_image_at notu). */
+typedef unsigned char *(*GclReadPixelsFn)(int width, int height);
 typedef void  (*GclDrawTextureProFn)(Texture2D, Rectangle, Rectangle,
                                      Vector2, float, Color);
 
@@ -694,11 +716,34 @@ static int render_height(void) {
     return fn ? fn() : GetRenderHeight();
 }
 
-static Image load_screen_image(void) {
-    static GclScreenImageFn fn = NULL;
+/* Ekrani VERILEN olcude oku - RT olcusu. Gerekcesi cagri yerindeki nota. */
+static Image load_screen_image_at(int w, int h) {
+    static GclReadPixelsFn fn = NULL;
     static int tried = 0;
-    if (!tried) { tried = 1; fn = (GclScreenImageFn)raylib_symbol("LoadImageFromScreen"); }
-    return fn ? fn() : LoadImageFromScreen();
+    Image img = {0};
+
+    if (w <= 0 || h <= 0) return img;
+
+    if (!tried) { tried = 1; fn = (GclReadPixelsFn)raylib_symbol("rlReadScreenPixels"); }
+    if (fn) {
+        unsigned char *px = fn(w, h);
+        if (px) {
+            img.data    = px;
+            img.width   = w;
+            img.height  = h;
+            img.mipmaps = 1;
+            img.format  = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+        }
+        return img;
+    }
+
+    /* rlgl yoksa (beklenmez) eski yola dus: pencere olcusuyle okur. */
+    {
+        static GclScreenImageFn legacy = NULL;
+        static int ltried = 0;
+        if (!ltried) { ltried = 1; legacy = (GclScreenImageFn)raylib_symbol("LoadImageFromScreen"); }
+        return legacy ? legacy() : LoadImageFromScreen();
+    }
 }
 
 static void blit_texture(Texture2D tex, Rectangle src, Rectangle dst,
@@ -1241,7 +1286,8 @@ static float water_eye_depth01(float amp) {
     float surface = 0.0f;
     float eye_y;
     float ramp;
-    float depth, height, body, body_d = 0.0f, eye_d = 0.0f, d;
+    float depth = 0.0f, height = 0.0f, body, body_d = 0.0f, eye_d = 0.0f, d;
+    int   swimming = 0;
 
     /* ---------- ANA YOL: GOVDENIN BATMA ORANI ----------
 
@@ -1256,6 +1302,7 @@ static float water_eye_depth01(float amp) {
         surface = st[UW_FPS_SURFACE];
         height  = st[UW_FPS_HEIGHT];
         depth   = st[UW_FPS_DEPTH];
+        swimming = (st[7] > 0.5f) ? 1 : 0;
         /* GOVDE OLCUSU KALDIRILDI.
 
            Eskiden burada `depth/height` orani hesaplanip FONKSIYON BURADA
@@ -1309,6 +1356,31 @@ static float water_eye_depth01(float amp) {
        kamerayi ve kafa suya girdiginde yurumeyi kapsar. Ikisi bir arada her
        durumu yakalar. */
     d = (body_d > eye_d) ? body_d : eye_d;
+
+    /* ---------- YUZME BAYRAGI: KESIN SU ALTI ----------
+
+       BURASI "SUYA GIRIYORUM AMA EKRANDA HICBIR SEY OLMUYOR" HATASININ KOKU.
+
+       Fizik, YUZME modunda kafayi SU YUZEYINE KILITLER (bkz.
+       gcl_raylib_fps.c: swim_move -> `max_feet = surface - Height`). Yani
+       goz yuzeyin TAM UZERINDE, sifir farkta kalir; `eye_d` de tam 0 cikar.
+       Govde orani ise yalnizca AYAKTAYKEN buyur: dalarken ayaklar yuzeyin
+       altinda olsa da oran esigi (UW_BODY_START) yalnizca govdenin yarisindan
+       fazlasi battiginda asilir ve dalis sirasinda bu GARANTI DEGILDIR.
+
+       Ikisi birlikte su altina girildigi halde `target` sifir kalabiliyor
+       ve perde HIC ACILMIYOR - bildirilen hal tam olarak budur.
+
+       `swim` bayragi ise "govdenin yeteri kadari suya girdi" demektir ve
+       fizik de yuzme kararini bu bayraga gore verir (bkz. gcl_raylib_fps.c:
+       water_classify). Yani ekranin su altinda oldugu an ile fizigin su
+       altinda oldugu an AYNI bayraktir; ikisi ayrisamaz.
+
+       DIZ BOYU SUDA ACILMAZ: orada govde orani esigin altindadir ve `swim`
+       de kapalidir (esik govde yuksekliginin %60'i). Yalnizca gercekten
+       daliнmisken acilir. */
+    if (swimming) d = 1.0f;
+
     if (d > 1.0f) d = 1.0f;
     if (d < 0.0f) d = 0.0f;
     return d;
@@ -1602,49 +1674,51 @@ static double fn_draw(int argc, const char **argv) {
     rlEnableBackfaceCulling();
     EndBlendMode();
 
-    /* ---------- SU ALTI EKRAN GECISI: AYNI CAGRI ICINDE ----------
+    /* ---------- BIRIKMIS 3B CIZIMLER, HALA KAMERA MATRISLERIYLE BOSALTILIR ----------
 
-       Eskiden bu is AYRI bir uye cagrisiydi (`DrawUnderwaterEffect`) ve
-       script onu `EndMode3D()`ten SONRA cagirmak zorundaydi. Ayri cagri
-       olmasi iki sorun uretiyordu:
+       BURASI "SUYUN ALTI BOS GORUNUYOR" HATASININ KOKU.
 
-         * Cagriyi UNUTMAK mumkundu ve efekt sessizce kaybolurdu.
-         * Iki cagri ARASINDA kalan her sey ile efekt arasinda bir kare
-           kaymasi olusabiliyordu - "gecikmeli" gorunum.
+       Asagidaki ortho gecisi `rlOrtho` + `rlSetMatrixModelview` ile matrisleri
+       2B'ye cevirir. O IKI CAGRININ BEKLEYEN PARTIYI BOSALTMAZLAR - yalnizca
+       matrisleri degistirirler (bkz. rlgl.h: rlOrtho/rlSetMatrixModelview).
 
-       Artik ekran gecisi `Draw()`in ICINDE, yuzey cizildikten hemen sonra
-       calisir. Ayri cagri YOKTUR.
+       Parti burada bosaltilmazsa, kuyruktaki 3B geometri (arazi, su yuzeyi,
+       kure...) 2B matrislerle cizilir: dunya koordinatlari ekran koordinati
+       sanilir, koseler NDC disina tasar ve geometri KAYBOLUR. Geriye yalnizca
+       temizlenmis arka plan kalir - ekran BOS/SIYAH gorunur.
 
-       ORTHO GECISI: `Draw()` normalde BeginMode3D'nin ICINDEDIR, yani o an
-       aktif matrisler KAMERA matrisleridir. Ekran gecisi ise 2B'dir; 3B
-       matrislerle cizilirse dortgen kameraya gore yerlesir ve ekrani
-       kaplamaz. Bu yuzden once matrisler SAKLANIR, 2B ortho kurulur, gecis
-       calistirilir, sonra matrisler AYNEN GERI KONUR.
+       Ardindan perde, bu bos kareyi okur ve uzerine su tonunu basar; goruntu
+       her karede AYNI kaldigi icin "ekran takilmis gibi" durur. Bildirilen iki
+       belirtinin de tek sebebi budur.
 
-       GERI KOYMAK ZORUNLUDUR: script `EndMode3D()`ten sonra UI cizmeye devam
-       eder; matrisler geri konmazsa UI yanlis yere duser. */
-    {
-        Matrix saved_mv   = rlGetMatrixModelview();
-        Matrix saved_proj = rlGetMatrixProjection();
-        /* OLCU DLL'DEN. `GetRenderWidth/Height` statik kopyadan cagrildiginda
-           DLL'in rlgl durumunu gormez: RaylibRender acikken dogru cevap RT
-           olcusudur ve onu yalnizca DLL bilir (bkz. render_width notu). Ayni
-           sayi `fn_underwater_effect` icinde de kullanilir; ikisi ayrisirsa
-           perde ekrani tam kaplamaz. */
-        int    rw = render_width();
-        int    rh = render_height();
+       KURAL: bosaltma, matrisler HALA KAMERADAYKEN yapilmalidir. */
+    gpu_batch_flush();
 
-        if (rw > 0 && rh > 0) {
-            rlOrtho(0.0, (double)rw, (double)rh, 0.0, 0.0, 1.0);
-            rlSetMatrixModelview(MatrixIdentity());
-            /* argc = 0: ekran gecisi yuvalari YENIDEN OKUMAZ; `Draw()`in
-               az once okudugu degerleri kullanir. */
-            (void)fn_underwater_effect(0, NULL);
-        }
+    /* ---------- EKRAN GECISI BURADAN KALDIRILDI - VE SEBEBI SU ----------
 
-        rlSetMatrixProjection(saved_proj);
-        rlSetMatrixModelview(saved_mv);
-    }
+       BURASI "SUYUN ALTI BOS / HAVADA UCAN DALGA" HATASININ KOKUYDU.
+
+       Ekran perdesi 2B'dir; kameranin ORTHO matrisleriyle cizilmek
+       zorundadir. Ama `Draw()` cagri aninda BeginMode3D ACIKTIR (bkz. fps
+       demo: `Raylib.BeginMode3D(...); water.Draw(); ...`), yani gecerli
+       matrisler KAMERA matrisleridir.
+
+       Perde o matrislerle cizilince sunu yapar: ekran uzayindaki
+       (0,0)-(sw,sh) dortgeni DUNYA koordinati sanilir, kameranin onunde cok
+       uzak bir duzlem olarak belirir ve icinde su yuzeyini tasir - yani
+       HAVADA UCAN BIR SU PARCASI. Ekranin geri kalani boyanmaz; "suyun alti
+       bos ve duz" gorunur. Bildirilen hal TAM OLARAK budur.
+
+       Matrisler elle 2B'ye cevrilerek duzeltilmeye calisildi. O yol
+       KIRILGAN: `rlOrtho` / `rlSetMatrixModelview` gibi cagrilar ancak
+       modul ile ayni rlgl durumuna yazarsa etki eder ve statik raylib
+       kopyasiyla DLL'in durumu ayrisabilir (bkz. dosyanin basi: "TUM
+       RAYLIB CAGRILARI DLL'DEN COZULUR"). Cozum matris hilesi degil, DOGRU
+       KONUMDUR.
+
+       DOGRU KONUM: ekran gecisi `EndMode3D()`ten SONRA cagrilmalidir; orada
+       raylib 2B matrisleri zaten kurmustur. O cagri ZATEN VARDIR ve demonun
+       kullandigi API odur: `water.DrawUnderwaterEffect();`. */
     return 0.0;
 }
 
@@ -1914,7 +1988,29 @@ static double fn_underwater_effect(int argc, const char **argv) {
         end_shader_mode();
     }
     gpu_depth_mask(1);
-    gpu_depth_test(1);
+    /* DERINLIK TESTI KAPATILIR - BURASI "RT ACIKKEN EKRAN DONUYOR" HATASI.
+
+       Burada `gpu_depth_test(1)` YAZILIYDI ve YANLISTI: `EndMode3D()`in
+       kapattigi testi yeniden aciyordu. Oysa buradan sonra 2B cizim devam
+       eder (blit, UI, DrawFPS) ve 2B'nin varsayilani testin KAPALI olmasidir.
+
+       NEDEN YALNIZCA RaylibRender ACIKKEN DONUYOR: modul acikken cizim bir
+       render texture'a gider ve `ClearBackground` O RT'yi temizler; PENCERE
+       derinlik tamponu ise HICBIR ZAMAN temizlenmez. Geri germe
+       (`gcl_render_end` -> composite) pencereye z=0.5'te bir dortgen yazar ve
+       orada 0.5 BIRAKIR. Test acik kalinca SONRAKI karede ayni z=0.5'teki
+       dortgen `GL_LESS` testini GECEMEZ (0.5 < 0.5 yanlistir), geri germe
+       ATILIR ve pencere hic guncellenmez - ekran suya GIRILDIGI karede
+       donar. Sudan cikinca efekt kapanir, test kapali kalir ve goruntu
+       kendiliginden duzelir. Bildirilen hal TAM OLARAK budur.
+
+       DONAN KARE "BEYAZ" GORUNUR cunku o kare batmadan hemen ONCEKI karedir:
+       parlak su yuzeyi/gokyuzu yansimasi. Beyazlik ayri bir hata degil, ayni
+       hatanin gorunen yuzudur.
+
+       RT KAPALIYKEN sorun gorunmez: pencere her karede temizlendigi icin
+       derinlik tamponu da sifirlanir ve dortgen testi gecer. */
+    gpu_depth_test(0);
     gpu_blend_end();
     return 0.0;
 }
@@ -1976,21 +2072,36 @@ static double fn_fps_is_swimming(int argc, const char **argv) {
 
 #define E(NAME, STR) {STR, fn_##NAME}
 
-/* `DrawUnderwaterEffect` — ARTIK BIR NO-OP (API KORUNUR, CIFT UYGULAMA OLMAZ).
+/* `DrawUnderwaterEffect` — EKRAN GECISININ GERCEK CAGRI YERI.
 
-   Perde artik `Draw()`in ICINDE, yuzey cizildikten hemen sonra uygulanir
-   (bkz. fn_draw sonundaki birlesik cagri). AYRI BIR CAGRININ YERI YOKTUR:
-   ayni karede iki kez calisirsa perde de iki kez uygulanir - ikinci gecis,
-   birincinin yazdigi su tonunu da okuyup uzerine bir kez daha biner ve
-   goruntu gereginden koyu cikar.
+   Perde 2B'dir ve `EndMode3D()`ten SONRA cizilmelidir; orada raylib 2B
+   matrisleri kurmustur. Bu uye tam olarak o cagridir ve fps demo'sunun
+   kullandigi API budur (bkz. language/examples/fps_first_demo/main.gcsf:
+   `water.DrawUnderwaterEffect();`).
 
-   Uye yine de TABLODA KALIR: eski bir script (ve bu depodaki fps demo'su)
-   hala `water.DrawUnderwaterEffect()` cagirir ve ad cozulemezse calisma
-   zamani hata basar. Cagri artik sessizce yok sayilir; efekt `Draw()`
-   tarafindan zaten uygulanmistir. */
+   `fn_draw` bunu CAGRMAZ: `Draw()` BeginMode3D'nin ICINDE cagrildigi icin
+   orada perde kameranin 3B matrisleriyle cizilir ve HAVADA UCAN bir su
+   parcasina donusur (bkz. fn_draw sonundaki not).
+
+   `argc` 19'dan az olabilir (bu uye argumansiz cagrilabilir): `read_slots`
+   o durumda yuvalari TAZELEMEZ ve `Draw()`in biraktigi degerler kullanilir. */
 static double fn_draw_underwater_member(int argc, const char **argv) {
-    (void)argc; (void)argv;
-    return 0.0;
+    /* GERCEK IS BURADA - ekran gecisi `Draw()`in ICINDEN CIKARILDI.
+
+       Neden cikarildi: `Draw()` cagri aninda BeginMode3D ACIKTIR, yani
+       gecerli matrisler kameranindir. 2B perde o matrislerle cizilince ekran
+       uzayindaki dortgen dunya koordinati sanilir ve HAVADA UCAN bir su
+       parcasina donusur; ekranin geri kalani boyanmaz.
+
+       Bu cagri ise demonun yaptigi gibi `EndMode3D()`ten SONRA gelir; orada
+       raylib 2B matrisleri kurmustur ve perde hicbir matris hilesi olmadan
+       ekrani kaplar. Ayrica `RaylibRender` altinda okunan kare, sahnenin
+       cizildigi RT'dir - yani dogru kare; pencere arabellegi degil.
+
+       `argc` 19'dan az olabilir (cagri argumansiz yapilirsa): `read_slots`
+       o durumda yuvalari TAZELEMEZ ve `Draw()`in az once biraktigi degerler
+       kullanilir - istenen davranis budur. */
+    return fn_underwater_effect(argc, argv);
 }
 
 static const GclNativeEntry g_entries[] = {
