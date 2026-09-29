@@ -312,9 +312,31 @@ static int   g_sky_state_valid = 0;
 
 typedef float (*GclRaylibFrameTimeFn)(void);
 typedef int   (*GclRaylibCameraPosFn)(float *out3);
+typedef int   (*GclRaylibGlslVersionFn)(void);
 
 static void *raylib_symbol(const char *name) {
     return gcl_module_symbol("Raylib.dll", name);
+}
+
+/* KUBBENIN KULLANACAGI GLSL SURUMU — Raylib.dll'den SORULUR.
+
+   NEDEN SABIT DEGIL: bu modul kendi GLSL programini kurar ve kaynagina
+   `#version N` satirini KENDISI yazar. Burada sabit SKY_DEFAULT_GLSL (330)
+   yaziliydi. GLSL tavani 1.20 olan bir GPU'da (Intel GM965/GL960, GMA X3100)
+   surucu 330'u derleyip BAGLAMAYA calisinca Mesa'nin libgallium'unda
+   SEGFAULT olusuyordu (glLinkProgram icinde) ve TUM surec cokuyordu — gdb
+   backtrace'i `libgallium -> rlLoadShaderProgramEx -> load_sky_shader`
+   gosteriyordu.
+
+   Raylib.dll baglamin actigi surumu zaten biliyor (rlGetVersion); soru
+   oradan sorulur, ikinci bir tahmin tutulmaz. Sembol yoksa (bu modulden eski
+   bir Raylib.dll) SKY_DEFAULT_GLSL'e dusulur. */
+static int glsl_version(void) {
+    static GclRaylibGlslVersionFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclRaylibGlslVersionFn)raylib_symbol("gcl_raylib_glsl_version"); }
+    if (!fn) return SKY_DEFAULT_GLSL;
+    return fn();
 }
 
 /* Kare suresi raylib'in KENDI saatiyle olculur: bir tam gun boylece
@@ -522,7 +544,7 @@ static int sky_ready(void) {
        guncelleme yok. */
     UploadMesh(&g_dome, false);
 
-    g_sky_shader = load_sky_shader(SKY_DEFAULT_GLSL);
+    g_sky_shader = load_sky_shader(glsl_version());
     if (g_sky_shader.id == 0) {
         sky_dome_free(&g_dome);
         return 0;

@@ -1284,16 +1284,30 @@ static double fn_GetFPS(int argc,const char**argv){(void)argc;(void)argv;return 
    Eşleme rlgl'nin kendi numaralandirmasiyla birdir: RL_OPENGL_21 -> GLSL 120,
    RL_OPENGL_33/43 -> GLSL 330, RL_OPENGL_ES_20 -> GLSL 100, ES_30 -> 300.
    Bilinmeyen bir degerde 120 dondurulur: en dar kume, en genis uyumluluk. */
+/* TEK KAYNAK: hem GCL uyesi (Raylib.GetGLSLVersion) hem de baska moduller
+   (RaylibSKYBOX, RaylibSimpleWater) ayni sayiyi buradan alir.
+
+   NEDEN BIR YARDIMCI SART: gokyuzu ve su modulleri KENDI GLSL programlarini
+   kurarlar ve kaynaklarina `#version N` satirini KENDILERI yazarlar. Bu deger
+   orada sabit 330 yaziliydi; GLSL tavani 1.20 olan bir GPU'da (Intel
+   GM965/GL960, GMA X3100) surucu 330'u derlemeye calisinca Mesa'nin
+   libgallium'unda SEGFAULT oluyordu (glLinkProgram icinde) ve surec cokuyordu.
+   Ikinci bir kopya tutmak yerine soru buradan sorulur; boylece GCL'in gordugu
+   surum ile modullerin derledigi surum ayrisamaz. */
+GCL_EXPORT int gcl_raylib_glsl_version(void) {
+    switch (rlGetVersion()) {
+    case RL_OPENGL_21:    return 120;
+    case RL_OPENGL_33:    return 330;
+    case RL_OPENGL_43:    return 330;
+    case RL_OPENGL_ES_20: return 100;
+    case RL_OPENGL_ES_30: return 300;
+    default:              return 120;   /* en dar kume, en genis uyumluluk */
+    }
+}
+
 static double fn_GetGLSLVersion(int argc,const char**argv){
     (void)argc;(void)argv;
-    switch (rlGetVersion()) {
-    case RL_OPENGL_21:    return 120.0;
-    case RL_OPENGL_33:    return 330.0;
-    case RL_OPENGL_43:    return 330.0;
-    case RL_OPENGL_ES_20: return 100.0;
-    case RL_OPENGL_ES_30: return 300.0;
-    default:              return 120.0;
-    }
+    return (double)gcl_raylib_glsl_version();
 }
 static double fn_SwapScreenBuffer(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(SwapScreenBuffer);SwapScreenBuffer();return 0.0;}
 static double fn_PollInputEvents(int argc,const char**argv){(void)argc;(void)argv;GCL_NO_WINDOW(PollInputEvents);PollInputEvents();return 0.0;}

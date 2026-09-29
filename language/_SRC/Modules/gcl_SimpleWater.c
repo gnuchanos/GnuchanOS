@@ -492,6 +492,29 @@ static void *raylib_symbol(const char *name) {
 }
 #endif
 
+/* KENDI GLSL PROGRAMLARIMIZ ICIN SURUM — Raylib.dll'den SORULUR.
+
+   NEDEN SABIT DEGIL: bu modul iki ayri program kurar (su yuzeyi ve su alti
+   perdesi) ve ikisinin de kaynagina `#version N` satirini KENDISI yazar. Burada
+   sabit WATER_DEFAULT_GLSL / UNDERWATER_DEFAULT_GLSL (330) yaziliydi. GLSL
+   tavani 1.20 olan bir GPU'da (Intel GM965/GL960, GMA X3100) surucu 330'u
+   derleyip BAGLAMAYA calisinca Mesa'nin libgallium'unda SEGFAULT olusuyordu
+   (glLinkProgram icinde) ve TUM surec cokuyordu.
+
+   Raylib.dll baglamin actigi surumu zaten biliyor (rlGetVersion); soru oradan
+   sorulur ve cevap `gcl_raylib_glsl_version` ile gelir — gokyuzu modulu de
+   ayni sembolu kullanir, boylece iki modul ayrisamaz. Sembol yoksa (bu modulden
+   eski bir Raylib.dll) sabit varsayilana dusulur. */
+typedef int (*GclGlslVersionFn)(void);
+
+static int water_glsl_version(void) {
+    static GclGlslVersionFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclGlslVersionFn)raylib_symbol("gcl_raylib_glsl_version"); }
+    if (!fn) return WATER_DEFAULT_GLSL;
+    return fn();
+}
+
 typedef float (*GclFrameTimeFn)(void);
 typedef int   (*GclCameraPosFn)(float *out3);
 typedef int   (*GclCameraStateFn)(float *out11);
@@ -845,7 +868,7 @@ static void underwater_locations(void) {
    ve cagri sessizce cikar (pencere disi bir cizim cokmemeli). */
 static int water_shader_ready(void) {
     if (g_shader_ready) return 1;
-    g_shader = build_shader(WATER_VERTEX_SRC, WATER_FRAGMENT_SRC, WATER_DEFAULT_GLSL);
+    g_shader = build_shader(WATER_VERTEX_SRC, WATER_FRAGMENT_SRC, water_glsl_version());
     if (g_shader.id == 0) return 0;
     water_shader_locations();
     g_shader_ready = 1;
@@ -855,7 +878,7 @@ static int water_shader_ready(void) {
 static int underwater_ready(void) {
     if (g_uw_ready) return 1;
     g_uw_shader = build_shader(UNDERWATER_VERTEX_SRC, UNDERWATER_FRAGMENT_SRC,
-                               UNDERWATER_DEFAULT_GLSL);
+                               water_glsl_version());
     if (g_uw_shader.id == 0) return 0;
     underwater_locations();
     g_uw_ready = 1;

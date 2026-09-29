@@ -783,6 +783,119 @@ def embed_icon() -> Path:
     return ICON_EMBED
 
 
+# ---------- raylib'in hangi GL surumu icin derlendigi ----------
+#
+# raylib'in grafik arka ucunu secmek icin Makefile'a GRAPHICS gecirilir ve bu
+# derleme ZAMANINDA sabitlenir: ayni arsiv iki farkli baglami tasiyamaz.
+# Varsayilan GRAPHICS_API_OPENGL_33'tur, ve Intel GM965 / GL960 (GMA X3100)
+# gibi bir GPU'da o derleme HIC ACILMAZ. Mesa'nin crocus surucusu bu donanimda
+# core profil sunmaz:
+#
+#     glxinfo -B
+#         Max core profile version: 0.0
+#         Max compat profile version: 2.1
+#
+# GLFW 330'luk bir baglam istedigi anda reddedilir:
+#
+#     WARNING: GLFW: Error: 65543 ... GLXBadFBConfig
+#     WARNING: GLFW: Failed to initialize Window
+#
+# ve InitWindow() basarisiz olmasina ragmen cagiran taraf penceresi varmis gibi
+# devam ettigi icin surec coker (Segmentation fault, exit 139). Bu yuzden GCL
+# IDE (`gcl -ide`) ve butun raylib ornekleri bu makinede ACILAMIYORDU.
+#
+# 2.1 derlemesi ayni donanimda calisir: baglam 2.1 compatibility olarak acilir
+# ve raylib gomulu shader'lari #version 120 olur. Dil tarafi zaten buna hazir -
+# fps_first_demo `Raylib.GetGLSLVersion()` ile 120/330 arasinda secer ve
+# assets/ altinda lighting_gl2.* varyantini tasir.
+#
+# Modern bir GPU'da 3.3'ten 2.1'e dusmek gereksiz bir kayip olurdu; bu yuzden
+# surum VARSAYILMAZ, OLCULUR. glxinfo yoksa ya da baglanamiyorsa 2.1 secilir:
+# bir ozelligi bosa harcamak, derlenmis bir raylib'i hic acilamaz hale
+# getirmekten iyidir.
+GRAPHICS_GL33 = "GRAPHICS_API_OPENGL_33"
+GRAPHICS_GL21 = "GRAPHICS_API_OPENGL_21"
+
+
+def _raylib_gl_variant(lib_path: Path) -> str:
+    """Arsivin derlendigi GL surumu: '21', '33' ya da '' (okunamadi).
+
+    Ayirt edici tek iz, raylib'in arsive DUZ METIN olarak gomdugu varsayilan
+    shader'larin `#version` satiridir: 3.3 derlemesi `#version 330`, 2.1
+    derlemesi `#version 120` tasir. Fark baska hicbir yerde gorunmez, bu
+    yuzden arsivin kendisi okunur - derleme secenegi kayitli tutulmaz.
+    """
+    try:
+        result = subprocess.run(["strings", str(lib_path)],
+                                capture_output=True, text=True, check=False)
+    except OSError:
+        return ""
+    versions = {line.strip() for line in result.stdout.splitlines()
+                if line.strip().startswith("#version ")}
+    if "#version 120" in versions:
+        return "21"
+    if versions:
+        return "33"
+    return ""
+
+
+def _core_profile_ok(text: str) -> bool:
+    """glxinfo ciktisi 3.3+ core profil sunuyor mu."""
+    for line in text.splitlines():
+        if "Max core profile version" not in line:
+            continue
+        _, _, value = line.partition(":")
+        parts = value.strip().split()
+        if not parts:
+            return False
+        try:
+            major, _, minor = parts[0].partition(".")
+            return (int(major), int(minor or 0)) >= (3, 3)
+        except ValueError:
+            return False
+    return False
+
+
+def detect_raylib_graphics() -> str:
+    """Bu makinede raylib hangi GRAPHICS ile derlenmeli (bkz. yukaridaki not).
+
+    Olcum YALNIZCA Linux'ta yapilir, ve bunun iki ayri sebebi var:
+
+      * `glxinfo` bir X11 aracidir; Windows'ta yoktur. Onu sormanin cevabi
+        orada her zaman "kurulu degil" olurdu ve varsayilan olarak 2.1
+        secilirdi - yani modern bir Windows makinesinde calisan bir arsivi
+        sebepsizce 2.1'e dusururduk.
+      * GL surumu DONANIMA baglidir, isletim sistemine degil: ayni ikili,
+        altindaki GPU destekledigi surece 3.3 baglamini acar. Windows'ta
+        bilinen bir 2.1 tavani bildirilmedi, o yuzden orada raylib'in kendi
+        varsayilani (3.3) korunur.
+
+    Linux'ta ise OLCULUR ve olculemiyorsa 2.1 secilir: ekransiz bir derleme
+    makinesinde (CI) yanlis tarafta yanilmak, uretilen arsivi hedef makinede
+    hic acilamaz hale getirmekten iyidir.
+    """
+    if os_name() != "gnuLinux":
+        return GRAPHICS_GL33
+    if shutil.which("glxinfo") is None:
+        return GRAPHICS_GL21
+    # glxinfo bir X sunucusuna BAGLANMAK zorundadir, ve DISPLAY bu betik SSH
+    # uzerinden kosarken bos gelir - o zaman olcum "baglanamadi" diye
+    # sonuclanir ve 2.1 secilirdi. Soket dizini, ortamdan bagimsiz dogru
+    # ekrani verir (bkz. gpu_fix.py'deki ayni gerekce).
+    environment = dict(os.environ)
+    if not environment.get("DISPLAY"):
+        for socket in sorted(Path("/tmp/.X11-unix").glob("X*")):
+            number = socket.name[1:]
+            if number.isdigit():
+                environment["DISPLAY"] = f":{number}"
+                break
+    result = subprocess.run(["glxinfo", "-B"], check=False,
+                            capture_output=True, text=True, env=environment)
+    if result.returncode != 0 or not _core_profile_ok(result.stdout):
+        return GRAPHICS_GL21
+    return GRAPHICS_GL33
+
+
 def raylib_arch_matches(lib_path: Path) -> bool:
     """libraylib.a'nın ilk objesi mevcut platforma uygun mu?
 
@@ -819,10 +932,22 @@ def build_raylib() -> Path:
             raise SystemExit(1)
 
     clone_raylib()
+    graphics = detect_raylib_graphics()
     lib = RAYLIB_SRC / "libraylib.a"
+    # Hazir arsiv iki sarti da saglamali: DOGRU PLATFORM icin derlenmis olmali
+    # (bkz. raylib_arch_matches) VE DOGRU GL SURUMU icin derlenmis olmali.
+    # Ikincisi olmadan, bir makinede uretilen 3.3 arsivi baska bir makineye
+    # tasindiginda "hazir" sayilir ve o makinede hic acilmaz; GL surumu
+    # donanima bagli oldugu icin bu tasima normal bir durumdur.
     if lib.exists() and raylib_arch_matches(lib):
-        print(f"[gcl] Raylib library ready: {lib}", flush=True)
-        return RAYLIB_SRC
+        built_for = _raylib_gl_variant(lib)
+        wanted = "21" if graphics == GRAPHICS_GL21 else "33"
+        if not built_for or built_for == wanted:
+            print(f"[gcl] Raylib library ready: {lib} "
+                  f"(GL {built_for or '?'})", flush=True)
+            return RAYLIB_SRC
+        print(f"[gcl] mevcut Raylib arsivi GL {built_for} icin derlenmis, "
+              f"bu makine GL {wanted} istiyor — yeniden derlenecek", flush=True)
     # Incompatible platform archive (for example, Windows mingw .a used on Linux) → delete both .a and .o,
     # then build locally. While MinGW objects remain, `make` rebuilds the archive and the result is still COFF (R_AMD64_IMAGEBASE).
     if lib.exists():
@@ -843,10 +968,16 @@ def build_raylib() -> Path:
     if not run_optional([make_tool, "clean", "PLATFORM=PLATFORM_DESKTOP", "RAYLIB_LIBTYPE=STATIC"], cwd=RAYLIB_SRC):
         print(f"[gcl] warning: '{make_tool} clean' did not complete — cleanup skipped, "
               f"build continues anyway.", flush=True)
-    run([make_tool, "PLATFORM=PLATFORM_DESKTOP", "RAYLIB_LIBTYPE=STATIC"], cwd=RAYLIB_SRC)
+    # GRAPHICS, raylib'de DERLEME ZAMANINDA sabitlenen secenektir; verilmezse
+    # Makefile'in kendi varsayilani (GRAPHICS_API_OPENGL_33) kullanilir ve bu
+    # GPU'da hicbir pencere acilamaz (bkz. yukaridaki not).
+    print(f"[gcl] Raylib GRAPHICS={graphics}", flush=True)
+    run([make_tool, "PLATFORM=PLATFORM_DESKTOP", "RAYLIB_LIBTYPE=STATIC",
+         f"GRAPHICS={graphics}"], cwd=RAYLIB_SRC)
     stems = list(RAYLIB_SRC.glob("libraylib*.a"))
     if stems:
-        print(f"[gcl] Raylib built: {stems[0]}", flush=True)
+        print(f"[gcl] Raylib built: {stems[0]} "
+              f"(GL {_raylib_gl_variant(stems[0]) or '?'})", flush=True)
     return RAYLIB_SRC
 
 
