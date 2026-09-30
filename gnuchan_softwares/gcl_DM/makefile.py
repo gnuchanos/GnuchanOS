@@ -565,6 +565,36 @@ def stop_rival_managers() -> None:
 
 
 def enable_service() -> None:
+    """Make this unit the one graphical.target starts.
+
+    TWO names have to end up pointing at the same service, and telling them
+    apart is the whole of this function:
+
+      * gnuchandm.service — the real unit, which has to be enabled so
+        graphical.target pulls it in;
+      * display-manager.service — an ALIAS, which is a symlink to the real
+        unit and not a unit of its own. It is the name every desktop program
+        and every session entry asks for.
+
+    The alias is created BY systemd, from `Alias=display-manager.service` in
+    the unit's own [Install] section: `enable gnuchandm.service` makes both the
+    symlink under graphical.target.wants AND the alias symlink. That is what
+    the line that used to be here did not understand.
+
+    That line was `enable --force display-manager.service`, and it is the whole
+    of the fault this replaces. systemd REFUSES to enable a linked unit file —
+    the alias is a symlink, and there is nothing for enable to write — so the
+    command failed, the install reported "failed to enable unit: refusing to
+    operate on linked unit file display-manager.service", and the alias it was
+    failing to make was one systemd had already made from Alias=. Enabling the
+    real unit is the entire fix.
+
+    What is left is the ordering, which does matter: a stale alias left by a
+    rival manager is removed FIRST, because it points at a unit that has just
+    been masked and two names for the same thing would leave systemd holding
+    one of them. And the hand-made symlink is kept as a fallback for a systemd
+    too old to act on Alias= — made only when systemd did not.
+    """
     step("Enabling as the display manager")
     systemctl("daemon-reload")
     systemctl("set-default", "graphical.target")
@@ -572,18 +602,23 @@ def enable_service() -> None:
     alias_path = Path("/etc/systemd/system/display-manager.service")
     if alias_path.exists() or alias_path.is_symlink():
         alias_path.unlink()
-    try:
-        os.symlink(str(SERVICE_FILE), str(alias_path))
-        detail(f"linked {alias_path} -> {SERVICE_FILE}")
-    except OSError as exc:
-        detail(f"display-manager alias setup skipped: {exc}")
+        detail(f"removed the old {alias_path}")
 
-    # The real unit is gnuchandm.service. graphical.target only knows the alias
-    # display-manager.service, so the alias must point at the real service and the
-    # real service must be enabled explicitly.
+    # The real unit, by name. systemd creates the alias as well, from the
+    # unit's own Alias= line.
     systemctl("enable", "--force", SERVICE_NAME)
-    if alias_path.exists() or alias_path.is_symlink():
-        systemctl("enable", "--force", "display-manager.service")
+
+    # A fallback, and only a fallback: a systemd that did not act on Alias=, or
+    # a unit file installed somewhere systemd does not scan. If the alias is
+    # already there it was systemd's own and is left alone.
+    if not (alias_path.exists() or alias_path.is_symlink()):
+        try:
+            os.symlink(str(SERVICE_FILE), str(alias_path))
+            detail(f"linked {alias_path} -> {SERVICE_FILE}")
+        except OSError as exc:
+            detail(f"display-manager alias setup skipped: {exc}")
+
+    systemctl("daemon-reload")
     systemctl("restart", SERVICE_NAME)
 
 
