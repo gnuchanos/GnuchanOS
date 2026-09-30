@@ -54,9 +54,36 @@ XSESSION_FILE = Path("/usr/share/xsessions/gnuchandm.desktop")
 SERVICE_NAME = "gnuchandm.service"
 SERVICE_FILE = Path("/etc/systemd/system") / SERVICE_NAME
 
-RIVAL_SERVICES = ("lightdm.service", "lxdm.service", "gdm3.service",
-                  "sddm.service", "xdm.service", "gdm.service",
-                  "getty@tty1.service", "autovt@tty1.service")
+# Every display manager this install knows how to displace, by unit name.
+#
+# The list is not "the ones this machine has": it is the ones ANY Debian may
+# have, because it exists for a machine this installer has never seen. A
+# manager left out of it is a login screen that keeps fighting for the console
+# — graphical.target starts every manager that is enabled, only one can own
+# tty1, and the loser leaves a black screen or a greeter that never appears.
+#
+# It is a starting point and not the whole answer. The three functions below
+# add whatever THIS machine names as its display manager, and that is what
+# covers a manager whose unit is not written here — see
+# aliased_display_managers().
+RIVAL_SERVICES = (
+    "gdm.service",
+    "gdm3.service",
+    "lightdm.service",
+    "lxdm.service",
+    "lxdm-plymouth.service",
+    "sddm.service",
+    "xdm.service",
+    "wdm.service",
+    "slim.service",
+    "nodm.service",
+    "ly.service",
+    "greetd.service",
+    "entrance.service",
+    # The console's own login, which a display manager conflicts with.
+    "getty@tty1.service",
+    "autovt@tty1.service",
+)
 
 SOURCES = (
     "dm_style.c", "dm_core.c", "dm_form.c", "dm_draw.c", "dm_login.c",
@@ -428,15 +455,101 @@ def systemctl(*arguments: str) -> int:
     return run(["systemctl", *arguments]).returncode
 
 
+def present_service_units() -> set:
+    """Every service unit systemd knows about, by EXACT name.
+
+    One query for all of them, and exact names, and both halves are the fix
+    for the same fault. The old code asked `list-unit-files <name>` once per
+    candidate and then searched the ANSWER as a substring, which is wrong in a
+    way that shows on a real machine: `xdm.service` is a substring of
+    `lxdm.service`, so a machine with lxdm was judged to have xdm as well and
+    the install ran `systemctl stop xdm.service` against a unit that is not
+    there. An exact name cannot be fooled by one unit being named inside
+    another, and asking once gives a set to test against rather than a string
+    to search.
+
+    Masked units ARE listed (their state reads "masked"), so a second run
+    finds the same set and the work below is idempotent.
+    """
+    result = run(["systemctl", "list-unit-files", "--type=service",
+                  "--no-legend"], capture=True)
+    if result.returncode != 0:
+        return set()
+    units = set()
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if parts:
+            units.add(parts[0])
+    return units
+
+
+def aliased_display_managers() -> set:
+    """The unit names of whatever THIS machine currently uses as its manager.
+
+    This is the belt to the list's braces, and it is what makes the install
+    safe on a machine whose display manager is one this file has never heard
+    of. `display-manager.service` is the name every manager is started under —
+    they all declare it as an alias, and graphical.target pulls it in — so
+    asking systemd which units answer to that name identifies the manager that
+    is actually installed, whatever its unit is called.
+
+    Our own unit is removed before the answer is returned: it declares the
+    same alias, so a re-run would otherwise try to mask the manager it is in
+    the middle of installing.
+    """
+    result = run(["systemctl", "show", "-p", "Names",
+                  "display-manager.service"], capture=True)
+    if result.returncode != 0:
+        return set()
+    names = set()
+    for line in result.stdout.splitlines():
+        if not line.startswith("Names="):
+            continue
+        for name in line[len("Names="):].split():
+            if (name.endswith(".service")
+                    and name != "display-manager.service"
+                    and name != SERVICE_NAME):
+                names.add(name)
+    return names
+
+
 def stop_rival_managers() -> None:
-    for name in RIVAL_SERVICES:
-        present = run(["systemctl", "list-unit-files", name], capture=True)
-        if name not in present.stdout:
+    """Take the console away from every other display manager.
+
+    Two things have to be true before the greeter can own tty1: no rival may
+    be RUNNING (a stopped-but-enabled one is started again at the next boot)
+    and no rival may be able to START (being enabled is what starts it). So
+    each one is stopped, disabled and MASKED.
+
+    The mask is the third and the one that sticks. Disable only removes the
+    symlinks that start a unit, so anything that pulls it in later brings the
+    login screen back: a dependency, a package upgrade that re-enables it, an
+    administrator who did not know it had been turned off. Mask points the
+    name at /dev/null, so every later attempt to start it gets a unit that
+    cannot run — which is what "this machine has ONE display manager" has to
+    mean for it to stay true.
+
+    The candidates are the written list AND whatever this machine names as its
+    manager, which is why nothing is missed on a machine using one this file
+    has never heard of.
+    """
+    candidates = set(RIVAL_SERVICES) | aliased_display_managers()
+    present = present_service_units()
+
+    disabled = []
+    for name in sorted(candidates):
+        if name not in present:
             continue
         step(f"Disabling and masking {name}")
         systemctl("stop", name)
         systemctl("disable", "--now", name)
         systemctl("mask", "--now", name)
+        disabled.append(name)
+
+    if disabled:
+        detail("rival display managers disabled: " + ", ".join(disabled))
+    else:
+        detail("no rival display manager is installed")
 
 
 def enable_service() -> None:
