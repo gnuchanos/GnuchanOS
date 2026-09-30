@@ -132,7 +132,7 @@ gcl_themes.Theme_cursor(
 )
 
 
-default_terminal = "xterm"
+default_terminal = "GnuChanTerm"
 GnuChanRunner = "GnuChanRunner"
 
 super_key1 = "Mod1"  # Alt

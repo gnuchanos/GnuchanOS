@@ -171,6 +171,28 @@ int dm_register(DmCore *core, const DmModule *module) {
 int dm_core_init(DmCore *core) {
     memset(core, 0, sizeof(*core));
 
+    /* The settings script is read FIRST, before the display is even opened,
+       and the order is the whole of why it is here.
+     *
+     * The style is built from the config — its colours, its three fonts and
+     * its five measurements — and the window is built from the style, so the
+     * config has to be plain data that exists before either. A font named in
+     * the script decides how large the text is, and that has to be known
+     * before there is a window to draw it in.
+     *
+     * A missing or broken file is not a failure: dm_config_load_default()
+     * leaves the built-in palette in place and says what was wrong in
+     * core->config.notes, which is a login screen that works rather than one
+     * that refuses to appear. */
+    dm_config_load_default(&core->config);
+    if (core->config.notes[0] != '\0') {
+        /* Said once, at start. The settings file is the one thing a person can
+           get wrong here, and the greeter's own output is a log — so the
+           reason is written where a person who goes looking will find it. */
+        fprintf(stderr, "gnuchandm: the settings script had notes: %s\n",
+                core->config.notes);
+    }
+
     core->display = XOpenDisplay(NULL);
     if (!core->display) {
         fprintf(stderr, "gnuchandm: cannot open the X display\n");
@@ -217,7 +239,8 @@ int dm_core_init(DmCore *core) {
     core->running = 1;
     core->focus = DM_FOCUS_USERNAME;
 
-    if (dm_style_load(&core->style, core->display, core->screen) != 0) return -1;
+    if (dm_style_load(&core->style, core->display, core->screen,
+                      &core->config) != 0) return -1;
 
     /* The sessions are read once, here, rather than at every redraw: what the
        machine offers does not change while the greeter is running, and a

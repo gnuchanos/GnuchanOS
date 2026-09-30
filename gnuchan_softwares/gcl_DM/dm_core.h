@@ -91,6 +91,11 @@ struct DmCore {
     int width;                /* the window's width and height; the greeter  */
     int height;               /* redraws from these, so a resize just works */
 
+    /* The settings script read into plain data — see dm_config.h — and the
+       style it produced. The config is kept as well as the style because it is
+       what a person actually wrote, and a message about it ("Accent is not a
+       colour") has to name the setting rather than the pixel it became. */
+    DmConfig config;
     DmStyle style;
     int running;
 

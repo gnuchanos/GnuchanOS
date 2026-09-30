@@ -86,11 +86,23 @@ RIVAL_SERVICES = (
 )
 
 SOURCES = (
+    "dm_config_parser.c", "dm_config.c",
     "dm_style.c", "dm_core.c", "dm_form.c", "dm_draw.c", "dm_login.c",
     "dm_input.c", "dm_auth.c", "dm_sessions.c", "dm_session.c", "dm_power.c",
     "GnuChanDM.c",
 )
-HEADERS = ("dm_module.h", "dm_style.h", "dm_sessions.h", "dm_core.h")
+HEADERS = ("dm_module.h", "dm_config.h", "dm_config_parser.h",
+           "dm_style.h", "dm_sessions.h", "dm_core.h")
+
+# The settings script, installed into the user's own config directory. The
+# greeter reads it from there — see dm_config_path() in dm_config.c — so a
+# machine that never had one gets the shipped file written where it looks.
+# Without this step the greeter runs on the palette compiled into dm_style.c,
+# which is the same colours but not the ones the shipped file describes, and
+# an edit to that file would do nothing because nothing would be reading it.
+CONFIG_SOURCE = ROOT / "GnuChanDM_config" / "GnuChanDM.py"
+CONFIG_DIR_NAME = "GnuChanDM"
+CONFIG_FILE_NAME = "GnuChanDM.py"
 
 ELEVATED_VARIABLE = "GNUCHANDM_ELEVATED"
 
@@ -608,6 +620,82 @@ def install(binary: Path) -> None:
         note(f"systemctl is not present; start the greeter by hand with {LAUNCHER}")
 
 
+def invoking_user() -> tuple:
+    """The home and ids of the person who ran sudo, not root.
+
+    The settings script belongs to the person who logs in, and the greeter
+    reads it from their home. Under sudo, HOME and the ids are root's, so the
+    original user is read back from SUDO_USER — the one piece of the invoking
+    session sudo keeps. Returns None when there is nothing sensible to write
+    to, which is a machine installing without a login user.
+    """
+    name = os.environ.get("SUDO_USER")
+    if not name:
+        return None
+    try:
+        import pwd
+        info = pwd.getpwnam(name)
+        return Path(info.pw_dir), info.pw_uid, info.pw_gid
+    except (ImportError, KeyError):
+        return None
+
+
+def install_config() -> None:
+    """Put the settings script where the greeter will read it.
+
+    The installed script is replaced on every run, not kept, exactly as the
+    window manager's and the terminal's installers replace theirs: this
+    installer owns that file, and a machine that installs a new build has to
+    get the settings that build ships with rather than whichever script
+    happened to be there.
+
+    It is installed for the account that ran sudo and not for root, because
+    the greeter is a login screen: it is started before anyone has logged in,
+    but the person who configured the machine is the one whose home it should
+    be read from.
+    """
+    if not CONFIG_SOURCE.is_file():
+        detail("no settings script to install")
+        return
+    user = invoking_user()
+    if user is None:
+        detail("skipped the settings: no login user to install it for")
+        return
+
+    home, uid, gid = user
+    directory = home / ".config" / CONFIG_DIR_NAME
+    target = directory / CONFIG_FILE_NAME
+
+    # The source is shipped with the greeter, so it is never empty; a check
+    # here turns "the login screen ignored my file" into one line naming the
+    # file that caused it, before the old one is touched.
+    if CONFIG_SOURCE.stat().st_size == 0:
+        raise SystemExit(
+            f"error: {CONFIG_SOURCE} is empty, so the greeter would have "
+            f"nothing to read"
+        )
+
+    directory.mkdir(parents=True, exist_ok=True)
+
+    # The old script is taken out before the new one is put in place, so the
+    # result is the shipped file and nothing of what was there before.
+    if target.exists():
+        target.unlink()
+        detail(f"removed the old {target}")
+
+    shutil.copyfile(CONFIG_SOURCE, target)
+
+    # The file belongs to the user who will read it, not to root who wrote it,
+    # or the greeter opens a file it can see but the user cannot change.
+    try:
+        os.chown(directory, uid, gid)
+        os.chown(target, uid, gid)
+    except OSError:
+        pass
+
+    detail(f"installed {target}")
+
+
 def uninstall() -> None:
     step("Uninstalling")
     if shutil.which("systemctl") is not None:
@@ -617,6 +705,11 @@ def uninstall() -> None:
         if target.exists():
             target.unlink()
             detail(f"removed {target}")
+    # The settings script is left behind on purpose: it is the user's own
+    # colours, and an uninstall that took them away would undo an edit the
+    # person made.
+    note(f"The settings script under ~/.config/{CONFIG_DIR_NAME}/ was left "
+         f"alone.")
 
 
 def main() -> int:
@@ -650,9 +743,11 @@ def main() -> int:
     ensure_packages()
     binary = build()
     install(binary)
+    install_config()
     note("")
     note("GnuChanDM is installed and enabled as the display manager.")
     note("It starts GnuChanWM as the session.")
+    note(f"Its settings are at ~/.config/{CONFIG_DIR_NAME}/{CONFIG_FILE_NAME}.")
     return 0
 
 

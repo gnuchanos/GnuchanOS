@@ -12,6 +12,8 @@
 
 #include <X11/Xlib.h>
 
+#include "dm_config.h"
+
 typedef struct DmStyle {
     /* Purple, dark to bright. */
     unsigned long background;    /* #1a0b2e - the screen behind the panel   */
@@ -36,11 +38,24 @@ typedef struct DmStyle {
     int button_height;           /* the height of one button               */
 } DmStyle;
 
-/* Resolve every colour and load a font. Returns 0 on success. A font that
-   cannot be loaded is not fatal: a missing font falls back to whatever the
-   X server offers, because a greeter that refuses to draw is worse than one
-   drawn in a font the user did not choose. */
-int  dm_style_load(DmStyle *style, Display *display, int screen);
+/* Resolve every colour, load the fonts, and take the measurements.
+ *
+ * `config` is the settings script read into plain data — see dm_config.h — and
+ * it may be NULL or empty-handed, in which case every built-in value in
+ * dm_style.c is kept. A field the script named is used and the rest are not:
+ * that is the whole of what "a settings file and not a whole theme" means.
+ *
+ * It is called AFTER the config is read and BEFORE the window is made, which
+ * is the only order that works: the font decides how large the text is and the
+ * measurements decide how large the panel is, so both have to be known before
+ * there is anything to size.
+ *
+ * Returns 0 on success. A font that cannot be loaded is not fatal: the one the
+ * script named is tried first and the built-in list after it, because a
+ * greeter that refuses to draw is worse than one drawn in a font the user did
+ * not choose — and a machine nobody can log into is worse than both. */
+int  dm_style_load(DmStyle *style, Display *display, int screen,
+                   const DmConfig *config);
 
 void dm_style_free(DmStyle *style, Display *display);
 
