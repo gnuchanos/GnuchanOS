@@ -316,6 +316,7 @@ static int uw_loc_camright = -1, uw_loc_camup = -1;
 static int uw_loc_tanhalf = -1, uw_loc_aspect = -1;
 static int uw_loc_surfacey = -1;
 static int uw_loc_amp = -1, uw_loc_freq = -1, uw_loc_speed = -1;
+static int uw_loc_flip = -1;
 
 /* ---------- CIZILMIS KARE DOKUSU ----------
 
@@ -343,6 +344,9 @@ static int uw_loc_amp = -1, uw_loc_freq = -1, uw_loc_speed = -1;
 static Texture2D g_uw_frame = {0};
 static int       g_uw_frame_w = 0;
 static int       g_uw_frame_h = 0;
+/* Doku, GPU ICI kopyayla mi doldu? Kaynak dortgenin YONU buna baglidir
+   (bkz. cizim yerindeki "KOKEN FARKI" notu). */
+static int       g_uw_frame_gpu = 0;
 
 /* Ekran okuma YARDIMCISI, tanimindan ONCE burada bildirilir: `uw_frame_refresh`
    dosyada ondan once gelir. Govdesi asagida, "EKRAN OKUMA VE BLIT"
@@ -358,12 +362,25 @@ static Texture2D texture_from_image(Image img);
 static void      update_texture(Texture2D tex, const void *pixels);
 static void      unload_texture(Texture2D tex);
 
+/* GPU ICI KOPYA (hizli yol). Govdesi asagida, "EKRAN OKUMA VE BLIT"
+   bolumundedir; ONCE burada bildirilir cunku `uw_frame_refresh` dosyada ondan
+   once gelir - yukaridaki uc bildirimle AYNI gerekce. */
+static int uw_frame_copy_gpu(int w, int h);
+
 /* Kareyi dokuya tazele. Doku hazir degilse/boyut degistiyse yeniden kurar.
    Donus: 1 = doku kullanilabilir. */
 static int uw_frame_refresh(int w, int h) {
     Image img;
 
     if (w <= 0 || h <= 0) return 0;
+
+    /* ---------- HIZLI YOL: KARE CPU'YA HIC INMEZ ----------
+
+       `glCopyTexSubImage2D` framebuffer'i dogrudan dokunun icine kopyalar:
+       ne indirme, ne geri yukleme. Basarisizsa (sembol yok) asagidaki eski
+       yola dusulur; davranis aynen korunur. */
+    if (uw_frame_copy_gpu(w, h)) return 1;
+    g_uw_frame_gpu = 0;
 
     /* Kare HER ZAMAN once okunur ve GECERLILIGI KONTROL EDILIR.
 
@@ -746,6 +763,112 @@ static Image load_screen_image_at(int w, int h) {
     }
 }
 
+/* ---------- EKRAN OKUMASININ HIZLI YOLU: GPU ICI KOPYA ----------
+
+   BURASI "1700 FPS'DEN 800'E DUSUYOR" HATASININ KOKU.
+
+   Eski yol kareyi UC adimda tasiyordu:
+
+       glReadPixels   -> 3.7 MB GPU'dan CPU'ya INDIRME
+       (donme dongusu) -> 3.7 MB uzerinde CPU'da kopyalama
+       glTexSubImage2D-> 3.7 MB CPU'dan GPU'ya GERI YUKLEME
+
+   Yani kare basina 7.4 MB PCIe trafigi ve - daha kotusu - `glReadPixels`
+   bir GPU-CPU SENKRON NOKTASI oldugu icin surucu, okuma tamamlanana kadar
+   pipeline'i DURDURUR. 720p'de 7.4 MB / ~12 GB/s = 0.66 ms. Olculen dusus
+   (1/1700 - 1/800) tam olarak 0.66 ms'dir; farkin tamami budur.
+
+   `glCopyTexSubImage2D` framebuffer'i dokunun icine GPU'da kopyalar: CPU'ya
+   hicbir sey inmez, hicbir sey geri yuklenmez. GL 1.1 cekirdek cagrisidir,
+   bu yuzden `opengl32.dll`de (Linux'ta libGL'de) hazirdir.
+
+   SEMBOL COZUMU: bu dosyanin kurali "hicbir GL basligi dahil edilmez, her
+   cagri yukleyiciden cozulur". `glCopyTexSubImage2D` Raylib.dll'in sembolu
+   DEGILDIR, o yuzden once opengl32.dll'e bakilir. */
+typedef unsigned int (*GclLoadTextureFn)(const void *data, int width,
+                                         int height, int format, int mipmaps);
+typedef void (*GclCopyTexSubImage2DFn)(unsigned int target, int level,
+                                       int xoffset, int yoffset,
+                                       int x, int y, int width, int height);
+typedef void (*GclBindTextureFn)(unsigned int target, unsigned int texture);
+
+static void *gl_symbol(const char *name) {
+#ifdef _WIN32
+    /* `symbol_in` yalnizca Windows'ta tanimlidir (bkz. yukaridaki blok). */
+    void *p = symbol_in("opengl32.dll", name);
+    if (p) return p;
+#endif
+    return raylib_symbol(name);
+}
+
+static GclCopyTexSubImage2DFn copy_tex_sub_image(void) {
+    static GclCopyTexSubImage2DFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclCopyTexSubImage2DFn)gl_symbol("glCopyTexSubImage2D"); }
+    return fn;
+}
+
+static GclBindTextureFn gl_bind_texture(void) {
+    static GclBindTextureFn fn = NULL;
+    static int tried = 0;
+    if (!tried) { tried = 1; fn = (GclBindTextureFn)gl_symbol("glBindTexture"); }
+    return fn;
+}
+
+/* BOS doku ayir (veri YOK). Kare, kopyayla doldurulur.
+
+   `PIXELFORMAT_UNCOMPRESSED_R8G8B8A8` ile `RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8`
+   AYNI sayidir (ikisi de 7): raylib bu iki listeyi bilerek hizalar, bu yuzden
+   raylib enum'u rlgl cagrisina dogrudan verilebilir. Ayni bicim, eski yolun
+   `LoadTextureFromImage` ile kurdugu dokunun bicimiyle de aynidir; kopya bu
+   yuzden bicim uyusmazligi uretmez. */
+static Texture2D texture_alloc(int w, int h) {
+    static GclLoadTextureFn fn = NULL;
+    static int tried = 0;
+    Texture2D tex = {0};
+    if (!tried) { tried = 1; fn = (GclLoadTextureFn)raylib_symbol("rlLoadTexture"); }
+    if (!fn) return tex;
+    tex.id      = fn(NULL, w, h, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1);
+    tex.width   = w;
+    tex.height  = h;
+    tex.mipmaps = 1;
+    tex.format  = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    return tex;
+}
+
+/* Donus: 1 = kare GPU'da kopyalandi (g_uw_frame hazir).
+           0 = bu yol kullanilamadi; cagiran eski yola duser. */
+static int uw_frame_copy_gpu(int w, int h) {
+    GclCopyTexSubImage2DFn copy = copy_tex_sub_image();
+    GclBindTextureFn       bind = gl_bind_texture();
+
+    if (!copy || !bind) return 0;
+
+    if (g_uw_frame.id == 0 || g_uw_frame_w != w || g_uw_frame_h != h) {
+        unload_texture(g_uw_frame);
+        g_uw_frame = texture_alloc(w, h);
+        if (g_uw_frame.id == 0) return 0;
+        g_uw_frame_w = w;
+        g_uw_frame_h = h;
+    }
+
+    /* Kopya, O AN BAGLI olan okuma framebuffer'indan yapilir - `glReadPixels`
+       ile ayni kaynak. RaylibRender acikken bu bir render texture'dir ve
+       dogru yuzeydir (bkz. load_screen_image_at notu).
+
+       DOKU BAGLAMA VE rlgl ONBELLEGI: `glBindTexture` burada ham cagrilir,
+       yani rlgl'nin `currentTextureId` onbellegi guncellenmez. Bu zararsizdir
+       cunku bu kopyadan sonraki ILK doku islemi `blit_texture(g_uw_frame, ...)`
+       cagrisidir ve o da AYNI dokuyu baglar; onbellek uyusmasa bile sonuc
+       dogru dokudur. Baska bir doku baglanirsa rlgl onbellegi uyusmadigi icin
+       zaten yeniden baglar. */
+    bind(0x0DE1 /* GL_TEXTURE_2D */, g_uw_frame.id);
+    copy(0x0DE1, 0, 0, 0, 0, 0, w, h);
+
+    g_uw_frame_gpu = 1;
+    return 1;
+}
+
 static void blit_texture(Texture2D tex, Rectangle src, Rectangle dst,
                          Vector2 origin, float rot, Color tint) {
     static GclDrawTextureProFn fn = NULL;
@@ -973,6 +1096,7 @@ static void underwater_locations(void) {
     uw_loc_amp      = GetShaderLocation(g_uw_shader, UW_U_AMP);
     uw_loc_freq     = GetShaderLocation(g_uw_shader, UW_U_FREQ);
     uw_loc_speed    = GetShaderLocation(g_uw_shader, UW_U_SPEED);
+    uw_loc_flip     = GetShaderLocation(g_uw_shader, UW_U_FLIP);
 }
 
 /* Shader'lar yalnizca BIR KEZ, ilk cizimde kurulur: o anda GL baglami zaten
@@ -1977,6 +2101,16 @@ static double fn_underwater_effect(int argc, const char **argv) {
            tamamen ortadan kaldirir. */
         float fw = (float)g_uw_frame.width;
         float fh = (float)g_uw_frame.height;
+        /* KOKEN, BURADA BILDIRILIR - yukaridaki uniform blogunda DEGIL.
+
+           Doku hangi yolla dolduysa kokeni ona baglidir ve bu, ancak
+           `uw_frame_refresh` dondukten SONRA bilinir. Uniform blogunda
+           yazilsaydi deger BIR KARE GECIKIRDI: kopyaya ilk gecilen karede
+           flip hala 0 kalir ve goruntu o kare boyunca ters donerdi. */
+        {
+            float flip = g_uw_frame_gpu ? 1.0f : 0.0f;
+            SetShaderValue(g_uw_shader, uw_loc_flip, &flip, SHADER_UNIFORM_FLOAT);
+        }
         /* Blit ve shader secimi DLL uzerinden - gerekcesi `begin_shader_mode`
            notunda. Modulun statik kopyasi kendi rlgl durumuna yazar ve
            RaylibRender'in bagli FBO'sunu gormez. */

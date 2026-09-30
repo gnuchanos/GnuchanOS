@@ -1489,25 +1489,6 @@ def build_python_runtime(build_dir: Path) -> None:
             print(f"[gcl] modül: {out_dll} (kopyalandı)", flush=True)
 
 
-def ensure_native_db() -> None:
-    """Regenerate _SRC/complete/complete_native_db.c from the module bindings.
-
-    The Raylib/Raygui completion tables are DERIVED from _SRC/Modules/gcl_raylib.c
-    and gcl_raygui.c. Without this step the IDE keeps describing an older API: a
-    function whose binding changed keeps suggesting the previous return type and
-    chained completion dies silently (todo.md -> "language full bug hunting" #7).
-    It also cross-checks each binding against the real raylib.h/raygui.h and prints
-    the module gaps it finds (no-op stubs that silently return 0 instead of a value).
-    The generator is idempotent: it does not rewrite the file when the content is
-    unchanged, so the IDE DLL is not rebuilt for nothing.
-    """
-    script = REPO_ROOT / "tools" / "gen_native_db.py"
-    if not script.exists():
-        print(f"[gcl] warning: native DB generator not found - skipped: {script}", flush=True)
-        return
-    run_optional([sys.executable, str(script)], cwd=REPO_ROOT)
-
-
 def build_ide(build_dir: Path) -> None:
     """simple_doc.md: Programs/ide.dll|.so — IDE is compiled as a separate DLL.
 
@@ -1596,9 +1577,10 @@ def build_gcl() -> Path:
     missing_ide = [s for s in IDE_SRCS
                    if s not in generated and not (ROOT / s).exists()]
     if not missing_ide:
-        # The native completion tables must match the bindings actually being
-        # built, otherwise the IDE completes against a stale API (todo #7).
-        ensure_native_db()
+        # _SRC/complete/complete_native_db.c is a checked-in source file. The
+        # generator that used to derive it from the module bindings
+        # (tools/gen_native_db.py) was removed from the tree, so there is
+        # nothing to regenerate here; the table is maintained by hand.
         build_ide(build_dir)
     else:
         print(f"[gcl] WARNING: IDE sources missing ({len(missing_ide)}/{len(IDE_SRCS)} files) — Programs/ was not generated (IDE unavailable).", file=sys.stderr)

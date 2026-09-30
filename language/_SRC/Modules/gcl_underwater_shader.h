@@ -70,6 +70,9 @@
 #define UW_U_AMP      "uwAmp"
 #define UW_U_FREQ     "uwFreq"
 #define UW_U_SPEED    "uwSpeed"
+/* Sahne dokusunun DUSEY kokeni: 0 = ust-sol (eski yol), 1 = alt-sol
+   (GPU ici kopya). Bkz. fragment govdesindeki "DOKU KOKENI" notu. */
+#define UW_U_FLIP     "uwFlip"
 
 /* ---------- AYARLAR ----------
 
@@ -173,6 +176,7 @@
 "uniform float uwAmp;\n" \
 "uniform float uwFreq;\n" \
 "uniform float uwSpeed;\n" \
+"uniform float uwFlip;\n" \
 "#define UW_BLUR  2.4\n" \
 "#define UW_TINT  0.55\n" \
 "#define UW_LIGHT 0.10\n" \
@@ -197,6 +201,20 @@
 "void main(void)\n" \
 "{\n" \
 "    vec2  uv  = fragTexCoord;\n" \
+"    /* ---------- DOKU KOKENI ----------\n" \
+"\n" \
+"       Sahne dokusunu IKI ayri yol doldurabilir ve ikisi FARKLI koken\n" \
+"       kullanir:\n" \
+"\n" \
+"         * Eski yol: kare CPU'ya indirilir, orada DUSEY CEVRILIR ve oyle\n" \
+"           yuklenir -> doku UST-SOL kokenlidir.\n" \
+"         * GPU ici kopya (glCopyTexSubImage2D): GL'in alt-sol kokenini\n" \
+"           OLDUGU GIBI yazar -> doku ALT-SOL kokenlidir, yani ters.\n" \
+"\n" \
+"       `uwFlip` hangisi oldugunu soyler ve YALNIZCA ORNEKLEMEYI cevirir.\n" \
+"       Ekran konumu (`ndc`) ve ton gradyani (`uv.y`) EKRAN uzayindadir;\n" \
+"       onlar cevrilmez, yoksa su cizgisi ve ton ters doner. */\n" \
+"    vec2  suv = (uwFlip > 0.5) ? vec2(uv.x, 1.0 - uv.y) : uv;\n" \
 "    float sub = clamp(uwSubmerge, 0.0, 1.0);\n" \
 "    vec2  px  = 1.0/max(uwRes, vec2(1.0));\n" \
 "    /* uv.y=0 ekranin USTUDUR (bkz. gcl_SimpleWater.c: dondurme notu),\n" \
@@ -237,6 +255,7 @@
 "       isin suya girip ekrani tumden kaplar. */\n" \
 "    float wh = gclUwWave(uwCamPos.xz, uwTime);\n" \
 "    float camF = uwCamPos.y - (uwSurfaceY + wh*uwAmp) - uwSubmerge*0.35;\n" \
+"    float edge = 0.03 + 0.30*uwAmp;\n" \
 "    float wet  = 0.0;\n" \
 "    if (camF < 0.05) {\n" \
 "        float minF = 1.0e9;\n" \
@@ -246,15 +265,23 @@
 "            float h2 = gclUwWave(p.xz, uwTime);\n" \
 "            float f = p.y - (uwSurfaceY + h2*uwAmp);\n" \
 "            if (f < minF) minF = f;\n" \
+"            /* ERKEN CIKIS - CIKTISI DEGISTIRMEZ.\n" \
+"\n" \
+"               `occ` minF'yi YALNIZCA `-edge` esigine gore okur: minF bu\n" \
+"               esigin altina indigi anda smoothstep 0 doner, yani occ TAM\n" \
+"               1'dir - ve minF daha da dusse bile bu DEGISMEZ. Kalan\n" \
+"               ornekleri hesaplamak, coktan kesinlesmis bir sonuc icin\n" \
+"               sinus harcamaktir. Kamera suyun altindayken ilk ornek bunu\n" \
+"               zaten saglar; dongu 16 yerine 1-2 adimda biter. */\n" \
+"            if (minF <= -edge) break;\n" \
 "            t *= 1.7;\n" \
 "        }\n" \
-"        float edge = 0.03 + 0.30*uwAmp;\n" \
 "        float occ  = 1.0 - smoothstep(-edge, edge, minF);\n" \
 "        float camU = smoothstep(0.06, -0.06, camF);\n" \
 "        wet = occ*camU;\n" \
 "    }\n" \
 "    float amt = sub*wet;\n" \
-"    if (amt <= 0.004) { GCL_FRAG = vec4(GCL_TEX(texture0, uv).rgb, 0.0); return; }\n" \
+"    if (amt <= 0.004) { GCL_FRAG = vec4(GCL_TEX(texture0, suv).rgb, 0.0); return; }\n" \
 "    /* ---------- 1. DALGALANMA ----------\n" \
 "\n" \
 "       Goruntuyu dalga alaninin EGIMI buker. Egim, alanin iki komsu\n" \
@@ -270,7 +297,7 @@
 "    float hy1 = gclUwWave(uwCamPos.xz + vec2(0.0, e), uwTime);\n" \
 "    float hy0 = gclUwWave(uwCamPos.xz - vec2(0.0, e), uwTime);\n" \
 "    vec2  warp = vec2(hx1 - hx0, hy1 - hy0)*UW_WARP*amt;\n" \
-"    vec2  wuv  = uv + warp;\n" \
+"    vec2  wuv  = suv + warp;\n" \
 "    /* ---------- 2. BLUR + KROMATIK SAPMA ----------\n" \
 "\n" \
 "       Bes ornekli yumusatma ve kanal bazli kaydirma TEK geciste: yesil\n" \
