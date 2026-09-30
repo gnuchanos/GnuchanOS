@@ -2149,6 +2149,15 @@ def install_gcl_system() -> None:
     if not ensure_linux_dev_deps():
         raise SystemExit("[gcl] hata: sistem geliştirme paketleri kurulamadı — derleme durduruldu")
 
+    # Which copy of this script is running, printed before anything is built.
+    #
+    # "The fix did not work" and "the fix never ran" look identical from the
+    # outside, and the second is the common one when the tree is edited on one
+    # machine and installed on another: the installer on the target is a copy,
+    # and a copy that was never updated goes on making the old mistake while
+    # reporting it the old way. This line tells the two apart at a glance.
+    print(f"[gcl] calisan script: {Path(__file__).resolve()}", flush=True)
+
     build_dir = build_gcl()
     bin_dir = _live_user_bin_dir()
     runtime_root = _live_runtime_root()
@@ -2224,6 +2233,36 @@ def install_gcl_system() -> None:
     else:
         print(f"[gcl] {bin_dir} su anki PATH'te degil; yukaridaki export "
               f"komutunu calistirin ya da yeni terminal acin.", flush=True)
+
+    # --- prove it, in a shell that reads the files just written ---
+    #
+    # Every check above can pass and the command still not work, because a
+    # profile that HAS the line is not a shell that has READ it. The only way to
+    # tell "installed, but this shell is older than the install" apart from
+    # "the line sits in a file the login shell never opens" is to ask a login
+    # shell to resolve the name - which is exactly what typing `gcl` does. The
+    # installer opens one and reports the answer instead of leaving the user to
+    # discover it.
+    found = ""
+    if shutil.which("bash"):
+        probe = subprocess.run(["bash", "-lc", "command -v gcl"],
+                               capture_output=True, text=True, check=False)
+        found = probe.stdout.strip().splitlines()[0] if probe.stdout.strip() else ""
+
+    if found:
+        print(f"[gcl] dogrulama: login kabugu `gcl` -> {found}", flush=True)
+    else:
+        print("[gcl] UYARI: yeni bir login kabugu `gcl`i bulamadi.", flush=True)
+        print("[gcl]   PATH satiri su dosyalara yazildi:", flush=True)
+        for profile, _line in _shell_profiles(bin_dir):
+            state = "var" if profile.exists() else "yok"
+            print(f"[gcl]     {profile}  ({state})", flush=True)
+        print("[gcl]   Login bash bu dosyalardan ILK BULDUGUNU okur "
+              "(~/.bash_profile -> ~/.bash_login -> ~/.profile) ve durur; "
+              "listede ilk 'var' olan dosyanin bu satiri icerdiginden emin olun.",
+              flush=True)
+        print(f"[gcl]   Kalici cozum: {bin_dir} dizinini PATH'e ekleyin.",
+              flush=True)
 
     print(f"[gcl] installed: {launcher}", flush=True)
     print(f"[gcl] runtime: {install_dir}", flush=True)
