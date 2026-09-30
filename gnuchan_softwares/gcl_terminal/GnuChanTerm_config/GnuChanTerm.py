@@ -41,27 +41,37 @@ gcl_Terminal.call(Font="monospace-11")
 # one hue, which makes telling two of them apart harder than sixteen hues would
 # — that is the cost of a purple system, and the entries are spread across
 # lightness so a directory and a file are still clearly different colours.
+# The order is the sixteen names followed by the terminal's own text and
+# background:
+#
+#     0 black    1 red      2 green   3 yellow
+#     4 blue     5 magenta  6 cyan    7 white
+#     8-15 the same eight, bright
+#     16 text    17 background
+#
+# The numbers are written beside the values, and the comments are OUTSIDE the
+# list on purpose: a comment inside it is one more thing the reader of this
+# file has to understand, and every colour here is already named by its place.
 gcl_Terminal.call(Colors=[
-    "#170a20",   # 0  black          - the theme's own dark
-    "#c084fc",   # 1  red
-    "#b56cff",   # 2  green
-    "#d8a4ff",   # 3  yellow
-    "#9d4edd",   # 4  blue
-    "#c77dff",   # 5  magenta
-    "#b76eff",   # 6  cyan
-    "#d8a4ff",   # 7  white          - the theme's #ead7ff reads as white
-    "#70458a",   # 8  bright black   - the theme's comment grey
-    "#d8a4ff",   # 9  bright red
-    "#c084fc",   # 10 bright green
-    "#e0aaff",   # 11 bright yellow
-    "#b76eff",   # 12 bright blue
-    "#e0aaff",   # 13 bright magenta
-    "#d8a4ff",   # 14 bright cyan
-    "#e0aaff",   # 15 bright white   - the theme's #ffffff is white
-    "#ddb3ff",   # 16 the terminal's own text - the theme's #ead7ff is white
-    "#09030d",   # 17 the terminal's own background
+    "#16051f",
+    "#8b2fc9",
+    "#9d3fe0",
+    "#b14cff",
+    "#7b2cbf",
+    "#c05cff",
+    "#a83ee6",
+    "#c77dff",
+    "#54206f",
+    "#b65cff",
+    "#9635d0",
+    "#d08aff",
+    "#a946e8",
+    "#c77dff",
+    "#b967f5",
+    "#d28cff",
+    "#c98cff",
+    "#0b0310",
 ])
-
 # --- the bar -----------------------------------------------------------------
 #
 # The strip along the bottom holding the child's working directory. It is the
