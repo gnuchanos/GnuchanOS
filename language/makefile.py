@@ -1594,6 +1594,30 @@ def build_gcl() -> Path:
         shutil.copy2(FREEFONT_DIR / "FreeMono.ttf", assets_dir / "FreeMono.ttf")
         print(f"[gcl] font copied: {assets_dir / 'FreeMono.ttf'}", flush=True)
 
+    # The IDE's own backdrop and logo, copied BESIDE the binary under a
+    # lowercase "assets/".
+    #
+    # They used to be copied nowhere at all: the blue backdrop and the title
+    # bar icon are loaded by ide_main.c, so every installed build came up
+    # saying "assets/bg.png failed to open" and "assets/logo.png failed to
+    # open" and drew a flat colour instead. Only FreeMono.ttf was ever placed
+    # here, and the IDE does not ask for it because the font is embedded.
+    #
+    # The directory is "assets" and not "Assets", and that is not a style
+    # choice: Linux treats the two as different directories, so a PNG put in
+    # Assets/ is invisible to a lookup for "assets/". The IDE asks for the
+    # lowercase name, so the lowercase name is what is created.
+    ide_assets = build_dir / "assets"
+    ide_assets.mkdir(parents=True, exist_ok=True)
+    for png in ("bg.png", "logo.png"):
+        source_png = REPO_ROOT / "assets" / png
+        if source_png.exists():
+            shutil.copy2(source_png, ide_assets / png)
+            print(f"[gcl] asset copied: {ide_assets / png}", flush=True)
+        else:
+            print(f"[gcl] warning: {source_png} is missing - the IDE will open "
+                  f"without it", file=sys.stderr, flush=True)
+
     if os_name() == "windows":
         for old_dll in list(build_dir.glob("python*.dll")):
             try:
@@ -1909,25 +1933,77 @@ def remove_desktop_entry() -> None:
         print(f"[gcl] removed: {entry}", flush=True)
 
 
+def _shell_profiles(bin_dir: Path) -> list[tuple[Path, str]]:
+    """Every rc file that has to carry the PATH line, and the line for each.
+
+    Writing to ONE file is what made `gcl` "command not found" after an
+    install: the file was chosen from $SHELL, and $SHELL is exactly what an
+    SSH session often does not set. The fallback was ~/.bashrc, so an account
+    whose login shell is zsh was given a line zsh never reads - the program
+    was installed, on PATH by its own account, and unreachable from the shell
+    the user was actually sitting in.
+
+    The files are therefore chosen by what a shell READS and not by which
+    shell the installer happened to be running under:
+
+      * ~/.profile  - the POSIX login file, read by sh, dash and bash when
+                      they start as a login shell. This is the one that makes
+                      the line survive a fresh SSH login.
+      * ~/.bashrc   - an INTERACTIVE bash reads this and not ~/.profile, so a
+                      non-login terminal needs the line here as well.
+      * ~/.zshrc    - the same for interactive zsh.
+      * ~/.zprofile - login zsh reads this and NOT ~/.profile.
+
+    fish does not read POSIX syntax at all and is given its own line below, so
+    an export written into its config would be a syntax error on every start.
+    """
+    home = Path.home()
+    posix_line = f'export PATH="{bin_dir}:$PATH"'
+    return [
+        (home / ".profile", posix_line),
+        (home / ".bashrc", posix_line),
+        (home / ".zshrc", posix_line),
+        (home / ".zprofile", posix_line),
+        (home / ".config" / "fish" / "config.fish",
+         f'set -gx PATH "{bin_dir}" $PATH'),
+    ]
+
+
 def _ensure_path_in_shell(bin_dir: Path) -> None:
-    shell_file = Path.home() / ".bashrc"
-    if os.environ.get("SHELL", "").endswith("zsh"):
-        shell_file = Path.home() / ".zshrc"
-    elif not shell_file.exists():
-        shell_file = Path.home() / ".profile"
+    """Put bin_dir on PATH in every rc file a shell may read.
 
-    export_line = f'export PATH="{bin_dir}:$PATH"'
-    if shell_file.exists():
-        text = shell_file.read_text(encoding="utf-8", errors="ignore")
-        if export_line in text:
-            return
+    A file that does not exist is skipped rather than created: writing
+    ~/.zshrc into a machine that has no zsh would leave an empty config behind
+    and would not help anyone. ~/.profile is the exception - it is the POSIX
+    login file every shell falls back to, so it is created when the account
+    has none, which is the case for a bare user with only ~/.bashrc.
+    """
+    written: list[Path] = []
+    for shell_file, export_line in _shell_profiles(bin_dir):
+        if shell_file.exists():
+            text = shell_file.read_text(encoding="utf-8", errors="ignore")
+            if export_line in text:
+                continue
+        elif shell_file.name != ".profile":
+            continue
+        else:
+            text = ""
+
+        if text and not text.endswith("\n"):
+            text += "\n"
+        text += f"\n{export_line}\n"
+        shell_file.parent.mkdir(parents=True, exist_ok=True)
+        shell_file.write_text(text, encoding="utf-8")
+        written.append(shell_file)
+
+    if written:
+        for path in written:
+            print(f"[gcl] PATH written: {path}", flush=True)
     else:
-        text = ""
-
-    if text and not text.endswith("\n"):
-        text += "\n"
-    text += f"\n{export_line}\n"
-    shell_file.write_text(text, encoding="utf-8")
+        print(f"[gcl] PATH already set in every shell profile ({bin_dir})",
+              flush=True)
+    print("[gcl] acik kabuklarda hemen kullanmak icin: "
+          "export PATH=\"%s:$PATH\"" % bin_dir, flush=True)
 
 
 def install_gcl_system() -> None:

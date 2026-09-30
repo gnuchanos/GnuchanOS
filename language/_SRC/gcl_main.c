@@ -130,6 +130,29 @@ static int run_ide(const char *path) {
 #endif
     }
 
+    /* The DIRECTORY the executable really lives in, with symlinks already
+       resolved, published for the same reason and in the same breath.
+     *
+     * The IDE loads its own backdrop and logo from disk, and a bare
+     * "assets/bg.png" means whatever the current directory happens to be when
+     * the launcher starts the process - which is nothing to do with where the
+     * program is installed. The IDE is started from ~/.local/bin/gcl, a
+     * .desktop file, or a terminal sitting anywhere at all, so the relative
+     * path found nothing and the pictures were silently absent.
+     *
+     * GCL_EXE_PATH cannot be used for this: it holds argv[0], which through
+     * the installed symlink is ~/.local/bin/gcl and not the binary under
+     * ~/.local/lib/gnuchan/gcl/. exe_dir above IS that binary's directory -
+     * the very number Programs/ide.so was just found through - so the assets
+     * that sit beside it are found by the same path that found the IDE. */
+    if (exe_dir[0]) {
+#ifdef _WIN32
+        _putenv_s("GCL_EXE_DIR", exe_dir);
+#else
+        setenv("GCL_EXE_DIR", exe_dir, 1);
+#endif
+    }
+
 #ifdef _WIN32
     char ide_path[4096];
     snprintf(ide_path, sizeof(ide_path), "%s\\Programs\\ide.dll", exe_dir);

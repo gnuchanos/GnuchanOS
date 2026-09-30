@@ -7,9 +7,49 @@ static Texture2D s_logo_texture = { 0 };
    kancasi (bkz. popup cizim yeri). Varsayilan 0 — normal calismada etkisi yok. */
 static int g_complete_hook = 0;
 
+/* Where the program itself is installed, published by gcl_main.c with every
+   symlink already resolved (GCL_EXE_DIR).
+ *
+ * The two pictures used to be asked for as "assets/bg.png" - a path relative
+ * to the CURRENT DIRECTORY. Nothing about where the IDE was started has
+ * anything to do with where it is installed: it is started from the symlink
+ * in ~/.local/bin, from a .desktop entry, or from a terminal sitting in
+ * whatever directory the user happened to be in. Run from anywhere but the
+ * build tree the files were simply not there, raylib reported each one as
+ * "failed to open", and the editor fell back to a flat colour. The directory
+ * the binary lives in is the one place the pictures are guaranteed to be,
+ * because the build puts them there (see makefile.py) and GCL_EXE_DIR is
+ * that directory - the same one Programs/ide.so was loaded from. */
+static void ide_asset_path(char *out, size_t outsz, const char *name) {
+    const char *dir = getenv("GCL_EXE_DIR");
+    if (dir && dir[0]) {
+        snprintf(out, outsz, "%s/assets/%s", dir, name);
+    } else {
+        snprintf(out, outsz, "assets/%s", name);
+    }
+}
+
 static void ensure_placeholder_textures(void) {
-    if (s_bg_texture.id == 0) s_bg_texture = LoadTexture("assets/bg.png");
-    if (s_logo_texture.id == 0) s_logo_texture = LoadTexture("assets/logo.png");
+    /* A file that is not there must be asked for ONCE. The old test was
+       `id == 0`, which is exactly the value a failed load leaves behind, so a
+       missing picture was re-requested on every frame for as long as the IDE
+       was open - and raylib prints a line for each failed request. One flag
+       per picture is what turns that flood into a single message trace. */
+    static int bg_tried = 0;
+    static int logo_tried = 0;
+
+    if (!bg_tried) {
+        char path[4096];
+        bg_tried = 1;
+        ide_asset_path(path, sizeof(path), "bg.png");
+        s_bg_texture = LoadTexture(path);
+    }
+    if (!logo_tried) {
+        char path[4096];
+        logo_tried = 1;
+        ide_asset_path(path, sizeof(path), "logo.png");
+        s_logo_texture = LoadTexture(path);
+    }
 }
 
 /* Pane state (editor_pane_empty, editor_pane_tab_index, editor_pane_cur,
@@ -548,11 +588,15 @@ int gcl_ide_run(const char *path) {
     SetTargetFPS(60);
     SetExitKey(KEY_NULL); // disable default ESC exit
 
-    /* Title bar icon - assets/logo.png */
-    Image icon = LoadImage("assets/logo.png");
-    if (icon.data != NULL) {
-        SetWindowIcon(icon);
-        UnloadImage(icon);
+    /* Title bar icon - the logo beside the binary, not beside the cwd. */
+    {
+        char logo_path[4096];
+        ide_asset_path(logo_path, sizeof(logo_path), "logo.png");
+        Image icon = LoadImage(logo_path);
+        if (icon.data != NULL) {
+            SetWindowIcon(icon);
+            UnloadImage(icon);
+        }
     }
     ensure_placeholder_textures();
 
