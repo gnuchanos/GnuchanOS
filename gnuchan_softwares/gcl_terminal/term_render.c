@@ -1,0 +1,533 @@
+/*
+ * term_render.c — the cell grid drawn as pixels.
+ *
+ * See term_render.h for why this is a module and why a frame is cheaper than it
+ * looks. What is here is the drawing itself, and it has two ideas in it: draw
+ * what changed, and draw it in runs.
+ *
+ * --- what a frame clears, and what it does not ---
+ *
+ * The temptation is to fill the whole buffer with the background and draw the
+ * whole screen, and it is wrong: the cursor blinks while nothing else is
+ * happening, and a frame that cleared everything would erase the line the
+ * cursor is on and put it back — a screen that flickers once every half second
+ * for no reason visible to anyone.
+ *
+ * So a frame that is not a full redraw clears only the rows it is about to
+ * draw, and the row the cursor is on is one of them. A blink therefore costs
+ * one row of drawing and not a screen.
+ *
+ * A FULL redraw is what happens after an expose or a resize, and only then is
+ * the whole buffer filled — because after either of those nothing is known
+ * about what is on the window.
+ *
+ * --- a row, in three passes ---
+ *
+ *   1. backgrounds   adjacent cells asking for the same colour become ONE
+ *                    rectangle. A btop graph bar is a run of one colour across
+ *                    many cells, so this is one fill per bar instead of one per
+ *                    character.
+ *
+ *   2. text          adjacent cells sharing a face and a colour become ONE Xft
+ *                    call, because Xft takes an array of code points.
+ *
+ *   3. underlines    adjacent underlined cells become one line.
+ *
+ * Three passes and not one, because a run of text and a run of background do
+ * not have the same boundaries — a line of text in one colour sits on a
+ * background that changes under it. Two clean passes beat one clever one.
+ *
+ * --- why a run stops at a wide character ---
+ *
+ * XftDrawString32() advances by each glyph's own width, which is right for a
+ * monospace font where every glyph advances one cell — and wrong for a wide
+ * character, whose glyph is twice as wide. So a run stops there and the wide
+ * character is drawn on its own. That is the whole reason a run has a boundary
+ * condition at all.
+ */
+#define _POSIX_C_SOURCE 200809L
+
+#include <stdlib.h>
+#include <string.h>
+
+#include "term_render.h"
+#include "term_render_internal.h"
+#include "term_style.h"
+
+/* The blink of the cursor, in milliseconds. It is the terminfo default and the
+   rate every terminal uses; a cursor that blinks at another rate looks broken
+   next to the rest of the desktop. */
+#define TERM_CURSOR_BLINK_MS 530
+
+static TermRender *render_of(TermCore *core) {
+    return (TermRender *)core->render;
+}
+
+/* --- the buffer ----------------------------------------------------------- */
+
+static void render_free_buffer(TermCore *core) {
+    TermRender *render = render_of(core);
+    if (render == NULL || render->buffer == None) {
+        return;
+    }
+    /* The Xft drawable points at the buffer and has to let go before the buffer
+       is freed, or it is holding a drawable the server has already destroyed. */
+    if (core->style != NULL && core->style->xft_draw != NULL) {
+        XftDrawDestroy(core->style->xft_draw);
+        core->style->xft_draw = NULL;
+    }
+    XFreePixmap(core->display, render->buffer);
+    render->buffer = None;
+}
+
+int term_render_resize(TermCore *core, int width, int height) {
+    TermRender *render = render_of(core);
+    if (render == NULL || width < 1 || height < 1) {
+        return -1;
+    }
+    if (render->buffer != None && render->width == width &&
+        render->height == height) {
+        return 0;
+    }
+
+    render_free_buffer(core);
+
+    render->buffer = XCreatePixmap(core->display, core->window,
+                                   (unsigned)width, (unsigned)height,
+                                   (unsigned)core->depth);
+    if (render->buffer == None) {
+        return -1;
+    }
+    render->width = width;
+    render->height = height;
+    render->needs_full = 1;
+
+    /* Xft draws into the buffer, so its drawable is made over the new one. One
+       Xft drawable per buffer, and no way to move an existing one. */
+    return term_style_attach(core->style, render->buffer);
+}
+
+int term_render_init(TermCore *core) {
+    TermRender *render = (TermRender *)calloc(1, sizeof(TermRender));
+    if (render == NULL) {
+        return -1;
+    }
+    render->buffer = None;
+    render->cursor_on = 1;
+    render->needs_full = 1;
+    core->render = render;
+
+    if (term_render_resize(core, core->width, core->height) != 0) {
+        free(render);
+        core->render = NULL;
+        return -1;
+    }
+    return 0;
+}
+
+void term_render_free(TermCore *core) {
+    TermRender *render = render_of(core);
+    if (render == NULL) {
+        return;
+    }
+    render_free_buffer(core);
+    free(render);
+    core->render = NULL;
+}
+
+/* --- one row -------------------------------------------------------------- */
+
+/* The packed colour a cell's background is drawn in, with the reverse attribute
+   applied: a reversed cell's background is its foreground colour. */
+static uint32_t cell_bg(const TermGrid *grid, const TermCell *cell) {
+    return term_palette_color(grid, cell,
+                              term_style_is_reversed(cell) ? 1 : 0);
+}
+
+static uint32_t cell_fg(const TermGrid *grid, const TermCell *cell) {
+    return term_palette_color(grid, cell,
+                              term_style_is_reversed(cell) ? 0 : 1);
+}
+
+/* Whether a cell's background is the theme's, and so already there. */
+static int cell_bg_is_default(const TermGrid *grid, const TermStyle *style,
+                              const TermCell *cell) {
+    if (term_style_is_reversed(cell)) {
+        /* A reversed cell paints its foreground as the background whatever the
+           colours are, so it is never "already there". */
+        return 0;
+    }
+    return cell_bg(grid, cell) == term_style_default_bg(style);
+}
+
+/* Pass 1: the backgrounds that are not the theme's. */
+static void render_row_backgrounds(TermCore *core, TermRender *render,
+                                   const TermGrid *grid,
+                                   const TermLine *line, int y) {
+    int cell_w = core->style->cell_width;
+    int cell_h = core->style->cell_height;
+
+    int x = 0;
+    while (x < grid->cols && x < core->cols) {
+        const TermCell *cell = &line->cells[x];
+        if (cell->wide_cont) {
+            x++;
+            continue;
+        }
+        if (cell_bg_is_default(grid, core->style, cell)) {
+            x += cell->wide ? 2 : 1;
+            continue;
+        }
+
+        /* A run of cells asking for the same background is one rectangle. It
+           stops at a cell that asks for another, and at a cell whose reverse
+           flag differs — a reversed cell's background is not the same KIND of
+           colour even when the value matches, and mixing them would make the
+           text of one draw over the background of the other. */
+        uint32_t bg = cell_bg(grid, cell);
+        int reversed = term_style_is_reversed(cell);
+        int run_start = x;
+        int run_cells = 0;
+
+        while (x < grid->cols && x < core->cols) {
+            const TermCell *rc = &line->cells[x];
+            if (rc->wide_cont) {
+                break;
+            }
+            if (term_style_is_reversed(rc) != reversed) {
+                break;
+            }
+            if (cell_bg(grid, rc) != bg) {
+                break;
+            }
+            run_cells += rc->wide ? 2 : 1;
+            x += rc->wide ? 2 : 1;
+        }
+
+        if (run_cells > 0) {
+            XSetForeground(core->display, core->style->gc, (unsigned long)bg);
+            XFillRectangle(core->display, render->buffer,
+                           core->style->gc,
+                           run_start * cell_w, y * cell_h,
+                           (unsigned)(run_cells * cell_w),
+                           (unsigned)cell_h);
+        }
+    }
+}
+
+/* The face and the colour a run of text is drawn with. A run breaks when either
+   changes, and comparing two pointers is the whole test. */
+typedef struct RenderPen {
+    XftFont  *face;
+    XftColor *color;
+} RenderPen;
+
+static RenderPen pen_for(TermCore *core, const TermCell *cell) {
+    RenderPen pen;
+    pen.face = term_style_face_for(core->style, cell);
+
+    /* A reversed cell draws its text in what would be its background, so the
+       two fields are swapped before the colour is looked up. */
+    TermCell swapped = *cell;
+    if (term_style_is_reversed(cell)) {
+        swapped.fg = cell->bg;
+        swapped.bg = cell->fg;
+    }
+    pen.color = term_style_color(core->style, &swapped, 1);
+    return pen;
+}
+
+static int pen_same(const RenderPen *a, const RenderPen *b) {
+    return a->face == b->face && a->color == b->color;
+}
+
+/* Pass 2: the text. */
+static void render_row_text(TermCore *core, const TermGrid *grid,
+                            const TermLine *line, int y) {
+    int cell_w = core->style->cell_width;
+    int baseline = y * core->style->cell_height + core->style->ascent;
+
+    int x = 0;
+    while (x < grid->cols && x < core->cols) {
+        const TermCell *cell = &line->cells[x];
+
+        /* An empty cell draws nothing, and a continuation cell belongs to the
+           wide character before it. */
+        if (cell->ch == 0 || cell->wide_cont) {
+            x++;
+            continue;
+        }
+
+        RenderPen pen = pen_for(core, cell);
+
+        /* A wide character is drawn alone. */
+        if (cell->wide) {
+            XftDrawString32(core->style->xft_draw, pen.color, pen.face,
+                            x * cell_w, baseline, &cell->ch, 1);
+            x += 2;
+            continue;
+        }
+
+        uint32_t codes[TERM_RENDER_MAX_RUN];
+        int run_len = 0;
+        int run_x = x;
+
+        while (x < grid->cols && x < core->cols &&
+               run_len < TERM_RENDER_MAX_RUN) {
+            const TermCell *rc = &line->cells[x];
+            if (rc->ch == 0 || rc->wide_cont || rc->wide) {
+                break;
+            }
+            RenderPen rp = pen_for(core, rc);
+            if (!pen_same(&pen, &rp)) {
+                break;
+            }
+            codes[run_len++] = rc->ch;
+            x++;
+        }
+
+        if (run_len > 0) {
+            XftDrawString32(core->style->xft_draw, pen.color, pen.face,
+                            run_x * cell_w, baseline, codes, run_len);
+        } else {
+            /* Nothing was collected, which can only happen when the loop broke
+               on its first cell — a wide or empty cell the checks above did not
+               claim. Stepping past it keeps the walk moving. */
+            x++;
+        }
+    }
+}
+
+/* Pass 3: the underlines. A contiguous group of underlined cells is one line. */
+static void render_row_underlines(TermCore *core, TermRender *render,
+                                  const TermGrid *grid,
+                                  const TermLine *line, int y) {
+    int cell_w = core->style->cell_width;
+    int cell_h = core->style->cell_height;
+    int line_y = y * cell_h + cell_h - 2;
+
+    int x = 0;
+    while (x < grid->cols && x < core->cols) {
+        const TermCell *cell = &line->cells[x];
+        if (cell->wide_cont || !(cell->attrs & TERM_ATTR_UNDERLINE)) {
+            x++;
+            continue;
+        }
+
+        int run_start = x;
+        int run_cells = 0;
+        while (x < grid->cols && x < core->cols) {
+            const TermCell *rc = &line->cells[x];
+            if (!(rc->attrs & TERM_ATTR_UNDERLINE)) {
+                break;
+            }
+            run_cells += rc->wide ? 2 : 1;
+            x += rc->wide ? 2 : 1;
+        }
+
+        if (run_cells > 0) {
+            XSetForeground(core->display, core->style->gc,
+                           (unsigned long)cell_fg(grid, cell));
+            XDrawLine(core->display, render->buffer, core->style->gc,
+                      run_start * cell_w, line_y,
+                      (run_start + run_cells) * cell_w - 1, line_y);
+        }
+    }
+}
+
+/* --- the cursor ----------------------------------------------------------- */
+
+/* The cursor, drawn as a block over the cell it sits on.
+ *
+ * It is drawn over the finished cell, and the character underneath is drawn
+ * again in the background colour so the block does not hide what it sits on —
+ * which is what a cursor is for. A terminal that instead swapped the cell's own
+ * colours would have to redraw the cell on every blink and could not blink over
+ * a cell that had its own background. */
+static void render_cursor(TermCore *core, TermRender *render,
+                          const TermGrid *grid) {
+    if (!render->cursor_on || !grid->cursor_visible) {
+        return;
+    }
+    if (grid->cursor_x < 0 || grid->cursor_x >= core->cols ||
+        grid->cursor_y < 0 || grid->cursor_y >= core->rows) {
+        return;
+    }
+
+    int cell_w = core->style->cell_width;
+    int cell_h = core->style->cell_height;
+    int x = grid->cursor_x * cell_w;
+    int y = grid->cursor_y * cell_h;
+    unsigned long ink = (unsigned long)term_style_default_fg(core->style);
+
+    /* A bar cursor is what a program that asked for one gets with DECSCUSR; the
+       block is what every terminal draws otherwise. */
+    if (grid->cursor_style == 1) {
+        XSetForeground(core->display, core->style->gc, ink);
+        XFillRectangle(core->display, render->buffer, core->style->gc,
+                       x, y, 2, (unsigned)cell_h);
+        return;
+    }
+
+    XSetForeground(core->display, core->style->gc, ink);
+    XFillRectangle(core->display, render->buffer, core->style->gc,
+                   x, y, (unsigned)cell_w, (unsigned)cell_h);
+
+    const TermCell *cell = term_grid_at(grid, grid->cursor_x, grid->cursor_y);
+    if (cell != NULL && cell->ch != 0 && !cell->wide_cont) {
+        XftColor *under = term_style_color_rgb(
+            core->style, term_style_default_bg(core->style));
+        XftFont *face = term_style_face_for(core->style, cell);
+        XftDrawString32(core->style->xft_draw, under, face,
+                        x, y + core->style->ascent, &cell->ch, 1);
+    }
+}
+
+/* --- one frame ------------------------------------------------------------ */
+
+/* Fill a band of rows with the theme's background. Used to clear the whole
+   buffer on a full redraw, and a single row before it is redrawn. */
+static void clear_band(TermCore *core, TermRender *render, int y, int rows) {
+    XSetForeground(core->display, core->style->gc,
+                   (unsigned long)term_style_default_bg(core->style));
+    XFillRectangle(core->display, render->buffer, core->style->gc, 0,
+                   y * core->style->cell_height,
+                   (unsigned)render->width,
+                   (unsigned)(rows * core->style->cell_height));
+}
+
+void term_render_frame(TermCore *core) {
+    TermRender *render = render_of(core);
+    if (render == NULL || render->buffer == None) {
+        return;
+    }
+    const TermGrid *grid = term_vt_screen(&core->vt);
+    int full = render->needs_full;
+
+    /* Nothing was written and nothing was asked for. This is the case on an idle
+       session and the whole point of the dirty marks: the cost of calling this
+       is a walk of the line marks, not a walk of the screen. */
+    if (!full && !term_grid_is_dirty(grid) && !term_core_needs_draw(core)) {
+        return;
+    }
+
+    int rows = grid->rows < core->rows ? grid->rows : core->rows;
+
+    if (full) {
+        /* Nothing is known about what is on the window: the whole band is
+           cleared and every row is drawn. */
+        clear_band(core, render, 0, core->rows);
+    }
+
+    for (int y = 0; y < rows; y++) {
+        const TermLine *line = &grid->lines[y];
+        if (!full && !line->dirty) {
+            continue;
+        }
+        if (!full) {
+            /* Only this row is being redrawn, so only this row is cleared. The
+               cursor's row is one of these, which is why a blink does not
+               disturb anything else. */
+            clear_band(core, render, y, 1);
+        }
+        render_row_backgrounds(core, render, grid, line, y);
+        render_row_text(core, grid, line, y);
+        render_row_underlines(core, render, grid, line, y);
+    }
+
+    render_cursor(core, render, grid);
+
+    /* The frame is complete: one copy, one visible change. */
+    XCopyArea(core->display, render->buffer, core->window, core->gc,
+              0, 0, (unsigned)render->width, (unsigned)render->height, 0, 0);
+    XFlush(core->display);
+
+    render->needs_full = 0;
+    term_grid_clear_dirty((TermGrid *)grid);
+    term_core_draw_done(core);
+}
+
+void term_render_all(TermCore *core) {
+    TermRender *render = render_of(core);
+    if (render == NULL) {
+        return;
+    }
+    /* A full redraw marks every line, so frame() walks all of them. Doing it
+       this way rather than with a second drawing path means there is one place
+       that knows how a cell becomes pixels. */
+    TermGrid *grid = (TermGrid *)term_vt_screen(&core->vt);
+    for (int y = 0; y < grid->rows; y++) {
+        grid->lines[y].dirty = 1;
+    }
+    render->needs_full = 1;
+    term_core_damage(core);
+    term_render_frame(core);
+}
+
+/* --- the module ----------------------------------------------------------- */
+
+static void render_module_event(TermCore *core, XEvent *event) {
+    TermRender *render = render_of(core);
+    if (render == NULL) {
+        return;
+    }
+    if (event->type == Expose) {
+        /* The window was covered or is new. Nothing is known about what is on
+           it, so the whole thing is drawn again. */
+        render->needs_full = 1;
+        term_core_damage(core);
+        return;
+    }
+    if (event->type == ConfigureNotify) {
+        term_core_request_size(core, event->xconfigure.width,
+                              event->xconfigure.height);
+        return;
+    }
+}
+
+static void render_module_tick(TermCore *core) {
+    TermRender *render = render_of(core);
+    if (render == NULL) {
+        return;
+    }
+
+    const TermGrid *grid = term_vt_screen(&core->vt);
+    unsigned long now = term_core_now_ms();
+    static unsigned long last_blink;
+
+    if (term_grid_is_dirty(grid)) {
+        /* Something arrived from the program: the cursor is shown and the blink
+           starts over, so it is never caught mid-off when the user looks. */
+        render->cursor_on = 1;
+        last_blink = now;
+    } else if (now - last_blink >= TERM_CURSOR_BLINK_MS) {
+        render->cursor_on = !render->cursor_on;
+        last_blink = now;
+
+        /* Only the cursor's own row has to be redrawn, and marking it is what
+           says so — the same mark a character write makes. A blink therefore
+           costs one row and not a screen. */
+        TermGrid *mutable_grid = (TermGrid *)grid;
+        if (grid->cursor_y >= 0 && grid->cursor_y < mutable_grid->rows) {
+            mutable_grid->lines[grid->cursor_y].dirty = 1;
+        }
+    }
+
+    term_render_frame(core);
+}
+
+static void render_module_cleanup(TermCore *core) {
+    term_render_free(core);
+}
+
+const TermModule term_render_module = {
+    .name = "render",
+    .init = term_render_init,
+    .event = render_module_event,
+    .tick = render_module_tick,
+    /* Twenty milliseconds, which is fifty frames a second. It is the ceiling on
+       how often anything is drawn, and it is not lower because the wake itself
+       costs more than the drawing on an idle screen. */
+    .interval_ms = 20,
+    .cleanup = render_module_cleanup,
+};

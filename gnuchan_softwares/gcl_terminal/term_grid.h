@@ -1,0 +1,287 @@
+/*
+ * term_grid.h — the screen as a grid of cells.
+ *
+ * A terminal is not a stream of text that has been drawn; it is a two
+ * dimensional grid of cells, each holding one character and the colours it is
+ * drawn in, and the escape sequences a program sends are instructions for
+ * changing cells in it. Everything else — scrolling, the cursor, the status
+ * line of an editor — is that grid being edited in place.
+ *
+ * So this is the structure the whole program is built around, and the one
+ * that has to be right. A program that draws a box around its output is
+ * writing characters into four sides of it and trusting that they line up;
+ * a program like btop is doing that for the whole screen, many times a
+ * second, and any disagreement about what a cell is shows up immediately as a
+ * picture that does not match its own frame.
+ *
+ * --- what a cell is ---
+ *
+ * `ch` is a Unicode code point and NOT a byte, because the graphs btop draws
+ * are braille patterns — U+2800..U+28FF — and a byte cannot hold one. The
+ * same is true of every box-drawing character a modern program uses, and of
+ * the two thirds of the world that do not write in ASCII. A terminal that
+ * stores bytes is a terminal that draws those as mojibake, and that is the
+ * fault this type exists to not have.
+ *
+ * A cell wider than one column — a CJK ideograph, an emoji — is stored as the
+ * character plus a cell marked as its continuation, so the grid stays a
+ * rectangle and the cursor arithmetic stays one cell per column.
+ *
+ * --- why the grid is a line table and not one array ---
+ *
+ * Scrolling is the single most common edit there is: a program that prints a
+ * line does it by moving every other line up, and a full screen of output
+ * does it hundreds of times a second. With one flat array that is a memmove
+ * of the whole screen per line. With a table of lines it is a rotation of
+ * POINTERS — the first line becomes the last and nothing is copied — and the
+ * cost of a scroll stops depending on how big the window is. This is the
+ * difference between a terminal that keeps up with `yes` and one that does
+ * not, and it is why the grid owns its lines rather than owning its bytes.
+ */
+#ifndef GNUCHANTERM_GRID_H
+#define GNUCHANTERM_GRID_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+/* The most columns and rows the grid will hold. A window larger than this is
+   clamped rather than refused: a terminal that will not open on a large screen
+   is worse than one that draws into the top-left corner of it, and the ceiling
+   is the bound the line table's allocation is written against. */
+#define TERM_GRID_MAX_COLS 512
+#define TERM_GRID_MAX_ROWS 256
+
+/* How a cell is drawn beyond its two colours. Bits rather than a list of
+   values because a cell is any combination of them — bold and underlined is a
+   thing a program may ask for — and because the renderer reads them as a set.
+ */
+enum {
+    TERM_ATTR_BOLD      = 1 << 0,
+    TERM_ATTR_DIM       = 1 << 1,
+    TERM_ATTR_ITALIC    = 1 << 2,
+    TERM_ATTR_UNDERLINE = 1 << 3,
+    TERM_ATTR_BLINK     = 1 << 4,
+    TERM_ATTR_REVERSE   = 1 << 5,
+    TERM_ATTR_HIDDEN    = 1 << 6,
+    TERM_ATTR_STRIKE    = 1 << 7,
+};
+
+/* The two values a program reaches for when it resets colours with SGR 39 and
+   49. They are indices and not pixels because the palette is the session's and
+   not the program's — see term_style.h — and a program that wants "the normal
+   text colour" must get whatever the theme says that is.
+
+   The two indices the default resolves to sit just past the sixteen a program
+   can name, which is what keeps the lookup a single array read. */
+#define TERM_COLOR_DEFAULT (-1)
+#define TERM_COLOR_INDEX_FG 16
+#define TERM_COLOR_INDEX_BG 17
+
+/* A cell whose colour was sent as 0xRRGGBB rather than named. The program's
+   colour is in truecolor_fg / truecolor_bg and the index fields hold this
+   marker, which is what tells the renderer to use the program's own colour
+   instead of looking an index up in the palette.
+
+   It is a sentinel and not a separate "is truecolor" flag because the two
+   would be able to disagree, and a cell that read differently to two readers
+   would be drawn differently by them. */
+#define TERM_COLOR_TRUECOLOR (-2)
+
+/* The most colours a palette has. Sixteen are the ones a program names by
+   number, the two at TERM_COLOR_INDEX_FG/BG are the theme's default text and
+   background, and the rest are spare for entries a program sets itself. */
+#define TERM_PALETTE_SIZE 256
+
+/* One column of the screen. */
+typedef struct TermCell {
+    uint32_t ch;      /* the code point; 0 is an empty cell               */
+    int32_t  fg;      /* a palette index, TERM_COLOR_DEFAULT or _TRUECOLOR*/
+    int32_t  bg;
+    uint32_t truecolor_fg;   /* the 0xRRGGBB a program sent, when it did  */
+    uint32_t truecolor_bg;
+    uint16_t attrs;   /* TERM_ATTR_* bits                                 */
+    uint8_t  wide;    /* 1 on the first column of a wide character        */
+    uint8_t  wide_cont; /* 1 on the second, which holds no character     */
+    uint8_t  dirty;   /* 1 while this cell has not been drawn             */
+} TermCell;
+
+/* One row, and the flag that goes with it.
+
+   `dirty` is what makes the terminal cheap on a slow GPU: redrawing the whole
+   screen every frame costs one Xft draw per cell of the window, and on an
+   Intel GMA 965 that is most of a frame budget for a picture that mostly has
+   not changed. A row is marked when a cell in it is written, and the renderer
+   walks the marked rows and the marked cells inside them. */
+typedef struct TermLine {
+    TermCell *cells;
+    uint8_t   dirty;
+} TermLine;
+
+/* --- the palette ----------------------------------------------------------
+ *
+ * The colours a program names by number, plus the theme's own two. The struct
+ * exists so the renderer has one place to look a colour up and the theme has
+ * one place to put it, and so a cell only has to carry an index rather than a
+ * colour.
+ */
+typedef struct TermPalette {
+    uint32_t colors[TERM_PALETTE_SIZE];
+    int      count;    /* how many are actually set; the rest are black    */
+} TermPalette;
+
+/* --- the grid -------------------------------------------------------------
+ *
+ * cols and rows are what the WINDOW is, and they are the numbers everything
+ * else is written against: the scroll region, the cursor, and the width the
+ * program is told when it asks.
+ *
+ * `scroll_top` and `scroll_bottom` are the region DECSTBM sets, and they are
+ * not the same thing as the window: a program that keeps a status line at the
+ * bottom sets the region to everything above it, and then every scroll — and
+ * every new line — moves text inside that region and leaves the status line
+ * where it is. A terminal without a scroll region cannot run an editor.
+ */
+typedef struct TermGrid {
+    TermLine *lines;
+    int       rows;
+    int       cols;
+
+    int       scroll_top;      /* inclusive, 0 based                          */
+    int       scroll_bottom;   /* inclusive                                   */
+
+    int       cursor_x;        /* 0 based column the next character goes to   */
+    int       cursor_y;
+    int       cursor_visible;
+
+    /* Where the cursor was before the current sequence saved it — ESC 7 and
+       ESC 8, and the `s` / `u` pair. One slot is enough: the sequences are a
+       pair, and a program that nests them is a program that is guessing. */
+    int       saved_x;
+    int       saved_y;
+
+    /* The colours and attributes the next written character gets. Carried here
+       rather than passed to every writing function because they are the state
+       of the terminal, not an argument to a call: a program sends SGR once
+       and then writes a hundred characters under it. */
+    int32_t   pen_fg;
+    int32_t   pen_bg;
+    uint32_t  pen_truecolor_fg;
+    uint32_t  pen_truecolor_bg;
+    uint32_t  pen_attrs;
+
+    /* What the cursor is drawn as, from DECSCUSR. A block cursor and a bar
+       cursor are different pictures over the same cell. */
+    int       cursor_style;
+
+    TermPalette palette;
+
+    /* Set when the window has been resized and the table has not been rebuilt
+       yet. The PTY has to be told the new size before the program draws again,
+       so the two are not done in the same place: the grid settles itself and
+       the module that owns the PTY sends the signal — see term_pty.h. */
+    int       resized;
+} TermGrid;
+
+/* --- life ----------------------------------------------------------------- */
+
+/* Make the grid and set it to `cols` by `rows`. Returns 0 on success. The
+   lines come back empty and the cursor at the top left. */
+int  term_grid_init(TermGrid *grid, int cols, int rows);
+
+void term_grid_free(TermGrid *grid);
+
+/* Reshape the grid to a new size. Lines that no longer fit are dropped and new
+   ones are added empty at the bottom; the cursor is pulled inside the new
+   size. This is what a window resize does, and it is deliberately lossy — the
+   history a program wants to keep is the program's own business, and no
+   terminal can know how it wanted it reflowed. */
+int  term_grid_resize(TermGrid *grid, int cols, int rows);
+
+/* --- writing -------------------------------------------------------------- */
+
+/* Erase a cell: the character is gone, the colours it would be written in stay
+   the pen's. This is what a space at the end of a line looks like, and what
+   ECH (erase character) does. */
+void term_grid_clear_cell(TermGrid *grid, int x, int y);
+
+/* Put `ch` at the cursor and move the cursor one column on, wrapping to the
+   next line at the right edge. The character is drawn in the current pen.
+ *
+ * A wide character occupies two columns: the cell holds the character and the
+   one after it is marked as its continuation. When the cursor is in the last
+   column there is no room for the second half, so the character goes on the
+   next line, which is what makes a program that prints CJK at the edge of the
+   screen wrap rather than draw half a glyph. */
+void term_grid_put(TermGrid *grid, uint32_t ch);
+
+/* Move the cursor. The position is CLAMPED to the grid and not refused: the
+   sequences a program sends move a cursor that may already be anywhere, and a
+   sequence that would put it outside must leave it at the edge rather than
+   make the grid inconsistent. */
+void term_grid_move_to(TermGrid *grid, int x, int y);
+void term_grid_move_by(TermGrid *grid, int dx, int dy);
+void term_grid_cursor_next_line(TermGrid *grid);
+void term_grid_carriage_return(TermGrid *grid);
+void term_grid_backspace(TermGrid *grid);
+
+/* --- scrolling ------------------------------------------------------------ */
+
+/* Move the lines inside the scroll region up by `count`, filling the bottom of
+   the region with empty lines; a negative count moves them down. The rows
+   outside the region do not move at all — that is the point of having one.
+
+   The move is a rotation of line records: nothing inside a line is copied, and
+   the cost is the same whatever the window is. */
+void term_grid_scroll(TermGrid *grid, int count);
+
+/* --- erasing -------------------------------------------------------------- */
+
+/* Erase from a point to the end of the line, or from the start of the line to
+   it, or the whole line — the three modes of EL. The pen's background fills
+   the cells because an erase paints a background as well as removing text: a
+   program that clears a line inside a coloured box would otherwise punch a
+   hole in it. */
+void term_grid_erase_line_to_end(TermGrid *grid, int x, int y);
+void term_grid_erase_line_to_start(TermGrid *grid, int x, int y);
+void term_grid_erase_line(TermGrid *grid, int y);
+
+/* The same three over rows: from a point to the bottom of the screen, down the
+   screen, and the whole visible screen (ED). */
+void term_grid_erase_to_end(TermGrid *grid, int x, int y);
+void term_grid_erase_to_start(TermGrid *grid, int x, int y);
+void term_grid_erase_screen(TermGrid *grid);
+
+/* Drop everything on the screen and put the cursor at the top left. This is
+   the state DECSTR and RIS leave behind. The pen is NOT touched: DECSTR clears
+   the screen without changing the colours a program is in the middle of
+   using, and RIS resets the pen itself before calling this. */
+void term_grid_reset(TermGrid *grid);
+
+/* --- reading -------------------------------------------------------------- */
+
+/* The cell at a position, or NULL when the position is outside the grid. The
+   renderer walks a rectangle that may be larger than the window at an edge, so
+   the check is here rather than in every caller. */
+const TermCell *term_grid_at(const TermGrid *grid, int x, int y);
+
+/* Whether anything at all has been written since the last clear. The renderer
+   asks before it walks the table: a session with nothing happening must not
+   cost a screen walk per frame. */
+int  term_grid_is_dirty(const TermGrid *grid);
+
+/* Forget every dirty mark, after the renderer has drawn them. */
+void term_grid_clear_dirty(TermGrid *grid);
+
+/* --- the palette ---------------------------------------------------------- */
+
+/* Set the palette's colours, the way the theme names them. */
+void term_palette_set(TermPalette *palette, const uint32_t *colors, int count);
+
+/* The packed 0xRRGGBB a cell's colour is. `foreground` picks which of the
+   cell's two. A truecolor cell returns the colour the program sent; anything
+   else is looked up in the palette, and a cell that asked for the default gets
+   the theme's. */
+uint32_t term_palette_color(const TermGrid *grid, const TermCell *cell,
+                            int foreground);
+
+#endif /* GNUCHANTERM_GRID_H */
