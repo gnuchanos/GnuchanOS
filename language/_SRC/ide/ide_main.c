@@ -538,6 +538,11 @@ int gcl_ide_run(const char *path) {
         ed.split_focus = (ed.split_left_tab >= 0) ? 0 : 1;
     }
 
+    /* Help penceresi dogrulama kancasi (GCL_IDE_HELP=1): paneli acik baslatir ki
+       cizildigi GCL_IDE_SHOT ile — tikleme otomasyonu olmadan — kanitlanabilsin.
+       Varsayilan kapali, normal calismada hicbir etkisi yok. */
+    if (getenv("GCL_IDE_HELP")) ed.help_open = 1;
+
     InitWindow(1200, 760, "GCL IDE");
     SetWindowState(FLAG_WINDOW_RESIZABLE);
     SetTargetFPS(60);
@@ -854,7 +859,11 @@ int gcl_ide_run(const char *path) {
             }
 
             if (ctrl && IsKeyPressed(KEY_N)) tab_add(&ed, NULL);
-            if (ctrl && IsKeyPressed(KEY_O)) {
+            /* DOSYA AC: Ctrl+Shift+O.
+               Eskiden Ctrl+O idi ve CIKTI PANELI ile CAKISIYORDU: panel artik
+               Ctrl+O'ya bagli (asagida), o yuzden dosya acma Ctrl+Shift+O'ya
+               TASINDI. Yetenek kaybolmaz, yalnizca tus degisir. */
+            if (ctrl && shift && IsKeyPressed(KEY_O)) {
                 char dir[2048];
                 editor_get_active_dir(&ed, dir, sizeof(dir));
                 char *p = gcl_ide_native_dialog(0, dir);
@@ -878,7 +887,32 @@ int gcl_ide_run(const char *path) {
             if (ctrl && IsKeyPressed(KEY_E)) {
                 gcl_settings_panel_open(&ed);
             }
+            /* EXPLORER: Ctrl+Space (Shift+Space eski kisayol olarak KALIR).
+               Ctrl+Space eskiden tamamlamaya bagliydi ve CAKISIYORDU; tamamlama
+               asagida Ctrl+I'ya tasindi. Iki tus da ayni isi yapar, boylece
+               eski aliskanlik bozulmaz. */
+            if (ctrl && IsKeyPressed(KEY_SPACE)) ed.sidebar_visible = !ed.sidebar_visible;
             if (shift && IsKeyPressed(KEY_SPACE)) ed.sidebar_visible = !ed.sidebar_visible;
+
+            /* CIKTI PANELI: Ctrl+O (Ctrl+J eski kisayol olarak KALIR).
+               `!shift` KOSULU ZORUNLUDUR: Ctrl+Shift+O dosya acar; shift'i
+               dislamasaydik tek tus ikisini birden tetiklerdi. */
+            if (ctrl && !shift && IsKeyPressed(KEY_O)) ed.output_visible = !ed.output_visible;
+            if (ctrl && IsKeyPressed(KEY_J)) ed.output_visible = !ed.output_visible;
+
+            /* TAM EKRAN: Ctrl+F. */
+            if (ctrl && IsKeyPressed(KEY_F)) ToggleFullscreen();
+
+            /* SEKME KAPAT: Ctrl+W. Odakli panenin aktif sekmesini kapatir;
+               bolunmus gorunumde sag pane kendi sekmesini kapatir. */
+            if (ctrl && IsKeyPressed(KEY_W)) {
+                int pane = ed.split_enabled ? ed.split_focus : 0;
+                int ti = editor_pane_tab_index(&ed, pane);
+                if (ti >= 0) {
+                    if (pane == 0) tab_close(&ed, ti);
+                    else tab_close_pane(&ed, pane, ti);
+                }
+            }
 
             /* Run: F5 or Ctrl+R */
             if (IsKeyPressed(KEY_F5) || (ctrl && IsKeyPressed(KEY_R))) editor_run_program(&ed);
@@ -887,8 +921,10 @@ int gcl_ide_run(const char *path) {
             if (ctrl && IsKeyPressed(KEY_Z)) gcl_ide_buffer_undo(&CUR);
             if (ctrl && IsKeyPressed(KEY_Y)) gcl_ide_buffer_redo(&CUR);
 
-            /* Ctrl+Space: FORCE the auto-completion window open (manual) */
-            if (ctrl && IsKeyPressed(KEY_SPACE)) {
+            /* Ctrl+I: TAMAMLAMA PENCERESINI ACMA.
+               Eskiden Ctrl+Space idi; o tus artik explorer'a ait (yukarida).
+               Yetenek kaybolmaz, yalnizca tus degisir. */
+            if (ctrl && IsKeyPressed(KEY_I)) {
                 ed.completion_dismissed = 0;
                 editor_show_completion(&ed, 1);
             }
@@ -979,8 +1015,12 @@ int gcl_ide_run(const char *path) {
                 if (IsKeyPressed(KEY_PAGE_UP)) { for (int i=0;i<20;i++) gcl_ide_buffer_cursor_up(&CUR); if (!shift) CUR.sel_anchor = CUR.cursor; }
                 if (IsKeyPressed(KEY_PAGE_DOWN)) { for (int i=0;i<20;i++) gcl_ide_buffer_cursor_down(&CUR); if (!shift) CUR.sel_anchor = CUR.cursor; }
             } else {
-                /* auto-completion navigation */
-                if (ctrl && IsKeyPressed(KEY_SPACE)) { ed.completion_dismissed = 0; editor_show_completion(&ed, 1); }
+                /* auto-completion navigation.
+                   NOT: Ctrl+Space bu daldan KALDIRILDI — o tus artik EXPLORER'a
+                   ait (yukarisi). Burada kalsaydi, tamamlama penceresi acikken
+                   Ctrl+Space hem explorer'i degistirir hem de tamamlamayi
+                   yeniden acardi; tek tus iki is yapardi. Tamamlama artik
+                   Ctrl+I ile tetiklenir. */
                 if (IsKeyPressed(KEY_UP)) { if (ed.completion_selected > 0) ed.completion_selected--; }
                 if (IsKeyPressed(KEY_DOWN)) { if (ed.completion_selected < ed.completion_count - 1) ed.completion_selected++; }
                 /* ESC is handled globally above this if/else — it must also work
@@ -1295,6 +1335,11 @@ int gcl_ide_run(const char *path) {
         if (ed.project_dialog_open) ide_new_project_draw(&ed, w, h, font_sz, &t);
         if (ed.settings_open) gcl_settings_panel_draw(&ed, w, h, font_sz, &t);
         if (ed.about) draw_about_panel(&ed, w, h, font_sz, &t);
+        /* Help penceresi: `ed.help_open` yalnizca BAYRAK olarak vardi.
+           Menu ogesi bayragi set ediyor, ESC temizliyor ama hicbir CIZIM
+           cagrisi yoktu; "Keyboard Shortcuts" menuye basinca ekranda hicbir
+           sey olmuyordu. Cagri, diger modallarla ayni sirada yapilir. */
+        if (ed.help_open) draw_help_panel(&ed, w, h, font_sz, &t);
 
         /* output panel — hide while a modal (New Project, etc.) is open: the modal must always stay on top.
            Otherwise the output panel would be drawn on top of the modal, leaving the modal underneath. */

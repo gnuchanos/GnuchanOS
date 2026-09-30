@@ -291,19 +291,127 @@ void gcl_settings_panel_draw(Editor *ed, int w, int h, int font_sz, GclIdeTheme 
 void draw_about_panel(Editor *ed, int w, int h, int font_sz, GclIdeTheme *t) {
     (void)ed;
     DrawRectangle(0, 0, w, h, (Color){ 0, 0, 0, 180 });
-    int dw = 360, dh = 200;
+    /* Yükseklik ölçülür: tanım metni sarmalı olduğu için satır sayısı
+       önceden bilinemez. Sabit yükseklik, iki satırlık metinde altta
+       kocaman boşluk ya da uzun metinde taşma üretirdi. */
+    int dw = 460;
+    int dh = 268;
+    if (dw > w - 20) dw = w - 20;
+    if (dh > h - 20) dh = h - 20;
     int dx = (w - dw) / 2, dy = (h - dh) / 2;
+    if (dx < 0) dx = 0;
+    if (dy < 0) dy = 0;
     draw_panel_frame((Rectangle){ (float)dx, (float)dy, (float)dw, (float)dh },
                      "About", t, font_sz);
     int x = dx + 20;
-    int yy = dy + 56;
+    int yy = dy + 52;
     DrawText("GCL IDE", x, yy, font_sz + 2, t->accent);
     yy += 32;
     DrawText("GnuchanOS - GCL Language", x, yy, font_sz - 2, t->text);
-    yy += 24;
-    DrawText("VSCode-style smart completion", x, yy, font_sz - 2, t->gutter);
-    yy += 24;
+    yy += 26;
+
+    /* TANIM METNI — raygui ile SARMALI çizilir.
+       Düz `DrawText` ile bu paragrafı çizmek, pencere genişliğini aşan tek
+       uzun bir satır üretiyordu (metin kenardan dışarı taşıyordu). `GuiLabel`,
+       TEXT_WRAP_MODE açıkken metni verilen dikdörtgenin genişliğine sarar;
+       bu yüzden cümleyi elle satırlara bölmek GEREKMEZ ve panel daraldığında
+       da metin içeride kalır. */
+    {
+        int wrap_prev = GuiGetStyle(DEFAULT, TEXT_WRAP_MODE);
+        int align_prev = GuiGetStyle(DEFAULT, TEXT_ALIGNMENT);
+        GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_WORD);
+        GuiSetStyle(DEFAULT, TEXT_ALIGNMENT, TEXT_ALIGN_LEFT);
+        GuiLabel((Rectangle){ (float)x, (float)yy, (float)(dw - 40), 120 },
+                 "GCL (Gnuchan Language) is an educational development environment "
+                 "for game programming, which additionally allows multi-processing "
+                 "through embedded Lua and Python.");
+        GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, wrap_prev);
+        GuiSetStyle(DEFAULT, TEXT_ALIGNMENT, align_prev);
+    }
+
     int ok_w = MeasureText("OK", font_sz) + 24;
     if (GuiButton((Rectangle){ (float)(dx + dw - 14 - ok_w), (float)(dy + dh - 44), (float)ok_w, 30 }, "OK"))
         ed->about = 0;
+}
+
+/* ---------------------------------------------
+   Help — Keyboard Shortcuts
+
+   BURASI "PENCERE ACILMIYOR" HATASININ DUZELTILDIGI YER.
+
+   `ed->help_open` zaten set ediliyordu (ide_menu.c: MACT_HELP) ve ESC ile
+   kapatilabiliyordu (ide_main.c), ama panel HICBIR YERDE CIZILMIYORDU: menu
+   ogesine basinca ekranda hicbir sey olmuyordu. Bu fonksiyon o eksigi
+   kapatir; cagri, diger modallarla ayni yerde (ide_main.c) yapilir.
+
+   LISTE KODDAN CIKARILDI, UYDURULMADI: her satir, ide_main.c'de o tusu
+   gercekten dinleyen satira karsilik gelir. Boylece panel, IDE'nin yaptigi
+   isi anlatir - yapmadigi bir seyi degil.
+   --------------------------------------------- */
+typedef struct { const char *keys; const char *what; } HelpRow;
+
+void draw_help_panel(Editor *ed, int w, int h, int font_sz, GclIdeTheme *t) {
+    /* Kısayollar koddan doğrulanmıştır (bkz. yukarıdaki not). */
+    static const HelpRow rows[] = {
+        { "Ctrl+N",          "New tab" },
+        { "Ctrl+Shift+O",    "Open file..." },
+        { "Ctrl+S",          "Save" },
+        { "Ctrl+W",          "Close active tab" },
+        { "Ctrl+Space",      "Toggle explorer" },
+        { "Shift+Space",     "Toggle explorer (alias)" },
+        { "Ctrl+O",          "Toggle output panel" },
+        { "Ctrl+J",          "Toggle output panel (alias)" },
+        { "Ctrl+F",          "Fullscreen" },
+        { "Ctrl+E",          "Settings..." },
+        { "Ctrl+I",          "Smart completion" },
+        { "Ctrl+Z",          "Undo" },
+        { "Ctrl+Y",          "Redo" },
+        { "Ctrl+C",          "Copy" },
+        { "Ctrl+X",          "Cut" },
+        { "Ctrl+V",          "Paste" },
+        { "Ctrl+A",          "Select all" },
+        { "F5 / Ctrl+R",     "Run" },
+        { "Tab / Shift+Tab", "Indent / outdent" },
+        { "Enter",           "New line (auto indent)" },
+        { "Ctrl+MouseWheel", "Zoom editor font" },
+        { "Esc",             "Close popup / dialog" },
+    };
+    const int row_count = (int)(sizeof(rows) / sizeof(rows[0]));
+
+    DrawRectangle(0, 0, w, h, (Color){ 0, 0, 0, 180 });
+
+    /* GENİSLIK EKRANA GORE KIRPILIR: sabit bir genişlik, küçük bir pencerede
+       paneli ekranın dışına taşırırdı. */
+    int dw = 620;
+    int header_h = 46;
+    int footer_h = 52;
+    int row_h = font_sz + 9;
+    int dh = header_h + footer_h + row_count * row_h + 16;
+    if (dw > w - 20) dw = w - 20;
+    if (dh > h - 20) dh = h - 20;
+    int dx = (w - dw) / 2, dy = (h - dh) / 2;
+    if (dx < 0) dx = 0;
+    if (dy < 0) dy = 0;
+
+    draw_panel_frame((Rectangle){ (float)dx, (float)dy, (float)dw, (float)dh },
+                     "Keyboard Shortcuts", t, font_sz);
+
+    /* Kısayol sütunu ile açıklama sütunu AYRI x'lerde durur; böylece kısa ve
+       uzun tuş adları açıklamaları hizasız bırakmaz. */
+    int key_x = dx + 26;
+    int what_x = dx + 26 + 190;
+    int row_y = dy + header_h + 8;
+    int clip_h = dy + dh - footer_h - row_y;
+
+    BeginScissorMode(dx + 6, row_y, dw - 12, clip_h);
+    for (int i = 0; i < row_count; i++) {
+        DrawText(rows[i].keys, key_x, row_y, font_sz, t->accent);
+        DrawText(rows[i].what, what_x, row_y, font_sz, t->text);
+        row_y += row_h;
+    }
+    EndScissorMode();
+
+    int ok_w = MeasureText("Close", font_sz) + 28;
+    if (GuiButton((Rectangle){ (float)(dx + dw - 14 - ok_w), (float)(dy + dh - 44), (float)ok_w, 30 }, "Close"))
+        ed->help_open = 0;
 }

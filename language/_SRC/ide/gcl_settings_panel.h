@@ -32,4 +32,9 @@ void gcl_settings_panel_draw(Editor *ed, int w, int h, int font_sz, GclIdeTheme 
 /* About diyaloğu (aynı modülde tutulur). */
 void draw_about_panel(Editor *ed, int w, int h, int font_sz, GclIdeTheme *t);
 
+/* Help / Keyboard Shortcuts penceresi (aynı modülde tutulur).
+   ed->help_open true iken HER KARE çağrılır. Panel "Close" düğmesine veya
+   ESC'ye basınca ed->help_open = 0 yapar. */
+void draw_help_panel(Editor *ed, int w, int h, int font_sz, GclIdeTheme *t);
+
 #endif /* GCL_SETTINGS_PANEL_H */
