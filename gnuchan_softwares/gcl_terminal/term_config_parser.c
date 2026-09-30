@@ -125,7 +125,25 @@ static void parser_advance(Parser *parser) {
         char quote = *c++;
         unsigned int i = 0;
         while (*c && *c != quote) {
+            /* A backslash is CARRIED THROUGH, and the character after it with
+               it.
+             *
+             * It used to be dropped, which quietly ate the shell's own escapes:
+             * a prompt written \u@\h was read as u@h, bash then printed the
+             * letters u and h instead of the user and the host, and nothing
+             * anywhere said the file had been altered on the way in. Every
+             * prompt a person writes is made of these — \u, \h, \w, \n, and
+             * the \e of a colour — so the file's job is to carry the text to
+             * the shell, not to have an opinion about what is in it.
+             *
+             * The closing quote is still found on every path, and a quote the
+             * backslash escaped is copied as text rather than ending the
+             * string, because the backslash is copied before the character
+             * that follows it is looked at. */
             if (*c == '\\' && c[1]) {
+                if (i + 1 < sizeof(parser->text)) {
+                    parser->text[i++] = *c;
+                }
                 c++;
             }
             if (i + 1 < sizeof(parser->text)) {

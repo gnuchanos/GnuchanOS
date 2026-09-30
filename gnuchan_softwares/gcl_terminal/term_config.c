@@ -60,6 +60,7 @@
    rather than two spellings that disagree. */
 #define CONFIG_OBJECT   "gcl_Terminal"
 #define KEY_FONT        "Font"
+#define KEY_PROMPT      "Prompt"
 #define KEY_COLORS      "Colors"
 #define KEY_BAR_BG      "BarBackground"
 #define KEY_BAR_FG      "BarForeground"
@@ -79,6 +80,13 @@ void term_config_defaults(TermConfig *config) {
        What this file knows is whether the script named a font; what a font
        NAME means is the style's business. */
     config->font[0] = '\0';
+
+    /* No prompt named, which leaves the shell's own alone. This is NOT a
+       built-in PS1 written here: a terminal that shipped one would be a
+       terminal that decided how every shell on the machine should look, and
+       the whole point of the prompt being in the script is that it is written
+       where the rest of the terminal is. See TermConfig.prompt. */
+    config->prompt[0] = '\0';
 
     /* Every colour starts unset. Nothing is filled in from gcl_palette.h here,
        because the palette belongs to the style and this struct only carries
@@ -291,6 +299,21 @@ static void read_setting(TermConfig *config, const char *name,
         snprintf(config->font, sizeof(config->font), "%s", text);
         return;
     }
+    if (strcmp(name, KEY_PROMPT) == 0) {
+        char text[TERM_CONFIG_TEXT_LENGTH];
+        term_config_value_text(value, text, sizeof(text));
+        if (text[0] == '\0') {
+            config_note(config, "Prompt is not a string; the shell's own is kept");
+            return;
+        }
+        /* Copied whole and NOT interpreted. The \u, \h and \w in it are the
+           shell's escapes and the shell expands them; this only carries the
+           text to the environment the child is given. Anything that looked
+           inside would be this file deciding what a prompt means, which is
+           the shell's business. */
+        snprintf(config->prompt, sizeof(config->prompt), "%s", text);
+        return;
+    }
     if (strcmp(name, KEY_COLORS) == 0) {
         read_colors(config, value);
         return;
@@ -363,6 +386,8 @@ static void read_statement(TermConfig *config, const TermStatement *statement) {
     snprintf(name, sizeof(name), "%s", field);
     if (strcmp(name, "font") == 0) {
         snprintf(name, sizeof(name), "%s", KEY_FONT);
+    } else if (strcmp(name, "prompt") == 0) {
+        snprintf(name, sizeof(name), "%s", KEY_PROMPT);
     } else if (strcmp(name, "colors") == 0) {
         snprintf(name, sizeof(name), "%s", KEY_COLORS);
     } else if (strcmp(name, "bar_background") == 0) {

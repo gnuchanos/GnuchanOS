@@ -24,6 +24,39 @@ gcl_Terminal.call(Font="monospace-11")
 # A larger font, antialiased, with the family named directly:
 # gcl_Terminal.call(Font="DejaVu Sans Mono-13:antialias=true:hinting=true")
 
+# --- the prompt --------------------------------------------------------------
+#
+# The shell's PS1, written the way the shell writes it. The \u, \h, \w and \n
+# below are BASH'S OWN escapes and are passed through untouched — it is bash
+# that expands them: \u is the user, \h the host, \w the working directory and
+# \n a line break. The \[ and \] around each colour tell bash that what is
+# between them takes no room on the screen, which is what keeps a long line
+# wrapping where it should instead of wrapping early.
+#
+# It is handed to the shell in its environment, and that is as far as a
+# terminal can go without editing a file of yours. Three things go over:
+#
+#     PS1               the text, for a shell that runs no PROMPT_COMMAND
+#     GCL_TERM_PROMPT   the same text, so the command below never quotes it
+#     PROMPT_COMMAND    PS1="$GCL_TERM_PROMPT", re-asserted before each prompt
+#
+# The third is what makes it stick. A shell reads the environment BEFORE its
+# own startup files, so a bare PS1 loses to the PS1 in ~/.bashrc on any machine
+# that has one. PROMPT_COMMAND runs after those files and before every prompt,
+# so the configured prompt is put back each time.
+#
+# A user whose own startup file sets PROMPT_COMMAND keeps theirs — it is read
+# later and replaces this one — and with it their own prompt, which is theirs
+# to choose. Nothing of the user's is read or written either way.
+#
+# The colours are the theme's: the frame in the lighter purple, the parts that
+# change (user, host, directory) in the paler one.
+gcl_Terminal.call(Prompt="\[\e[38;5;141m\]┌─[\[\e[38;5;183m\]\u\[\e[38;5;141m\]@\[\e[38;5;183m\]\h\[\e[38;5;141m\]]─[\[\e[38;5;183m\]\w\[\e[38;5;141m\]]\n\[\e[38;5;141m\]└──\[\e[38;5;183m\]❯ \[\e[0m\]")
+
+# A plainer one, one line and no colour, which is what to write while checking
+# that the prompt mechanism itself works:
+# gcl_Terminal.call(Prompt="\u@\h:\w\$ ")
+
 # --- the palette -------------------------------------------------------------
 #
 # The sixteen colours a program names by number, in the order every terminal
@@ -98,6 +131,7 @@ gcl_Terminal.call(Cursor="#ddb3ff")
 # file being edited one line at a time reads like.
 #
 # gcl_Terminal.font = "monospace-11"
+# gcl_Terminal.prompt = "\u@\h:\w\$ "
 # gcl_Terminal.colors = ["#170a20", "#c084fc"]
 # gcl_Terminal.bar_background = "#09030d"
 # gcl_Terminal.bar_foreground = "#ead7ff"
@@ -112,4 +146,5 @@ gcl_Terminal.call(Cursor="#ddb3ff")
 # read and then quietly ignored would be a line here that does nothing and
 # says nothing about why. They will be added here when they work.
 #
-# The cursor's COLOUR is read, and is the line above.
+# The cursor's COLOUR is read, and is the line above. The prompt is read too,
+# and is the line further up.

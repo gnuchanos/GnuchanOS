@@ -61,6 +61,22 @@ typedef struct TermConfig {
      * cells — see the file comment above. */
     char font[TERM_CONFIG_TEXT_LENGTH];
 
+    /* --- the prompt -------------------------------------------------------
+     *
+     * The shell's PS1, written the way the shell itself writes it: the escapes
+     * \\u, \\h, \\w and \\n are the shell's own and are passed through
+     * untouched, because it is the shell that expands them and not this file.
+     *
+     * It is handed to the child in its environment and not written anywhere of
+     * the shell's. That is the whole of how far a terminal can go: bash reads
+     * the environment before its own startup files, so a shell whose files set
+     * PS1 keeps its own and a shell that sets none gets this one. Imposing it
+     * further would mean editing ~/.bashrc, which is the user's file.
+     *
+     * Empty means "the script named no prompt", which leaves the shell's own
+     * alone — the same contract the font and every colour have. */
+    char prompt[TERM_CONFIG_TEXT_LENGTH];
+
     /* --- the colours ------------------------------------------------------
      *
      * The palette a program names by number, plus the two the theme owns. Each
