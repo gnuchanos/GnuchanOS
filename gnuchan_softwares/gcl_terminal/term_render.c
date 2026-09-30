@@ -355,7 +355,7 @@ typedef struct RenderPen {
     XftColor *color;
 } RenderPen;
 
-static RenderPen pen_for(TermCore *core, const TermCell *cell) {
+static RenderPen pen_for(TermCore *core, const TermCell *cell, int selected) {
     RenderPen pen;
     pen.face = term_style_face_for(core->style, cell);
 
@@ -376,7 +376,16 @@ static RenderPen pen_for(TermCore *core, const TermCell *cell) {
      * Resolving each field where it lives keeps DEFAULT meaning what the program
      * meant by it, and the reverse stays a choice between two finished
      * colours. */
-    int reversed = term_style_is_reversed(cell);
+    /* The SELECTION reverses too, and it has to be folded in here as well as in
+       the background pass or the two disagree.
+     *
+     * The background of a selected cell is painted in its FOREGROUND colour —
+       that is what cell_bg_with() does — so a glyph left in the foreground
+       colour would be drawn in the same ink as the box behind it and vanish
+       completely: a selection of invisible text. Flipping the pen as well puts
+       the characters in the cell's background colour, which is what makes a
+       selection READ as reversed text. */
+    int reversed = term_style_is_reversed(cell) ^ (selected ? 1 : 0);
     XftColor *text = term_style_color(core->style, cell, 1);
     XftColor *behind = term_style_color(core->style, cell, 0);
     pen.color = reversed ? behind : text;
@@ -404,7 +413,8 @@ static void render_row_text(TermCore *core, const TermGrid *grid,
             continue;
         }
 
-        RenderPen pen = pen_for(core, cell);
+        int selected = cell_is_selected(core, y, x);
+        RenderPen pen = pen_for(core, cell, selected);
 
         /* A wide character is drawn alone. */
         if (cell->wide) {
@@ -424,7 +434,14 @@ static void render_row_text(TermCore *core, const TermGrid *grid,
             if (rc->ch == 0 || rc->wide_cont || rc->wide) {
                 break;
             }
-            RenderPen rp = pen_for(core, rc);
+            /* The run breaks where the SELECTION changes as well as where the
+               face or the colour does: a run drawn with one pen cannot have
+               half of itself reversed, and a selection edge in the middle of a
+               line is exactly that. Without this the cells after the cursor's
+               column were drawn with the pen the run started with, so a
+               selection looked like it covered a whole line whatever part of
+               it was dragged. */
+            RenderPen rp = pen_for(core, rc, cell_is_selected(core, y, x));
             if (!pen_same(&pen, &rp)) {
                 break;
             }
@@ -776,6 +793,28 @@ void term_render_frame(TermCore *core) {
        is a walk of the line marks, not a walk of the screen. */
     if (!full && !term_grid_is_dirty(grid) && !term_core_needs_draw(core)) {
         return;
+    }
+
+    /* SOMETHING ASKED FOR A REDRAW, and the rows it is about have to be marked
+       or the request goes nowhere.
+     *
+     * term_core_damage() sets a flag meaning "draw again", and the loop below
+       walks the DIRTY ROWS — of which there are none, because damage marks
+     nothing. The flag therefore got as far as this function and no further:
+       the early-out above let it through and then every row was skipped, so a
+     selection highlight, a scrollbar move and everything else that damages
+     without writing a cell drew NOTHING until some unrelated output happened
+     to mark a row.
+     *
+     * Marking every row is the honest answer to "the picture changed and I do
+       not know where": a caller that knows can mark the rows itself, and one
+       that does not — a selection dragged across many lines — should not have
+     to guess. The cost is one frame of the visible screen, which is what a
+       redraw request means. */
+    if (!full && term_core_needs_draw(core)) {
+        for (int y = 0; y < mutable_grid->rows; y++) {
+            mutable_grid->lines[y].dirty = 1;
+        }
     }
 
     int rows = grid->rows < core->rows ? grid->rows : core->rows;

@@ -108,11 +108,18 @@ typedef struct TermCore {
      * scrolls it. The core is the thing they already share. */
     TermScroll scroll;
 
-    /* The bar along the bottom of the window, which the input module takes a
-       click off before the program sees it. */
-    int scrollbar_visible;
-    int scrollbar_x;
-    int scrollbar_width;
+    /* Whether the scrollbar's thumb is being DRAGGED. It is the core's because
+       the button went down in one event and the pointer moves in others: the
+       state has to outlive the call that began the drag, and the core is the
+       only thing every module already shares.
+
+       The three fields that used to be here — scrollbar_visible, scrollbar_x
+       and scrollbar_width — were written by nothing and read by nothing: the
+       geometry is computed on demand by term_core_scrollbar_rect(), which is
+       the one place it can disagree with the input module's hit test. They are
+       gone rather than left behind as three names for a scrollbar that never
+       was. */
+    int scrollbar_dragging;
 
     /* What the main grid asks when a line leaves the top of it, and when it
        wants one back. term_core_init() fills this in with the ring above and

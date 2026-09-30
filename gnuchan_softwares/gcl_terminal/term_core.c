@@ -719,7 +719,14 @@ static void core_dispatch_event(TermCore *core, XEvent *event) {
        module is interested, and the answer has to be sent or every paste on
        the desktop hangs. It is handled before the modules so a module never
        sees an event that was never about it. */
-    if (event->type == SelectionRequest || event->type == SelectionClear) {
+    /* The three selection events, and the third is the one that was missing:
+       a PASTE does not arrive when the key is pressed, it arrives here, as a
+       SelectionNotify carrying the text another program was asked for. Without
+       this case the answer was read as an ordinary event and thrown away, so
+       Ctrl+Shift+V asked a question nothing ever listened for. */
+    if (event->type == SelectionRequest ||
+        event->type == SelectionClear ||
+        event->type == SelectionNotify) {
         term_select_event(core, event);
         return;
     }

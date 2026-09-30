@@ -118,36 +118,42 @@ typedef struct KeyEntry {
 } KeyEntry;
 
 static const KeyEntry KEYS[] = {
-    /* The arrows. `ESC [ A` and `ESC O A` are the two forms. */
-    { XK_Up,        "\x1b[%dA", "\x1bO%dA" },
-    { XK_Down,      "\x1b[%dB", "\x1bO%dB" },
-    { XK_Right,     "\x1b[%dC", "\x1bO%dC" },
-    { XK_Left,      "\x1b[%dD", "\x1bO%dD" },
-    { XK_Home,      "\x1b[%dH", "\x1bO%dH" },
-    { XK_End,       "\x1b[%dF", "\x1bO%dF" },
+    /* The arrows. `ESC [ A` and `ESC O A` are the two forms, and `%s` is where
+       a modifier's number goes — the empty string when there is none. */
+    { XK_Up,        "\x1b[%sA", "\x1bO%sA" },
+    { XK_Down,      "\x1b[%sB", "\x1bO%sB" },
+    { XK_Right,     "\x1b[%sC", "\x1bO%sC" },
+    { XK_Left,      "\x1b[%sD", "\x1bO%sD" },
+    { XK_Home,      "\x1b[%sH", "\x1bO%sH" },
+    { XK_End,       "\x1b[%sF", "\x1bO%sF" },
 
     /* The editing keys. The `~` group is the one xterm uses for everything
-       that had no letter left. */
-    { XK_Insert,    "\x1b[2~", NULL },
-    { XK_Delete,    "\x1b[3~", NULL },
-    { XK_Page_Up,   "\x1b[5~", NULL },
-    { XK_Page_Down, "\x1b[6~", NULL },
-    { XK_BackSpace, "\x7f",    NULL },
+       that had no letter left, and the `%s` follows the key's own number —
+       `ESC [ 3 ; 5 ~` is ctrl-delete, and nought when no modifier is held.
+       A tilde key with no `%s` could not carry a modifier at all, which is
+       why the delete key used to send a plain `ESC [ 3 ~` whatever was held
+       down. */
+    { XK_Insert,    "\x1b[2%s~", NULL },
+    { XK_Delete,    "\x1b[3%s~", NULL },
+    { XK_Page_Up,   "\x1b[5%s~", NULL },
+    { XK_Page_Down, "\x1b[6%s~", NULL },
+    { XK_BackSpace, "\x7f",      NULL },
 
-    /* The function keys. F1 to F4 are the old SS3 group; the rest are the `~`
-       numbers, and there is no pattern to them. */
-    { XK_F1,  "\x1bOP",   NULL },
-    { XK_F2,  "\x1bOQ",   NULL },
-    { XK_F3,  "\x1bOR",   NULL },
-    { XK_F4,  "\x1bOS",   NULL },
-    { XK_F5,  "\x1b[15~", NULL },
-    { XK_F6,  "\x1b[17~", NULL },
-    { XK_F7,  "\x1b[18~", NULL },
-    { XK_F8,  "\x1b[19~", NULL },
-    { XK_F9,  "\x1b[20~", NULL },
-    { XK_F10, "\x1b[21~", NULL },
-    { XK_F11, "\x1b[23~", NULL },
-    { XK_F12, "\x1b[24~", NULL },
+    /* The function keys. F1 to F4 are the old SS3 group, which has no room for
+       a parameter and so cannot carry a modifier; the rest are the `~` numbers,
+       and there is no pattern to them. */
+    { XK_F1,  "\x1bOP",     NULL },
+    { XK_F2,  "\x1bOQ",     NULL },
+    { XK_F3,  "\x1bOR",     NULL },
+    { XK_F4,  "\x1bOS",     NULL },
+    { XK_F5,  "\x1b[15%s~", NULL },
+    { XK_F6,  "\x1b[17%s~", NULL },
+    { XK_F7,  "\x1b[18%s~", NULL },
+    { XK_F8,  "\x1b[19%s~", NULL },
+    { XK_F9,  "\x1b[20%s~", NULL },
+    { XK_F10, "\x1b[21%s~", NULL },
+    { XK_F11, "\x1b[23%s~", NULL },
+    { XK_F12, "\x1b[24%s~", NULL },
 };
 
 #define KEYS_LEN ((int)(sizeof(KEYS) / sizeof(KEYS[0])))
@@ -164,43 +170,66 @@ static const KeyEntry *key_lookup(KeySym keysym) {
 
 /* Write a modifier into a sequence template.
  *
- * The templates are `"\x1b[%dA"` and the like: a prefix, the number, a suffix.
- * They are all static strings written a few lines above, so the format is
- * known good — but snprintf cannot check a format that is not a literal, and
- * a compiler told to look (-Wformat=2) says so, because the day one of those
- * templates gains a `%s` the call would read an `int` as a pointer.
+ * The templates carry `%s` where the modifier's number belongs, and the text
+ * that goes there is built below. There are two groups and they put it in
+ * different places, which is the whole of the difficulty:
  *
- * So the template is SPLIT at its `%d` and the three pieces are formatted
- * against a literal instead. That is not a workaround: it is the same output
- * by a call the compiler can check, and a template with no `%d` at all — the
- * fixed sequences, `\x7f` and the function keys — takes the branch that copies
- * it whole.
+ *   the letters   ESC [ 1 ; 5 A       the number goes before the letter
+ *   the tildes    ESC [ 3 ; 5 ~       the number follows the key's own
+ *
+ * `mods` is the standard's modifier number, one higher than the bit field, so
+ * 1 means "no modifier" — and NO modifier means NOTHING is written, which is
+ * what makes a plain arrow `ESC [ A` rather than `ESC [ 1 A`.
+ *
+ * That last point was the fault: the number used to be written
+ * unconditionally, so the application-cursor form came out as `ESC O 1 A` —
+ * a sequence that does not exist, because SS3 has no room for a parameter.
+ * nano turns that mode on, so every arrow key in nano arrived as four bytes
+ * its parser could not match, and the keyboard looked dead.
+ *
+ * The template is SPLIT at its `%s` and the pieces are formatted against a
+ * literal. snprintf cannot check a format that is not a literal, and a
+ * compiler told to look (-Wformat=2) is right to complain: the day one of
+ * these templates gains a real conversion the call would read an `int` as a
+ * pointer. Splitting it is the same output by a call the compiler can check.
  *
  * Returns the length, or -1 when it would not fit. */
 static int format_sequence(char *out, unsigned int size, const char *templ,
                            int mods) {
-    const char *mark = strstr(templ, "%d");
+    const char *mark = strstr(templ, "%s");
     if (mark == NULL) {
         int len = snprintf(out, size, "%s", templ);
         return (len >= 0 && (unsigned)len < size) ? len : -1;
     }
-    /* `%.*s` takes the prefix by length, so nothing has to be copied out of
-       the template to cut it short. */
+
+    /* Nothing at all when no modifier is held. */
+    char modifier[16];
+    if (mods <= 1) {
+        modifier[0] = '\0';
+    } else if (strchr(templ, '~') != NULL) {
+        snprintf(modifier, sizeof(modifier), ";%d", mods);
+    } else {
+        snprintf(modifier, sizeof(modifier), "1;%d", mods);
+    }
+
     int head = (int)(mark - templ);
-    int len = snprintf(out, size, "%.*s%d%s", head, templ, mods, mark + 2);
+    int len = snprintf(out, size, "%.*s%s%s", head, templ, modifier, mark + 2);
     return (len >= 0 && (unsigned)len < size) ? len : -1;
 }
 
-/* Send a key that has a sequence. The modifier is written into the template,
-   which is why the templates carry a `%d`; a sequence with no modifier slot is
-   sent as it stands, and one code path serves both. */
+/* Send a key that has a sequence.
+ *
+ * The application-cursor form is taken only for an UNMODIFIED key, and that is
+ * not tidiness: SS3 has no room for a parameter, so a modified arrow has no
+ * SS3 form to take and is always the CSI form. `mods == 1` is exactly "no
+ * modifier". */
 static void send_key_sequence(TermCore *core, const KeyEntry *entry,
                               unsigned int state, int app_cursor) {
     char out[TERM_KEY_MAX];
     int mods = modifier_number(state);
 
     const char *templ = entry->normal;
-    if (app_cursor && entry->app != NULL) {
+    if (app_cursor && entry->app != NULL && mods <= 1) {
         templ = entry->app;
     }
 
@@ -396,12 +425,32 @@ static int handle_terminal_key(TermCore *core, XKeyEvent *key, KeySym keysym) {
     int shift = (key->state & ShiftMask) != 0;
     int ctrl = (key->state & ControlMask) != 0;
 
-    /* Ctrl+Shift+C is a copy. Shift is required and is not a formality: plain
-       Ctrl+C is an interrupt and belongs to whatever is running, so taking it
-       would make it impossible to stop a program from the terminal. */
+    /* Ctrl+Shift+C and Ctrl+Shift+V are the copy and the paste. Shift is
+       required on both and is not a formality: plain Ctrl+C is an interrupt
+       and plain Ctrl+V is a literal-next, and both belong to whatever is
+       running. Taking them would make it impossible to stop a program or to
+       type a control character from the terminal. */
     if (ctrl && shift && (keysym == XK_C || keysym == XK_c)) {
         term_select_copy(core);
         return 1;
+    }
+    if (ctrl && shift && (keysym == XK_V || keysym == XK_v)) {
+        term_select_paste(core);
+        return 1;
+    }
+
+    /* Ctrl+Shift with an arrow selects, by the character or by the word. It is
+       the keyboard's way of doing what a drag does, and it is claimed before
+       the general shift-scrolling below because with Ctrl held the arrows mean
+       "extend the selection" and not "scroll by a line". */
+    if (ctrl && shift) {
+        switch (keysym) {
+        case XK_Left:  term_select_key(core, 0, -1, 0); return 1;
+        case XK_Right: term_select_key(core, 0,  1, 0); return 1;
+        case XK_Up:    term_select_key(core, -1, 0, 0); return 1;
+        case XK_Down:  term_select_key(core,  1, 0, 0); return 1;
+        default: break;
+        }
     }
 
     /* Anything typed at the prompt is the user being done reading: the view
@@ -465,6 +514,28 @@ static int handle_terminal_key(TermCore *core, XKeyEvent *key, KeySym keysym) {
 static int handle_button(TermCore *core, XButtonEvent *button, int pressed) {
     int shift = (button->state & ShiftMask) != 0;
 
+    /* A DRAG of the scrollbar's thumb, which is a different gesture from a
+       click on the track and was not handled at all: the button went down on
+       the bar, put the view there, and then the button coming up did nothing —
+       so grabbing the thumb and moving it scrolled nowhere.
+     *
+     * The drag is remembered on the CORE, because the motion events arrive long
+     * after this call returned and the state has to outlive it. Every motion
+     * while it is set puts the view where the pointer is, which is what a
+     * person means by dragging a scrollbar. */
+    if (button->button == Button1) {
+        if (!pressed && core->scrollbar_dragging) {
+            core->scrollbar_dragging = 0;
+            return 1;
+        }
+        if (pressed && click_is_on_scrollbar(core, button->x, button->y)) {
+            core->scrollbar_dragging = 1;
+            term_core_set_view_offset(
+                core, term_core_scrollbar_offset_at(core, button->y));
+            return 1;
+        }
+    }
+
     if (button->button == Button4 || button->button == Button5) {
         if (!pressed) {
             return 1;   /* a wheel event has no release */
@@ -480,14 +551,6 @@ static int handle_button(TermCore *core, XButtonEvent *button, int pressed) {
     }
 
     if (button->button == Button1) {
-        if (pressed && click_is_on_scrollbar(core, button->x, button->y)) {
-            /* A click anywhere on the track puts the view there, which is what
-               a person means by clicking below the thumb: not "down one line"
-               but "show me that part". */
-            term_core_set_view_offset(
-                core, term_core_scrollbar_offset_at(core, button->y));
-            return 1;
-        }
         /* A drag on the grid selects text, and only when the program has not
            asked for the mouse: a program that wants clicks — btop, a file
            manager in a terminal — must get them. */
@@ -581,6 +644,15 @@ static void input_module_event(TermCore *core, XEvent *event) {
        progress, so a program that wants motion events — `?1003`, which reports
        every move — still gets them when the user is not selecting. */
     case MotionNotify: {
+        /* Dragging the scrollbar's thumb, which takes precedence over a
+           selection drag: the button went down on the bar, so it is the bar
+           being dragged and nothing on the grid is selected. */
+        if (core->scrollbar_dragging) {
+            term_core_set_view_offset(
+                core, term_core_scrollbar_offset_at(core, event->xmotion.y));
+            term_core_claim_event(core);
+            return;
+        }
         TermSelect *select = (TermSelect *)core->select;
         if (select != NULL && select->dragging) {
             term_select_extend(core, event->xmotion.x, event->xmotion.y);

@@ -58,6 +58,14 @@ typedef struct TermSelect {
        forgot would be a terminal that breaks every paste on the desktop for as
        long as it ran. */
     int  owns_selection;
+
+    /* A paste that has been asked for and not yet answered. X answers
+       asynchronously, so between the key and the text there is a round trip
+       through the selection's owner; this says one is in flight, so an answer
+       that arrives with a property of None is read as "the owner had nothing"
+       rather than being mistaken for some other program's traffic. */
+    int  paste_pending;
+    Atom paste_property;
 } TermSelect;
 
 void term_select_init(TermSelect *select);
@@ -95,8 +103,42 @@ int term_select_covers(const TermSelect *select, const TermGrid *grid,
  * owned by the same string, so either gesture gets the same text. */
 void term_select_copy(TermCore *core);
 
-/* Answer a SelectionRequest. Called by the module for that event; returns 1
-   when the event was a selection one and has been dealt with. */
+/* --- the other direction: pasting ----------------------------------------- */
+
+/* Ask the CLIPBOARD's owner for its text, and hand what comes back to the
+ * program. This is Ctrl+Shift+V.
+ *
+ * It is a two-part operation and that is X's doing, not a choice made here: a
+ * program does not READ a selection, it ASKS for it and waits for a
+ * SelectionNotify carrying the answer. So this half only sends the request;
+ * the answer arrives later as an event and is finished by
+ * term_select_event(). A terminal that sent the request and never listened
+ * would be a terminal whose paste key did nothing.
+ *
+ * The text is written to the PTY through term_input_send(), which is the same
+ * path a keystroke takes — so a pasted newline is an Enter and a pasted page of
+ * text is many characters, not one. A program that asked for bracketed paste
+ * gets the text wrapped in the markers that say so, which is what lets it tell
+ * a paste from typing and not run the lines as commands. */
+void term_select_paste(TermCore *core);
+
+/* Answer the events the two halves of a selection use: a SelectionRequest from
+   another program asking for our text, a SelectionClear when ours is taken
+   away, and a SelectionNotify carrying the answer to a paste. Called by the
+   core's own dispatch; returns 1 when the event was one of these and has been
+   dealt with, so nothing further acts on it. */
 int term_select_event(TermCore *core, XEvent *event);
+
+/* --- selecting from the keyboard ------------------------------------------ */
+
+/* Move the moving end of the selection, and start one at the terminal's cursor
+   when there is none yet. `lines` and `cols` are how far to go — negative is up
+   and left — and `word` says to move by whole words rather than by characters,
+   which is what the ctrl in Ctrl+Shift+arrow means.
+ *
+ * This is the keyboard's half of what a drag does. It exists because a mouse is
+ * not always the thing in hand and because a selection made with the keys can
+ * be made precisely, which dragging over a fixed-width grid is not. */
+void term_select_key(TermCore *core, int lines, int cols, int word);
 
 #endif /* GNUCHANTERM_SELECT_H */

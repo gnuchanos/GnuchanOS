@@ -105,31 +105,99 @@ void term_config_defaults(TermConfig *config) {
 
 /* --- where the script is -------------------------------------------------- */
 
+/* Whether a path names something that can be read. It is how the search below
+   decides a candidate is THE file: a place with nothing at it is not an
+   answer, and walking past it is the whole point of the search. */
+static int path_is_readable(const char *path) {
+    return path != NULL && path[0] != '\0' && access(path, R_OK) == 0;
+}
+
+/* THE FIRST PLACE THAT HOLDS A FILE WINS, and the order is the whole of this
+ * function:
+ *
+ *   $GCL_TERMINAL_CONFIG    one file named outright. It is first because a
+ *                           person who sets it means it — a second theme, a
+ *                           test, a session with its own colours — and
+ *                           nothing should be able to get in front of it.
+ *
+ *   $XDG_CONFIG_HOME/...    the standard user location, which is where the
+ *                           installer writes and where a desktop's own
+ *                           settings belong.
+ *
+ *   ~/.config/...           the same location for a session that never set
+ *                           XDG_CONFIG_HOME, which is most of them.
+ *
+ *   GnuChanTerm_config/...  the copy the SOURCE TREE ships, relative to where
+ *                           the terminal was started. It is last because it
+ *                           is the developer's file: a machine with settings
+ *                           of its own must not have the tree's one step in
+ *                           front of it. It is what makes `makefile.py run` —
+ *                           a build from the tree, with no install — read the
+ *                           settings the tree ships.
+ *
+ * That last entry is the whole reason the settings file appeared to do
+ * nothing. The terminal only ever looked in the two user locations, so a
+ * build run from the tree — which is what `run` is, and what a person testing
+ * a change does — had no settings file at all: the colours stayed the built-in
+ * palette of gcl_palette.h and the prompt stayed whatever the shell's own
+ * startup files set, because none of gcl_Terminal was ever read.
+ *
+ * When none of the places holds a file the standard user location is written,
+ * and NOT an empty string: the caller then reports that path as missing, which
+ * names the file a person is expected to write. An empty string would say only
+ * that there is nowhere to look.
+ *
+ * Written into buffer, which is returned. `size` is how much room there is. */
 char *term_config_path(char *buffer, unsigned int size) {
     if (!buffer || size == 0) {
         return buffer;
     }
     buffer[0] = '\0';
 
-    /* $XDG_CONFIG_HOME when it is set and absolute, which is what the
-       specification says it is for; ~/.config otherwise. A relative
-       XDG_CONFIG_HOME is ignored on purpose — the spec says so, and honouring
-       it would put the file wherever the user happened to start the terminal
-       from, which is a settings file nobody can find twice. */
-    const char *base = getenv("XDG_CONFIG_HOME");
-    if (base != NULL && base[0] == '/') {
-        snprintf(buffer, size, "%s/GnuChanTerm/GnuChanTerm.py", base);
+    /* 1. The file named outright. */
+    const char *named = getenv("GCL_TERMINAL_CONFIG");
+    if (path_is_readable(named)) {
+        snprintf(buffer, size, "%s", named);
         return buffer;
     }
 
+    /* 2. $XDG_CONFIG_HOME when it is set and absolute, which is what the
+       specification says it is for. A relative XDG_CONFIG_HOME is ignored on
+       purpose — the spec says so, and honouring it would put the file wherever
+       the user happened to start the terminal from, which is a settings file
+       nobody can find twice. */
+    char candidate[TERM_CONFIG_TEXT_LENGTH * 2];
+    const char *base = getenv("XDG_CONFIG_HOME");
+    if (base != NULL && base[0] == '/') {
+        snprintf(candidate, sizeof(candidate),
+                 "%s/GnuChanTerm/GnuChanTerm.py", base);
+        if (path_is_readable(candidate)) {
+            snprintf(buffer, size, "%s", candidate);
+            return buffer;
+        }
+    }
+
+    /* 3. ~/.config, the same place for a session that never set
+       XDG_CONFIG_HOME. The path is written even when there is nothing at it —
+       it is the fallback the caller reports — and the search carries on,
+       because the file being looked for may be down at the tree's copy. */
     const char *home = getenv("HOME");
-    if (home == NULL || home[0] == '\0') {
-        /* No HOME and no XDG_CONFIG_HOME: there is nowhere to look, and the
-           caller is told by the empty string rather than by a path made of
-           guesses. */
+    if (home != NULL && home[0] != '\0') {
+        snprintf(candidate, sizeof(candidate),
+                 "%s/.config/GnuChanTerm/GnuChanTerm.py", home);
+        if (path_is_readable(candidate)) {
+            snprintf(buffer, size, "%s", candidate);
+            return buffer;
+        }
+        snprintf(buffer, size, "%s", candidate);
+    }
+
+    /* 4. The tree's own copy, beside the working directory. */
+    if (path_is_readable("GnuChanTerm_config/GnuChanTerm.py")) {
+        snprintf(buffer, size, "%s", "GnuChanTerm_config/GnuChanTerm.py");
         return buffer;
     }
-    snprintf(buffer, size, "%s/.config/GnuChanTerm/GnuChanTerm.py", home);
+
     return buffer;
 }
 

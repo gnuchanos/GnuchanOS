@@ -131,9 +131,21 @@ typedef struct TermConfig {
    config is missing or broken gets exactly this. */
 void term_config_defaults(TermConfig *config);
 
-/* Where the script is looked for: $XDG_CONFIG_HOME/GnuChanTerm/GnuChanTerm.py,
-   or ~/.config/GnuChanTerm/GnuChanTerm.py. Written into buffer, which is
-   returned. `size` is how much room there is. */
+/* Where the script is looked for, FIRST PLACE THAT HAS ONE WINNING:
+
+     $GCL_TERMINAL_CONFIG                    a file named outright
+     $XDG_CONFIG_HOME/GnuChanTerm/GnuChanTerm.py
+     ~/.config/GnuChanTerm/GnuChanTerm.py
+     GnuChanTerm_config/GnuChanTerm.py       the copy the source tree ships
+
+   The last one is relative to the working directory and is what lets a build
+   run straight from the tree — `makefile.py run` — read the settings the tree
+   ships instead of falling back to the built-in palette of gcl_palette.h. It
+   is LAST so a machine with settings of its own never has the tree's file in
+   front of it; see term_config_path() in term_config.c for why each place is
+   where it is.
+
+   Written into buffer, which is returned. `size` is how much room there is. */
 char *term_config_path(char *buffer, unsigned int size);
 
 /* Read the script at path into config. Returns 0 when the file was read and

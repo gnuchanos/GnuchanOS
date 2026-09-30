@@ -216,7 +216,7 @@ set -e
 # The display this launcher owns is a constant, and it is deliberately not read
 # from the environment.
 #
-# It used to be `DISPLAY="${DISPLAY:-:0}"`, which is wrong in exactly the case
+# It used to be `DISPLAY="${{DISPLAY:-:0}}"`, which is wrong in exactly the case
 # this script runs in. A display manager is often started from something that
 # already has a DISPLAY — a shell, a session, another greeter being replaced —
 # and inheriting that number makes the launcher start a *second* X server on a

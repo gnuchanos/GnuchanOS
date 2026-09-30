@@ -29,6 +29,10 @@
 
 #include "term_select.h"
 #include "term_style.h"
+/* For writing the pasted text to the child, and for asking the parser whether
+   it wants the paste bracketed. A paste goes down the same path a keystroke
+   does, which is the whole of why this file needs the input module at all. */
+#include "term_input.h"
 
 /* Room for the extracted text, and the ceiling on it.
  *
@@ -503,6 +507,184 @@ static void selection_lost(TermCore *core) {
     }
 }
 
+/* --- pasting -------------------------------------------------------------- */
+
+/* The ceiling on a paste, for the same reason the copy has one: the answer
+   comes from another program and this is the only place that decides how much
+   of it is believed. */
+#define PASTE_MAX_BYTES (4 * 1024 * 1024)
+
+void term_select_paste(TermCore *core) {
+    if (core->select == NULL || core->display == NULL) {
+        return;
+    }
+    TermSelect *select = (TermSelect *)core->select;
+
+    /* The answer goes into a property of our OWN window, and it is asked for
+       by UTF8_STRING and not by XA_STRING: a modern clipboard holds UTF-8, and
+       a program that asked for STRING is offering whatever its locale says,
+       which for anything not ASCII is mojibake. */
+    Atom clipboard = XInternAtom(core->display, "CLIPBOARD", False);
+    Atom utf8 = XInternAtom(core->display, "UTF8_STRING", False);
+    Atom property = XInternAtom(core->display, "GCL_TERM_PASTE", False);
+
+    select->paste_pending = 1;
+    select->paste_property = property;
+
+    /* The property is cleared first. A stale answer from an earlier paste would
+       otherwise be read as this one's, and a person pasting twice would get the
+       first text both times. */
+    XDeleteProperty(core->display, core->window, property);
+    XConvertSelection(core->display, clipboard, utf8, property,
+                      core->window, CurrentTime);
+    XFlush(core->display);
+}
+
+/* The answer arrived. Read it and hand it to the program.
+ *
+ * `property == None` means the selection's owner had nothing to give — an
+ * empty clipboard, or a program that went away between the request and the
+ * answer — and is not an error: there is simply nothing to paste. */
+static void finish_paste(TermCore *core, XSelectionEvent *event) {
+    TermSelect *select = (TermSelect *)core->select;
+    if (select == NULL || !select->paste_pending) {
+        return;
+    }
+    select->paste_pending = 0;
+
+    if (event->property == None) {
+        return;
+    }
+
+    Atom type = None;
+    int format = 0;
+    unsigned long count = 0;
+    unsigned long after = 0;
+    unsigned char *data = NULL;
+
+    /* `long_length` is in 32 bit units, so asking for a quarter of the ceiling
+       asks for the ceiling in bytes. `True` is the delete: the property is
+       taken rather than left behind for the next paste to trip over. */
+    int status = XGetWindowProperty(
+        core->display, core->window, select->paste_property, 0,
+        (long)(PASTE_MAX_BYTES / 4), True, AnyPropertyType,
+        &type, &format, &count, &after, &data);
+    if (status != Success || data == NULL || format != 8 || count == 0) {
+        if (data != NULL) {
+            XFree(data);
+        }
+        return;
+    }
+
+    /* Bracketed paste, when the program asked for it with `?2004h`. The two
+       markers are what tell the program that this text arrived as one paste
+       rather than being typed, and a program that has asked for them will run
+       an editor's `:wq` pasted as a line of text instead of as a command. */
+    if (term_vt_wants_bracketed_paste(&core->vt)) {
+        static const char START[] = "\x1b[200~";
+        static const char END[] = "\x1b[201~";
+        term_input_send(core, START, (int)sizeof(START) - 1);
+        term_input_send(core, (const char *)data, (int)count);
+        term_input_send(core, END, (int)sizeof(END) - 1);
+    } else {
+        term_input_send(core, (const char *)data, (int)count);
+    }
+
+    XFree(data);
+    /* The view follows the program: a paste is typed text as far as the shell
+       is concerned, and a screen left scrolled back would put what was pasted
+       somewhere the user cannot see. */
+    term_core_scroll_to_bottom(core);
+}
+
+/* --- selecting from the keyboard ----------------------------------------- */
+
+/* Whether a cell holds a character that a word is made of. A word break is
+   whitespace or an empty cell, which is what a person means by "the word under
+   the cursor" on a terminal. */
+static int cell_is_word_char(const TermCell *cell) {
+    if (cell == NULL || cell->ch == 0) {
+        return 0;
+    }
+    if (cell->ch == ' ' || cell->ch == '\t') {
+        return 0;
+    }
+    return 1;
+}
+
+void term_select_key(TermCore *core, int lines, int cols, int word) {
+    if (core->select == NULL) {
+        return;
+    }
+    TermSelect *select = (TermSelect *)core->select;
+    const TermGrid *grid = &core->vt.grid;
+
+    /* Nothing selected yet: the selection starts at the TERMINAL's cursor, so
+       Ctrl+Shift+Right extends forward from where the shell is about to type,
+       which is what the gesture means when it is begun with no selection. */
+    if (!select->active) {
+        select->anchor_line = term_grid_line_number(grid, grid->cursor_y);
+        select->anchor_col = grid->cursor_x;
+        select->cursor_line = select->anchor_line;
+        select->cursor_col = select->anchor_col;
+        select->active = 1;
+    }
+
+    int line = select->cursor_line;
+    int col = select->cursor_col;
+
+    if (lines != 0) {
+        /* A line move stays inside what can be seen, because a selection end
+           that has walked off the view is one the user cannot aim with. The
+           range is the visible absolute lines. */
+        int top = term_grid_line_number(grid, 0);
+        int bottom = term_grid_line_number(grid, grid->rows - 1);
+        line += lines;
+        if (line < top) line = top;
+        if (line > bottom) line = bottom;
+        select->cursor_line = line;
+        term_core_damage(core);
+        return;
+    }
+
+    if (cols != 0 && line >= 0) {
+        int width = grid->cols;
+        int step = cols > 0 ? 1 : -1;
+        int remaining = cols > 0 ? cols : -cols;
+
+        /* A WORD move skips the run of non-word characters first and then the
+           run of word ones, which is what makes a doubled ctrl+Right land on
+           the end of the next word rather than in the middle of the spaces
+           between them. */
+        if (word) {
+            while (remaining-- > 0 && col >= 0 && col < width) {
+                const TermCell *cells = NULL;
+                int cell_count = 0;
+                cells = term_grid_row_cells(grid, grid->cursor_y, &cell_count);
+                if (cells == NULL) {
+                    break;
+                }
+                /* Skip what is not a word, then what is. */
+                while (col >= 0 && col < cell_count &&
+                       !cell_is_word_char(&cells[col])) {
+                    col += step;
+                }
+                while (col >= 0 && col < cell_count &&
+                       cell_is_word_char(&cells[col])) {
+                    col += step;
+                }
+            }
+        } else {
+            col += cols;
+        }
+
+        if (col < 0) col = 0;
+        if (col >= width) col = width - 1;
+        select->cursor_col = col;
+        term_core_damage(core);
+    }
+}
+
 int term_select_event(TermCore *core, XEvent *event) {
     if (event->type == SelectionRequest) {
         answer_selection_request(core, &event->xselectionrequest);
@@ -510,6 +692,10 @@ int term_select_event(TermCore *core, XEvent *event) {
     }
     if (event->type == SelectionClear) {
         selection_lost(core);
+        return 1;
+    }
+    if (event->type == SelectionNotify) {
+        finish_paste(core, &event->xselection);
         return 1;
     }
     return 0;
