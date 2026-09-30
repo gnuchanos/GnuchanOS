@@ -49,6 +49,18 @@
    for italic and bold italic. */
 #define TERM_STYLE_MAX_FACES 4
 
+/* How many distinct 0xRRGGBB colours are kept converted, for cells that carry a
+   colour rather than a palette index, and for the bar and the cursor.
+ *
+ * It is a cache of its own and NOT spare slots in the palette, which is the
+ * fault it was written to fix: the conversion used to write the colour into the
+ * next free PALETTE entry, so the first thing that asked for a truecolor — the
+ * bar, on the very first frame — overwrote palette entry 18 for good. A program
+ * that then asked for colour 18 was handed the bar's purple, and a syntax
+ * highlighter or a file manager with its own palette is exactly what notices.
+ */
+#define TERM_TRUECOLOR_CACHE 256
+
 /* Which face a cell is drawn in. */
 enum {
     TERM_FACE_NORMAL = 0,
@@ -83,10 +95,29 @@ typedef struct TermStyle {
     XftColor    xft_colors[TERM_PALETTE_SIZE];
     int         xft_color_count;
 
+    /* The colours cells carry outright, kept apart from the palette above so
+       converting one cannot overwrite an indexed colour. See
+       TERM_TRUECOLOR_CACHE. */
+    uint32_t truecolor_values[TERM_TRUECOLOR_CACHE];
+    XftColor truecolor_colors[TERM_TRUECOLOR_CACHE];
+    int      truecolor_count;
+
     /* Whether the display can blend, which decides how the renderer puts text
        over a background. With Render it composites; without it the cell has
        already been filled and the glyph is drawn opaque over it. */
     int has_render;
+
+    /* The bar at the top of the window. It belongs to the terminal and not to
+       the program, so no cell can name these two: a program that painted its
+       own purple would be choosing the terminal's furniture. The defaults are
+       the theme's, and a settings file overrides them — see term_theme.h. */
+    uint32_t bar_bg;
+    uint32_t bar_fg;
+
+    /* The block drawn over the cursor's cell. It is the terminal's own for the
+       same reason the bar's two are: a program cannot name it, because it is
+       the terminal saying where the cursor is and not the program drawing. */
+    uint32_t cursor;
 
     GC  gc;
 } TermStyle;
@@ -121,6 +152,14 @@ void term_style_set_color(TermStyle *style, int index, uint32_t rgb);
 uint32_t term_style_default_fg(const TermStyle *style);
 uint32_t term_style_default_bg(const TermStyle *style);
 
+/* One palette entry as a packed 0xRRGGBB. It is for a caller that has to NAME
+   a colour rather than draw with one: the LS_COLORS value handed to the shell
+   is built from these, so a colour changed in the settings file reaches `ls`
+   as well as the screen. An index outside the palette answers with the
+   background, which is a colour that exists rather than a read past the end of
+   the array. */
+uint32_t term_style_palette_entry(const TermStyle *style, int index);
+
 /* --- drawing -------------------------------------------------------------- */
 
 /* The XftColor a cell's colour is drawn with. The cell carries an index rather
@@ -128,6 +167,20 @@ uint32_t term_style_default_bg(const TermStyle *style);
    instead of once per cell. `foreground` picks which of the cell's two. */
 XftColor *term_style_color(TermStyle *style, const TermCell *cell,
                            int foreground);
+
+/* The same cell's colour as a packed 0xRRGGBB, for a caller that hands the
+   value to XSetForeground rather than to Xft — the renderer fills a run of
+   backgrounds that way.
+ *
+ * It resolves against the STYLE's palette, and that is the whole reason it
+ * exists. The grid carries a TermPalette of its own and nothing ever fills it,
+   so reading a cell's colour through the grid returned the fallback for every
+   cell: black for a background, white for a foreground. That painted a black
+   field over the theme and turned a reversed bar white with its text lost
+   inside it. The palette belongs to the STYLE — it is the configured look of
+   the terminal — and one palette is one place to change it. */
+uint32_t term_style_cell_color(const TermStyle *style, const TermCell *cell,
+                               int foreground);
 
 /* The XftColor for a packed 0xRRGGBB, which is what a truecolor cell and a
    module drawing its own rectangle both want. */
@@ -142,5 +195,17 @@ XftFont *term_style_face_for(TermStyle *style, const TermCell *cell);
 /* Whether the cell is drawn with its colours swapped — the SGR reverse
    attribute, which is most of what a selection highlight is made of. */
 int term_style_is_reversed(const TermCell *cell);
+
+/* The bar's two colours. They are the terminal's own and no program can set
+   them, which is why they are read here and not from a cell. */
+uint32_t term_style_bar_bg(const TermStyle *style);
+uint32_t term_style_bar_fg(const TermStyle *style);
+
+/* Set them, from the theme. */
+void term_style_set_bar(TermStyle *style, uint32_t bg, uint32_t fg);
+
+/* The cursor's colour, which the renderer draws its block in. */
+uint32_t term_style_cursor(const TermStyle *style);
+void term_style_set_cursor(TermStyle *style, uint32_t rgb);
 
 #endif /* GNUCHANTERM_STYLE_H */

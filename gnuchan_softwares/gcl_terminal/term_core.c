@@ -51,6 +51,16 @@
 #include "term_style.h"
 #include "term_render.h"
 #include "term_input.h"
+#include "term_select.h"
+
+/* The scrollbar's width in pixels. It is a fixed number of pixels and not a
+   cell: a bar sized in cells would be eight pixels on one font and twenty on
+   another, and this is a piece of furniture rather than a column of text. */
+#define TERM_SCROLLBAR_WIDTH 8
+
+/* The shortest the thumb may be drawn, so a history of ten thousand lines
+   still has something to see and something to grab. */
+#define TERM_SCROLLBAR_MIN_THUMB 16
 
 /* The window's own event mask. StructureNotify is what a resize arrives as and
    ExposureMask what a redraw request does; both are the core's to subscribe to
@@ -75,6 +85,199 @@ unsigned long term_core_now_ms(void) {
     return (unsigned long)(ts.tv_sec * 1000UL + ts.tv_nsec / 1000000UL);
 }
 
+/* --- the history ---------------------------------------------------------- */
+
+/* The half of the contract the HISTORY answers: the grid hands a line over and
+   asks for one back, and these are what the ring does with them.
+ *
+ * They are here rather than in term_scroll.c because the ring has no business
+   knowing what a grid is, and they are not in the grid because the grid has no
+   business keeping four thousand lines. The core owns both, so the core
+   introduces them. */
+static int history_push(void *user, TermCell *cells, int cols) {
+    return term_scroll_push((TermScroll *)user, cells, cols);
+}
+
+static void history_clear(void *user) {
+    term_scroll_clear((TermScroll *)user);
+}
+
+static int history_count(void *user) {
+    return term_scroll_count((TermScroll *)user);
+}
+
+static const TermCell *history_line(void *user, int index, int *cols) {
+    TermScroll *scroll = (TermScroll *)user;
+    if (cols != NULL) {
+        *cols = term_scroll_cols(scroll);
+    }
+    return term_scroll_cells(scroll, index);
+}
+
+/* The ring's offset and the grid's copy of it are the same number kept in two
+   places, and this is the one place they are put in step.
+ *
+ * They are kept apart because their lifetimes differ — the ring moves when a
+   program prints, the grid's copy is only read while drawing — and because the
+   grid must not know what a TermScroll is. But two copies of anything drift,
+   so every move of the view goes through here. */
+static void core_sync_view(TermCore *core) {
+    TermGrid *grid = &core->vt.grid;
+    int was = term_grid_view_offset(grid);
+    int now = term_scroll_offset(&core->scroll);
+    if (was == now) {
+        return;
+    }
+    term_grid_set_view_offset(grid, now);
+
+    /* Every row of the picture changes identity when the view moves, so every
+       row has to be drawn again.
+     *
+     * This is the same trap the scroll region has and it is worth naming: the
+     * dirty marks belong to the LINES, and a scroll of the view moves no line
+     * at all — the rows simply read from somewhere else. A frame that trusted
+     * the marks would find them all clean and draw nothing, and the wheel would
+     * appear to do nothing while the ring's offset changed underneath it.
+     *
+     * Marking the rows is what says "what is on the window is no longer what
+     * these rows hold". */
+    for (int y = 0; y < grid->rows; y++) {
+        grid->lines[y].dirty = 1;
+    }
+}
+
+void term_core_scroll_by(TermCore *core, int lines) {
+    if (term_scroll_by(&core->scroll, lines)) {
+        core_sync_view(core);
+        term_core_damage(core);
+    }
+}
+
+void term_core_scroll_to_bottom(TermCore *core) {
+    if (term_scroll_offset(&core->scroll) == 0) {
+        return;
+    }
+    term_scroll_to_bottom(&core->scroll);
+    core_sync_view(core);
+    term_core_damage(core);
+}
+
+int term_core_scrolled_back(const TermCore *core) {
+    return term_scroll_offset(&core->scroll) > 0;
+}
+
+/* --- the scrollbar -------------------------------------------------------- */
+
+void term_core_scrollbar_rect(const TermCore *core, int *x, int *width,
+                              int *track_y, int *track_h,
+                              int *thumb_y, int *thumb_h) {
+    int kept = term_scroll_count(&core->scroll);
+    int rows = core->vt.grid.rows;
+    int cell_h = core->style != NULL ? core->style->cell_height : 16;
+    if (cell_h < 1) cell_h = 16;
+
+    /* No history means no scrollbar. It is not drawn greyed out or drawn full:
+       a terminal that has printed nothing has nothing above it, and a bar that
+       appeared anyway would be a bar that does nothing when dragged. */
+    int visible = kept > 0;
+
+    int track_h_value = rows > 0 ? rows * cell_h : 0;
+    int thumb_h_value = 0;
+    int thumb_y_value = 0;
+
+    if (visible && track_h_value > 0) {
+        /* The thumb's length is the screen's share of the whole: how much of
+           everything there is, is on the screen. A history of nine hundred
+           lines with twenty-four on the screen gives a thumb a fortieth of the
+           track, which is what tells the eye there is a lot above. */
+        int whole = kept + rows;
+        thumb_h_value = track_h_value * rows / whole;
+        if (thumb_h_value < TERM_SCROLLBAR_MIN_THUMB) {
+            thumb_h_value = TERM_SCROLLBAR_MIN_THUMB;
+        }
+        if (thumb_h_value > track_h_value) {
+            thumb_h_value = track_h_value;
+        }
+
+        /* Where the thumb goes. The offset counts BACK from the newest line
+           and the scrollbar counts DOWN from the top, so the two are opposite:
+           at the top of the history the offset is at its largest and the thumb
+           is at the top. */
+        int travel = track_h_value - thumb_h_value;
+        int offset = term_scroll_offset(&core->scroll);
+        int most = kept > 0 ? kept : 1;
+        thumb_y_value = travel * (most - offset) / most;
+    }
+
+    if (x != NULL) {
+        *x = core->width - TERM_SCROLLBAR_WIDTH;
+    }
+    if (width != NULL) *width = visible ? TERM_SCROLLBAR_WIDTH : 0;
+    if (track_y != NULL) *track_y = 0;
+    if (track_h != NULL) *track_h = track_h_value;
+    if (thumb_y != NULL) *thumb_y = thumb_y_value;
+    if (thumb_h != NULL) *thumb_h = thumb_h_value;
+}
+
+int term_core_scrollbar_offset_at(const TermCore *core, int y) {
+    int x = 0;
+    int width = 0;
+    int track_y = 0;
+    int track_h = 0;
+    int thumb_y = 0;
+    int thumb_h = 0;
+    term_core_scrollbar_rect(core, &x, &width, &track_y, &track_h,
+                             &thumb_y, &thumb_h);
+    if (track_h <= 0 || thumb_h <= 0) {
+        return 0;
+    }
+
+    int kept = term_scroll_count(&core->scroll);
+    int travel = track_h - thumb_h;
+    if (travel <= 0 || kept <= 0) {
+        return 0;
+    }
+
+    /* The thumb is grabbed by its middle: a drag puts the line under the
+       pointer at the middle of the thumb, which is where the hand thinks it
+       is holding it. */
+    int place = y - track_y - thumb_h / 2;
+    if (place < 0) place = 0;
+    if (place > travel) place = travel;
+
+    /* The inverse of where the thumb was put: the top of the track is the
+       oldest line, and so names the LARGEST offset. */
+    int from_top = kept * place / travel;
+    int offset = kept - from_top;
+    if (offset < 0) offset = 0;
+    if (offset > kept) offset = kept;
+    return offset;
+}
+
+void term_core_set_view_offset(TermCore *core, int offset) {
+    if (offset < 0) offset = 0;
+    if (offset > term_scroll_count(&core->scroll)) {
+        offset = term_scroll_count(&core->scroll);
+    }
+    if (offset == term_scroll_offset(&core->scroll)) {
+        return;
+    }
+    /* The ring owns the number, so it is moved to it rather than assigned —
+       term_scroll_by() clamps against the history as it is NOW, which is the
+       only clamp that stays correct as lines arrive. */
+    term_scroll_by(&core->scroll, offset - term_scroll_offset(&core->scroll));
+    core_sync_view(core);
+    term_core_damage(core);
+}
+
+void term_core_claim_event(TermCore *core) {
+    core->event_claimed = 1;
+}
+
+int term_core_event_claimed(const TermCore *core) {
+    return core->event_claimed;
+}
+
 /* --- life ----------------------------------------------------------------- */
 
 /* Transform a cell count into a pixel count, and back. Both directions are
@@ -86,6 +289,78 @@ void term_core_cell_size(const TermCore *core, int *cell_width,
     *cell_height = core->style != NULL ? core->style->cell_height : 16;
     if (*cell_width < 1) *cell_width = 8;
     if (*cell_height < 1) *cell_height = 16;
+}
+
+/* --- the frame and the bar ------------------------------------------------ */
+
+void term_core_grid_origin(const TermCore *core, int *x, int *y) {
+    int cell_w = 0;
+    int cell_h = 0;
+    term_core_cell_size(core, &cell_w, &cell_h);
+    /* The bar is at the BOTTOM, so the grid starts at the very top and only the
+       margin pushes it in from the left. Its bottom edge is then where the bar
+       begins, which is why nothing has to be added for it here: the grid's own
+       height is the window less the margin and the bar, as the core computed
+       when it sized it. */
+    if (x != NULL) *x = TERM_PAD_CELLS * cell_w;
+    if (y != NULL) *y = 0;
+}
+
+const char *term_core_title(const TermCore *core) {
+    return core->title;
+}
+
+/* Read the child's working directory and put it in the bar.
+ *
+ * /proc/<pid>/cwd is a symbolic link to the directory, so readlink() on it is
+ * one syscall and not a parse of anything. It is read rather than asked for
+ * through the PTY on purpose: asking means sending an escape sequence the shell
+ * has to answer, and a shell that is busy — or running btop — never will. The
+ * bar would then freeze on whatever directory the shell was in when it stopped
+ * reading, which is the one moment its answer is stale.
+ *
+ * The home directory is folded to `~`, which is what a shell prompt does and
+ * what makes a path fit: /home/kubi/Projects/GnuchanOS is four fifths of a line
+ * and ~/Projects/GnuchanOS is half of one.
+ */
+void term_core_refresh_title(TermCore *core) {
+    if (core->pty == NULL) {
+        return;
+    }
+    TermPty *pty = (TermPty *)core->pty;
+    if (pty->child <= 0) {
+        return;
+    }
+
+    char link[64];
+    snprintf(link, sizeof(link), "/proc/%ld/cwd", (long)pty->child);
+
+    char target[TERM_TITLE_MAX];
+    ssize_t got = readlink(link, target, sizeof(target) - 1);
+    if (got <= 0) {
+        return;
+    }
+    target[got] = '\0';
+
+    /* The home directory is matched on a boundary and not on a prefix: /home/k
+       must not fold to ~ubi. */
+    const char *home = getenv("HOME");
+    char built[TERM_TITLE_MAX];
+    size_t home_len = (home != NULL) ? strlen(home) : 0;
+    if (home_len > 0 && strncmp(target, home, home_len) == 0 &&
+        (target[home_len] == '/' || target[home_len] == '\0')) {
+        snprintf(built, sizeof(built), "~%s", target + home_len);
+    } else {
+        snprintf(built, sizeof(built), "%s", target);
+    }
+
+    if (strcmp(built, core->title) != 0) {
+        snprintf(core->title, sizeof(core->title), "%s", built);
+        core->title_dirty = 1;
+        /* The bar has to be drawn again, and the frame the renderer would
+           otherwise skip on an idle screen is exactly the one that draws it. */
+        term_core_damage(core);
+    }
 }
 
 int term_core_register(TermCore *core, const TermModule *module) {
@@ -116,7 +391,27 @@ static int module_timeout_ms(const TermCore *core) {
     return smallest;
 }
 
-int term_core_init(TermCore *core, const char *title) {
+/* The font to open, in the order it is chosen: what the settings script named,
+   then $GCL_TERMINAL_FONT, then nothing — and nothing means the style's own
+   built-in, which is monospace-11.
+ *
+ * The environment variable is second and not first because a settings file is
+ * a deliberate act and an exported variable is usually an accident of the
+ * session that started the terminal. A person who writes a font in their
+ * settings means it; a shell that has GCL_TERMINAL_FONT exported from
+ * somewhere is offering a suggestion. */
+static const char *core_font_choice(const char *from_config) {
+    if (from_config != NULL && from_config[0] != '\0') {
+        return from_config;
+    }
+    const char *from_env = getenv("GCL_TERMINAL_FONT");
+    if (from_env != NULL && from_env[0] != '\0') {
+        return from_env;
+    }
+    return NULL;
+}
+
+int term_core_init(TermCore *core, const char *title, const char *font_name) {
     /* The module list is INCLUDED in the clear below, so it is taken out
        first. The header says modules are registered before this is called,
        and a memset over the whole struct would erase the list that was just
@@ -130,6 +425,18 @@ int term_core_init(TermCore *core, const char *title) {
     core->running = 1;
     core->cols = 80;
     core->rows = 24;
+    term_scroll_init(&core->scroll);
+
+    /* The selection is made here and not by a module because two things that
+       are not modules need it: the renderer asks it what to highlight and the
+       input module asks it to start a drag. It needs no display of its own —
+       the clipboard is only touched when a copy is asked for — so it can be
+       made before the display is opened below. */
+    core->select = (TermSelect *)calloc(1, sizeof(TermSelect));
+    if (core->select == NULL) {
+        return -1;
+    }
+    term_select_init((TermSelect *)core->select);
 
     core->display = XOpenDisplay(NULL);
     if (core->display == NULL) {
@@ -148,7 +455,7 @@ int term_core_init(TermCore *core, const char *title) {
         return -1;
     }
     if (term_style_init(core->style, core->display, core->screen,
-                        getenv("GCL_TERMINAL_FONT")) != 0) {
+                        core_font_choice(font_name)) != 0) {
         /* No font means nothing can be drawn, and a terminal that opens to a
            blank window is worse than one that does not open. */
         fprintf(stderr, "gcl_terminal: cannot open a font\n");
@@ -162,8 +469,11 @@ int term_core_init(TermCore *core, const char *title) {
     int cell_w = 0;
     int cell_h = 0;
     term_core_cell_size(core, &cell_w, &cell_h);
-    core->width = core->cols * cell_w;
-    core->height = core->rows * cell_h;
+    /* The window is the grid PLUS the frame, or the bar and the margin would
+       cover the first row and the last column of what the child was told it
+       had. */
+    core->width = core->cols * cell_w + 2 * TERM_PAD_CELLS * cell_w;
+    core->height = core->rows * cell_h + TERM_BAR_ROWS * cell_h;
 
     core->window = XCreateSimpleWindow(
         core->display, RootWindow(core->display, core->screen),
@@ -201,6 +511,21 @@ int term_core_init(TermCore *core, const char *title) {
         core->display = NULL;
         return -1;
     }
+
+    /* The MAIN screen keeps its lines above it; the alternate one does not.
+     *
+     * That asymmetry is the whole of what a scrollback is. A shell prints and
+     * scrolls and the user wants to read what went by. btop paints every cell
+     * of a screen that has no history at all — the "lines above" it are last
+     * frame's picture, and keeping them would make scrolling back through a
+     * full-screen program show garbage the program never meant anyone to see.
+     * So the history is attached to one grid and not the other. */
+    core->history.user = &core->scroll;
+    core->history.push = history_push;
+    core->history.clear = history_clear;
+    core->history.count = history_count;
+    core->history.line = history_line;
+    term_grid_attach_history(&core->vt.grid, &core->history);
 
     /* The parser's answers go back through the PTY, which does not exist yet —
        the module that spawns the child fills this in. */
@@ -263,8 +588,23 @@ void term_core_apply_resize(TermCore *core) {
     int cell_w = 0;
     int cell_h = 0;
     term_core_cell_size(core, &cell_w, &cell_h);
-    int cols = width / cell_w;
-    int rows = height / cell_h;
+
+    /* The frame comes off BEFORE the division into cells, because it is cells
+       that are being subtracted and the child is told the count that is left.
+       A program told the full window would draw its last row under the bar and
+       its last column against the edge, and btop would lose the bottom of every
+       panel it draws.
+     *
+     * A window dragged smaller than the frame clamps to one cell rather than to
+       zero: a grid of no cells is a grid every write into it has to be guarded
+       against, and the terminal on a 20 pixel window has bigger problems. */
+    int area_w = width - 2 * TERM_PAD_CELLS * cell_w;
+    int area_h = height - TERM_BAR_ROWS * cell_h;
+    if (area_w < cell_w) area_w = cell_w;
+    if (area_h < cell_h) area_h = cell_h;
+
+    int cols = area_w / cell_w;
+    int rows = area_h / cell_h;
     if (cols < 1) cols = 1;
     if (rows < 1) rows = 1;
     core->cols = cols;
@@ -318,8 +658,30 @@ static void core_pump_pty(TermCore *core) {
     }
     TermPty *pty = (TermPty *)core->pty;
 
+    int was_back = term_core_scrolled_back(core);
+
     int got = term_pty_pump(pty, &core->vt);
     if (got > 0) {
+        /* The program has printed, so the view comes back to the live screen.
+         *
+         * The rule is every terminal's and it is not a courtesy: a shell that
+         * has answered a command while the user was reading history would
+         * otherwise be a shell whose prompt is off the bottom of the screen,
+         * unseen, and the user would type into a view that is not the prompt.
+         * The scrollback is still there and the wheel still reaches it; the
+         * screen simply follows the program, which is what a terminal IS.
+         *
+         * It is done only when the view was actually back, so a `yes` that
+         * prints a million lines does not go through the ring's arithmetic a
+         * million times for nothing. */
+        if (was_back || term_core_scrolled_back(core)) {
+            term_scroll_to_bottom(&core->scroll);
+            core_sync_view(core);
+        } else {
+            /* The view was already live, but the lines that scrolled off still
+               moved the ring — the grid's copy has to follow. */
+            core_sync_view(core);
+        }
         /* Anything the program printed means something to draw. It is not a
            judgement about whether the screen changed — the parser marked the
            cells that did — it is a request for a frame. */
@@ -352,6 +714,16 @@ static void core_dispatch_event(TermCore *core, XEvent *event) {
         return;
     }
 
+    /* The selection protocol is the core's own, like the window manager's
+       close request above: it arrives on the display whether or not any
+       module is interested, and the answer has to be sent or every paste on
+       the desktop hangs. It is handled before the modules so a module never
+       sees an event that was never about it. */
+    if (event->type == SelectionRequest || event->type == SelectionClear) {
+        term_select_event(core, event);
+        return;
+    }
+
     /* A resize is settled here and not by the renderer, because the grid and
        the PTY both depend on it and the renderer is only one of the two. */
     if (event->type == ConfigureNotify &&
@@ -363,7 +735,15 @@ static void core_dispatch_event(TermCore *core, XEvent *event) {
     for (int i = 0; i < core->modules.count; i++) {
         const TermModule *module = core->modules.items[i];
         if (module->event != NULL) {
+            /* The flag is cleared BEFORE each module, not after: a module that
+               claimed the event has said "nobody after me wants this", and a
+               module that found it already set is looking at an event that is
+               spoken for and must leave it alone. */
+            core->event_claimed = 0;
             module->event(core, event);
+            if (core->event_claimed) {
+                break;
+            }
         }
     }
 }
@@ -440,6 +820,16 @@ void term_core_step(TermCore *core) {
        when select() returned an event — a frame that waited for the timeout
        would lag a keystroke by the interval. */
     unsigned long now = term_core_now_ms();
+
+    /* The bar follows the child's directory, a few times a second. It is here
+       and not in the PTY path because the directory changes with no output to
+       show for it: `cd` prints nothing, and a bar that waited for a byte would
+       still be showing the directory the shell started in. */
+    if (now - core->last_title_ms >= TERM_TITLE_INTERVAL_MS) {
+        core->last_title_ms = now;
+        term_core_refresh_title(core);
+    }
+
     static unsigned long last_tick[TERM_MAX_MODULES];
     for (int i = 0; i < core->modules.count; i++) {
         const TermModule *module = core->modules.items[i];
@@ -486,6 +876,14 @@ void term_core_shutdown(TermCore *core) {
         core->style = NULL;
     }
     term_vt_free(&core->vt);
+    /* The ring's buffers belong to the ring, and the grid that gave them away
+       holds none of them — there is nothing double-freeing here. */
+    term_scroll_free(&core->scroll);
+    if (core->select != NULL) {
+        term_select_free((TermSelect *)core->select);
+        free(core->select);
+        core->select = NULL;
+    }
 
     if (core->display != NULL) {
         if (core->gc != NULL) {

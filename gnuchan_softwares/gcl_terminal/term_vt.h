@@ -128,6 +128,17 @@ typedef struct TermVt {
        has an answer that is not a guess. */
     long unknown_sequences;
 
+    /* Whether the cursor is drawn, on the TERMINAL and not on a screen.
+     *
+     * There is one cursor, and a program that hides it hides it — switching to
+     * the alternate screen must not bring it back. Keeping the flag on the grid
+     * meant the two screens each had their own copy, so a program that hid the
+     * cursor and THEN switched screens (which is the order btop sends: `?25l`
+     * before `?1049h`) left the alternate screen's copy still saying "visible",
+     * and a cursor blinked over a picture that had explicitly turned it off.
+     */
+    int cursor_visible;
+
     /* What the program asked for. The input module reads these: a program that
        did not ask for mouse events must not be sent them, or it receives text
        it never wanted when the user drags over the window. */
@@ -172,6 +183,10 @@ void term_vt_feed(TermVt *vt, const char *bytes, int len);
 
 /* The screen that is showing. The renderer draws this one. */
 const TermGrid *term_vt_screen(const TermVt *vt);
+
+/* Whether the cursor is drawn. It is the terminal's and not the screen's —
+   see TermVt.cursor_visible — so the renderer asks here and not of the grid. */
+int term_vt_cursor_visible(const TermVt *vt);
 
 /* --- what a program asks for --------------------------------------------- */
 

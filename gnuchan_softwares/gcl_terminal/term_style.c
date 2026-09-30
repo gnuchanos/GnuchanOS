@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "term_style.h"
+#include "gcl_palette.h"
 
 /* The default font. It is a monospace family every Debian has through the
    fonts-dejavu-core package, at a size that fits an 80x24 window on the
@@ -34,24 +35,39 @@ static const char *DEFAULT_FONT = "monospace-11";
 
 /* --- the built-in palette -------------------------------------------------
  *
- * The colours a program names by number, in the values every terminal has used
- * since the eighties — the ones a program's output is designed against, so that
- * `ls --color` looks right without anything being configured.
+ * THE WHOLE PALETTE IS PURPLE. This is the theme and not an accident of the
+ * sixteen being close: every one of them is a shade of the same hue, from a
+ * deep violet through the magenta-violets to a lavender, and none of them is
+ * white, grey, green or blue.
  *
- * The two entries after the sixteen are the theme's own default text and
+ * The reason to write it down is that the sixteen names exist so a program can
+ * tell things apart with them — `ls` paints a directory one colour and an
+ * executable another — and sixteen shades of one hue are harder to tell apart
+ * than sixteen hues are. The compensation is SPREAD: neighbours are several
+ * steps of lightness and saturation apart, so a directory and a file are still
+ * two clearly different purples. A program that needs a sharper distinction
+ * has the 256-colour and truecolor forms, and both are honoured.
+ *
+ * The entries past the sixteen are the theme's own default text and
  * background, which a cell that never sent an SGR is drawn in. They are not
  * part of the sixteen: a program cannot name them, and its own SGR 39 and 49
  * mean "whatever the theme says", which is exactly what these are.
  */
-static const uint32_t DEFAULT_PALETTE[TERM_PALETTE_SIZE] = {
-    /* the eight normal */
-    0x1A1A1A, 0xC04040, 0x40A040, 0xC0A040, 0x4060C0, 0xA040A0, 0x40A0A0, 0xC0C0C0,
-    /* the eight bright */
-    0x505050, 0xFF6060, 0x60FF60, 0xFFFF60, 0x6080FF, 0xFF60FF, 0x60FFFF, 0xFFFFFF,
-    /* the theme's default text and background, at INDEX_FG and INDEX_BG */
-    /* 16 */ 0xE0E0E0,
-    /* 17 */ 0x101010,
-};
+static const uint32_t DEFAULT_PALETTE[TERM_PALETTE_SIZE] = GCL_PALETTE_INIT;
+
+/* --- the bar's colours -----------------------------------------------------
+ *
+ * The terminal's own two, and the only colours in the program that are for the
+ * furniture rather than for a program's output.
+ *
+ * The background is the SAME purple as the terminal's own background and not a
+ * darker one, which is the whole of how the bar stops looking like a border: a
+ * strip in another colour reads as a frame around the text, and a strip in the
+ * same colour reads as part of the window. The one row of text on it is what
+ * marks it, and that is enough.
+ */
+static const uint32_t DEFAULT_BAR_BG = GCL_BAR_BG;   /* the terminal's own  */
+static const uint32_t DEFAULT_BAR_FG = GCL_BAR_FG;   /* and its text        */
 
 /* --- one packed colour becomes an XftColor --------------------------------
  *
@@ -146,7 +162,33 @@ int term_style_init(TermStyle *style, Display *display, int screen,
     style->has_render = XRenderQueryVersion(display, &major, &minor);
 
     term_style_set_palette(style, DEFAULT_PALETTE, TERM_PALETTE_SIZE);
+    style->bar_bg = DEFAULT_BAR_BG;
+    style->bar_fg = DEFAULT_BAR_FG;
+    style->cursor = GCL_CURSOR;
     return 0;
+}
+
+/* --- the bar -------------------------------------------------------------- */
+
+uint32_t term_style_bar_bg(const TermStyle *style) {
+    return style->bar_bg;
+}
+
+uint32_t term_style_bar_fg(const TermStyle *style) {
+    return style->bar_fg;
+}
+
+void term_style_set_bar(TermStyle *style, uint32_t bg, uint32_t fg) {
+    style->bar_bg = bg;
+    style->bar_fg = fg;
+}
+
+uint32_t term_style_cursor(const TermStyle *style) {
+    return style->cursor;
+}
+
+void term_style_set_cursor(TermStyle *style, uint32_t rgb) {
+    style->cursor = rgb;
 }
 
 void term_style_free(TermStyle *style) {
@@ -161,6 +203,12 @@ void term_style_free(TermStyle *style) {
                      &style->xft_colors[i]);
     }
     style->xft_color_count = 0;
+
+    for (int i = 0; i < style->truecolor_count; i++) {
+        XftColorFree(style->display, style->visual, style->colormap,
+                     &style->truecolor_colors[i]);
+    }
+    style->truecolor_count = 0;
 
     if (style->xft_draw != NULL) {
         XftDrawDestroy(style->xft_draw);
@@ -226,14 +274,28 @@ uint32_t term_style_default_fg(const TermStyle *style) {
     if (TERM_COLOR_INDEX_FG < style->palette.count) {
         return style->palette.colors[TERM_COLOR_INDEX_FG];
     }
-    return 0xE0E0E0u;
+    return GCL_FG;
 }
 
 uint32_t term_style_default_bg(const TermStyle *style) {
     if (TERM_COLOR_INDEX_BG < style->palette.count) {
         return style->palette.colors[TERM_COLOR_INDEX_BG];
     }
-    return 0x101010u;
+    return GCL_BG;
+}
+
+uint32_t term_style_palette_entry(const TermStyle *style, int index) {
+    if (style == NULL) {
+        return GCL_BG;
+    }
+    if (index < 0 || index >= style->palette.count) {
+        /* Out of range answers with the background rather than reading past
+           the array: a caller that named a colour the palette does not have
+           gets a colour that exists, which draws and is wrong rather than
+           being invisible or being a crash. */
+        return term_style_default_bg(style);
+    }
+    return style->palette.colors[index];
 }
 
 /* --- the colours a cell is drawn with ------------------------------------- */
@@ -267,37 +329,75 @@ static void style_fill_colors_to(TermStyle *style, int index) {
 }
 
 XftColor *term_style_color_rgb(TermStyle *style, uint32_t rgb) {
-    /* A truecolor cell's colour is not in the palette, so it cannot be found by
-       index. It is converted into a slot of its own, and the slot is reused for
-       every later cell that asks for the same colour — a screen of gradients
-       has a few hundred distinct colours, and this is the difference between a
-       few hundred allocations and one per cell per frame.
+    /* A truecolor cell's colour is not in the palette, so it is kept in a cache
+       of its own — and the separation is the whole point.
      *
-     * The search is over the entries converted so far, comparing the packed
-     * value. It is a linear scan and it is not on the hot path: a cell only
-     * reaches here when its colour was sent as 0xRRGGBB, which is uncommon next
-     * to the sixteen names. */
-    for (int i = 0; i < style->xft_color_count; i++) {
-        if (style->palette.colors[i] == rgb) {
-            return &style->xft_colors[i];
+     * This used to record the converted colour in the next free PALETTE entry,
+     * so that the lookup could be the same linear scan. It appeared to work and
+     * it quietly corrupted the palette: the bar is drawn in a truecolor on the
+     * very first frame, so entry 18 was overwritten with the bar's colour
+     * before any program had drawn a character, and a program that asked for
+     * colour 18 got the bar's colour and not the palette's. Every colour above
+     * the sixteen was a slot a truecolor could take.
+     *
+     * The cache below cannot do that: its entries are the packed values
+     * themselves, matched against the value being asked for, and nothing writes
+     * into `palette`.
+     *
+     * The search is linear, and it is not on the hot path: a cell reaches here
+     * only when its colour arrived as 0xRRGGBB, and the common case — a
+     * gradient or a syntax highlight — asks for the same few hundred colours
+     * over and over, which is what the cache holds. */
+    for (int i = 0; i < style->truecolor_count; i++) {
+        if (style->truecolor_values[i] == rgb) {
+            return &style->truecolor_colors[i];
         }
     }
-    if (style->xft_color_count >= TERM_PALETTE_SIZE) {
-        return &style->xft_colors[0];
+    if (style->truecolor_count >= TERM_TRUECOLOR_CACHE) {
+        /* The cache is full. The colour is converted into the last slot and
+           displaces what was there rather than going unconverted: a wrong but
+           live colour is readable, and the alternative is a cell drawn in the
+           first entry's colour, which for two colours that are far apart is a
+           cell that cannot be read at all. */
+        int slot = TERM_TRUECOLOR_CACHE - 1;
+        XftColorFree(style->display, style->visual, style->colormap,
+                     &style->truecolor_colors[slot]);
+        if (xft_color_from_rgb(style, &style->truecolor_colors[slot], rgb) != 0) {
+            return &style->truecolor_colors[0];
+        }
+        style->truecolor_values[slot] = rgb;
+        return &style->truecolor_colors[slot];
     }
-    int slot = style->xft_color_count;
-    if (xft_color_from_rgb(style, &style->xft_colors[slot], rgb) != 0) {
-        return &style->xft_colors[0];
+
+    int slot = style->truecolor_count;
+    if (xft_color_from_rgb(style, &style->truecolor_colors[slot], rgb) != 0) {
+        /* A display that refuses the allocation. The entry is still counted, so
+           the slot holds whatever `xft_color_from_rgb` left — which is a zeroed
+           XftColor, and drawn as black rather than as uninitialised memory. */
+        memset(&style->truecolor_colors[slot], 0,
+               sizeof(style->truecolor_colors[slot]));
     }
-    /* The converted colour is recorded in the palette as well, so the next cell
-       that asks for it is found on the scan above rather than converted a
-       second time. */
-    style->palette.colors[slot] = rgb;
-    if (slot >= style->palette.count) {
-        style->palette.count = slot + 1;
+    style->truecolor_values[slot] = rgb;
+    style->truecolor_count++;
+    return &style->truecolor_colors[slot];
+}
+
+uint32_t term_style_cell_color(const TermStyle *style, const TermCell *cell,
+                               int foreground) {
+    int32_t index = foreground ? cell->fg : cell->bg;
+
+    if (index == TERM_COLOR_TRUECOLOR) {
+        return foreground ? cell->truecolor_fg : cell->truecolor_bg;
     }
-    style->xft_color_count++;
-    return &style->xft_colors[slot];
+    if (index == TERM_COLOR_DEFAULT || index < 0 ||
+        index >= style->palette.count) {
+        index = foreground ? TERM_COLOR_INDEX_FG : TERM_COLOR_INDEX_BG;
+    }
+    if (index < 0 || index >= TERM_PALETTE_SIZE ||
+        index >= style->palette.count) {
+        return foreground ? GCL_FG : GCL_BG;
+    }
+    return style->palette.colors[index];
 }
 
 XftColor *term_style_color(TermStyle *style, const TermCell *cell,

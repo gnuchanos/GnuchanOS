@@ -16,7 +16,7 @@ gcl_Window.set_window_border_width(2)
 # It stays on until the window is focused again, which is the act of having
 # found it — so a hand that has sent three windows to three desks can still tell
 # which three they were.
-gcl_Window.set_moved_window_border_color("#00e5a0")
+gcl_Window.set_moved_window_border_color("#52024d")
 
 # The desktop wallpaper, drawn behind every window with Imlib2, the way feh
 # draws one. This is not the bar's picture: a wallpaper belongs behind the

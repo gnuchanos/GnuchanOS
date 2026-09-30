@@ -232,11 +232,20 @@ static void seq_erase_display(TermGrid *grid, const TermVtSequence *seq) {
     switch (seq_param(seq, 0, 0)) {
     case 0: term_grid_erase_to_end(grid, grid->cursor_x, grid->cursor_y);   break;
     case 1: term_grid_erase_to_start(grid, grid->cursor_x, grid->cursor_y); break;
-    /* 2 is the whole screen and 3 is "the scrollback too". There is no
-       scrollback here, so 3 is the same as 2 rather than being an error: a
-       program that clears the screen and the history gets a clear screen. */
-    case 2:
-    case 3: term_grid_erase_screen(grid); break;
+    /* 2 is the whole screen and 3 is "the screen and the scrollback".
+     *
+     * They were the same thing while there was no scrollback, and they are not
+     * now: `clear` in a shell sends 2 and leaves the history alone — which is
+     * what makes it possible to read what was on the screen before clearing
+     * it — while a program that wants the history gone sends 3 and gets it
+     * gone. Folding 3 onto 2 as this used to do would leave any program that
+     * asked for a clean slate with a scrollback full of the thing it was
+     * clearing away. */
+    case 2: term_grid_erase_screen(grid); break;
+    case 3:
+        term_grid_erase_screen(grid);
+        term_grid_clear_history(grid);
+        break;
     default: break;
     }
 }
@@ -304,6 +313,24 @@ static void seq_scroll_region(TermGrid *grid, const TermVtSequence *seq) {
  *          mode is accepted and needs nothing done for it, which is the honest
  *          answer and not a lie.
  */
+/* Show one of the two screens, marking ALL of it to be drawn.
+ *
+ * The marking is the whole point and not a detail. A frame clears the dirty
+ * flag of every row it draws, so the screen being switched AWAY from is clean
+ * and so is the one being switched TO — it was drawn, long ago, before the
+ * program took over. Switching the pointer alone therefore changed nothing on
+ * the window: the renderer found no dirty row, drew nothing, and btop's last
+ * picture stayed up after btop had exited, over the shell prompt that was
+ * underneath it. Marking every row is what makes the screen that comes back
+ * actually be drawn.
+ */
+static void vt_show_screen(TermVt *vt, TermGrid *screen) {
+    vt->active = screen;
+    for (int y = 0; y < screen->rows; y++) {
+        screen->lines[y].dirty = 1;
+    }
+}
+
 static void seq_set_mode(TermVt *vt, const TermVtSequence *seq, int enable) {
     TermGrid *grid = vt->active;
     for (int i = 0; i < seq->param_count; i++) {
@@ -315,17 +342,24 @@ static void seq_set_mode(TermVt *vt, const TermVtSequence *seq, int enable) {
             vt->application_cursor = enable;
             break;
         case 25:
-            grid->cursor_visible = enable;
+            /* The cursor is the TERMINAL's, not the screen's. btop hides it
+               with `?25l` and THEN switches to the alternate screen; with the
+               flag on the grid the switch handed the program a screen whose own
+               copy still said "visible", and a cursor blinked over a picture
+               that had explicitly asked for none. */
+            vt->cursor_visible = enable;
             break;
         case 47:
         case 1047:
             vt->alt_active = enable;
-            vt->active = enable ? &vt->alt : &vt->grid;
             if (enable) {
                 /* The alternate screen starts clean, which is what makes it
                    alternate: a program that switches to it and draws must not
                    find the shell's prompt underneath its picture. */
                 term_grid_reset(&vt->alt);
+                vt_show_screen(vt, &vt->alt);
+            } else {
+                vt_show_screen(vt, &vt->grid);
             }
             break;
         case 1048:
@@ -341,13 +375,13 @@ static void seq_set_mode(TermVt *vt, const TermVtSequence *seq, int enable) {
                 vt->grid.saved_x = vt->grid.cursor_x;
                 vt->grid.saved_y = vt->grid.cursor_y;
                 vt->alt_active = 1;
-                vt->active = &vt->alt;
                 term_grid_reset(&vt->alt);
+                vt_show_screen(vt, &vt->alt);
             } else {
                 vt->alt_active = 0;
-                vt->active = &vt->grid;
                 term_grid_move_to(&vt->grid, vt->grid.saved_x,
                                   vt->grid.saved_y);
+                vt_show_screen(vt, &vt->grid);
             }
             break;
         case 1000:
@@ -663,10 +697,23 @@ static const TermVtEntry CSI_TABLE[] = {
     { 'M', 0, 0, do_dl },
     { 'S', 0, 0, do_su },
     { 'T', 0, 0, do_sd },
-    /* The region, the modes, and the questions. */
+    /* The region, the modes, and the questions.
+     *
+     * h and l carry the `?` private marker — `ESC [ ? 25 l` is the only form
+     * anything sends — and the marker is part of what is matched. Leaving it
+     * at 0 here meant the two rows never matched a real sequence: EVERY mode a
+     * program asked for was dropped as unknown, so the cursor was never hidden
+     * (`?25l`), the alternate screen was never entered (`?1049h`), mouse
+     * reporting was never enabled and bracketed paste was never turned on.
+     * The whole mode mechanism of the terminal was dead, and the visible
+     * symptom was a cursor blinking over btop's picture however many times
+     * btop asked it not to.
+     *
+     * The cursor keys in application mode above have their `?` written out for
+     * the same reason; these two were the pair that was missed. */
     { 'r', 0, 0, do_scroll_region },
-    { 'h', 0, 0, do_mode_set },
-    { 'l', 0, 0, do_mode_clear },
+    { 'h', '?', 0, do_mode_set },
+    { 'l', '?', 0, do_mode_clear },
     /* DECSCUSR is `ESC [ n SP q` and DECSTR is `ESC [ ! p`; the space and the
        bang are what tell them from sequences that share the final byte. */
     { 'q', 0, ' ', do_deccusr },
@@ -706,6 +753,10 @@ static void vt_full_reset(TermVt *vt) {
     vt->bracketed_paste = 0;
     vt->application_cursor = 0;
     vt->dec_graphics = 0;
+    /* RIS is the ONLY reset that puts the cursor back, because it is the one
+       sequence that means "as if switched on" — and a terminal that has just
+       been switched on has a cursor. */
+    vt->cursor_visible = 1;
 }
 
 /* A control byte in the middle of ordinary text. */
@@ -1037,6 +1088,9 @@ int term_vt_init(TermVt *vt, int cols, int rows) {
     }
     vt->active = &vt->grid;
     vt->state = TERM_VT_GROUND;
+    /* A terminal that has just been made is one that has just been switched
+       on, and that one shows its cursor. */
+    vt->cursor_visible = 1;
     return 0;
 }
 
@@ -1046,23 +1100,55 @@ void term_vt_free(TermVt *vt) {
 }
 
 int term_vt_resize(TermVt *vt, int cols, int rows) {
+    /* Whether each screen's region was the WHOLE of it before the resize, which
+       is the only case where the region has to follow the new size.
+     *
+     * This is read before the grids are resized, because afterwards the old
+     * row count is gone. A region that was the whole screen is the ordinary
+     * case — a shell scrolls the whole screen and nothing else — and a region
+     * that was NOT the whole screen is a program's own choice, which must be
+     * kept as it is. */
+    int grid_was_full = (vt->grid.scroll_top == 0 &&
+                         vt->grid.scroll_bottom == vt->grid.rows - 1);
+    int alt_was_full = (vt->alt.scroll_top == 0 &&
+                        vt->alt.scroll_bottom == vt->alt.rows - 1);
+
     if (term_grid_resize(&vt->grid, cols, rows) != 0) {
         return -1;
     }
     if (term_grid_resize(&vt->alt, cols, rows) != 0) {
         return -1;
     }
-    /* The region follows the window on the screen that is showing, because a
-       window that grew has more room and a program that set a region before the
-       resize expects the bottom of it to be the bottom of the window. */
-    if (vt->active->scroll_bottom >= vt->active->rows) {
-        vt->active->scroll_bottom = vt->active->rows - 1;
+
+    /* A region that covered the screen covers the new screen.
+     *
+     * Leaving it at the old bottom was the fault behind a shell that stopped
+     * writing downwards: the grid grew from 24 rows to the window's, but the
+     * region stayed 0..23, so the cursor reached row 23 and every new line
+     * scrolled rows 0..23 while the rows below — which the window now had — were
+     * never written and never moved. Output appeared to pile up on one line
+     * halfway down a window with blank space under it. */
+    if (grid_was_full) {
+        vt->grid.scroll_top = 0;
+        vt->grid.scroll_bottom = vt->grid.rows - 1;
+    } else if (vt->grid.scroll_bottom >= vt->grid.rows) {
+        vt->grid.scroll_bottom = vt->grid.rows - 1;
+    }
+    if (alt_was_full) {
+        vt->alt.scroll_top = 0;
+        vt->alt.scroll_bottom = vt->alt.rows - 1;
+    } else if (vt->alt.scroll_bottom >= vt->alt.rows) {
+        vt->alt.scroll_bottom = vt->alt.rows - 1;
     }
     return 0;
 }
 
 const TermGrid *term_vt_screen(const TermVt *vt) {
     return vt->active;
+}
+
+int term_vt_cursor_visible(const TermVt *vt) {
+    return vt->cursor_visible;
 }
 
 int term_vt_wants_mouse(const TermVt *vt) {

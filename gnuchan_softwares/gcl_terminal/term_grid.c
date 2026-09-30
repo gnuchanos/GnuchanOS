@@ -144,11 +144,14 @@ void term_grid_reset(TermGrid *grid) {
     }
     grid->cursor_x = 0;
     grid->cursor_y = 0;
-    grid->cursor_visible = 1;
     grid->scroll_top = 0;
     grid->scroll_bottom = grid->rows - 1;
     grid->saved_x = 0;
     grid->saved_y = 0;
+    /* There is no cursor flag here to leave alone. Whether the cursor is drawn
+       is the TERMINAL's and not a screen's — one cursor, hidden or not, is
+       hidden whatever screen is showing — so it lives on TermVt. See the
+       comment there for the fault that made it so. */
     /* The pen is NOT reset here. DECSTR clears the screen without changing the
        colours a program is in the middle of using, and RIS resets the pen
        itself before calling this. */
@@ -180,6 +183,7 @@ int term_grid_init(TermGrid *grid, int cols, int rows) {
     grid->pen_fg = TERM_COLOR_DEFAULT;
     grid->pen_bg = TERM_COLOR_DEFAULT;
     grid->cursor_style = 0;
+    /* No cursor flag is set here either; a grid is not what has a cursor. */
     term_grid_reset(grid);
     return 0;
 }
@@ -227,6 +231,27 @@ int term_grid_resize(TermGrid *grid, int cols, int rows) {
     }
 
     if (rows != grid->rows) {
+        /* The rows that are going away are freed FIRST, and this order is not
+           a style choice.
+         *
+         * The obvious way is to realloc the table to the new (smaller) size and
+           then free the tail — and it is a heap overflow: after the realloc the
+           entries at index `rows` and above are OUTSIDE the allocation, so
+           reading them to find the buffers to free reads freed memory, and the
+           `free()` that follows is handed a pointer that was never a buffer.
+           Maximising the window shrinks it from 24 rows to... whichever the
+           window is, which is exactly the case that walks off the end, and the
+           result is a segmentation fault on the way to a full screen.
+         *
+         * Freeing while the table is still whole is the fix, and it costs
+           nothing: the same rows are freed either way. */
+        if (rows < grid->rows) {
+            for (int y = rows; y < grid->rows; y++) {
+                free(grid->lines[y].cells);
+                grid->lines[y].cells = NULL;
+            }
+        }
+
         TermLine *fresh = (TermLine *)realloc(
             grid->lines, (size_t)rows * sizeof(TermLine));
         if (fresh == NULL) {
@@ -244,14 +269,9 @@ int term_grid_resize(TermGrid *grid, int cols, int rows) {
                 }
                 grid->lines[y].dirty = 1;
             }
-        } else {
-            /* Shrunk: the rows that no longer exist have to be freed, or the
-               memory goes with the window. */
-            for (int y = rows; y < grid->rows; y++) {
-                free(grid->lines[y].cells);
-                grid->lines[y].cells = NULL;
-            }
         }
+        /* The shrunk case freed its rows above, before the table was
+           reallocated — see the comment there. */
         grid->rows = rows;
     }
 
@@ -419,6 +439,39 @@ static void rotate_lines(TermGrid *grid, int top, int bottom, int count) {
     free(moved);
 }
 
+/* Hand the lines that are leaving the top of the screen to the history, and
+   give the grid blank ones to rotate in their place.
+ *
+ * The blank buffers are allocated BEFORE the old ones are given away, and that
+ * order is the whole of the safety here: an allocation that failed after the
+ * handover would leave a row with no cells at all, and every draw of it would
+ * read a null pointer.
+ *
+ * A history that answers "I let go of my oldest line" is not acted on here.
+   The grid owns no selection and nothing else anchored to an absolute line
+   number; whoever does is told by the history itself, inside its own push. */
+static void lines_to_history(TermGrid *grid, int first, int count) {
+    if (grid->history == NULL || grid->history->push == NULL) {
+        return;
+    }
+    for (int i = 0; i < count; i++) {
+        int y = first + i;
+        if (y < 0 || y >= grid->rows) {
+            break;
+        }
+        TermCell *fresh = line_alloc(grid->cols);
+        if (fresh == NULL) {
+            break;
+        }
+        TermCell *going = grid->lines[y].cells;
+        grid->lines[y].cells = fresh;
+        grid->lines[y].dirty = 1;
+        if (going != NULL) {
+            grid->history->push(grid->history->user, going, grid->cols);
+        }
+    }
+}
+
 void term_grid_scroll(TermGrid *grid, int count) {
     int top = grid->scroll_top;
     int bottom = grid->scroll_bottom;
@@ -438,7 +491,16 @@ void term_grid_scroll(TermGrid *grid, int count) {
 
     if (count > 0) {
         /* Up: the top records go to the bottom, and the rows they vacated at
-           the bottom of the region are the blank ones. */
+           the bottom of the region are the blank ones.
+         *
+         * Before they are rotated away, the lines leaving the TOP OF THE SCREEN
+           go to the history — and only when the region begins at the top. A
+           program that keeps a status line and scrolls the region below it
+           never scrolls anything off the world, and pushing those rows would
+           put lines the user can still see into the scrollback. */
+        if (top == 0) {
+            lines_to_history(grid, top, count);
+        }
         rotate_lines(grid, top, bottom, count);
         for (int y = bottom - count + 1; y <= bottom; y++) {
             line_blank(grid, y);
@@ -452,6 +514,30 @@ void term_grid_scroll(TermGrid *grid, int count) {
         for (int y = top; y < top + down; y++) {
             line_blank(grid, y);
         }
+    }
+
+    /* Every row in the region holds NEW CONTENT after a scroll, and every one
+       of them is marked to be drawn again.
+     *
+     * The dirty flags travel with the line records, and that is exactly why
+     * this is needed: a row drawn before the scroll is still marked clean
+     * after it has been handed the row below's content. The renderer skips
+     * it, the window keeps the picture it already had, and a program's new
+     * output appears to pile up on the last line while everything above it
+     * stays frozen — a shell's prompt printing `top>` over itself instead of
+     * scrolling.
+     *
+     * A full-screen program hides the fault: btop redraws every cell anyway,
+     * so the marks never matter. A program that scrolls one line at a time is
+     * the case that shows it.
+     *
+     * Only the REGION is marked, not the screen: a program that keeps a status
+     * line outside its scroll region must not have that line redrawn once per
+     * printed line — which on a slow display is the difference between a
+     * terminal that keeps up with `yes` and one that does not.
+     */
+    for (int y = top; y <= bottom; y++) {
+        grid->lines[y].dirty = 1;
     }
 }
 
@@ -496,6 +582,93 @@ const TermCell *term_grid_at(const TermGrid *grid, int x, int y) {
         return NULL;
     }
     return &grid->lines[y].cells[x];
+}
+
+/* --- the lines above ------------------------------------------------------ */
+
+void term_grid_attach_history(TermGrid *grid, const TermGridHistory *history) {
+    if (grid == NULL) {
+        return;
+    }
+    grid->history = history;
+    /* A history that arrives while the view is scrolled back would leave the
+       view pointing into a ring it has never seen — a screen becoming the
+       alternate one, and the alternate one becoming a screen again. The view
+       starts at the live screen, which is where it belongs every time a grid
+       becomes a different screen. */
+    grid->view_offset = 0;
+}
+
+void term_grid_set_view_offset(TermGrid *grid, int offset) {
+    if (grid != NULL) {
+        grid->view_offset = offset > 0 ? offset : 0;
+    }
+}
+
+int term_grid_view_offset(const TermGrid *grid) {
+    return grid != NULL ? grid->view_offset : 0;
+}
+
+int term_grid_line_number(const TermGrid *grid, int row) {
+    if (grid == NULL) {
+        return row;
+    }
+    int remembered = (grid->history != NULL && grid->history->count != NULL)
+                         ? grid->history->count(grid->history->user)
+                         : 0;
+    int top = remembered - grid->view_offset;
+    if (top < 0) {
+        top = 0;
+    }
+    return top + row;
+}
+
+const TermCell *term_grid_row_cells(const TermGrid *grid, int row, int *cols) {
+    if (cols != NULL) {
+        *cols = 0;
+    }
+    if (grid == NULL || row < 0 || row >= grid->rows) {
+        return NULL;
+    }
+
+    /* The live screen: the view is at the bottom, or there is nothing above to
+       scroll back through, and the row is the grid's own. */
+    if (grid->view_offset <= 0 || grid->history == NULL ||
+        grid->history->count == NULL || grid->history->line == NULL) {
+        if (cols != NULL) {
+            *cols = grid->cols;
+        }
+        return grid->lines[row].cells;
+    }
+
+    int remembered = grid->history->count(grid->history->user);
+    int absolute = term_grid_line_number(grid, row);
+
+    if (absolute < remembered) {
+        /* A remembered line. Its width is the RING's and not the window's — a
+           line kept from before a resize is a different length — so it is
+           asked for rather than assumed. */
+        return grid->history->line(grid->history->user, absolute, cols);
+    }
+
+    /* A line of the screen, pushed down the screen by how far the view is
+       scrolled back. */
+    int screen_row = absolute - remembered;
+    if (screen_row < 0 || screen_row >= grid->rows) {
+        return NULL;
+    }
+    if (cols != NULL) {
+        *cols = grid->cols;
+    }
+    return grid->lines[screen_row].cells;
+}
+
+void term_grid_clear_history(TermGrid *grid) {
+    if (grid != NULL && grid->history != NULL &&
+        grid->history->clear != NULL) {
+        grid->history->clear(grid->history->user);
+    }
+    term_grid_set_view_offset(grid, 0);
 }
 
 int term_grid_is_dirty(const TermGrid *grid) {

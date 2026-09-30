@@ -151,7 +151,9 @@ typedef struct TermGrid {
 
     int       cursor_x;        /* 0 based column the next character goes to   */
     int       cursor_y;
-    int       cursor_visible;
+    /* Whether the cursor is drawn is NOT here. It is the terminal's and not a
+       screen's — there is one cursor and hiding it hides it, whatever screen
+       is showing — so it lives on TermVt. See term_vt.h. */
 
     /* Where the cursor was before the current sequence saved it — ESC 7 and
        ESC 8, and the `s` / `u` pair. One slot is enough: the sequences are a
@@ -180,7 +182,48 @@ typedef struct TermGrid {
        so the two are not done in the same place: the grid settles itself and
        the module that owns the PTY sends the signal — see term_pty.h. */
     int       resized;
+
+    /* --- the lines above, and where the view sits in them ---
+     *
+     * The grid does NOT own the history and does not know what it is: it knows
+     * that when a line leaves the top of the screen, somebody may want to keep
+     * it, and that a reader may want a remembered line back. That is one
+     * pointer to a small table of calls — the same shape the escape parser
+     * uses for its answers, and for the same reason.
+     *
+     * Keeping the ring inside the grid instead would give every grid four
+     * thousand line records, including the alternate screen, which by
+     * definition has no history at all: a full-screen program's screen is not
+     * something to scroll back through. NULL here means exactly that.
+     *
+     * `view_offset` is how far the view is scrolled back. It is SET by whoever
+     * owns the history — the history knows it and the grid is told — so that
+     * the one reader that resolves a screen row into cells
+     * (term_grid_row_cells) can do so without reaching for anything. */
+    const struct TermGridHistory *history;
+    int view_offset;
 } TermGrid;
+
+/* What the grid asks of whoever holds the lines above it.
+ *
+ * `push` is handed the CELLS of a line that is leaving the top, and takes
+ * ownership of them: the grid never touches that buffer again. `clear` is
+ * called when the screen is reset in the sense that means the history is no
+ * longer above anything — ESC [ 3 J, and a terminal reset.
+ *
+ * `line` resolves an ABSOLUTE number into cells, filling in their width,
+ * because a line remembered before a resize is a different length from
+ * today's. The grid answers for the screen itself by subtracting `count`.
+ *
+ * Every one of these may be a pointer to a terminal's own state; the grid
+ * never looks at `user`. */
+typedef struct TermGridHistory {
+    void *user;
+    int (*push)(void *user, TermCell *cells, int cols);
+    void (*clear)(void *user);
+    int (*count)(void *user);
+    const TermCell *(*line)(void *user, int index, int *cols);
+} TermGridHistory;
 
 /* --- life ----------------------------------------------------------------- */
 
@@ -256,6 +299,47 @@ void term_grid_erase_screen(TermGrid *grid);
    the screen without changing the colours a program is in the middle of
    using, and RIS resets the pen itself before calling this. */
 void term_grid_reset(TermGrid *grid);
+
+/* --- the lines above ------------------------------------------------------ */
+
+/* Give the grid somewhere to hand the lines that leave the top of the screen,
+   and somewhere to ask about the view. NULL is the alternate screen: a
+   full-screen program has no history because it never scrolls anything off
+   the top of the world. */
+void term_grid_attach_history(TermGrid *grid, const TermGridHistory *history);
+
+/* How far the view is scrolled back, in lines. Set by the owner of the
+   history; every reader here is resolved against it. */
+void term_grid_set_view_offset(TermGrid *grid, int offset);
+int  term_grid_view_offset(const TermGrid *grid);
+
+/* The cells to DRAW at a screen row, and how many of them there are.
+ *
+ * With the view at the live screen this is the grid's own row and the answer
+ * is a pointer into the table. Scrolled back it is a remembered line, or a
+ * screen line further down the screen than the row would suggest — which is
+ * what makes the picture scroll without moving a single cell: only the top row
+ * of the picture changes identity.
+ *
+ * `cols` is what the answer is good for, and it is NOT always the grid's own
+ * width: a line remembered from before a resize is a different length, and a
+ * reader that assumed otherwise would read past the end of it. It is set even
+ * when the answer is NULL.
+ *
+ * This is the ONLY reader that knows about the history. Everything else reads
+ * the grid's lines as it always did, because everything else is about the
+ * screen the program is drawing on, and the program is never scrolled back. */
+const TermCell *term_grid_row_cells(const TermGrid *grid, int row, int *cols);
+
+/* The absolute number of the line at a screen row: the history comes first and
+   the screen follows, so the screen's first row is the history's count. Used
+   by the selection, which is remembered in absolute numbers. */
+int term_grid_line_number(const TermGrid *grid, int row);
+
+/* Tell the history that the screen has been cleared, and go back to the live
+   screen. What ESC [ 3 J means: the lines above are no longer above anything,
+   so nobody can reach them. */
+void term_grid_clear_history(TermGrid *grid);
 
 /* --- reading -------------------------------------------------------------- */
 

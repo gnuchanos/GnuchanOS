@@ -52,24 +52,33 @@ TERMINFO_DIR = Path("/usr/share/terminfo")
 
 SOURCES = (
     "term_grid.c",
+    "term_scroll.c",
     "term_vt.c",
+    "term_config_parser.c",
+    "term_config.c",
     "term_style.c",
     "term_pty.c",
     "term_render.c",
     "term_input.c",
+    "term_select.c",
     "term_core.c",
     "GnuChanTerm.c",
 )
 
 HEADERS = (
+    "gcl_palette.h",
+    "term_config.h",
+    "term_config_parser.h",
     "term_module.h",
     "term_grid.h",
+    "term_scroll.h",
     "term_vt.h",
     "term_style.h",
     "term_pty.h",
     "term_render.h",
     "term_render_internal.h",
     "term_input.h",
+    "term_select.h",
     "term_core.h",
 )
 
