@@ -67,11 +67,13 @@ typedef struct TermConfig {
      * \\u, \\h, \\w and \\n are the shell's own and are passed through
      * untouched, because it is the shell that expands them and not this file.
      *
-     * It is handed to the child in its environment and not written anywhere of
-     * the shell's. That is the whole of how far a terminal can go: bash reads
-     * the environment before its own startup files, so a shell whose files set
-     * PS1 keeps its own and a shell that sets none gets this one. Imposing it
-     * further would mean editing ~/.bashrc, which is the user's file.
+     * It is handed to the child in its environment and nothing of the user's
+     * is read or written. Three names carry it, and the reason it takes three
+     * is that putting the text in PS1 alone does NOT work: a shell reads the
+     * environment first and its startup files after, and /etc/profile and
+     * /etc/bash.bashrc both set PS1 on every Debian install. So PROMPT_COMMAND
+     * carries a command that puts the prompt back before each one — see
+     * GnuChanTerm.c's build_env(), which is where the three are built.
      *
      * Empty means "the script named no prompt", which leaves the shell's own
      * alone — the same contract the font and every colour have. */

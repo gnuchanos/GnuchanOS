@@ -48,23 +48,43 @@
  *
  * --- what this file does NOT set, and why ---
  *
- * It does not set LS_COLORS or PROMPT_COMMAND. A terminal that sets those is a
- * terminal that has decided how the user's shell should look, and that is the
- * shell's business and the shell's files'. The colours a person sees in *this*
- * terminal — the background, the text, the sixteen a program names, the
- * cursor, the bar — come from the settings script and nothing else: see
- * term_config.c. What `ls` does with those colours is then its own business,
- * in its own configuration, and a terminal that reaches in and overrides it is
- * one that has to be fought with every time the user edits their own files.
+ * It does not set LS_COLORS. A terminal that sets it is a terminal that has
+ * decided how the user's shell should look, and that is the shell's business
+ * and the shell's files'. The colours a person sees in *this* terminal — the
+ * background, the text, the sixteen a program names, the cursor, the bar —
+ * come from the settings script and nothing else: see term_config.c. What `ls`
+ * does with those colours is then its own business, in its own configuration,
+ * and a terminal that reaches in and overrides it is one that has to be fought
+ * with every time the user edits their own files.
  *
- * PS1 is the one exception, and it is a deliberately narrow one. When the
- * settings script names a Prompt, that string is put in the child's
- * environment and nothing further is done with it: bash reads the environment
- * BEFORE its own startup files, so a shell whose files set PS1 keeps its own
- * and a shell that sets none gets the configured one. Not one file of the
- * user's is read or written, and a script that names no Prompt leaves the
- * shell exactly as it was. That is the whole of why this is an environment
- * variable and not an edit to ~/.bashrc.
+ * The PROMPT is the one exception, and it is a deliberately narrow one, but it
+ * takes THREE environment variables and the reason is a hard fact about how a
+ * shell reads its files:
+ *
+ *   - a shell reads the ENVIRONMENT first and its own startup files after;
+ *   - /etc/profile and /etc/bash.bashrc both set PS1 on every Debian install,
+ *     unconditionally and near the end of the file. `PS1='$ '` is in
+ *     /etc/profile and `PS1='\\u@\\h:\\w\\$ '` in /etc/bash.bashrc.
+ *
+ * So a PS1 put in the environment is ALWAYS overwritten before a prompt is
+ * ever drawn: the shell's own files are read later and win. That is the whole
+ * of why a configured prompt looked exactly like the default one, and why
+ * putting the text in PS1 is not enough on its own.
+ *
+ * PROMPT_COMMAND is the one hook that runs AFTER those files and before every
+ * prompt, so the prompt is set there as well:
+ *
+ *     PS1               the text, for a shell that runs no PROMPT_COMMAND
+ *     GCL_TERM_PROMPT   the same text, so the command never has to quote it —
+ *                       an apostrophe or a semicolon in a prompt cannot then
+ *                       change what the command does
+ *     PROMPT_COMMAND    PS1="$GCL_TERM_PROMPT", re-asserted before each prompt
+ *
+ * Not one file of the user's is read or written, and a script that names no
+ * Prompt sets none of the three, so a shell then looks exactly as it did. A
+ * user whose own startup script sets PROMPT_COMMAND keeps theirs — it is read
+ * later and replaces this one — and with it their own prompt, which is theirs
+ * to choose.
  */
 #define _POSIX_C_SOURCE 200809L
 
@@ -99,12 +119,12 @@
 #define TERM_PTY_MAX_ARGS 64
 
 /* The most slots this terminal fills itself: the three it is — TERM,
-   COLORTERM, TERM_PROGRAM — plus a PS1 when the settings script named a
-   prompt, plus the NULL that ends the array. Five. The copies of the session's
-   own environment below are stopped that many short of the end, so the array
-   can never be overrun however long the session's environment is, whether or
-   not a prompt was configured. */
-#define TERM_ENV_OWN 5
+   COLORTERM, TERM_PROGRAM — plus the three a configured prompt takes (PS1,
+   GCL_TERM_PROMPT and PROMPT_COMMAND), plus the NULL that ends the array.
+   Seven. The copies of the session's own environment below are stopped that
+   many short of the end, so the array can never be overrun however long the
+   session's environment is, whether or not a prompt was configured. */
+#define TERM_ENV_OWN 7
 
 /* --- the shell ------------------------------------------------------------
  *
@@ -130,14 +150,17 @@ static void build_env(char **env, int *env_count, const char *prompt) {
             strncmp(*it, "TERM_PROGRAM=", 13) == 0) {
             continue;
         }
-        /* An inherited PS1 is dropped when this terminal was given one. Two
-           copies of the same name in an environment is a name whose value
-           depends on which reader looks first, and the one the settings
-           script named is the answer this terminal was asked for. When no
-           prompt was named the inherited one is passed through untouched, so
-           a script that says nothing about the prompt changes nothing about
-           it. */
-        if (has_prompt && strncmp(*it, "PS1=", 4) == 0) {
+        /* An inherited PS1 — and the two names that go with it — is dropped
+           when this terminal was given a prompt. Two copies of the same name
+           in an environment is a name whose value depends on which reader
+           looks first, and the one the settings script named is the answer
+           this terminal was asked for. When no prompt was named all three are
+           passed through untouched, so a script that says nothing about the
+           prompt changes nothing about it. */
+        if (has_prompt &&
+            (strncmp(*it, "PS1=", 4) == 0 ||
+             strncmp(*it, "PROMPT_COMMAND=", 15) == 0 ||
+             strncmp(*it, "GCL_TERM_PROMPT=", 16) == 0)) {
             continue;
         }
         env[count++] = *it;
@@ -153,15 +176,30 @@ static void build_env(char **env, int *env_count, const char *prompt) {
     env[count++] = color_var;
     env[count++] = program_var;
 
-    /* The prompt, when the settings script named one. Static for the same
-       reason the three above are: the pointer outlives this function in the
-       child's image only long enough for execvp() to read it. The text is
-       carried through exactly as written — the \u, \h and \w in it are the
-       shell's own escapes, and it is the shell that expands them. */
+    /* The prompt, when the settings script named one. All three are static for
+       the same reason the three above are: the pointers outlive this function
+       in the child's image only long enough for execvp() to read them. The
+       text is carried through exactly as written — the \u, \h and \w in it are
+       the shell's own escapes, and it is the shell that expands them.
+     *
+     * The command is a FIXED string with no prompt text in it, and that is the
+     * point: the shell reads it as a command, so a prompt holding a quote, a
+     * space or a semicolon would otherwise be able to change what the command
+     * does. Referring to the variable keeps the text data and the command
+     * code, whatever a person writes in their prompt. */
     if (has_prompt) {
-        static char prompt_var[TERM_CONFIG_TEXT_LENGTH + 4];
-        snprintf(prompt_var, sizeof(prompt_var), "PS1=%s", prompt);
-        env[count++] = prompt_var;
+        static char prompt_ps1[TERM_CONFIG_TEXT_LENGTH + 32];
+        static char prompt_value[TERM_CONFIG_TEXT_LENGTH + 32];
+        static char prompt_command[] =
+            "PROMPT_COMMAND=PS1=\"$GCL_TERM_PROMPT\"";
+
+        snprintf(prompt_ps1, sizeof(prompt_ps1), "PS1=%s", prompt);
+        snprintf(prompt_value, sizeof(prompt_value),
+                 "GCL_TERM_PROMPT=%s", prompt);
+
+        env[count++] = prompt_ps1;
+        env[count++] = prompt_value;
+        env[count++] = prompt_command;
     }
 
     env[count] = NULL;
