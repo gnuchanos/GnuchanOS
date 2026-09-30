@@ -40,6 +40,11 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
+/* XClassHint, XSetClassHint and XSetWMProtocols live here and not in Xlib.h.
+   Without this the window setup below does not compile at all — which a
+   compiler reports as a handful of unrelated "unknown type" errors in the
+   middle of the file, not as a missing include. */
+#include <X11/Xutil.h>
 
 #include "term_core.h"
 #include "term_pty.h"
@@ -112,7 +117,16 @@ static int module_timeout_ms(const TermCore *core) {
 }
 
 int term_core_init(TermCore *core, const char *title) {
+    /* The module list is INCLUDED in the clear below, so it is taken out
+       first. The header says modules are registered before this is called,
+       and a memset over the whole struct would erase the list that was just
+       built — leaving a window that opens, draws nothing, and ignores every
+       key, because nothing is left to draw or to listen. */
+    struct TermModuleList modules = core->modules;
+
     memset(core, 0, sizeof(*core));
+
+    core->modules = modules;
     core->running = 1;
     core->cols = 80;
     core->rows = 24;

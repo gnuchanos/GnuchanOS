@@ -172,7 +172,12 @@ static int start_shell(TermCore *core, int argc, char **argv) {
 /* --- the entry point ------------------------------------------------------ */
 
 int main(int argc, char **argv) {
+    /* Zeroed before anything touches it. term_core_register() runs first and
+       reads modules.count, so a core that arrived with stack garbage in it
+       would either refuse the first module or write past the array — and the
+       terminal would open on an empty screen with no explanation. */
     TermCore core;
+    memset(&core, 0, sizeof(core));
 
     /* The modules. The order is the order they are given events and the order
        they are asked to draw, and it is deliberate:

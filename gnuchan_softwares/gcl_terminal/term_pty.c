@@ -13,7 +13,9 @@
  * time for the child to ask and be told nothing.
  */
 #define _POSIX_C_SOURCE 200809L
-#define _DEFAULT_SOURCE
+/* _DEFAULT_SOURCE is asked for by the build anyway (-D_DEFAULT_SOURCE), and
+   defining it here as well is a redefinition warning on every compile. It is
+   left to the build so there is one place that decides. */
 
 #include <errno.h>
 #include <fcntl.h>
@@ -35,6 +37,12 @@
 #endif
 
 #include "term_pty.h"
+
+/* The process environment. It is declared here because <unistd.h> only exposes
+   it under _GNU_SOURCE, and this is the one file that replaces it: the child
+   is given a TERM that describes THIS terminal, so an inherited TERM=xterm
+   must not survive the exec. */
+extern char **environ;
 
 int term_pty_spawn(TermPty *pty, char *const argv[], char *const envp[],
                    int cols, int rows) {
