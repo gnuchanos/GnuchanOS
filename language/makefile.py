@@ -1855,16 +1855,87 @@ def print_suite_summary(results: list[tuple[str, bool]],
     return False
 
 
+def _sudo_user_home() -> Path | None:
+    """The home of the account that invoked sudo, or None when that is moot.
+
+    A run under sudo has TWO homes and they are not the same one. Path.home()
+    answers /root, because that is the account the process is running as -
+    while the person who typed the command, and who will type `gcl` afterwards,
+    is the account sudo recorded in SUDO_USER and has a home of its own.
+
+    Installing into /root is the third face of "gcl: command not found": the
+    program is copied somewhere the user cannot reach, the .desktop entry is
+    written into root's private applications directory where no launcher looks,
+    and the PATH line is appended to root's shell profile, which the user's
+    shell never reads. Every message still says the install succeeded, because
+    from root's point of view it did.
+
+    SUDO_USER is absent for a genuine root login, and then /root is right after
+    all, so this answers None and the callers keep Path.home().
+    """
+    if not (hasattr(os, "geteuid") and os.geteuid() == 0):
+        return None
+    user = os.environ.get("SUDO_USER")
+    if not user or user == "root":
+        return None
+    try:
+        import pwd
+        return Path(pwd.getpwnam(user).pw_dir)
+    except (ImportError, KeyError):
+        return None
+
+
+def _target_home() -> Path:
+    """The home directory the install belongs to: the user's, never root's."""
+    return _sudo_user_home() or Path.home()
+
+
+def _chown_to_invoking_user(path: Path) -> None:
+    """Give a path back to the account that ran sudo.
+
+    A sudo run copies with root's hands, so every file it creates under the
+    user's home is owned by root:root. That is not a cosmetic detail - the next
+    `makefile.py -install` run WITHOUT sudo cannot replace those files, because
+    removing a file needs write permission on the DIRECTORY, and the directory
+    belongs to root. The user's own install becomes something only root can
+    update, which is the opposite of what a per-user install is for.
+
+    Called after the copy and after the profiles are written. It is a no-op
+    unless SUDO_USER names a real other user, and it never fails the install:
+    a chown that cannot run leaves the files owned by root, which is exactly
+    the state this improves on.
+    """
+    user = os.environ.get("SUDO_USER")
+    if not user or user == "root":
+        return
+    if not path.exists() and not path.is_symlink():
+        return
+    try:
+        import grp
+        import pwd
+        entry = pwd.getpwnam(user)
+        group = grp.getgrgid(entry.pw_gid).gr_name
+    except (ImportError, KeyError):
+        return
+    result = subprocess.run(["chown", "-R", f"{user}:{group}", str(path)],
+                            check=False, capture_output=True, text=True)
+    if result.returncode == 0:
+        print(f"[gcl] sahiplik {user}:{group} -> {path}", flush=True)
+    else:
+        print(f"[gcl] uyari: sahiplik degistirilemedi ({path}): "
+              f"{(result.stderr or '').strip()}", flush=True)
+
+
 def _live_user_bin_dir() -> Path:
-    if hasattr(os, "geteuid") and os.geteuid() == 0:
+    if hasattr(os, "geteuid") and os.geteuid() == 0 and _sudo_user_home() is None:
         return Path("/usr/local/bin")
-    return Path.home() / ".local" / "bin"
+    return _target_home() / ".local" / "bin"
 
 
 def _live_runtime_root() -> Path:
-    if hasattr(os, "geteuid") and os.geteuid() == 0:
+    if hasattr(os, "geteuid") and os.geteuid() == 0 and _sudo_user_home() is None:
         return Path("/usr/local/lib/gnuchan")
-    return Path.home() / ".local" / "lib" / "gnuchan"
+    return _target_home() / ".local" / "lib" / "gnuchan"
 
 
 def _live_application_dir() -> Path:
@@ -1872,14 +1943,18 @@ def _live_application_dir() -> Path:
 
     This is the directory the freedesktop specification names for a program
     installed for one user, and it is one of the two a program launcher reads
-    (the other is /usr/share/applications, used when running as root). GCL
-    writes its entry here because being installed is not the same as being
+    (the other is /usr/share/applications, used when running as a real root).
+    GCL writes its entry here because being installed is not the same as being
     findable: a program with no .desktop file is a program a launcher cannot
     offer, however well it runs from a terminal.
+
+    The user's home is used even under sudo, for the reason in _sudo_user_home:
+    a .desktop file in /root/.local/share/applications is a launcher entry that
+    only root could ever see.
     """
-    if hasattr(os, "geteuid") and os.geteuid() == 0:
+    if hasattr(os, "geteuid") and os.geteuid() == 0 and _sudo_user_home() is None:
         return Path("/usr/share/applications")
-    return Path.home() / ".local" / "share" / "applications"
+    return _target_home() / ".local" / "share" / "applications"
 
 
 def _desktop_entry_path() -> Path:
@@ -1933,6 +2008,32 @@ def remove_desktop_entry() -> None:
         print(f"[gcl] removed: {entry}", flush=True)
 
 
+def _bash_login_file(home: Path) -> Path:
+    """The file a LOGIN bash will actually read.
+
+    This is the second half of the "gcl: command not found" this section exists
+    to end, and it is the half that was missing. A login bash does not read
+    ~/.profile outright; it reads the FIRST of these that exists and stops:
+
+        ~/.bash_profile   ->   ~/.bash_login   ->   ~/.profile
+
+    So on an account that has a ~/.bash_profile - which is what many
+    distributions ship and what anyone who has arranged a shell by hand ends up
+    with - bash stops at that file and NEVER reaches ~/.profile. A PATH line
+    written into ~/.profile alone therefore installed a program the login shell
+    still could not find, while every message said it was ready. The shell
+    prompt reads `-bash` in exactly that case, and that is the case this
+    function is for.
+    """
+    for name in (".bash_profile", ".bash_login", ".profile"):
+        candidate = home / name
+        if candidate.exists():
+            return candidate
+    # None of the three exists: ~/.profile is the POSIX default bash falls back
+    # to, so it is the file the caller is allowed to create.
+    return home / ".profile"
+
+
 def _shell_profiles(bin_dir: Path) -> list[tuple[Path, str]]:
     """Every rc file that has to carry the PATH line, and the line for each.
 
@@ -1946,49 +2047,68 @@ def _shell_profiles(bin_dir: Path) -> list[tuple[Path, str]]:
     The files are therefore chosen by what a shell READS and not by which
     shell the installer happened to be running under:
 
-      * ~/.profile  - the POSIX login file, read by sh, dash and bash when
-                      they start as a login shell. This is the one that makes
-                      the line survive a fresh SSH login.
-      * ~/.bashrc   - an INTERACTIVE bash reads this and not ~/.profile, so a
-                      non-login terminal needs the line here as well.
-      * ~/.zshrc    - the same for interactive zsh.
+      * the resolved bash LOGIN file (see _bash_login_file) - ~/.bash_profile,
+        ~/.bash_login or ~/.profile, whichever bash stops at first. This is the
+        one that makes the line survive a fresh SSH login.
+      * ~/.profile  - written on its own account as well, for sh and dash
+                      logins and for the desktop environments that source it.
+      * ~/.bashrc   - an INTERACTIVE bash reads this and not the login file, so
+                      a non-login terminal needs the line here too.
       * ~/.zprofile - login zsh reads this and NOT ~/.profile.
+      * ~/.zshrc    - the same for interactive zsh.
 
-    fish does not read POSIX syntax at all and is given its own line below, so
-    an export written into its config would be a syntax error on every start.
+    A file that does not exist is left alone, with one exception: the resolved
+    bash login file. An account with no login file at all has ~/.profile
+    created for it, because otherwise a fresh login would have nothing to read
+    and the install would be invisible again.
+
+    fish does not read POSIX syntax at all and is given its own line, so an
+    export written into its config would be a syntax error on every start.
     """
-    home = Path.home()
+    # The USER's home, not root's, even when the installer ran under sudo - a
+    # PATH line appended to /root/.bashrc is read only by root's shells (see
+    # _sudo_user_home).
+    home = _target_home()
     posix_line = f'export PATH="{bin_dir}:$PATH"'
-    return [
-        (home / ".profile", posix_line),
-        (home / ".bashrc", posix_line),
-        (home / ".zshrc", posix_line),
-        (home / ".zprofile", posix_line),
-        (home / ".config" / "fish" / "config.fish",
-         f'set -gx PATH "{bin_dir}" $PATH'),
-    ]
+    fish_line = f'set -gx PATH "{bin_dir}" $PATH'
+    login_file = _bash_login_file(home)
+
+    profiles: list[tuple[Path, str]] = []
+    seen: set[Path] = set()
+    for path in (
+        login_file,
+        home / ".profile",
+        home / ".bashrc",
+        home / ".zprofile",
+        home / ".zshrc",
+        home / ".config" / "fish" / "config.fish",
+    ):
+        # ~/.profile appears twice when it is also the resolved login file. The
+        # same line appended twice is harmless but reads as if two things had
+        # been installed.
+        if path in seen:
+            continue
+        seen.add(path)
+        if not path.exists() and path != login_file:
+            continue
+        profiles.append((path, fish_line if path.name == "config.fish" else posix_line))
+    return profiles
 
 
 def _ensure_path_in_shell(bin_dir: Path) -> None:
-    """Put bin_dir on PATH in every rc file a shell may read.
+    """Put bin_dir on PATH in every file a shell may read, and name them.
 
-    A file that does not exist is skipped rather than created: writing
-    ~/.zshrc into a machine that has no zsh would leave an empty config behind
-    and would not help anyone. ~/.profile is the exception - it is the POSIX
-    login file every shell falls back to, so it is created when the account
-    has none, which is the case for a bare user with only ~/.bashrc.
+    The files come from _shell_profiles(). The only file this may CREATE is the
+    resolved bash login file, so a machine that already has its own
+    ~/.bash_profile is not given a stray ~/.profile beside it, while a machine
+    with no login file at all is given the POSIX default.
     """
     written: list[Path] = []
     for shell_file, export_line in _shell_profiles(bin_dir):
-        if shell_file.exists():
-            text = shell_file.read_text(encoding="utf-8", errors="ignore")
-            if export_line in text:
-                continue
-        elif shell_file.name != ".profile":
+        text = (shell_file.read_text(encoding="utf-8", errors="ignore")
+                if shell_file.exists() else "")
+        if export_line in text:
             continue
-        else:
-            text = ""
-
         if text and not text.endswith("\n"):
             text += "\n"
         text += f"\n{export_line}\n"
@@ -2000,10 +2120,17 @@ def _ensure_path_in_shell(bin_dir: Path) -> None:
         for path in written:
             print(f"[gcl] PATH written: {path}", flush=True)
     else:
-        print(f"[gcl] PATH already set in every shell profile ({bin_dir})",
-              flush=True)
-    print("[gcl] acik kabuklarda hemen kullanmak icin: "
-          "export PATH=\"%s:$PATH\"" % bin_dir, flush=True)
+        print(f"[gcl] PATH already present in every profile that exists "
+              f"({bin_dir})", flush=True)
+
+    # A profile that has been written is not a shell that has read it. This is
+    # the difference between "installed" and "usable right now": the shell the
+    # user is sitting in has already read its files and will not look again,
+    # which is exactly why an install that reported success was followed by
+    # "gcl: command not found".
+    print(f"[gcl] bu kabukta hemen kullanmak icin: "
+          f"export PATH=\"{bin_dir}:$PATH\"", flush=True)
+    print("[gcl] ya da yeni bir terminal acin.", flush=True)
 
 
 def install_gcl_system() -> None:
@@ -2034,6 +2161,9 @@ def install_gcl_system() -> None:
         else:
             install_dir.unlink()
     shutil.copytree(build_dir, install_dir, dirs_exist_ok=True)
+    # A copy made by root belongs to root; the user it was made FOR has to be
+    # able to replace it later without sudo (see _chown_to_invoking_user).
+    _chown_to_invoking_user(install_dir)
 
     # The icon the desktop entry names, copied beside the runtime so the
     # entry's Icon= is an absolute path that exists. A bare name would need an
@@ -2053,7 +2183,10 @@ def install_gcl_system() -> None:
         else:
             launcher.unlink()
     launcher.symlink_to(install_dir / "gcl")
+    _chown_to_invoking_user(launcher)
     _ensure_path_in_shell(bin_dir)
+    # The profiles were written by root as well when sudo was used.
+    _chown_to_invoking_user(_target_home() / ".profile")
 
     # The desktop entry is what makes the install FINDABLE, not merely present:
     # GnuChanRunner lists what it starts by reading the applications
@@ -2063,6 +2196,34 @@ def install_gcl_system() -> None:
         write_desktop_entry(launcher, install_dir)
     else:
         print("[gcl] (no .desktop entry written: that is a Linux thing)", flush=True)
+
+    # Prove the install happened instead of only announcing it.
+    #
+    # The launcher is a symlink and the program is a copied file, and either can
+    # be absent for reasons the copy above does not raise on: a runtime root the
+    # user cannot write, a build that produced no executable, a symlink left
+    # pointing at a name the build did not use. Every one of those used to end
+    # with the same "gcl is now usable" line, so the next command the user typed
+    # was the first news that anything was wrong. The checks below make the
+    # install fail loudly, at the moment it fails, and say which path is wrong.
+    installed_exe = install_dir / exe_name()
+    if not installed_exe.exists():
+        raise SystemExit(f"[gcl] hata: kurulan program yok: {installed_exe}")
+    if not launcher.exists():
+        raise SystemExit(f"[gcl] hata: baslatici olusturulamadi: {launcher}")
+
+    # Whether the directory is on PATH RIGHT NOW decides what the user has to do
+    # next, and the two answers are different enough to be worth separating: one
+    # needs a new terminal, the other needs the line above to be sourced.
+    on_path_now = any(
+        entry and Path(entry).expanduser() == bin_dir
+        for entry in os.environ.get("PATH", "").split(os.pathsep)
+    )
+    if on_path_now:
+        print(f"[gcl] {bin_dir} zaten PATH'te; bu kabukta da calismali.", flush=True)
+    else:
+        print(f"[gcl] {bin_dir} su anki PATH'te degil; yukaridaki export "
+              f"komutunu calistirin ya da yeni terminal acin.", flush=True)
 
     print(f"[gcl] installed: {launcher}", flush=True)
     print(f"[gcl] runtime: {install_dir}", flush=True)

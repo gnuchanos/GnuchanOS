@@ -1118,6 +1118,32 @@ int gcl_ide_run(const char *path) {
         /* ---- draw ---- */
         BeginDrawing();
 
+        /* The frame is cleared BEFORE anything is drawn, and before the shake
+           transform is pushed.
+         *
+         * There was no ClearBackground here at all, so the back buffer kept
+           whatever the previous frame had left in it: only the rectangles the
+           UI happens to paint were ever overwritten. Every pixel nobody paints
+           therefore showed the last frame's contents, one frame behind
+           everything around it.
+         *
+         * That is exactly what the strip under the tab bar was. The tab strip
+           ends at content_top + TAB_H and the code area begins at
+           content_top + TAB_H + 6 (see editor_rect below) - a six-pixel band,
+           the full width of the editor, that NEITHER of them covers. Nothing
+           painted it, so it kept the previous frame while the text above and
+           below it was already new, and the eye read the result as a flickering
+           horizontal line. In split view the same band is invisible because
+           pane_left is filled with t.bg over the whole area; single view had no
+           such fill.
+         *
+         * Clearing here fixes it at the source rather than by painting that one
+           band: any area the UI does not cover now shows the theme background
+           instead of a stale copy of the last frame. It must come BEFORE
+           rlPushMatrix() - ClearBackground resets the matrix, which would undo
+           the translate the shake is about to apply. */
+        ClearBackground(t.bg);
+
         /* screen shake — ease-out (ridiculous_coding): amplitude decreases with remaining time */
         if (ed.screen_shake && ed.shake_remaining > 0.0f) {
             float t = ed.shake_remaining / (ed.shake_duration > 0.0f ? ed.shake_duration : 1.0f);
