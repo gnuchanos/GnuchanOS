@@ -124,8 +124,16 @@ ELEVATED_VARIABLE = "GNUCHANWINE_ELEVATED"
 #: diskte ve derleme suresinde yer kaplar. Oyunlarin ihtiyac duydugu sey
 #: d3d8/d3d9 (wined3d) ve ses; geri kalani istege baglidir.
 #: Vulkan paketleri YOKTUR ve olmamalidir: GM965'te Vulkan yok.
+#:
+#: `mingw-w64` ZORUNLUDUR ve eksikligi configure'i durdurur: Wine, PE
+#: (Windows) ikililerini bu capraz derleyici ile uretir ve `--enable-archs`
+#: istendiginde i386 PE derleyicisi aranir. Paket olmadan configure
+#:     configure: error: i386 PE compiler not found.
+#: diyerek durur — build hic baslamaz. `gcc-mingw-w64-i686` bu paketin 32 bit
+#: yarisidir; tamami hem i386 hem x86_64'i getirir ve ikisi de gerekir.
 BUILD_PACKAGES = (
     "build-essential", "pkg-config", "flex", "bison", "git",
+    "mingw-w64", "gettext",
     "libx11-dev", "libxext-dev", "libxrandr-dev", "libxrender-dev",
     "libxfixes-dev", "libxi-dev", "libxcursor-dev", "libxcomposite-dev",
     "libxinerama-dev",
@@ -366,10 +374,18 @@ def configure_flags() -> list[str]:
         "--without-pulse",
         "--without-oss",
     ]
-    # -O2 -march=native: Core2 icin dogru komut seti; -O3 DEGIL (Wine'in sicak
-    # yollari bellek erisimine baglidir). -pipe eski bir diskte derlemeyi
-    # hizlandirir.
-    optimizations = "-O2 -march=native -fno-semantic-interposition -pipe"
+    # -O2: Wine'in sicak yollari bellek erisimine baglidir, -O3 DEGIL. -pipe
+    # eski bir diskte derlemeyi hizlandirir.
+    #
+    # ISLEMCI HEDEFI (`-march`) EZILEBILIR ve bu GitHub Actions icin sarttir:
+    # yerelde dogru deger `native`dir (Core2 icin tam komut seti), ama CI
+    # kosucusu modern bir Xeon'dur; `native` ile derlenen ikili ESKI bir
+    # GM965 makinesinde "Illegal instruction" ile coker. CI, kendi
+    # workflow'unda GNUCHAN_MARCH=a core2 (veya uyumlu en dusuk ortak
+    # payda) verir ve ikili hedef makinede calisir. Verilmezse `native` —
+    # yani yerel derlemenin davranisi DEGISMEZ.
+    march = os.environ.get("GNUCHAN_MARCH", "native")
+    optimizations = f"-O2 -march={march} -fno-semantic-interposition -pipe"
     cflags = f"{optimizations} -D_FORTIFY_SOURCE=2"
     flags.append(f"CFLAGS={cflags}")
     flags.append(f"CXXFLAGS={cflags}")

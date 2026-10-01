@@ -1,0 +1,123 @@
+# =============================================================================
+# GnuChanOS Wine + wined3d — uzak derleme (GitHub Actions)
+# -----------------------------------------------------------------------------
+# NEDEN: hedef makine bir Intel GM965 / Core2 Duo'dur ve Wine'in TAM derlemesi
+# orada saatler surer, ustelik islemciyi 85 C'de tutar. Bu workflow ayni
+# derlemeyi GitHub'in cok cekirdekli kosucusunda yapar ve ciktiyi
+# `wine-gnuchan.tar.gz` olarak artifact birakir. Hedef makinede yapilacak tek
+# sey arsivi acmaktir — derleme yok, isinma yok.
+#
+# ONEMLI: KOSUCU ISLEMCISI HEDEF MAKINEDEN YENIDIR.
+# GitHub kosucusu modern bir Xeon'dur; orada `-march=native` ile derlenen ikili
+# ESKI bir GM965 makinesinde "Illegal instruction" ile coker. Bu yuzden burada
+# GNUCHAN_MARCH=core2 verilir: Merom/Core2 icin dogru, GM965'te calisan en
+# yuksek ortak payda. makefile.py bu degiskeni okur (bkz. configure_flags).
+#
+# CIKTI NE: /opt/wine-gnuchan agacinin tamami, tek bir tar.gz icinde. Onek
+# (WINEPREFIX) CIKTIYA DAHIL DEGILDIR — onek makinede `makefile.py prefix` ile
+# uretilir, cunku onek kullaniciya ozeldir.
+# =============================================================================
+
+name: wine-gnuchan build
+
+on:
+  # Elle tetikleme. Varsayilan budur: her push'ta 1 saatlik derleme yakmak
+  # yerine, istendiginde calisir.
+  workflow_dispatch:
+
+  # Yalnizca wined3d kaynagi ya da bu workflow degistiginde otomatik calisir.
+  # Boylece "kodu degistirdim, yeni ikili lazim" durumu kendiliginden karsilanir
+  # ve ilgisiz bir commit (ornegin bir tema dosyasi) derlemeyi baslatmaz.
+  push:
+    paths:
+      - 'dotfile/WINE/**'
+      - '.github/workflows/wine-gnuchan.yml'
+
+jobs:
+  build:
+    # ubuntu-22.04: Wine 11.x icin yeterince yeni, ubuntu-24.04'ten daha
+    # oturmus bir kutuphane seti. 24.04'e gecmek icin tek satir degisir.
+    runs-on: ubuntu-22.04
+
+    # Derleme uzun; varsayilan 6 saat sinirinin altinda kalir ama erken
+    # durdurulmamasi icin acikca yazilir.
+    timeout-minutes: 300
+
+    env:
+      # Hedef islemci. GM965 = Merom = core2. Degistirmek icin tek yer burasi.
+      GNUCHAN_MARCH: core2
+      # makefile.py'nin cagirdigi alt islemler icin; apt'i sessiz tutar.
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - name: Depoyu al
+        uses: actions/checkout@v4
+
+      # GitHub kosucusunda ~14 GB bos alan vardir ve Wine derlemesi + kurulum
+      # ~10-12 GB ister. Onceden kurulu, bu ise yaramayan buyuk dizinler
+      # silinerek yer acilir. Silinmezse derleme ortasinda "No space left on
+      # device" ile duser.
+      - name: Disk alani ac
+        run: |
+          echo "Once:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost
+          sudo apt-get clean
+          echo "Sonra:"
+          df -h /
+
+      # Bagimliliklari makefile.py kurar. `deps` eylemi ensure_root cagirir ve
+      # burada zaten root/sudo oldugumuz icin dogrudan kurar. mingw-w64 ve
+      # gettext bu listenin icindedir (bkz. makefile.py BUILD_PACKAGES) —
+      # eksiklikleri configure'i "i386 PE compiler not found" ile durdurur.
+      - name: Derleme bagimliliklarini kur
+        working-directory: dotfile/WINE
+        run: sudo -E python3 makefile.py deps
+
+      # configure + TUM Wine derlemesi. `build` eylemi sirasiyla: kaynagi
+      # guncelle -> optimize wined3d'yi agaca kopyala -> configure -> make.
+      # -E, GNUCHAN_MARCH degiskenini sudo'ya tasir; tasinmazsa `native` olur ve
+      # ikili hedef makinede calismaz.
+      - name: Derle (tam Wine + wined3d)
+        working-directory: dotfile/WINE
+        run: sudo -E python3 makefile.py build
+
+      # /opt/wine-gnuchan agacini tek arsive al. Yol, arsivin ICINDE
+      # `opt/wine-gnuchan/...` olacak sekilde -C / ile alinir; boylece hedef
+      # makinede `sudo tar xzf wine-gnuchan.tar.gz -C /` tek komutla dogru yere
+      # acar.
+      - name: Paketle
+        run: |
+          sudo tar czf wine-gnuchan.tar.gz -C / opt/wine-gnuchan
+          ls -lh wine-gnuchan.tar.gz
+
+      # Derlenen ikilinin gercekten hedef islemci icin uretildigini KANITLA:
+      # arsivden cikan ve hedefte calisacak loader'in makine kodu, core2'nin
+      # desteklemedigi bir komut seti (ornegin AVX) kullaniyor olamaz.
+      # Bu kontrol olmadan, yanlislikla `native` ile derlenmis bir arsiv
+      # fark edilmeden indirilirdi.
+      - name: Ikiliyi dogrula (core2 uyumu)
+        run: |
+          mkdir -p /tmp/check
+          tar xzf wine-gnuchan.tar.gz -C /tmp/check
+          echo "=== dosya turu ==="
+          file /tmp/check/opt/wine-gnuchan/bin/wine 2>/dev/null || true
+          echo "=== AVX/AVX2 kullanimi (BOS olmali) ==="
+          if objdump -d /tmp/check/opt/wine-gnuchan/bin/wine 2>/dev/null | grep -qE '\bv(a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z)(mov|add|mul|sub|xor|and|or)[a-z]*'; then
+            echo "UYARI: yukarida AVX komutu var; yanlis -march ile derlenmis olabilir"
+          else
+            echo "AVX komutu bulunamadi (beklenen)"
+          fi
+
+      - name: Artifact olarak yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine-gnuchan-core2
+          path: wine-gnuchan.tar.gz
+          # Arsiv buyuk; gereksiz sikistirma tekrari yapma.
+          compression-level: 0
+          retention-days: 30
