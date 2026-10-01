@@ -728,6 +728,7 @@ static void frame_clamp_to_workarea(WmCore *core, WmFrame *frame) {
 static void frame_size_limits(WmCore *core, const WmFrame *frame,
                               int *max_width, int *max_height);
 static void frame_clamp_size_to_screen(WmCore *core, WmFrame *frame);
+static int  frame_size_is_fullscreen(WmCore *core, int width, int height);
 
 void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
     /* A scaled window's frame is the user's to size, not the client's. The
@@ -740,12 +741,33 @@ void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
         return;
     }
 
+    /* A request for the whole screen IS a request for fullscreen — see
+       frame_size_is_fullscreen() for why the size, and not a state atom, is the
+       form of the request a Direct3D game actually makes. Recognised here, the
+       request gets the whole screen; taken only as a size it would meet the
+       rule below and be given the desktop less the bar instead.
+
+       THE TEST IS MADE BEFORE THE SIZE IS TAKEN, and that order is what makes
+       leaving fullscreen work. wm_frame_set_fullscreen() records the size to
+       come back to only when the window is still smaller than the screen — and
+       it is, at this moment. Take the size first and the window is already
+       enlarged, nothing is recorded, and the window can never be put back to
+       the size it had. */
+    if (!frame->fullscreen &&
+        frame_size_is_fullscreen(core,
+                                 width > 1 ? width : frame->client_width,
+                                 height > 1 ? height : frame->client_height)) {
+        wm_frame_set_fullscreen(core, frame, 1);
+        return;
+    }
+
     if (width > 1) {
         frame->client_width = width;
     }
     if (height > 1) {
         frame->client_height = height;
     }
+
     /* The size IS held to the desktop, and this is the one thing a window
        manager can do about a window larger than the screen. X keeps no pixels
        for the part that falls past the screen's edge and sends no Expose when
@@ -864,12 +886,36 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
     }
 
     if (resized) {
+        /* A game under Wine does not ask for fullscreen with a state atom; it
+           resizes ITSELF to the screen and expects the manager to follow. That
+           resize arrives here, and this is where it is recognised for what it
+           is — see frame_size_is_fullscreen().
+
+           Without this the window is only ever held to the desktop less the
+           bar, so a game that asked for the screen is given a picture short of
+           it, notices, and asks again: the loop this whole change is about.
+           The frame is put back to the whole screen and the rest of the sync is
+           skipped, because the window is now fixed and has no place of its own
+           to be read.
+
+           The test comes BEFORE the size is taken, for the reason given in
+           wm_frame_resize(): the size recorded as the place to come back to is
+           the one the window had before it went fullscreen, and taking the new
+           size first would leave nothing to record. */
+        if (!frame->fullscreen &&
+            frame_size_is_fullscreen(core, attributes.width,
+                                     attributes.height)) {
+            wm_frame_set_fullscreen(core, frame, 1);
+            return;
+        }
+
         if (attributes.width > 1) {
             frame->client_width = attributes.width;
         }
         if (attributes.height > 1) {
             frame->client_height = attributes.height;
         }
+
         /* A window that resized ITSELF is held to the screen exactly as one
            whose resize the manager was asked for: it is the same window either
            way, and a window bigger than the screen has the same blank edge
@@ -981,6 +1027,32 @@ static void frame_clamp_size_to_screen(WmCore *core, WmFrame *frame) {
     if (frame->client_height > max_height) {
         frame->client_height = max_height;
     }
+}
+
+/* Whether the size a client asked for is a request for the whole screen.
+ *
+ * THE TEST IS A SIZE AND NOT A STATE, and that is the whole of why it is here.
+ * A Direct3D game under Wine usually does NOT send _NET_WM_STATE_FULLSCREEN: it
+ * resizes itself to the screen and expects the manager to follow. Asking for
+ * the screen in both directions IS that request, and it is the only form of it
+ * most games ever make.
+ *
+ * Read only as a size, the request meets the rule that holds a window to the
+ * desktop — which is the screen less the bar — and the game is given a picture
+ * short of the screen it asked for. The game notices, corrects, and the two
+ * fight. Recognised here, the request meets the other rule instead: a
+ * fullscreen window is the WHOLE screen, nothing taken off it.
+ *
+ * A window that asked for the screen's size less a pixel or two is still
+ * asking for the screen, so the test is not equality. */
+static int frame_size_is_fullscreen(WmCore *core, int width, int height) {
+    int screen_width = core->width > 1 ? core->width
+                                       : DisplayWidth(core->display,
+                                                      core->screen);
+    int screen_height = core->height > 1 ? core->height
+                                         : DisplayHeight(core->display,
+                                                         core->screen);
+    return width >= screen_width && height >= screen_height;
 }
 
 void wm_frame_maximize(WmCore *core, WmFrame *frame) {
@@ -1242,6 +1314,21 @@ void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on) {
     }
     on = on ? 1 : 0;
     if (frame->fullscreen == on) {
+        /* Already in the state that was asked for, and the request is still
+           ANSWERED. "Already there" happens whenever the size test in
+           wm_frame_create() or wm_frame_resize() got there first — and a
+           client that asked with a state message and hears nothing back
+           concludes the manager ignored it and asks again, for ever. The
+           answer is the property, so it is written even when nothing about the
+           window has to change.
+
+           Written only on the way IN: a window that is not fullscreen and is
+           told it is not has nothing to be told, and publishing an empty list
+           on every unrelated call would fight a client that is setting the
+           property itself. */
+        if (on) {
+            frame_publish_fullscreen_state(core, frame, 1);
+        }
         return;
     }
 
@@ -1253,14 +1340,37 @@ void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on) {
                                                          core->screen);
 
     if (on) {
-        /* The place and size to come back to. It is taken here and not from
-           the fields a maximise uses, because a window may be maximised and
-           then made fullscreen and has to come back to the maximise, not to
-           wherever it was before that. */
-        frame->restore_x = frame->x;
-        frame->restore_y = frame->y;
-        frame->restore_width = frame->client_width;
-        frame->restore_height = frame->client_height;
+        /* The place and size to come back to — but ONLY when the window is
+           smaller than the screen right now.
+
+           The test is what makes the automatic path safe. A game that resized
+           ITSELF to the screen (see frame_size_is_fullscreen) arrives here
+           with the screen's own size already in hand, and recording that as
+           the place to come back to would mean "leave fullscreen" put the
+           window straight back to the size it is now — a window that could not
+           be brought out of fullscreen at all. The fields are left as they
+           were, which is the size the window had when it was first framed. */
+        int screen_w = core->width > 1 ? core->width
+                                       : DisplayWidth(core->display,
+                                                      core->screen);
+        int screen_h = core->height > 1 ? core->height
+                                        : DisplayHeight(core->display,
+                                                        core->screen);
+        if (frame->client_width < screen_w || frame->client_height < screen_h) {
+            frame->restore_x = frame->x;
+            frame->restore_y = frame->y;
+            frame->restore_width = frame->client_width;
+            frame->restore_height = frame->client_height;
+        }
+        if (frame->restore_width < 1 || frame->restore_height < 1) {
+            /* Nothing was ever recorded — a window that opened fullscreen and
+               has no other size. Coming back to the size of the screen is the
+               only answer better than a zero-sized window. */
+            frame->restore_x = 0;
+            frame->restore_y = 0;
+            frame->restore_width = screen_w;
+            frame->restore_height = screen_h;
+        }
 
         /* Fullscreen and maximised at once would be two answers to one
            question, and the glyph that says which is drawn reads maximized.
@@ -1333,6 +1443,27 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
        that does resize itself has this updated by wm_frame_sync(). */
     frame->natural_width = frame->client_width;
     frame->natural_height = frame->client_height;
+
+    /* A window that opens asking for the whole screen IS asking for fullscreen
+       — see frame_size_is_fullscreen() for why the size, and not a state atom,
+       is the form a Direct3D game makes. It is answered HERE, before the frame
+       is mapped, so the game never sees a titled window for even one frame and
+       never has to correct for one.
+
+       The place to come back to is recorded as the window's own opening
+       geometry: a window whose only known size is the screen has nowhere else
+       to return to, and this is that geometry made explicit rather than left
+       at zero. */
+    if (frame_size_is_fullscreen(core, frame->client_width,
+                                 frame->client_height)) {
+        frame->restore_x = frame->x;
+        frame->restore_y = frame->y;
+        frame->restore_width = frame->client_width;
+        frame->restore_height = frame->client_height;
+        frame->fullscreen = 1;
+        frame->x = 0;
+        frame->y = 0;
+    }
 
     /* A window's TITLE BAR is kept clear of the bar and on the screen. The
        screen's top-left corner is not where a window belongs when a bar is
