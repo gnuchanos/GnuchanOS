@@ -109,6 +109,14 @@ static void manage_map(WmCore *core, Window window) {
     if (manage_is_unmanaged_type(core, window)) {
         /* Mapped as the program asked, with no frame: it said it is not a
            window to decorate. */
+        XWindowAttributes attributes;
+        if (XGetWindowAttributes(core->display, window, &attributes)) {
+            fprintf(stderr,
+                    "gnuchanwm: manage: window 0x%lx NOT framed "
+                    "(override_redirect=%d, %dx%d)\n",
+                    (unsigned long)window, attributes.override_redirect,
+                    attributes.width, attributes.height);
+        }
         XMapWindow(core->display, window);
         return;
     }
@@ -120,6 +128,11 @@ static void manage_map(WmCore *core, Window window) {
         XMapWindow(core->display, window);
         return;
     }
+
+    fprintf(stderr,
+            "gnuchanwm: manage: window 0x%lx framed (client %dx%d, "
+            "fullscreen-hint read next)\n",
+            (unsigned long)window, frame->client_width, frame->client_height);
 
     /* A game that opened already asking for the whole screen is given it now,
        before the window is on screen, rather than one frame later. */
