@@ -61,17 +61,6 @@ void wm_workspace_apply(WmCore *core) {
     for (int i = 0; i < core->frame_count; i++) {
         WmFrame *frame = &core->frames[i];
 
-        /* A frame is on screen only when it is on the current workspace and
-           the user has not put it away. Anything else is unmapped, which is
-           also what the server does with a frame that is already down, so no
-           case needs a test of what the frame's map state already is.
-
-           A fullscreen client is a special case: the client window itself keeps
-           its own map state even when the manager-only frame window is hidden,
-           and if only the wrapper is toggled the game can remain visible on the
-           old workspace while the rest of the desktop has already moved. Both
-           the frame and its client therefore have to agree with the workspace
-           decision here. */
         int wanted = (frame->workspace == core->current_workspace) &&
                      !frame->minimized;
 

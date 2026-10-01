@@ -325,34 +325,21 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
                 : (frame->moved ? style->border_moved
                                 : style->border_unfocused);
 
-    /* A fullscreen window has no chrome, so there is nothing for the manager
-       to draw: the frame is exactly the size of the client and the client
-       covers it. The title bar and the border are dropped here rather than
-       drawn and then covered by the program's own pixels, which is what keeps
-       a strip of title bar from flashing across the top of a game that is
-       repainting thirty times a second.
-
-       The one thing that can still be drawn is the compositor's picture of a
-       SCALED window, which the client does not paint itself; that path is kept
-       and everything else returns. */
-    if (frame->fullscreen) {
-        if (frame->scaled) {
-            frame_ensure_buffer(core, frame, width, height);
-            Drawable scaled_target =
-                frame->buffer != None ? frame->buffer : frame->frame;
-            XSetForeground(display, core->gc, style->panel);
-            XFillRectangle(display, scaled_target, core->gc, 0, 0,
-                           (unsigned int)width, (unsigned int)height);
-            wm_compositor_draw(core, frame->client, scaled_target, 0, 0,
-                               frame->client_width, frame->client_height);
-            if (scaled_target != frame->frame) {
-                XCopyArea(display, frame->buffer, frame->frame, core->gc,
-                          0, 0, (unsigned int)width, (unsigned int)height,
-                          0, 0);
-            }
-            XFlush(display);
+    if (frame->fullscreen && frame->scaled) {
+        frame_ensure_buffer(core, frame, width, height);
+        Drawable scaled_target =
+            frame->buffer != None ? frame->buffer : frame->frame;
+        XSetForeground(display, core->gc, style->panel);
+        XFillRectangle(display, scaled_target, core->gc, 0, 0,
+                       (unsigned int)width, (unsigned int)height);
+        wm_compositor_draw(core, frame->client, scaled_target, 0, 0,
+                           frame->client_width, frame->client_height);
+        if (scaled_target != frame->frame) {
+            XCopyArea(display, frame->buffer, frame->frame, core->gc,
+                      0, 0, (unsigned int)width, (unsigned int)height,
+                      0, 0);
         }
-        return;
+        XFlush(display);
     }
 
     frame_ensure_buffer(core, frame, width, height);
@@ -681,12 +668,14 @@ static void frame_clamp_to_workarea(WmCore *core, WmFrame *frame) {
            treat it as a borderless surface that has to stay fixed. */
     }
 
-    int screen_width = core->width > 1 ? core->width
-                                       : DisplayWidth(core->display,
-                                                      core->screen);
-    int screen_height = core->height > 1 ? core->height
-                                         : DisplayHeight(core->display,
-                                                         core->screen);
+    int screen_width = core->desktop_width > 1 ? core->desktop_width
+                                               : (core->width > 1 ? core->width
+                                                                  : DisplayWidth(core->display,
+                                                                                 core->screen));
+    int screen_height = core->desktop_height > 1 ? core->desktop_height
+                                                 : (core->height > 1 ? core->height
+                                                                    : DisplayHeight(core->display,
+                                                                                   core->screen));
     int area_x = 0;
     int area_y = 0;
     int area_width = 0;
@@ -784,12 +773,14 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
         return;
     }
 
-    int screen_width = core->width > 1 ? core->width
-                                       : DisplayWidth(core->display,
-                                                      core->screen);
-    int screen_height = core->height > 1 ? core->height
-                                         : DisplayHeight(core->display,
-                                                         core->screen);
+    int screen_width = core->desktop_width > 1 ? core->desktop_width
+                                               : (core->width > 1 ? core->width
+                                                                  : DisplayWidth(core->display,
+                                                                                 core->screen));
+    int screen_height = core->desktop_height > 1 ? core->desktop_height
+                                                 : (core->height > 1 ? core->height
+                                                                    : DisplayHeight(core->display,
+                                                                                   core->screen));
 
     /* A scaled window resizes itself as much as it likes: the content is drawn
        at whatever size the program chose, and that size is what is scaled FROM.
@@ -1270,12 +1261,14 @@ void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on) {
         return;
     }
 
-    int screen_width = core->width > 1 ? core->width
-                                       : DisplayWidth(core->display,
-                                                      core->screen);
-    int screen_height = core->height > 1 ? core->height
-                                         : DisplayHeight(core->display,
-                                                         core->screen);
+    int screen_width = core->desktop_width > 1 ? core->desktop_width
+                                               : (core->width > 1 ? core->width
+                                                                  : DisplayWidth(core->display,
+                                                                                 core->screen));
+    int screen_height = core->desktop_height > 1 ? core->desktop_height
+                                                 : (core->height > 1 ? core->height
+                                                                    : DisplayHeight(core->display,
+                                                                                   core->screen));
 
     if (on) {
         /* The place and size to come back to. It is taken here and not from
@@ -1292,11 +1285,6 @@ void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on) {
            The state asked for most recently wins, and it is this one. */
         frame->maximized = 0;
 
-        /* This WM keeps the title bar and border visible even when the client
-           asks for a fullscreen-like window. The window is resized to the
-           screen's usable area without stripping its chrome, so it still keeps
-           drag/move behaviour and does not trap the user in a borderless
-           surface. */
         frame->fullscreen = 1;
         frame->x = 0;
         frame->y = 0;
