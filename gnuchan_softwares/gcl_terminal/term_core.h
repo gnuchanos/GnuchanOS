@@ -180,6 +180,15 @@ typedef struct TermCore {
     int  title_dirty;
     unsigned long last_title_ms;
 
+    /* What the PROGRAM asked the window to be called, from OSC 0, 1 or 2. It
+       is separate from `title` above and not the same thing: `title` is the
+       bar's text, which the terminal reads from the child's directory, and
+       this is the text the child sent to be the WINDOW's name — what the
+       window manager shows in a title bar and what a task switcher lists.
+       Empty means the program has not named itself, and the window keeps the
+       name it was opened with. */
+    char program_title[TERM_TITLE_MAX];
+
     /* The pending size, applied when the debounce expires. */
     int pending_width;
     int pending_height;

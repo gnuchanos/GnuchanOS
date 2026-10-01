@@ -35,10 +35,10 @@ static const char *DEFAULT_FONT = "monospace-11";
 
 /* --- the built-in palette -------------------------------------------------
  *
- * THE WHOLE PALETTE IS PURPLE. This is the theme and not an accident of the
- * sixteen being close: every one of them is a shade of the same hue, from a
- * deep violet through the magenta-violets to a lavender, and none of them is
- * white, grey, green or blue.
+ * THE SIXTEEN ARE PURPLE. This is the theme and not an accident of the sixteen
+ * being close: every one of them is a shade of the same hue, from a deep
+ * violet through the magenta-violets to a lavender, and none of them is white,
+ * grey, green or blue.
  *
  * The reason to write it down is that the sixteen names exist so a program can
  * tell things apart with them — `ls` paints a directory one colour and an
@@ -48,12 +48,15 @@ static const char *DEFAULT_FONT = "monospace-11";
  * two clearly different purples. A program that needs a sharper distinction
  * has the 256-colour and truecolor forms, and both are honoured.
  *
- * The entries past the sixteen are the theme's own default text and
- * background, which a cell that never sent an SGR is drawn in. They are not
- * part of the sixteen: a program cannot name them, and its own SGR 39 and 49
- * mean "whatever the theme says", which is exactly what these are.
+ * THE ARRAY IS NOT BUILT HERE. It used to be a static table of the whole
+ * palette, and that stopped being possible when the palette grew past the
+ * sixteen: entries 16 to 255 are the STANDARD's — the cube and the greyscale
+ * ramp, which a program names by number and expects to get — and they are
+ * built by term_palette_fill_standard(). The two past those are the theme's
+ * own text and background. All three parts are put together in
+ * style_build_palette() below.
  */
-static const uint32_t DEFAULT_PALETTE[TERM_PALETTE_SIZE] = GCL_PALETTE_INIT;
+static const uint32_t THEME_ANSI[GCL_ANSI_COUNT] = GCL_PALETTE_INIT;
 
 /* --- the bar's colours -----------------------------------------------------
  *
@@ -142,6 +145,41 @@ static int style_open_faces(TermStyle *style, const char *font_name) {
     return 0;
 }
 
+/* Assemble the palette the style starts with, from its three parts:
+ *
+ *   0-15     THEME_ANSI — what the theme chose for the sixteen a program names
+ *   16-255   the standard cube and greyscale ramp, from
+ *            term_palette_fill_standard()
+ *   256-257  the theme's own text and background, from gcl_palette.h
+ *
+ * The order matters and is the reason this is one function rather than three
+ * lines in three places: the standard part is written first and the theme's
+ * sixteen over it, so the sixteen WIN where they overlap — and they do not
+ * overlap, because they are below 16. It is written this way so that a reader
+ * seeing `term_palette_fill_standard()` knows it cannot touch what the theme
+ * chose.
+ *
+ * The two past 255 have no standard value and are the theme's; they are set
+ * last so nothing can be written over them. */
+static void style_build_palette(TermStyle *style) {
+    uint32_t built[TERM_PALETTE_SIZE];
+    memset(built, 0, sizeof(built));
+
+    /* The standard first: everything a program can name by number. */
+    term_palette_fill_standard(built);
+
+    /* The theme's sixteen over the top of it. */
+    for (int i = 0; i < GCL_ANSI_COUNT && i < TERM_PALETTE_SIZE; i++) {
+        built[i] = THEME_ANSI[i];
+    }
+
+    /* The theme's own two, past everything a program can name. */
+    built[TERM_COLOR_INDEX_FG] = GCL_FG;
+    built[TERM_COLOR_INDEX_BG] = GCL_BG;
+
+    term_style_set_palette(style, built, TERM_PALETTE_SIZE);
+}
+
 int term_style_init(TermStyle *style, Display *display, int screen,
                     const char *font_name) {
     memset(style, 0, sizeof(*style));
@@ -166,7 +204,7 @@ int term_style_init(TermStyle *style, Display *display, int screen,
     int minor = 0;
     style->has_render = XRenderQueryVersion(display, &major, &minor);
 
-    term_style_set_palette(style, DEFAULT_PALETTE, TERM_PALETTE_SIZE);
+    style_build_palette(style);
     style->bar_bg = DEFAULT_BAR_BG;
     style->bar_fg = DEFAULT_BAR_FG;
     style->cursor = GCL_CURSOR;
@@ -281,6 +319,77 @@ void term_style_set_color(TermStyle *style, int index, uint32_t rgb) {
         XftColorFree(style->display, style->visual, style->colormap,
                      &style->xft_colors[index]);
         xft_color_from_rgb(style, &style->xft_colors[index], rgb);
+    }
+}
+
+/* --- the baseline a program's changes go back to --------------------------
+ *
+ * See TermStyle.baseline for why this is a snapshot and not the built-in
+ * palette. What is here is the three calls that take it and the three that
+ * restore from it, and they are small because the baseline is a plain copy of
+ * what the theme already built.
+ *
+ * The snapshot is taken ONCE, after term_config_apply_style() — see
+ * GnuChanTerm.c. Taking it at any other time captures the wrong thing: before
+ * the theme, the shipped defaults; after a program has run, the program's own
+ * colours. Neither is what "put it back" means.
+ */
+void term_style_snapshot(TermStyle *style) {
+    if (style == NULL) {
+        return;
+    }
+    style->baseline = style->palette;
+    style->baseline_cursor = style->cursor;
+}
+
+/* Drop every converted colour so they are remade from the palette as it now
+   is. Shared by the two whole-palette restores below, and it is the reason the
+   restore is more than an array copy: `xft_colors` caches the OLD values and
+   a screen drawn from it would keep the colours the program set. */
+static void style_drop_converted(TermStyle *style) {
+    for (int i = 0; i < style->xft_color_count; i++) {
+        XftColorFree(style->display, style->visual, style->colormap,
+                     &style->xft_colors[i]);
+    }
+    style->xft_color_count = 0;
+}
+
+void term_style_restore_palette(TermStyle *style) {
+    if (style == NULL) {
+        return;
+    }
+    style->palette = style->baseline;
+    style_drop_converted(style);
+}
+
+/* One entry back. An index past what the baseline holds is left alone rather
+   than set to black: a program that resets an entry the theme never had gets
+   the colour it already had, and a reset can never invent one. */
+void term_style_restore_entry(TermStyle *style, int index) {
+    if (style == NULL || index < 0 || index >= TERM_PALETTE_SIZE) {
+        return;
+    }
+    if (index >= style->baseline.count) {
+        return;
+    }
+    style->palette.colors[index] = style->baseline.colors[index];
+    if (index >= style->palette.count) {
+        style->palette.count = index + 1;
+    }
+    /* The converted copy is dropped for this entry so the next draw remakes it
+       from the restored value — see style_drop_converted() for why a stale one
+       would keep the program's colour on the screen. */
+    if (index < style->xft_color_count) {
+        XftColorFree(style->display, style->visual, style->colormap,
+                     &style->xft_colors[index]);
+        xft_color_from_rgb(style, &style->xft_colors[index],
+                           style->palette.colors[index]);
+    }
+}
+
+void term_style_restore_cursor(TermStyle *style) {
+    if (style != NULL) {
+        style->cursor = style->baseline_cursor;
     }
 }
 

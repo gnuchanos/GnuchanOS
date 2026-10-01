@@ -6,10 +6,16 @@
  *
  * Typing `python main.py` once should be enough. The second time, `python` is
  * on the line and the rest of the command — the part you have not typed yet —
- * is shown faintly after the cursor. Tab takes it. That is the whole feature,
- * and it is the one thing a shell's own readline cannot do because readline
- * does not remember what you typed in a previous SESSION in a form it can
- * suggest from at the prompt.
+ * is shown faintly after the cursor. RIGHT TAKES IT, and not Tab: Tab is the
+ * shell's completion key and is left to the shell, which is the only thing
+ * that knows the filesystem — a path typed up to a partial directory is the
+ * shell's to finish. Taking Tab would leave that uncompletable, so the ghost
+ * yields the key. See term_input.c's handle_suggest_key() for the whole of
+ * that reasoning.
+ *
+ * It is the one thing a shell's own readline cannot do because readline does
+ * not remember what you typed in a previous SESSION in a form it can suggest
+ * from at the prompt.
  *
  * --- where the line comes from, and why not from the keyboard ---
  *
@@ -23,9 +29,9 @@
  * counted keys would therefore disagree with the screen the moment anything
  * was pressed that is not a plain character: press Up and readline replaces the
  * whole line while the terminal's count still holds the old one, and from then
- * on every suggestion is computed from text nobody typed and every Tab sends
- * the wrong suffix. There is no repairing it, because the terminal cannot ask
- * readline what the line is.
+ * on every suggestion is computed from text nobody typed and every Right press
+ * sends the wrong suffix. There is no repairing it, because the terminal
+ * cannot ask readline what the line is.
  *
  * So the line is READ OFF THE SCREEN instead, and that is exact by
  * construction: the text between where the prompt ended and where the cursor
@@ -199,7 +205,7 @@ void term_suggest_load(TermSuggest *suggest);
  * means, and the replacement is sent as backspaces followed by the text: a
  * backspace deletes backwards in every readline editing mode, where a
  * "kill to start" escape means one thing in emacs mode and another in vi. That
- * is the same reasoning that makes Tab send only the tail.
+ * is the same reasoning that makes the suggestion send only the tail.
  *
  * It acts only while a prompt is on the line — see input_known — so a full
  * screen program that uses the arrows (an editor, a pager) keeps them.

@@ -127,13 +127,28 @@ static int path_is_readable(const char *path) {
  *   ~/.config/...           the same location for a session that never set
  *                           XDG_CONFIG_HOME, which is most of them.
  *
- *   GnuChanTerm_config/...  the copy the SOURCE TREE ships, relative to where
- *                           the terminal was started. It is last because it
- *                           is the developer's file: a machine with settings
- *                           of its own must not have the tree's one step in
- *                           front of it. It is what makes `makefile.py run` —
- *                           a build from the tree, with no install — read the
- *                           settings the tree ships.
+ *   <exe>/GnuChanTerm_config/...  the copy the SOURCE TREE ships, found from
+ *                           the running BINARY and not from the working
+ *                           directory. That distinction is the whole of this
+ *                           step: a terminal started by the window manager, by
+ *                           a desktop entry or by a key binding has a working
+ *                           directory of $HOME or whatever the session was,
+ *                           and a path relative to that finds nothing. The
+ *                           binary, wherever it was built, always knows where
+ *                           it is, so this is the copy that is actually beside
+ *                           it. It is next to last because it is the
+ *                           developer's file — a machine with settings of its
+ *                           own must not have the tree's one step in front of
+ *                           it — and it is what makes a build run from the
+ *                           tree, with no install, read the settings the tree
+ *                           ships.
+ *
+ *   GnuChanTerm_config/...  the same copy, relative to the working directory.
+ *                           It is kept and tried after the one above because it
+ *                           is what a person running the binary by hand, from
+ *                           the source directory, has always had; the check
+ *                           above answers the same case from the other side,
+ *                           so this one is a backstop rather than the answer.
  *
  * That last entry is the whole reason the settings file appeared to do
  * nothing. The terminal only ever looked in the two user locations, so a
@@ -192,7 +207,72 @@ char *term_config_path(char *buffer, unsigned int size) {
         snprintf(buffer, size, "%s", candidate);
     }
 
-    /* 4. The tree's own copy, beside the working directory. */
+    /* 4. The tree's own copy, found from the BINARY rather than from the
+       working directory — see the note above for why that is the difference
+       that matters. /proc/self/exe is the kernel's own answer to "where is the
+       program I am running", and it is a symlink to the real file wherever it
+       was started from. The readlink gives the directory the binary is in, and
+       the config is looked for in the tree beside it.
+     *
+     * A machine without /proc — not Linux — simply finds nothing here and
+       falls to the step below, so this cannot be the reason a terminal fails
+       to start. */
+    char exe[TERM_CONFIG_TEXT_LENGTH];
+    ssize_t exe_length = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    if (exe_length > 0) {
+        exe[exe_length] = '\0';
+        char *slash = strrchr(exe, '/');
+        if (slash != NULL) {
+            *slash = '\0';   /* the directory the binary is in */
+
+            /* WALK UP from the binary, one directory at a time, and look for
+               the tree's copy at each level. A fixed number of ".." would be
+               wrong, and that is the whole reason for the walk: where the copy
+               sits relative to the binary depends on how it was built. A build
+               into a `build/` directory under the source has it three levels
+               up; a build into `_temp/<name>-build/` beside the repository
+               root — which is what makefile.py does — has it four. Encoding
+               one of those would work on one machine and not the other.
+             *
+               TWO SHAPES are looked for at every level, because the tree
+               itself can be entered from two places: the config directly under
+               the level (a working directory that IS the source), and the copy
+               under the repository's own gnuchan_softwares/gcl_terminal (a
+               level that is the repository root). One of the two is what a
+               given level is, and trying both is what makes the walk
+               layout-blind.
+             *
+               The walk stops at the root — the slash that has no directory
+               before it — so a binary outside any tree simply finds nothing
+               and falls to the step below. */
+            char level[TERM_CONFIG_TEXT_LENGTH];
+            snprintf(level, sizeof(level), "%s", exe);
+            for (int depth = 0; depth < 6; depth++) {
+                snprintf(candidate, sizeof(candidate),
+                         "%s/GnuChanTerm_config/GnuChanTerm.py", level);
+                if (path_is_readable(candidate)) {
+                    snprintf(buffer, size, "%s", candidate);
+                    return buffer;
+                }
+                snprintf(candidate, sizeof(candidate),
+                         "%s/gnuchan_softwares/gcl_terminal/"
+                         "GnuChanTerm_config/GnuChanTerm.py", level);
+                if (path_is_readable(candidate)) {
+                    snprintf(buffer, size, "%s", candidate);
+                    return buffer;
+                }
+                char *up = strrchr(level, '/');
+                if (up == NULL || up == level) {
+                    break;    /* the root: nothing above it to try */
+                }
+                *up = '\0';
+            }
+        }
+    }
+
+    /* 5. The same copy, beside the working directory. A backstop for the case
+       above — a session with no /proc, or a binary moved away from its tree
+       while the working directory still holds one. */
     if (path_is_readable("GnuChanTerm_config/GnuChanTerm.py")) {
         snprintf(buffer, size, "%s", "GnuChanTerm_config/GnuChanTerm.py");
         return buffer;
@@ -526,13 +606,38 @@ int term_config_load_default(TermConfig *config) {
 
 /* --- onto the style ------------------------------------------------------- */
 
+/* Where a slot in the script's Colors list lands in the PALETTE.
+ *
+ * The list is eighteen long and the palette is 258, and they are not the same
+ * numbering past the sixteenth. The first sixteen are the same in both — a
+ * program names 0 to 15 and the theme writes 0 to 15, and they are the same
+ * entries. The script's last two are the theme's own text and background, and
+ * in the palette those live PAST the 256 a program can name — see
+ * TERM_COLOR_INDEX_FG. So the seventeenth and eighteenth entries of the list
+ * are the 257th and 258th entries of the palette, and this is the one place
+ * that mapping is written down.
+ *
+ * It returns -1 for a slot with no place in the palette, which cannot happen
+ * for the eighteen the list holds and is answered rather than assumed. */
+static int config_slot_to_palette(int slot) {
+    if (slot < 0 || slot >= TERM_CONFIG_PALETTE_SIZE) {
+        return -1;
+    }
+    if (slot == TERM_CONFIG_INDEX_TEXT) {
+        return TERM_COLOR_INDEX_FG;
+    }
+    if (slot == TERM_CONFIG_INDEX_BG) {
+        return TERM_COLOR_INDEX_BG;
+    }
+    return slot;
+}
+
 void term_config_apply_style(const TermConfig *config, struct TermStyle *style) {
     if (!config || !style) {
         return;
     }
 
-    /* The palette the style ended up with, with the script's colours layered
-       over the top.
+    /* The WHOLE palette, with the script's colours layered over the top.
      *
      * The style's own values are the starting point and NOT the built-in
      * palette in gcl_palette.h, because those two can already differ: a
@@ -542,30 +647,35 @@ void term_config_apply_style(const TermConfig *config, struct TermStyle *style) 
      * program's own colour, and what makes editing gcl_palette.h and writing a
      * config the same kind of change rather than two that fight.
      *
-     * For the sixteen a program names, palette entry i IS the answer. The last
-     * two are the theme's own text and background and are read through their
-     * own accessors, because that is what those indices mean — see
-     * term_style.c. */
-    uint32_t palette[TERM_CONFIG_PALETTE_SIZE];
-    for (int i = 0; i < TERM_CONFIG_PALETTE_SIZE; i++) {
-        if (i == TERM_COLOR_INDEX_FG) {
-            palette[i] = term_style_default_fg(style);
-        } else if (i == TERM_COLOR_INDEX_BG) {
-            palette[i] = term_style_default_bg(style);
-        } else if (i < style->palette.count) {
-            palette[i] = style->palette.colors[i];
-        } else {
-            /* An entry the style never set. Nothing has a colour for it, so
-               the background stands in — a cell drawn in it is visible and
-               wrong rather than invisible, which is the same choice the
-               renderer makes for a colour it cannot allocate. */
-            palette[i] = term_style_default_bg(style);
+     * The copy is the FULL 256-colour palette and not the eighteen a script
+     * can name, and that is the whole of this being correct: the cube and the
+     * greyscale ramp are entries a program reaches by number and the script
+     * has no business touching, so they are carried through untouched rather
+     * than being cut off at eighteen. Writing back only eighteen — which is
+     * what this did before the palette grew — would set the palette's count to
+     * 18 and make every `38;5;N` above 17 fall back to the default, which is
+     * the bug the 256-colour form had. */
+    uint32_t palette[TERM_PALETTE_SIZE];
+    for (int i = 0; i < TERM_PALETTE_SIZE; i++) {
+        palette[i] = (i < style->palette.count)
+                         ? style->palette.colors[i]
+                         : term_style_default_bg(style);
+    }
+
+    /* The script's colours over the top. Each slot is placed where it belongs
+       in the palette rather than at the same number, because the last two are
+       not at 16 and 17 in the palette — see config_slot_to_palette(). */
+    for (int slot = 0; slot < TERM_CONFIG_PALETTE_SIZE; slot++) {
+        if (!config->palette[slot].set) {
+            continue;
         }
-        if (config->palette[i].set) {
-            palette[i] = config->palette[i].rgb;
+        int index = config_slot_to_palette(slot);
+        if (index >= 0 && index < TERM_PALETTE_SIZE) {
+            palette[index] = config->palette[slot].rgb;
         }
     }
-    term_style_set_palette(style, palette, TERM_CONFIG_PALETTE_SIZE);
+
+    term_style_set_palette(style, palette, TERM_PALETTE_SIZE);
 
     /* The bar's two, each falling back to what the style already had so a
        script that names one of them keeps the other. */

@@ -34,9 +34,11 @@
 /* For the selection and the clipboard, which are the terminal's own and not
    the program's: a drag with the left button and Ctrl+Shift+C. */
 #include "term_select.h"
-/* For the suggestion: Tab takes the ghost, the arrows walk the history, and
+/* For the suggestion: Right takes the ghost, the arrows walk the history, and
    Enter stores the line. All three are the terminal's own and not the
-   program's, so they are claimed before a program can see them. */
+   program's, so they are claimed before a program can see them. Tab is NOT
+   one of them — it belongs to the shell's completion — and the note above
+   handle_suggest_key() says why. */
 #include "term_suggest.h"
 
 /* The most bytes one key press can produce. A function key with every modifier
@@ -506,17 +508,34 @@ static int handle_terminal_key(TermCore *core, XKeyEvent *key, KeySym keysym) {
 
 /* --- the terminal's own keys at a prompt ----------------------------------
  *
- * Three gestures belong to the terminal and only while a shell is waiting for a
- * line, and each is claimed before the program can see it:
+ * The gestures that belong to the terminal, and each is claimed before the
+ * program can see it:
  *
- *   Tab        takes the suggestion, if there is one
- *   Up, Down   walk the command history
- *   Enter      stores the line as a finished command
+ *   Right, End  take the suggestion, if there is one
+ *   Up, Down    walk the command history
+ *   Enter       stores the line as a finished command
+ *
+ * TAB IS DELIBERATELY NOT HERE, and it is worth saying why, because it was and
+ * that was wrong. TAB IS THE SHELL'S COMPLETION KEY. A path typed up to a
+ * partial directory — `cd ~/wine/drive_c/Program` — is completed by the SHELL,
+ * which knows the filesystem; the terminal knows only the commands it has seen
+ * run before. While Tab was claimed, a session with any stored command
+ * beginning with what was typed had its Tab eaten by the ghost: the terminal
+ * finished the LINE from its own history and the shell's completion never ran,
+ * so the path past the first partial directory could not be completed at all.
+ * The ghost is a convenience and completion is not; the convenience yields.
+ *
+ * Right and End take it instead, which is what the shells that do this use and
+ * for the same reason: they are the keys that mean "to the end of the line",
+ * and a suggestion is the rest of the line. BOTH ARE ONLY CLAIMED WHEN THERE IS
+ * SOMETHING TO TAKE — with no suggestion they return 0 and fall through, so
+ * Right still moves the cursor and End still goes to the line's end. That is
+ * what keeps this from being a key the user has lost.
  *
  * "Only while a shell is waiting" is not a guess and it is not a heuristic: it
  * is what the OSC 133 marker set — see term_suggest.h — so a full-screen
- * program that reads its own arrows and Tab (an editor, a pager, a game) never
- * has them taken, because no marker said a prompt was up.
+ * program that reads its own arrows (an editor, a pager, a game) never has them
+ * taken, because no marker said a prompt was up.
  *
  * Returns 1 when the key was the terminal's and has been dealt with.
  */
@@ -535,11 +554,17 @@ static int handle_suggest_key(TermCore *core, XKeyEvent *key, KeySym keysym) {
     TermSuggest *suggest = (TermSuggest *)core->suggest;
 
     switch (keysym) {
-    case XK_Tab:
-        /* A suggestion is taken and nothing else happens. With no suggestion
-           the key is NOT claimed, so it falls through to the shell and its own
-           completion runs — which is what Tab has always done and what a
-           person pressing it at an empty line expects. */
+    case XK_Right:
+    case XK_End:
+        /* The rest of the line, taken — see the note above for why these and
+           not Tab.
+
+           NOT CLAIMED WHEN THERE IS NOTHING TO TAKE, and that is the whole of
+           the safety: term_suggest_accept() returns 0 when the suggestion is
+           empty, and the key then falls through to the shell, where Right
+           moves the cursor and End goes to the end of the line exactly as they
+           always did. A user who never wants a suggestion never notices these
+           keys exist. */
         return term_suggest_accept(core);
 
     case XK_Return:
@@ -644,9 +669,10 @@ static void input_module_event(TermCore *core, XEvent *event) {
         KeySym keysym = XLookupKeysym(key, 0);
 
         /* The suggestion's keys come first of all. They are the terminal's and
-           they are only live at a prompt, so claiming them here is what keeps
-           Tab, the arrows and Enter working as the shell expects everywhere
-           else. See handle_suggest_key(). */
+           they are only live at a prompt, and each is claimed only when there
+           is something to take — so Right, End, Up, Down and Enter all keep
+           their ordinary meaning everywhere else, and Tab is never claimed at
+           all. See handle_suggest_key(). */
         if (handle_suggest_key(core, key, keysym)) {
             term_core_claim_event(core);
             return;

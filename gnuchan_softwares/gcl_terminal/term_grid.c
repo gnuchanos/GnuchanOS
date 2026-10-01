@@ -183,6 +183,10 @@ int term_grid_init(TermGrid *grid, int cols, int rows) {
     grid->pen_fg = TERM_COLOR_DEFAULT;
     grid->pen_bg = TERM_COLOR_DEFAULT;
     grid->cursor_style = 0;
+    /* DECAWM starts SET, which is what every terminal does and what a shell
+       depends on: a prompt that reaches the last column has to run on to the
+       next line, not overwrite itself. A program that wants it off says so. */
+    grid->autowrap = 1;
     /* No cursor flag is set here either; a grid is not what has a cursor. */
     term_grid_reset(grid);
     return 0;
@@ -322,12 +326,32 @@ void term_grid_put(TermGrid *grid, uint32_t ch) {
         return;
     }
 
+    /* A grid one column wide cannot hold a two-column glyph: the continuation
+       cell would be written at column 1, which does not exist. The glyph is
+       drawn as a single column instead — wrong as a picture and right as
+       memory, which is the only answer that does not write past the end of the
+       line buffer. This is the one place a narrow grid reaches it. */
+    if (width == 2 && grid->cols < 2) {
+        width = 1;
+    }
+
     /* Wrap. The cursor sits one past the last column until the next character
        arrives; that is what lets a program fill the last column and then send
-       CR LF without an extra line being scrolled out from under it. */
+       CR LF without an extra line being scrolled out from under it.
+     *
+     * AUTOWRAP is DECAWM, which a program turns off with `ESC [ ? 7 l` when it
+     * draws a line that must not run on — a progress bar's last cell, a box
+     * whose right edge is the screen's. With it OFF the cursor stops at the
+     * last column and the character is written over the one there, which is
+     * what "the line does not wrap" means. It is ON unless a program says
+     * otherwise, because a shell needs it. */
     if (grid->cursor_x >= grid->cols) {
-        grid->cursor_x = 0;
-        term_grid_cursor_next_line(grid);
+        if (!grid->autowrap) {
+            grid->cursor_x = grid->cols - 1;
+        } else {
+            grid->cursor_x = 0;
+            term_grid_cursor_next_line(grid);
+        }
     }
     /* A wide character in the last column has no room for its second half, so
        it starts the next line — the alternative is half a glyph against the
@@ -691,6 +715,56 @@ void term_grid_clear_dirty(TermGrid *grid) {
 
 /* --- the palette ---------------------------------------------------------- */
 
+/* The 6x6x6 colour cube's levels. Every terminal that has a 256-colour palette
+   uses these six values and no others: the cube is five steps of each channel
+   plus black, and a program that asks for `38;5;196` is asking for the red at
+   level 5 of red and 0 of the rest. */
+static const uint8_t CUBE_LEVEL[6] = { 0, 95, 135, 175, 215, 255 };
+
+/* Build the 256 colours a program names by number, in the layout every
+   terminal uses:
+ *
+ *   0-15     the sixteen, which the THEME decides — so they are left as they
+ *            are here and filled in by the caller from its own palette
+ *   16-231   the 6x6x6 cube: 16 + 36*red + 6*green + blue, each 0 to 5
+ *   232-255  the greyscale ramp: black to white in twenty-four even steps
+ *
+ * The cube and the ramp are NOT the theme's and are not configurable: a program
+ * that asks for `38;5;196` is asking for a specific red and expects to get it,
+ * whatever the theme's sixteen look like. Filling them here is what makes the
+ * 256-colour form mean what a program means by it.
+ *
+ * The two past 255 — the theme's own text and background — are NOT touched;
+ * they are the caller's to set, because they are the one pair in the palette
+ * that has no standard value. */
+void term_palette_fill_standard(uint32_t *colors) {
+    if (colors == NULL) {
+        return;
+    }
+
+    /* The cube. r, g and b each run 0 to 5 in the order the standard gives. */
+    for (int index = 16; index <= 231; index++) {
+        int value = index - 16;
+        int r = value / 36;
+        int g = (value / 6) % 6;
+        int b = value % 6;
+        colors[index] = ((uint32_t)CUBE_LEVEL[r] << 16) |
+                        ((uint32_t)CUBE_LEVEL[g] << 8) |
+                        (uint32_t)CUBE_LEVEL[b];
+    }
+
+    /* The greyscale ramp: 8, 18, 28, ... 238. It starts at 8 rather than 0
+       because the cube already holds a black and a white, and the ramp is the
+       twenty-four greys BETWEEN them that the cube's six levels are too coarse
+       to give. */
+    for (int index = 232; index <= 255; index++) {
+        uint8_t level = (uint8_t)(8 + (index - 232) * 10);
+        colors[index] = ((uint32_t)level << 16) |
+                        ((uint32_t)level << 8) |
+                        (uint32_t)level;
+    }
+}
+
 void term_palette_set(TermPalette *palette, const uint32_t *colors, int count) {
     if (count > TERM_PALETTE_SIZE) count = TERM_PALETTE_SIZE;
     if (count < 0) count = 0;
@@ -707,10 +781,10 @@ uint32_t term_palette_color(const TermGrid *grid, const TermCell *cell,
     if (index == TERM_COLOR_TRUECOLOR) {
         return foreground ? cell->truecolor_fg : cell->truecolor_bg;
     }
-    /* The default is the theme's own two colours, which the theme is required
-       to put at TERM_COLOR_INDEX_FG and _BG. A cell that asked for neither the
-       program's colour nor a palette entry gets those, so a program that never
-       sends SGR is drawn in the theme and not in black. */
+    /* The default is the theme's own two colours, which sit PAST the 256 a
+       program can name — see TERM_COLOR_INDEX_FG. A cell that asked for
+       neither the program's colour nor a palette entry gets those, so a program
+       that never sends SGR is drawn in the theme and not in black. */
     if (index == TERM_COLOR_DEFAULT) {
         index = foreground ? TERM_COLOR_INDEX_FG : TERM_COLOR_INDEX_BG;
     }

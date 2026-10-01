@@ -28,10 +28,22 @@
 #include "wm_spawn.h"
 
 /* The terminals this looks for, best first. The first one that exists is the
-   one Alt+Enter opens. x-terminal-emulator is Debian's alternatives symlink —
-   the distribution's own answer to "the terminal" — so it is tried first
-   when it is present. */
+   one Alt+Enter opens.
+ *
+ * GNUCHANTERM IS FIRST, and it is the whole of why this list is not the same
+ * one every desktop ships. This is GnuChanOS: the terminal this desktop is
+ * themed around is its own, and a manager that opened a different one — xterm,
+ * or whatever `x-terminal-emulator` happens to point at — would be opening a
+ * terminal whose colours come from its own files and not from the settings
+ * script, which is exactly the bug this fixes. A machine that has not installed
+ * GnuChanTerm falls through to the rest, so the list still ends in something
+ * every machine has.
+ *
+ * The rest is the usual order. x-terminal-emulator is Debian's alternatives
+ * symlink — the distribution's own answer to "the terminal" — and the named
+ * programs follow it for a machine that has one of them and not the symlink. */
 static const char *TERMINAL_CANDIDATES[] = {
+    "GnuChanTerm",
     "x-terminal-emulator",
     "gnome-terminal",
     "konsole",

@@ -312,6 +312,161 @@ static void core_vt_osc(void *user, const char *body, int len) {
     term_suggest_marker((TermSuggest *)core->suggest, core, body[4]);
 }
 
+/* An OSC 0, 1 or 2 TITLE: the program naming the window.
+ *
+ * The text goes straight to XStoreName and that is the whole of it — the
+ * window manager reads the window's WM_NAME and draws it in the title bar, so
+ * a program that names itself appears there and one that does not keeps
+ * "GnuChanTerm".
+ *
+ * The text is NOT wrapped or escaped, and that is not an oversight: a window
+ * title is a byte string with no structure the terminal has an opinion about,
+ * and the only thing that has to happen is that the bytes the program sent are
+ * the bytes the window manager gets. Empty is a real title — a program that
+ * clears its title means it — and it is passed on as an empty string.
+ *
+ * The bytes are COPIED out and not kept by pointer: the body belongs to the
+ * parser's own buffer and is overwritten by the next OSC, so a title kept as a
+ * pointer would become the next title or garbage. */
+static void core_vt_title(void *user, const char *text, int len) {
+    TermCore *core = (TermCore *)user;
+    if (core == NULL || core->display == NULL || core->window == None) {
+        return;
+    }
+    if (len < 0) {
+        len = 0;
+    }
+    if (len >= (int)sizeof(core->program_title)) {
+        len = (int)sizeof(core->program_title) - 1;
+    }
+    if (len > 0 && text != NULL) {
+        memcpy(core->program_title, text, (size_t)len);
+    }
+    core->program_title[len] = '\0';
+
+    /* The name X is given. A program that clears its title sends an empty one
+       and gets the window's own name back, which is the honest answer: the
+       terminal is what the window is when nothing else says otherwise. */
+    XStoreName(core->display, core->window,
+               core->program_title[0] != '\0' ? core->program_title
+                                              : "GnuChanTerm");
+    XFlush(core->display);
+}
+
+/* An OSC colour: the program repainting the palette, the foreground, the
+   background or the cursor, asking what one of them is, or putting one back.
+ *
+ * The parser hands over which SLOT — a palette index, or one of the three
+ * personal colours — what ACTION, and the colour when there is one. What is
+ * done with each is the whole of this: a palette entry is a
+ * term_style_set_color on its number, the theme's own two are the same call on
+ * the palette's two special indices, and a QUERY is answered by writing the
+ * current colour back to the program. See term_vt.h for the slots and the
+ * actions.
+ *
+ * A QUERY is why this is more than a setter. A program asks `ESC ] 11 ; ? BEL`
+ * to learn the background so it can draw a box that matches it, and a terminal
+ * that stays silent leaves it waiting for an answer that never comes — the same
+ * failure as not answering `ESC [ c`. The reply is the query echoed back with
+ * the colour in place of the `?`, in the `rgb:` form, which is what every
+ * terminal sends and what a program parses. */
+static void core_vt_write_cstr(TermCore *core, const char *text) {
+    if (core != NULL && core->pty != NULL && text != NULL) {
+        term_pty_write((TermPty *)core->pty, text, (int)strlen(text));
+    }
+}
+
+/* The reply to a colour query: `ESC ] <code> ; <colour> ST`. For OSC 4 the
+   index comes before the colour, so the two shapes are told apart by whether a
+   palette index was asked about. */
+static void core_answer_color_query(TermCore *core, int slot, uint32_t rgb) {
+    char reply[64];
+    if (slot >= 0) {
+        snprintf(reply, sizeof(reply), "\x1b]4;%d;rgb:%02x/%02x/%02x\x1b\\",
+                 slot, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    } else {
+        int code = (slot == TERM_VT_COLOR_FOREGROUND) ? 10
+                 : (slot == TERM_VT_COLOR_BACKGROUND) ? 11
+                                                      : 12;
+        snprintf(reply, sizeof(reply), "\x1b]%d;rgb:%02x/%02x/%02x\x1b\\",
+                 code, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    }
+    core_vt_write_cstr(core, reply);
+}
+
+/* Where a slot's colour lives in the palette. The three personal colours are
+   not palette entries a cell can name — they are the theme's face — so a SET
+   on one writes the palette's own text or background slot. The cursor is not
+   in the palette at all and is handled apart. */
+static int core_slot_palette_index(int slot) {
+    if (slot == TERM_VT_COLOR_FOREGROUND) {
+        return TERM_COLOR_INDEX_FG;
+    }
+    if (slot == TERM_VT_COLOR_BACKGROUND) {
+        return TERM_COLOR_INDEX_BG;
+    }
+    return slot;
+}
+
+static void core_vt_color(void *user, int slot, uint32_t rgb, int action) {
+    TermCore *core = (TermCore *)user;
+    if (core == NULL || core->style == NULL) {
+        return;
+    }
+    TermStyle *style = core->style;
+
+    /* OSC 104 with no index: the whole palette back to the theme's. The cursor
+       is not part of it — that is OSC 112 — so it is left as it is. */
+    if (action == TERM_VT_COLOR_RESET && slot == TERM_VT_COLOR_ALL_PALETTE) {
+        term_style_restore_palette(style);
+        term_render_all(core);
+        return;
+    }
+
+    /* The cursor is the one slot that is not in the palette. It is drawn by the
+       renderer as a rectangle, so a change to it is a redraw of the whole
+       frame — a partial redraw would have to be told which cell held it. */
+    if (slot == TERM_VT_COLOR_CURSOR) {
+        if (action == TERM_VT_COLOR_SET) {
+            term_style_set_cursor(style, rgb);
+        } else if (action == TERM_VT_COLOR_RESET) {
+            term_style_restore_cursor(style);
+        } else {
+            core_answer_color_query(core, slot, term_style_cursor(style));
+            return;
+        }
+        term_render_all(core);
+        return;
+    }
+
+    if (action == TERM_VT_COLOR_QUERY) {
+        uint32_t answer = (slot == TERM_VT_COLOR_FOREGROUND)
+                              ? term_style_default_fg(style)
+                          : (slot == TERM_VT_COLOR_BACKGROUND)
+                              ? term_style_default_bg(style)
+                              : term_style_palette_entry(style, slot);
+        core_answer_color_query(core, slot, answer);
+        return;
+    }
+
+    int index = core_slot_palette_index(slot);
+    if (index < 0 || index >= TERM_PALETTE_SIZE) {
+        return;
+    }
+    if (action == TERM_VT_COLOR_RESET) {
+        term_style_restore_entry(style, index);
+    } else {
+        term_style_set_color(style, index, rgb);
+    }
+    /* Every cell that already used the colour has to be drawn again, and a
+       recolour can touch any of them: a program that changes its background
+       while the screen is full has changed all of it. A whole redraw is the
+       honest answer and the cheap one here — a palette change is rare and the
+       alternative is walking the screen looking for cells that used the entry,
+       which is more work than drawing them. */
+    term_render_all(core);
+}
+
 /* --- life ----------------------------------------------------------------- */
 
 /* Transform a cell count into a pixel count, and back. Both directions are
@@ -566,6 +721,8 @@ int term_core_init(TermCore *core, const char *title, const char *font_name) {
        above read core->pty at the moment they are called rather than now. */
     core->vt_host.write = core_vt_write;
     core->vt_host.osc = core_vt_osc;
+    core->vt_host.title = core_vt_title;
+    core->vt_host.color = core_vt_color;
     core->vt_host.user = core;
     core->vt.host = core->vt_host;
 

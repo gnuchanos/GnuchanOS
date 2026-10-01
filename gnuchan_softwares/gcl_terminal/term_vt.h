@@ -91,17 +91,71 @@ typedef struct TermVtSequence {
  * not have to know what a PTY is — see term_pty.h.
  *
  * `osc` is handed the body of every OSC string the parser has finished
- * collecting, and it exists for exactly one family of them: the OSC 133
- * semantic-prompt markers, which say where a shell's prompt ended and its input
- * begins. That is the one OSC whose CONTENT the terminal has a use for, and
- * the alternative to this callback is the parser knowing about suggestions.
- * Everything else — a window title, a colour — is still consumed and dropped;
- * see the file comment. */
+ * collecting. Two families are acted on and they are enough to be worth the
+ * callback: the OSC 133 semantic-prompt markers, which say where a shell's
+ * prompt ended and its input begins, and the OSC 0, 1 and 2 TITLE strings,
+ * which are how a program names itself in the window manager's title bar.
+ *
+ * `title` is separate from `osc` because what a title needs is not what a
+ * marker needs: the marker is a position the terminal records, and the title
+ * is text another program draws. Keeping them as two callbacks is what lets
+ * each do its one thing without the other knowing it exists.
+ *
+ * `color` is the third family and it is a callback of its own for the same
+ * reason: a colour a program sets is the STYLE's and not the parser's, and the
+ * parser must not grow a palette to be able to talk about one. Everything else
+ * — an OSC this terminal has no use for — is still consumed and dropped. */
 typedef struct TermVtHost {
     void (*write)(void *user, const char *bytes, int len);
     void (*osc)(void *user, const char *body, int len);
+    void (*title)(void *user, const char *text, int len);
+    void (*color)(void *user, int slot, uint32_t rgb, int action);
     void *user;
 } TermVtHost;
+
+/* --- the colours a program sets: OSC 4, 10, 11 and 12 ---------------------
+ *
+ * A program may repaint the terminal's palette and its three personal colours:
+ * `ESC ] 4 ; index ; colour` sets a palette entry, 10 the default foreground,
+ * 11 the background, and 12 the cursor. Programs that ship a colourscheme of
+ * their own use it — a mail client that wants its own blue, a fetch tool that
+ * wants a logo's exact colours — and a terminal that ignores it draws them in
+ * the theme instead, which for such a program is every colour wrong.
+ *
+ * `slot` is a palette index 0 to 255, or one of the three below. They are
+ * NEGATIVE for a reason: every entry a program can name by number is 0 to 255,
+ * so one comparison against 0 tells a palette entry from a personal colour,
+ * and a positive number is never mistaken for a special one. The three sit
+ * past the 256 a program names in the PALETTE — see TERM_COLOR_INDEX_FG — and
+ * the two numberings are deliberately not shared: this one is "which thing did
+ * the program mean" and that one is "where does the theme's colour live".
+ *
+ * `action` is what the program asked for, and it is not decoration: the same
+ * sequence shape means three different things, and a reader that assumed SET
+ * would answer a question by overwriting the colour it was asked about.
+ *
+ *   SET    draw this colour from now on
+ *   QUERY  "what is this colour" — the program wrote `?` where a colour goes
+ *   RESET  "put it back" — OSC 104, 110, 111 and 112, which take no colour
+ *
+ * A QUERY is answered by the CALLER and not by the parser, because only the
+ * caller has the palette to look the answer up in. The parser reports the
+ * question and forgets it. */
+#define TERM_VT_COLOR_FOREGROUND (-1)
+#define TERM_VT_COLOR_BACKGROUND (-2)
+#define TERM_VT_COLOR_CURSOR     (-3)
+
+/* "Every entry a program can name", for OSC 104 with no index: the whole
+   palette goes back to what the theme built. It is a slot of its own and not
+   a loop in the parser, because restoring a palette means the STYLE's baseline
+   and the parser does not have one. */
+#define TERM_VT_COLOR_ALL_PALETTE (-4)
+
+enum {
+    TERM_VT_COLOR_SET = 0,
+    TERM_VT_COLOR_QUERY,
+    TERM_VT_COLOR_RESET,
+};
 
 typedef struct TermVt {
     TermGrid  grid;         /* the first screen: what scrolls              */

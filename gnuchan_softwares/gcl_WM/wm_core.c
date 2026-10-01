@@ -178,6 +178,8 @@ int wm_core_init(WmCore *core) {
     core->running = 1;
     core->width = DisplayWidth(core->display, core->screen);
     core->height = DisplayHeight(core->display, core->screen);
+    core->desktop_width = core->width;
+    core->desktop_height = core->height;
 
     /* The palette and the font are the desktop's whole appearance, and the
        one graphics context is what every module draws with. They are made

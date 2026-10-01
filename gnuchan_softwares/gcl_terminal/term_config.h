@@ -34,10 +34,25 @@
 /* A written value: a colour, a font name, a command. */
 #define TERM_CONFIG_TEXT_LENGTH 256
 
-/* The number of colours a palette has, which is what term_style_set_palette()
-   takes: the sixteen a program names by number, plus the theme's own default
-   text and background. */
+/* The number of colours a SETTINGS FILE can name: the sixteen a program names
+   by number, plus the theme's own default text and background.
+ *
+ * It is NOT the size of the palette. The palette a program reaches into is 256
+ * entries — the sixteen, the 6x6x6 cube, the greyscale ramp — and there are two
+ * more past those for the theme's own colours; a settings file has no business
+ * naming the cube, because `38;5;196` means a specific red whatever the theme
+ * says. So this is the length of the list the script writes, and it is mapped
+ * onto the full palette in term_config_apply_style(). */
 #define TERM_CONFIG_PALETTE_SIZE 18
+
+/* Which of those eighteen is the theme's own text and background. The last two,
+ * because a person writing a Colors list writes the sixteen a program names and
+ * then, if they want, the two the terminal itself draws in — which is where
+ * they have always been and where a list copied from another terminal expects
+ * them. They do NOT correspond to indices 16 and 17 in the palette; see
+ * TERM_COLOR_INDEX_FG in term_grid.h for why the palette puts them past 255. */
+#define TERM_CONFIG_INDEX_TEXT 16
+#define TERM_CONFIG_INDEX_BG   17
 
 /* One colour of the palette, as written: -1 means "the script did not name
    this one" and the built-in value is kept. It is an int and not a uint32_t
@@ -102,13 +117,14 @@ typedef struct TermConfig {
     /* --- what is NOT here, and why ----------------------------------------
      *
      * The cursor's shape, the margin and height of the bar, the starting size
-     * of the window, the shell to run, and the scrollback are all things a
-     * person might reasonably want to set, and none of them is in this struct.
-     * They are not in it because the code that would honour them is not there
-     * yet: the frame's two measurements are compile-time constants in
-     * term_core.h and term_render.c, the window has one starting size, and
-     * there is no scrollback buffer at all — the grid holds the visible screen
-     * and nothing above it.
+     * of the window, the shell to run, and the scrollback's DEPTH are all
+     * things a person might reasonably want to set, and none of them is in
+     * this struct. They are not in it because the code that would honour them
+     * is not there yet: the frame's two measurements are compile-time constants
+     * in term_core.h and term_render.c, the window has one starting size, and
+     * the scrollback is a fixed four thousand lines — see TERM_SCROLL_MAX_LINES
+     * in term_scroll.h. The scrollback itself EXISTS and is drawn and scrolled;
+     * what this struct cannot say is how deep it should be.
      *
      * A setting that is read and then quietly ignored is worse than a setting
      * that is not offered: the first is a lie the person who wrote the script

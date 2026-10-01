@@ -61,39 +61,37 @@ void wm_workspace_apply(WmCore *core) {
     for (int i = 0; i < core->frame_count; i++) {
         WmFrame *frame = &core->frames[i];
 
-        /* A FULLSCREEN window is on screen whatever workspace is current, and
-           that is not a special case for its own sake: unmapping it is what
-           turns a Direct3D game black.
+        /* A frame is on screen only when it is on the current workspace and
+           the user has not put it away. Anything else is unmapped, which is
+           also what the server does with a frame that is already down, so no
+           case needs a test of what the frame's map state already is.
 
-           A Direct3D surface is what the GPU draws into, and the server keeps
-           no copy of it. Unmapping the window takes it off the screen, and a
-           game that is not told to redraw — one sitting on a menu, or one that
-           only repaints on damage it caused itself — never puts anything back.
-           Switching away and back then leaves it black for good.
+           A fullscreen client is a special case: the client window itself keeps
+           its own map state even when the manager-only frame window is hidden,
+           and if only the wrapper is toggled the game can remain visible on the
+           old workspace while the rest of the desktop has already moved. Both
+           the frame and its client therefore have to agree with the workspace
+           decision here. */
+        int wanted = (frame->workspace == core->current_workspace) &&
+                     !frame->minimized;
 
-           There is nothing to hide, either. A fullscreen window covers the
-           whole screen, bar included, so a workspace it is not on is one the
-           user cannot see while it is there. Leaving it mapped is what every
-           window manager does with one.
-
-           Everything else keeps the rule: on screen when it is on the current
-           workspace and the user has not put it away. Anything else is
-           unmapped, which is also what the server does with a frame that is
-           already down, so no case needs a test of the frame's map state. */
-        int wanted = !frame->minimized &&
-                     (frame->fullscreen ||
-                      frame->workspace == core->current_workspace);
-
-        XWindowAttributes attributes;
-        int shown = XGetWindowAttributes(core->display, frame->frame,
-                                         &attributes) &&
-                    attributes.map_state == IsViewable;
+        XWindowAttributes frame_attributes;
+        XWindowAttributes client_attributes;
+        int frame_shown = XGetWindowAttributes(core->display, frame->frame,
+                                               &frame_attributes) &&
+                          frame_attributes.map_state == IsViewable;
+        int client_shown = XGetWindowAttributes(core->display, frame->client,
+                                               &client_attributes) &&
+                           client_attributes.map_state == IsViewable;
+        int shown = frame_shown || client_shown;
 
         if (wanted && !shown) {
             XMapRaised(core->display, frame->frame);
+            XMapRaised(core->display, frame->client);
             wm_frame_draw(core, frame);
         } else if (!wanted && shown) {
             XUnmapWindow(core->display, frame->frame);
+            XUnmapWindow(core->display, frame->client);
         }
     }
     XFlush(core->display);

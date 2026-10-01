@@ -66,16 +66,33 @@ enum {
     TERM_ATTR_STRIKE    = 1 << 7,
 };
 
-/* The two values a program reaches for when it resets colours with SGR 39 and
-   49. They are indices and not pixels because the palette is the session's and
-   not the program's — see term_style.h — and a program that wants "the normal
-   text colour" must get whatever the theme says that is.
-
-   The two indices the default resolves to sit just past the sixteen a program
-   can name, which is what keeps the lookup a single array read. */
+/* The value a program reaches for with SGR 39 and 49 — "the normal text
+   colour", "the normal background". It is an index and not a pixel because the
+   palette is the session's and not the program's — see term_style.h — and a
+   program that wants the terminal's own colour must get whatever the theme
+   says that is. */
 #define TERM_COLOR_DEFAULT (-1)
-#define TERM_COLOR_INDEX_FG 16
-#define TERM_COLOR_INDEX_BG 17
+
+/* Where the theme's own text and background live in the palette.
+ *
+ * THEY SIT PAST THE 256 A PROGRAM CAN NAME, and that is not tidiness — it is
+ * the fix for a collision that made the 256-colour form wrong. The palette is
+ * laid out the way every terminal lays one out: 0-15 are the sixteen a program
+ * names by number, 16-231 are the 6x6x6 colour cube the `38;5;N` form reaches
+ * into, and 232-255 are the greyscale ramp.
+ *
+ * These two used to be 16 and 17. Index 16 is ALSO the first entry of the
+ * cube — the cube's black — so a program that asked for colour 16 was handed
+ * the theme's text colour instead, and every colour from 18 up had no entry at
+ * all and fell back to the foreground or the background. A program using the
+ * 256-colour form was drawn in the wrong colours, and the ones it could name
+ * correctly stopped at 15.
+ *
+ * Moving them past the 256 removes the collision by construction: every index
+ * a program can name means exactly what it named, and the theme's own two are
+ * not in that range for anything to collide with. */
+#define TERM_COLOR_INDEX_FG 256
+#define TERM_COLOR_INDEX_BG 257
 
 /* A cell whose colour was sent as 0xRRGGBB rather than named. The program's
    colour is in truecolor_fg / truecolor_bg and the index fields hold this
@@ -87,10 +104,11 @@ enum {
    would be drawn differently by them. */
 #define TERM_COLOR_TRUECOLOR (-2)
 
-/* The most colours a palette has. Sixteen are the ones a program names by
-   number, the two at TERM_COLOR_INDEX_FG/BG are the theme's default text and
-   background, and the rest are spare for entries a program sets itself. */
-#define TERM_PALETTE_SIZE 256
+/* The most colours a palette has: the 256 a program names — the sixteen, the
+   6x6x6 cube, the greyscale ramp — plus the theme's own text and background at
+   TERM_COLOR_INDEX_FG and _BG. The two are past the 256 because those indices
+   are the program's and a theme's colour must not be reachable by one. */
+#define TERM_PALETTE_SIZE 258
 
 /* One column of the screen. */
 typedef struct TermCell {
@@ -170,6 +188,12 @@ typedef struct TermGrid {
     uint32_t  pen_truecolor_fg;
     uint32_t  pen_truecolor_bg;
     uint32_t  pen_attrs;
+
+    /* Whether a character written in the last column wraps to the next line.
+       It is DECAWM (`ESC [ ? 7 h` / `l`), and every terminal starts with it
+       SET — a shell relies on it — while a program that draws a line which
+       must not run on clears it. See term_grid_put(). */
+    int       autowrap;
 
     /* What the cursor is drawn as, from DECSCUSR. A block cursor and a bar
        cursor are different pictures over the same cell. */
@@ -360,6 +384,16 @@ void term_grid_clear_dirty(TermGrid *grid);
 
 /* Set the palette's colours, the way the theme names them. */
 void term_palette_set(TermPalette *palette, const uint32_t *colors, int count);
+
+/* Fill entries 16 to 255 with the standard 256-colour table: the 6x6x6 cube
+ * and the greyscale ramp. The sixteen below and the theme's own two past 255
+ * are NOT touched — the first are the theme's to choose and the second are not
+ * a program's to name.
+ *
+ * A caller building a palette calls this first and then overwrites the
+ * sixteen, so that a program using the `38;5;N` form gets the colour it asked
+ * for and the theme gets the sixteen it chose. */
+void term_palette_fill_standard(uint32_t *colors);
 
 /* The packed 0xRRGGBB a cell's colour is. `foreground` picks which of the
    cell's two. A truecolor cell returns the colour the program sent; anything

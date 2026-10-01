@@ -366,6 +366,13 @@ int main(int argc, char **argv) {
        applied here. */
     term_config_apply_style(&config, core.style);
 
+    /* What a program's own colour changes go back to, taken HERE and nowhere
+       else. The snapshot has to come after the theme is applied — so it holds
+       the colours the user configured and not the ones the code shipped with —
+       and before the shell starts, so it cannot capture a program's own OSC 4
+       as if it were part of the theme. See term_style.h for what it is for. */
+    term_style_snapshot(core.style);
+
     if (start_shell(&core, argc, argv, config.prompt) != 0) {
         term_core_shutdown(&core);
         return 1;

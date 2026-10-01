@@ -107,10 +107,11 @@ typedef struct TermStyle {
        already been filled and the glyph is drawn opaque over it. */
     int has_render;
 
-    /* The bar at the top of the window. It belongs to the terminal and not to
-       the program, so no cell can name these two: a program that painted its
-       own purple would be choosing the terminal's furniture. The defaults are
-       the theme's, and a settings file overrides them — see term_theme.h. */
+    /* The bar along the bottom of the window. It belongs to the terminal and
+       not to the program, so no cell can name these two: a program that
+       painted its own purple would be choosing the terminal's furniture. The
+       defaults are the theme's, and a settings file overrides them — see
+       term_config.h and term_config_apply_style(). */
     uint32_t bar_bg;
     uint32_t bar_fg;
 
@@ -118,6 +119,23 @@ typedef struct TermStyle {
        same reason the bar's two are: a program cannot name it, because it is
        the terminal saying where the cursor is and not the program drawing. */
     uint32_t cursor;
+
+    /* --- what a program changed, and what it changed it FROM --------------
+     *
+     * A program may repaint the palette and the cursor's colour — see the OSC
+     * colour handling in term_vt.c — and it may then put them back: OSC 104 for
+     * the palette, 110-112 for the three personal colours. Putting one back
+     * means knowing what it was, and what it was is the THEME's, which is what
+     * the settings file and gcl_palette.h built and not the built-in defaults
+     * of the code.
+     *
+     * So the baseline is a SNAPSHOT, taken once the theme has been applied —
+     * see term_style_snapshot() — and the colours above are the working copy a
+     * program edits. Keeping the two apart is what makes "put it back" mean the
+     * colour the user configured rather than the one the terminal shipped with,
+     * which for anyone who wrote a settings file are different colours. */
+    TermPalette baseline;
+    uint32_t    baseline_cursor;
 
     /* The faint text the fish-style suggestion is drawn in — see
        term_suggest.h. It is the terminal's own and not a cell's, because the
@@ -148,12 +166,31 @@ int  term_style_attach(TermStyle *style, Drawable drawable);
 
 /* Set the colours a program names by number, plus the theme's own default text
    and background at TERM_COLOR_INDEX_FG and _BG. `colors` is 0xRRGGBB packed,
-   and `count` is how many of them are being set. */
+   and `count` is how many of them are being set.
+
+   This is for laying down the THEME — see term_config_apply_style() and
+   style_build_palette() — and not for a program changing a colour: the
+   baseline is NOT touched here, which is what "put it back" restores. */
 void term_style_set_palette(TermStyle *style, const uint32_t *colors, int count);
 
 /* Set one entry, which is what a program does when it wants a palette colour
-   changed for its own output. */
+   changed for its own output — OSC 4. It changes the working palette and not
+   the baseline, so the change is reversible with OSC 104. */
 void term_style_set_color(TermStyle *style, int index, uint32_t rgb);
+
+/* Take the current palette and cursor as the baseline: what a program's own
+   colour changes go back to. Called ONCE, after the theme has been applied and
+   before any program has run — a snapshot taken later would capture the
+   program's changes as if they were the theme, and "put it back" would restore
+   the wrong colours. */
+void term_style_snapshot(TermStyle *style);
+
+/* Put the palette, one entry, or the cursor back to the baseline. These are
+   what OSC 104, 110, 111 and 112 do. Entries the baseline never had are left
+   alone rather than set to black, so a reset can never invent a colour. */
+void term_style_restore_palette(TermStyle *style);
+void term_style_restore_entry(TermStyle *style, int index);
+void term_style_restore_cursor(TermStyle *style);
 
 /* The default colours the theme chose, so a module that draws its own
    rectangle — the cursor, a selection — draws in the same ones. */

@@ -84,17 +84,21 @@
 #define GCL_ANSI_BRIGHT_CYAN    0xD8A4FFu
 #define GCL_ANSI_BRIGHT_WHITE   0xE0AAFFu   /* the theme's #FFFFFF is white  */
 
-/* The palette as an array, which is what term_style_set_palette() takes. The
-   two entries past the sixteen are the default text and background: a program
-   cannot name them, and its own SGR 39 and 49 mean "whatever the theme says",
-   which is exactly what these are. */
+/* The SIXTEEN a program names by number, and nothing else. The theme's own text
+   and background are NOT here: they sit past the 256 a program can name — see
+   TERM_COLOR_INDEX_FG in term_grid.h — and the 6x6x6 cube and greyscale ramp
+   between are the standard's and are built by term_palette_fill_standard().
+ *
+ * This is the whole of what a theme decides about the palette: the sixteen it
+ * chose. Everything from 16 to 255 means what a program means by it, whatever
+ * the theme looks like, and the two past that are the theme's face. */
+#define GCL_ANSI_COUNT 16
 #define GCL_PALETTE_INIT {                                       \
     GCL_ANSI_BLACK, GCL_ANSI_RED, GCL_ANSI_GREEN, GCL_ANSI_YELLOW, \
     GCL_ANSI_BLUE, GCL_ANSI_MAGENTA, GCL_ANSI_CYAN, GCL_ANSI_WHITE, \
     GCL_ANSI_BRIGHT_BLACK, GCL_ANSI_BRIGHT_RED,                   \
     GCL_ANSI_BRIGHT_GREEN, GCL_ANSI_BRIGHT_YELLOW,                \
     GCL_ANSI_BRIGHT_BLUE, GCL_ANSI_BRIGHT_MAGENTA,                \
-    GCL_ANSI_BRIGHT_CYAN, GCL_ANSI_BRIGHT_WHITE,                  \
-    GCL_FG, GCL_BG }
+    GCL_ANSI_BRIGHT_CYAN, GCL_ANSI_BRIGHT_WHITE }
 
 #endif /* GNUCHANTERM_PALETTE_H */

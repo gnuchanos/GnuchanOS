@@ -52,6 +52,239 @@ static void vt_reply(TermVt *vt, const char *text) {
     }
 }
 
+/* --- the colours a program sets: OSC 4, 10, 11, 12, 104, 110-112 ----------
+ *
+ * A program may repaint the terminal's palette and its three personal colours.
+ * The sequences are `ESC ] 4 ; index ; colour` for a palette entry, 10 for the
+ * default foreground, 11 for the background and 12 for the cursor; 104 and
+ * 110-112 put them back. See TermVtHost.color in term_vt.h for what the
+ * callback is handed and why a QUERY is the caller's to answer.
+ *
+ * The parsing here is text and nothing else: an OSC colour is written in a
+ * grammar of its own and the grammar is what this reads. What a colour MEANS —
+ * which palette entry, which of the style's colours — is the callback's, and
+ * that is what keeps this file from growing a palette to talk about one.
+ */
+static int osc_hex(int c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+/* A decimal integer at `*cursor`, advanced past it. Returns 0 and the number,
+   or -1 when there is not a digit there. The parser's own parameters are read
+   by the state machine; this is for the text INSIDE an OSC, which is not the
+   same grammar. */
+static int osc_parse_int(const char **cursor, int *out) {
+    const char *p = *cursor;
+    if (*p < '0' || *p > '9') {
+        return -1;
+    }
+    int value = 0;
+    while (*p >= '0' && *p <= '9') {
+        value = value * 10 + (*p - '0');
+        if (value > 100000) {
+            value = 100000;
+        }
+        p++;
+    }
+    *cursor = p;
+    *out = value;
+    return 0;
+}
+
+/* One component of a colour, scaled from however many hex digits were written
+   to the eight bits the palette holds. `digits` is 1 to 4 and the scaling is
+   proportional: F and FF both mean full, which is what makes #abc and #aabbcc
+   the same colour and not two that differ by rounding. */
+static unsigned int osc_scale_component(unsigned int value, int digits) {
+    unsigned int max = (1u << (4 * digits)) - 1u;
+    if (max == 0) {
+        return 0;
+    }
+    return (value * 255u) / max;
+}
+
+/* A colour written the way an OSC carries one: `rgb:RR/GG/BB`,
+   `rgb:RRRR/GGGG/BBBB` with any even number of digits from one to four per
+   component, or the `#` forms `#RGB`, `#RRGGBB` and `#RRRRGGGGBBBB`.
+ *
+ * Returns 0 and fills `out` with 0xRRGGBB, and `*end` with where the colour
+ * stopped; -1 when the text is not a colour. `end` may be NULL when the caller
+ * does not care where it ended. */
+static int osc_parse_color(const char *text, const char **end, uint32_t *out) {
+    if (text == NULL || out == NULL) {
+        return -1;
+    }
+    const char *p = text;
+    unsigned int comp[3];
+
+    if (strncmp(p, "rgb:", 4) == 0) {
+        p += 4;
+        for (int i = 0; i < 3; i++) {
+            unsigned int value = 0;
+            int digits = 0;
+            while (digits < 4) {
+                int h = osc_hex((unsigned char)*p);
+                if (h < 0) {
+                    break;
+                }
+                value = value * 16u + (unsigned int)h;
+                digits++;
+                p++;
+            }
+            if (digits == 0) {
+                return -1;
+            }
+            comp[i] = osc_scale_component(value, digits);
+            if (i < 2) {
+                if (*p != '/') {
+                    return -1;
+                }
+                p++;
+            }
+        }
+        *out = (comp[0] << 16) | (comp[1] << 8) | comp[2];
+        if (end != NULL) {
+            *end = p;
+        }
+        return 0;
+    }
+
+    if (*p == '#') {
+        p++;
+        const char *start = p;
+        int digits = 0;
+        while (osc_hex((unsigned char)*p) >= 0) {
+            p++;
+            digits++;
+        }
+        /* Three, six or twelve: one, two or four hex digits per component.
+           Anything else is a colour this does not understand and is refused
+           rather than guessed at. */
+        if (digits != 3 && digits != 6 && digits != 12) {
+            return -1;
+        }
+        int per = digits / 3;
+        p = start;
+        for (int i = 0; i < 3; i++) {
+            unsigned int value = 0;
+            for (int d = 0; d < per; d++) {
+                value = value * 16u + (unsigned int)osc_hex((unsigned char)*p);
+                p++;
+            }
+            comp[i] = osc_scale_component(value, per);
+        }
+        *out = (comp[0] << 16) | (comp[1] << 8) | comp[2];
+        if (end != NULL) {
+            *end = p;
+        }
+        return 0;
+    }
+
+    return -1;
+}
+
+/* Interpret one OSC as a colour request, and report it to the host. Returns 1
+   when the string WAS a colour request — handled or not — and 0 when it is not
+   one of the codes this reads. The return value is what keeps a title from
+   being offered to the colour callback: the two families are told apart by the
+   leading number and by nothing else. */
+static int vt_handle_color_osc(TermVt *vt, const char *body) {
+    const char *p = body;
+    int code = 0;
+    if (vt->host.color == NULL || osc_parse_int(&p, &code) != 0) {
+        return 0;
+    }
+
+    /* OSC 4 — one or more `index;colour` pairs in the one string, which is how
+       a program sets a whole colourscheme in a single write. A `?` where a
+       colour goes is the program asking what the entry IS. */
+    if (code == 4) {
+        while (*p == ';') {
+            p++;
+            int index = 0;
+            if (osc_parse_int(&p, &index) != 0 || *p != ';') {
+                break;
+            }
+            p++;
+            if (*p == '?') {
+                p++;
+                vt->host.color(vt->host.user, index, 0, TERM_VT_COLOR_QUERY);
+                continue;
+            }
+            uint32_t rgb = 0;
+            const char *colour_end = p;
+            if (osc_parse_color(p, &colour_end, &rgb) != 0) {
+                break;
+            }
+            vt->host.color(vt->host.user, index, rgb, TERM_VT_COLOR_SET);
+            p = colour_end;
+        }
+        return 1;
+    }
+
+    /* OSC 10, 11 and 12 — the foreground, the background and the cursor. Each
+       carries its colour after a semicolon, or a `?` to ask. */
+    if (code == 10 || code == 11 || code == 12) {
+        int slot = (code == 10) ? TERM_VT_COLOR_FOREGROUND
+                 : (code == 11) ? TERM_VT_COLOR_BACKGROUND
+                                : TERM_VT_COLOR_CURSOR;
+        if (*p == ';') {
+            p++;
+            if (*p == '?') {
+                vt->host.color(vt->host.user, slot, 0, TERM_VT_COLOR_QUERY);
+            } else {
+                uint32_t rgb = 0;
+                const char *colour_end = p;
+                if (osc_parse_color(p, &colour_end, &rgb) == 0) {
+                    vt->host.color(vt->host.user, slot, rgb, TERM_VT_COLOR_SET);
+                }
+            }
+        }
+        return 1;
+    }
+
+    /* OSC 104 — put palette entries back. With an index it is that one; with
+       none it is the whole palette, which is the one request that names every
+       entry at once and so has a slot of its own. */
+    if (code == 104) {
+        if (*p != ';') {
+            vt->host.color(vt->host.user, TERM_VT_COLOR_ALL_PALETTE, 0,
+                           TERM_VT_COLOR_RESET);
+            return 1;
+        }
+        while (*p == ';') {
+            p++;
+            int index = 0;
+            if (osc_parse_int(&p, &index) != 0) {
+                break;
+            }
+            vt->host.color(vt->host.user, index, 0, TERM_VT_COLOR_RESET);
+        }
+        return 1;
+    }
+
+    if (code == 110) {
+        vt->host.color(vt->host.user, TERM_VT_COLOR_FOREGROUND, 0,
+                       TERM_VT_COLOR_RESET);
+        return 1;
+    }
+    if (code == 111) {
+        vt->host.color(vt->host.user, TERM_VT_COLOR_BACKGROUND, 0,
+                       TERM_VT_COLOR_RESET);
+        return 1;
+    }
+    if (code == 112) {
+        vt->host.color(vt->host.user, TERM_VT_COLOR_CURSOR, 0,
+                       TERM_VT_COLOR_RESET);
+        return 1;
+    }
+
+    return 0;
+}
+
 /* An OSC string has ended whole. What is done with it depends on what it is,
    and only one family is acted on: the OSC 133 semantic-prompt markers.
  *
@@ -68,14 +301,38 @@ static void vt_reply(TermVt *vt, const char *text) {
 static void vt_finish_osc(TermVt *vt) {
     vt->osc[vt->osc_len] = '\0';
 
-    if (vt->host.osc != NULL && vt->osc_len > 0) {
+    if (vt->osc_len > 0) {
         const char *body = vt->osc;
-        /* Only the 133 markers are offered: every other OSC is a string with no
-           meaning here, and handing one over would make the callback's own
-           filter the second place that has to know what a title looks like. */
-        if (strncmp(body, "133;", 4) == 0 && body[4] != '\0') {
+
+        /* OSC 133 — the semantic-prompt markers. Only this family is offered
+           to the marker callback: every other OSC is a string with no meaning
+           there, and handing one over would make the callback's own filter the
+           second place that has to know what a marker looks like. */
+        if (vt->host.osc != NULL &&
+            strncmp(body, "133;", 4) == 0 && body[4] != '\0') {
             vt->host.osc(vt->host.user, body, vt->osc_len);
         }
+
+        /* OSC 0, 1 and 2 — a program naming itself. All three carry a title and
+           differ only in how much of the window they mean to change; a
+           terminal with one title bar treats them the same, which is what
+           every terminal does.
+
+           The text is `0;<title>`, `1;<title>`, `2;<title>` — the number, a
+           semicolon, and everything after it. It is taken from after the
+           semicolon and passed as it is: a title is bytes and not cells, and
+           carrying it without looking inside is what lets a title hold
+           anything a program puts in one. */
+        if (vt->host.title != NULL && body[1] == ';' &&
+            (body[0] == '0' || body[0] == '1' || body[0] == '2')) {
+            vt->host.title(vt->host.user, body + 2, vt->osc_len - 2);
+        }
+
+        /* OSC 4, 10, 11, 12, 104 and 110-112 — the colours a program sets and
+           asks about. The callback is what holds the palette, so the parser
+           reports the request and moves on; a QUERY is answered there and not
+           here because only the caller can look the colour up. */
+        vt_handle_color_osc(vt, body);
     }
 
     vt->osc_len = 0;
@@ -369,6 +626,13 @@ static void seq_set_mode(TermVt *vt, const TermVtSequence *seq, int enable) {
         switch (seq->params[i]) {
         case 1:
             vt->application_cursor = enable;
+            break;
+        /* DECAWM. `?7l` turns wrapping off, which a program drawing a line that
+           must not run on does — a progress bar's last cell, a box whose right
+           edge is the screen's. Nothing else about the grid changes: the flag
+           is read in term_grid_put(). */
+        case 7:
+            grid->autowrap = enable;
             break;
         case 25:
             /* The cursor is the TERMINAL's, not the screen's. btop hides it

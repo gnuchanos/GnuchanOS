@@ -102,6 +102,13 @@ struct WmCore {
     int width;                /* the desktop's size; the wallpaper         */
     int height;               /* restarts from these when the screen is    */
                               /* resized                                   */
+    /* The size this manager trusts as the desktop's real geometry. A game or
+       Wine-like client that changes XRandR mode under the WM produces a root
+       ConfigureNotify that must not be allowed to redefine the desktop layout
+       the manager is already using. The WM keeps the last value it accepted and
+       rejects unexpected redefinitions instead of following them. */
+    int desktop_width;
+    int desktop_height;
     int current_workspace;
 
     WmModuleList modules;
