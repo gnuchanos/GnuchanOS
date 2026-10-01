@@ -63,6 +63,13 @@ static void register_modules(WmCore *core) {
        resize would be from a pixmap the server has already thrown away, and
        the window would show a torn or missing picture for a frame. */
     wm_register(core, &wm_compositor_module);
+    /* The display guard, before the frame and manage: it is what stops a game
+       from resizing the whole desktop under them. It remembers the CRTC mode
+       the session started on and puts it back if a client changes it — the
+       fallback a Direct3D game reaches for when it cannot get fullscreen the
+       EWMH way. Registered here so the mode is remembered before the first
+       window can open and ask for the screen. */
+    wm_register(core, &wm_randr_module);
     wm_register(core, &wm_manage_module);
     wm_register(core, &wm_frame_module);
     wm_register(core, &wm_focus_module);

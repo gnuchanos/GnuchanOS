@@ -64,23 +64,31 @@ void wm_workspace_apply(WmCore *core) {
         int wanted = (frame->workspace == core->current_workspace) &&
                      !frame->minimized;
 
-        XWindowAttributes frame_attributes;
-        XWindowAttributes client_attributes;
-        int frame_shown = XGetWindowAttributes(core->display, frame->frame,
-                                               &frame_attributes) &&
-                          frame_attributes.map_state == IsViewable;
-        int client_shown = XGetWindowAttributes(core->display, frame->client,
-                                               &client_attributes) &&
-                           client_attributes.map_state == IsViewable;
-        int shown = frame_shown || client_shown;
+        /* ONLY the frame is mapped and unmapped, never the client inside it.
+         *
+         * That is the fix for a window that vanished on a workspace switch.
+         * The client is a child of the frame, so unmapping the frame already
+         * takes it off the screen and mapping the frame brings it back — the
+         * server remembers that the child was mapped. Calling XUnmapWindow on
+         * the client as well was therefore redundant, and it was harmful:
+         * unmapping a window directly makes the server send a real
+         * UnmapNotify for it, and manage_unmap() reads a real UnmapNotify as
+         * the PROGRAM hiding its own window and destroys the frame. The window
+         * was not hidden by its program at all — the manager had just put it
+         * on another desk — but the event looked identical, so the whole
+         * window was thrown away the moment its desk was left. Minimise and
+         * restore already work this way (they touch only frame->frame), which
+         * is why putting a window away never lost it. */
+        XWindowAttributes attributes;
+        int shown = XGetWindowAttributes(core->display, frame->frame,
+                                         &attributes) &&
+                    attributes.map_state == IsViewable;
 
         if (wanted && !shown) {
             XMapRaised(core->display, frame->frame);
-            XMapRaised(core->display, frame->client);
             wm_frame_draw(core, frame);
         } else if (!wanted && shown) {
             XUnmapWindow(core->display, frame->frame);
-            XUnmapWindow(core->display, frame->client);
         }
     }
     XFlush(core->display);

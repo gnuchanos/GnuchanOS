@@ -46,18 +46,24 @@
 /* The chrome drawn around the client: the border on the left, right and
    bottom, and the title bar above.
  *
- * This WM keeps the chrome visible even when a client asks for a fullscreen
- * window. The user's desktop is never resized to follow a game, and the bar
- * still has to stay draggable and reachable. A "fullscreen-like" window here
- * means the client fills the visible screen area without stripping the frame,
- * so the window remains a normal managed window instead of becoming a trapped
- * borderless surface. */
+ * BOTH read zero while a window is fullscreen, and that is the whole of what
+ * makes a fullscreen window really fullscreen. A window manager that answers
+ * the EWMH fullscreen state but keeps drawing its title bar and offsetting the
+ * client by (border, title) has not given the client the screen at all: the
+ * client asked for the whole of it, got it less 2*border by a title bar tall,
+ * saw that it did not get what it asked for, and asked AGAIN — and a Direct3D
+ * game that keeps failing does not ask politely, it starts fighting the manager
+ * (moving itself every frame) and, when that fails, changes the display mode.
+ * Reading the chrome as zero here is what breaks that loop: the frame becomes
+ * the screen, the client becomes the frame, and there is nothing left to
+ * correct. Every geometry rule in this file goes through one of these two
+ * functions, so this one change is the whole of it. */
 static int frame_border_of(const WmFrame *frame) {
-    return frame->border;
+    return frame->fullscreen ? 0 : frame->border;
 }
 
 static int frame_title_of(const WmFrame *frame) {
-    return WM_TITLE_HEIGHT;
+    return frame->fullscreen ? 0 : WM_TITLE_HEIGHT;
 }
 
 static int frame_width(const WmFrame *frame) {
@@ -325,21 +331,36 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
                 : (frame->moved ? style->border_moved
                                 : style->border_unfocused);
 
-    if (frame->fullscreen && frame->scaled) {
-        frame_ensure_buffer(core, frame, width, height);
-        Drawable scaled_target =
-            frame->buffer != None ? frame->buffer : frame->frame;
-        XSetForeground(display, core->gc, style->panel);
-        XFillRectangle(display, scaled_target, core->gc, 0, 0,
-                       (unsigned int)width, (unsigned int)height);
-        wm_compositor_draw(core, frame->client, scaled_target, 0, 0,
-                           frame->client_width, frame->client_height);
-        if (scaled_target != frame->frame) {
-            XCopyArea(display, frame->buffer, frame->frame, core->gc,
-                      0, 0, (unsigned int)width, (unsigned int)height,
-                      0, 0);
+    /* A fullscreen window has NO chrome: no border band, no title bar, no
+       buttons, nothing painted over the client at all. That is the whole point
+       of the state — a game that has been given the whole screen must not have
+       a strip of the manager drawn across the top of it, and the chrome's own
+       geometry already reads as zero while this flag is set (see
+       frame_border_of / frame_title_of above).
+
+       The client's picture still has to be drawn here when it is being scaled,
+       because the server is not showing it — the compositor holds its pixels
+       and this is what puts them back. An unscaled fullscreen window is a real
+       child window filling the frame, so the server draws it and there is
+       nothing for the manager to paint. */
+    if (frame->fullscreen) {
+        if (frame->scaled) {
+            frame_ensure_buffer(core, frame, width, height);
+            Drawable scaled_target =
+                frame->buffer != None ? frame->buffer : frame->frame;
+            XSetForeground(display, core->gc, style->panel);
+            XFillRectangle(display, scaled_target, core->gc, 0, 0,
+                           (unsigned int)width, (unsigned int)height);
+            wm_compositor_draw(core, frame->client, scaled_target, 0, 0,
+                               frame->client_width, frame->client_height);
+            if (scaled_target != frame->frame) {
+                XCopyArea(display, frame->buffer, frame->frame, core->gc,
+                          0, 0, (unsigned int)width, (unsigned int)height,
+                          0, 0);
+            }
+            XFlush(display);
         }
-        XFlush(display);
+        return;
     }
 
     frame_ensure_buffer(core, frame, width, height);
@@ -658,14 +679,16 @@ static int frame_hint_size(int value, int base, int increment, int minimum) {
  * larger than the screen is left where it is — there is no place to put it
  * where both edges are inside, and moving it would only hide more of it. */
 static void frame_clamp_to_workarea(WmCore *core, WmFrame *frame) {
-    /* A fullscreen-like request is kept as a managed window: the client is
-       stretched to cover the screen, but the frame is still visible so the user
-       can drag it back and the bar remains reachable. We do not strip the
-       chrome here because that makes a window impossible to move once the game
-       takes over the display area. */
+    /* A fullscreen window is not clamped at all, and the early return is not
+       a shortcut — leaving it out is a bug. The workarea is the screen LESS
+       the bar, so the `frame->y < area_y` test below would shove a fullscreen
+       window down by the height of the bar; and the `frame->x + width > area`
+       test would drag it in from the right by the same, because a fullscreen
+       frame is exactly the screen and is therefore "too big" for the workarea.
+       Fullscreen means the whole screen and nothing else, so it is the one
+       window with no place and no size to be corrected. */
     if (frame->fullscreen) {
-        /* A fullscreen-like window is still a window we can move, so we do not
-           treat it as a borderless surface that has to stay fixed. */
+        return;
     }
 
     int screen_width = core->desktop_width > 1 ? core->desktop_width

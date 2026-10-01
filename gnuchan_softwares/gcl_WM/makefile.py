@@ -67,6 +67,7 @@ SOURCES = (
     "wm_switcher.c",
     "wm_switcher_view.c",
     "wm_compositor.c",
+    "wm_randr.c",
     "wm_spawn.c",
     "wm_autostart.c",
     "wm_menu.c",
@@ -81,7 +82,7 @@ HEADERS = (
     "wm_theme.h",
     "wm_config.h", "wm_config_parser.h",
     "wm_workspace.h", "wm_desktop.h", "wm_image.h",
-    "wm_tray.h", "wm_switcher.h", "wm_compositor.h",
+    "wm_tray.h", "wm_switcher.h", "wm_compositor.h", "wm_randr.h",
 )
 
 FALLBACK_TERMINAL = "xterm"
@@ -270,6 +271,18 @@ def compositor_headers_present() -> bool:
             header_present("X11/extensions/Xrender.h"))
 
 
+def randr_headers_present() -> bool:
+    """Whether libXrandr's header is here.
+
+    It is what the display guard in wm_randr.c is built against: the module
+    remembers the desktop's CRTC mode at start-up and puts it back when a game
+    changes it, which is how a Wine game going fullscreen is stopped from
+    shrinking the whole screen. Without the header the guard does nothing, so
+    it is a dependency of the build.
+    """
+    return header_present("X11/extensions/Xrandr.h")
+
+
 def program_exists(name: str) -> bool:
     if "/" in name:
         return os.access(name, os.X_OK)
@@ -327,6 +340,10 @@ def missing_build_dependencies() -> list[str]:
     if not compositor_headers_present():
         needed.extend(("libxcomposite-dev", "libxdamage-dev",
                        "libxrender-dev"))
+    # The display guard's, which is how a game is stopped from resizing the
+    # whole desktop when it goes fullscreen — see wm_randr.c.
+    if not randr_headers_present():
+        needed.append("libxrandr-dev")
     return needed
 
 
@@ -377,11 +394,11 @@ def x11_flags() -> tuple[list[str], list[str]]:
     if pkg_config is not None:
         cflags = run([pkg_config, "--cflags",
                       "x11", "xft", "xcursor", "imlib2",
-                      "xcomposite", "xdamage", "xrender"],
+                      "xcomposite", "xdamage", "xrender", "xrandr"],
                      capture=True)
         libs = run([pkg_config, "--libs",
                     "x11", "xft", "xcursor", "imlib2",
-                    "xcomposite", "xdamage", "xrender"],
+                    "xcomposite", "xdamage", "xrender", "xrandr"],
                    capture=True)
         if cflags.returncode == 0 and libs.returncode == 0:
             return cflags.stdout.split(), libs.stdout.split()
@@ -389,7 +406,7 @@ def x11_flags() -> tuple[list[str], list[str]]:
     fallback_includes += ["-I" + path for path in freetype_includes()]
     return (fallback_includes,
             ["-lX11", "-lXft", "-lXcursor", "-lImlib2",
-             "-lXcomposite", "-lXdamage", "-lXrender"])
+             "-lXcomposite", "-lXdamage", "-lXrender", "-lXrandr"])
 
 
 def check_sources() -> None:

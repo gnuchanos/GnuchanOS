@@ -163,6 +163,7 @@ extern const WmModule wm_input_module;    /* wm_input.c   */
 extern const WmModule wm_tray_module;     /* wm_tray.c    */
 extern const WmModule wm_switcher_module; /* wm_switcher.c */
 extern const WmModule wm_compositor_module;/* wm_compositor.c */
+extern const WmModule wm_randr_module;    /* wm_randr.c    */
 
 /* wm_menu.c — open the desktop's menu at a point on the screen, and say
    whether one is already up. Public because the menu is the desktop's answer
