@@ -14,14 +14,31 @@
  * Ignoring the root's ConfigureNotify (which the core already does) is not
  * enough, because that only stops the manager from FOLLOWING the change. The
  * change has still been made. The mode itself has to be put back, and that is
- * what this module does: it remembers the CRTC configuration the session
- * started on and restores it the moment anything changes it.
+ * what this module does: it remembers the CRTC configuration AND the size of
+ * the screen the session started with, and restores both the moment anything
+ * changes them.
+ *
+ * BOTH are restored, and restoring only the CRTCs is the mistake this file was
+ * corrected for. A game that changes the display mode changes the SIZE OF THE
+ * SCREEN, not only the mode a CRTC drives: putting the CRTCs back alone leaves
+ * the root window at the game's size, so the whole desktop stays in the corner
+ * of a black screen — the exact "small screen in the left corner" a Wine game
+ * leaves behind. The screen size is restored as well, and it is restored with
+ * XRRSetScreenSize() and not by the CRTC write, because those are two separate
+ * things in RandR: a CRTC can be set to a mode that fits a screen, and the
+ * screen can still be a different size. So the screen is grown first (a CRTC
+ * may not be set to a mode that does not fit the screen), the CRTCs are put
+ * back, and the screen is then brought to exactly its own size.
  *
  * It is deliberately unconditional. A client changing the display mode is a
  * client changing the desktop out from under every other window on it, and
  * there is no case where a managed window is allowed to do that — the whole
  * point of the EWMH fullscreen state is that a window gets the screen WITHOUT
- * the screen changing size.
+ * the screen changing size. A slow tick checks the same thing once a second as
+ * a safety net for a change that produced no notice at all, which some drivers
+ * and the older XRRSetScreenConfig path do: the check writes nothing when the
+ * mode is already right, so a desktop that is behaving costs a few round trips
+ * and nothing else.
  *
  * A server without RandR, or with a RandR too old to have CRTCs, is not an
  * error: the module says so once and does nothing, and the session behaves
@@ -42,6 +59,12 @@
    enough for a desk of monitors and low enough that the array is trivial. */
 #define WM_MAX_CRTCS 16
 
+/* How often the safety net runs. Once a second is short enough that a game
+   which shrinks the screen and sends no notice is put back before the user has
+   time to think the desktop is broken, and long enough that a session which is
+   behaving spends almost nothing on it. */
+#define WM_RANDR_TICK_MS 1000
+
 /* One CRTC's configuration as it was found at start-up: the mode it was
    driving, where it put it, and which outputs it was connected to. That is
    everything XRRSetCrtcConfig() needs to put it back. */
@@ -58,6 +81,16 @@ typedef struct SavedCrtc {
 static SavedCrtc saved[WM_MAX_CRTCS];
 static int saved_count = 0;
 
+/* The size of the screen the session started on. The CRTCs above describe
+   which mode each output drives; this is the root window's own size, which a
+   mode change moves as well and which XRRSetCrtcConfig() does NOT put back.
+   The millimetre fields are the physical size, which does not change and is
+   only carried so XRRSetScreenSize() is given a complete answer. */
+static int saved_screen_width = 0;
+static int saved_screen_height = 0;
+static int saved_screen_width_mm = 0;
+static int saved_screen_height_mm = 0;
+
 static int randr_event_base = 0;
 static int randr_ok = 0;
 
@@ -67,6 +100,26 @@ static int randr_ok = 0;
    mode already correct and writes nothing — but the flag keeps one call from
    re-entering itself. */
 static int restoring = 0;
+
+/* The root window's CURRENT size, read fresh from the server.
+ *
+ * DisplayWidth()/DisplayHeight() are NOT used, and that is on purpose: those
+ * are read from the Screen structure Xlib filled in when the connection was
+ * opened, and Xlib does not necessarily update them when a mode change arrives
+ * — so a restore driven by them would compare the new size against a cached
+ * copy of the old one and conclude there was nothing to do. XGetWindowAttributes
+ * is a round trip, so what it returns is what the server has now, which is the
+ * only thing worth comparing against. */
+static void randr_current_size(WmCore *core, int *width, int *height) {
+    XWindowAttributes attributes;
+    if (XGetWindowAttributes(core->display, core->root, &attributes)) {
+        *width = attributes.width;
+        *height = attributes.height;
+        return;
+    }
+    *width = DisplayWidth(core->display, core->screen);
+    *height = DisplayHeight(core->display, core->screen);
+}
 
 /* Forget the saved outputs. Called once, at shutdown. */
 static void randr_free_saved(void) {
@@ -79,9 +132,13 @@ static void randr_free_saved(void) {
     saved_count = 0;
 }
 
-/* Remember how every CRTC is set up right now. Called once, at start-up,
-   before any client can have changed anything. */
+/* Remember how every CRTC is set up right now, and how large the screen is.
+   Called once, at start-up, before any client can have changed anything. */
 static void randr_snapshot(WmCore *core) {
+    randr_current_size(core, &saved_screen_width, &saved_screen_height);
+    saved_screen_width_mm = DisplayWidthMM(core->display, core->screen);
+    saved_screen_height_mm = DisplayHeightMM(core->display, core->screen);
+
     XRRScreenResources *resources =
         XRRGetScreenResources(core->display, core->root);
     if (!resources) {
@@ -123,20 +180,39 @@ static void randr_snapshot(WmCore *core) {
     XRRFreeScreenResources(resources);
 }
 
-/* Put every CRTC back to the mode and place it was remembered with, but only
-   where it differs — so a restore that has nothing to do is a handful of
-   reads and no writes, which is what stops the restore's own change events
-   from producing more of them. */
+/* Put the screen and every CRTC back to the size and mode they were remembered
+   with, but only where they differ — so a restore that has nothing to do is a
+   handful of reads and no writes, which is what stops the restore's own change
+   events from producing more of them, and what makes the once-a-second check
+   free when nothing is wrong. */
 static void randr_restore(WmCore *core) {
     if (restoring || saved_count == 0) {
         return;
     }
     restoring = 1;
 
+    int changed = 0;
+    int width = 0;
+    int height = 0;
+
+    /* The screen is grown FIRST, and that ordering is not cosmetic: a CRTC may
+       not be set to a mode that does not fit inside the screen, so a CRTC
+       cannot be put back to a large mode while the screen is still the small
+       size a game left it at. The screen is taken to whichever of the two is
+       larger, so there is room either way; the exact size is set once the
+       CRTCs are back. */
+    randr_current_size(core, &width, &height);
+    if (width != saved_screen_width || height != saved_screen_height) {
+        int room_width = width > saved_screen_width ? width : saved_screen_width;
+        int room_height = height > saved_screen_height ? height : saved_screen_height;
+        XRRSetScreenSize(core->display, core->root, room_width, room_height,
+                         saved_screen_width_mm, saved_screen_height_mm);
+        changed = 1;
+    }
+
     XRRScreenResources *resources =
         XRRGetScreenResources(core->display, core->root);
     if (resources) {
-        int changed = 0;
         for (int i = 0; i < saved_count; i++) {
             SavedCrtc *entry = &saved[i];
             XRRCrtcInfo *info = XRRGetCrtcInfo(core->display, resources,
@@ -155,13 +231,25 @@ static void randr_restore(WmCore *core) {
             XRRFreeCrtcInfo(info);
         }
         XRRFreeScreenResources(resources);
+    }
 
-        if (changed) {
-            XSync(core->display, False);
-            fprintf(stderr,
-                    "gnuchanwm: randr: a program changed the display mode; "
-                    "the desktop's own mode has been put back.\n");
-        }
+    /* And now the screen is brought to exactly its own size. A game may have
+       made it larger as well as smaller, and an enlarged desktop is as wrong
+       as a shrunken one; with the CRTCs back, shrinking it now cannot cut a
+       CRTC off, because the CRTCs fit the size being asked for. */
+    randr_current_size(core, &width, &height);
+    if (width != saved_screen_width || height != saved_screen_height) {
+        XRRSetScreenSize(core->display, core->root, saved_screen_width,
+                         saved_screen_height, saved_screen_width_mm,
+                         saved_screen_height_mm);
+        changed = 1;
+    }
+
+    if (changed) {
+        XSync(core->display, False);
+        fprintf(stderr,
+                "gnuchanwm: randr: a program changed the display mode; "
+                "the desktop's own mode has been put back.\n");
     }
 
     restoring = 0;
@@ -175,8 +263,8 @@ static void randr_event(WmCore *core, XEvent *event) {
     /* The RandR notices, which is the clean path: a mode change reaches this
        manager as RRScreenChangeNotify and a CRTC change as RRNotify. Both are
        restored from, and both are safe to restore from more than once —
-       randr_restore() writes only the CRTCs that differ, so the notice the
-       restore itself sends finds nothing left to do and stops. */
+       randr_restore() writes only what differs, so the notice the restore
+       itself sends finds nothing left to do and stops. */
     int type = event->type - randr_event_base;
     if (type == RRScreenChangeNotify || type == RRNotify) {
         randr_restore(core);
@@ -195,6 +283,21 @@ static void randr_event(WmCore *core, XEvent *event) {
     }
 }
 
+/* The safety net.
+ *
+ * The events above are the intended trigger and they are enough when they
+ * arrive — but a driver that changes the mode without sending the notice, or a
+ * client that used a path that did not ask for one, leaves the desktop shrunk
+ * with nothing to react to. This runs the same restore once a second and does
+ * nothing at all when the mode is already right, so its cost on a healthy
+ * session is a few round trips and no writes. */
+static void randr_tick(WmCore *core) {
+    if (!randr_ok) {
+        return;
+    }
+    randr_restore(core);
+}
+
 static int randr_init(WmCore *core) {
     int error_base = 0;
     int major = 0;
@@ -210,8 +313,9 @@ static int randr_init(WmCore *core) {
     }
 
     /* Ask to be told when the screen or a CRTC changes. It is the notice that
-       is the trigger: the mode is not polled for, because the one moment it
-       matters is the moment a client changes it. */
+       is the trigger: the mode is not polled for as the FIRST line of defence,
+       because the one moment it matters is the moment a client changes it —
+       the tick above is only the net under that. */
     XRRSelectInput(core->display, core->root,
                    RRScreenChangeNotifyMask | RRCrtcChangeNotifyMask);
     randr_snapshot(core);
@@ -220,8 +324,9 @@ static int randr_init(WmCore *core) {
     if (randr_ok) {
         fprintf(stderr,
                 "gnuchanwm: randr: holding the desktop at its own display "
-                "mode (%d CRTC%s)\n",
-                saved_count, saved_count == 1 ? "" : "s");
+                "mode (%d CRTC%s, %dx%d)\n",
+                saved_count, saved_count == 1 ? "" : "s",
+                saved_screen_width, saved_screen_height);
     }
     return 0;
 }
@@ -236,7 +341,7 @@ const WmModule wm_randr_module = {
     .name = "randr",
     .init = randr_init,
     .event = randr_event,
-    .tick = NULL,
-    .interval_ms = 0,
+    .tick = randr_tick,
+    .interval_ms = WM_RANDR_TICK_MS,
     .cleanup = randr_cleanup,
 };
