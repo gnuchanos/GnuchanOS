@@ -45,6 +45,16 @@
 /* The cell the cursor sits on, and the block drawn over it. */
 #define GCL_CURSOR 0xDDB3FFu
 
+/* The fish-style suggestion: the ghost of a command taken from the history,
+   drawn faintly after the cursor — see term_suggest.h. It is the terminal's own
+   colour and not a palette entry, for the same reason the cursor's is: the
+   ghost is the terminal offering something, not a program drawing, and no SGR
+   can name it. It is DIMMER than the text — the same hue pulled towards the
+   background — so a suggestion reads as something offered and not as something
+   already typed, which is the whole of what makes it usable rather than
+   confusing. */
+#define GCL_SUGGEST 0x7A5A96u
+
 /* The bar along the bottom. Its background is the terminal's OWN background and
    not a second colour, which is the whole of how it stops looking like a
    border: a strip in another colour reads as a frame around the text, and a

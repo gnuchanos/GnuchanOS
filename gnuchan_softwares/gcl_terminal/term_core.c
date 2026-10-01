@@ -52,6 +52,7 @@
 #include "term_render.h"
 #include "term_input.h"
 #include "term_select.h"
+#include "term_suggest.h"
 
 /* The scrollbar's width in pixels. It is a fixed number of pixels and not a
    cell: a bar sized in cells would be eight pixels on one font and twenty on
@@ -276,6 +277,39 @@ void term_core_claim_event(TermCore *core) {
 
 int term_core_event_claimed(const TermCore *core) {
     return core->event_claimed;
+}
+
+/* --- the parser's two ways of speaking ------------------------------------
+ *
+ * The parser writes ANSWERS back to the program (a device-attributes reply, a
+ * cursor position) and it REPORTS the strings the terminal has a use for. Both
+ * are function pointers on the host so the parser never learns what a PTY or a
+ * suggestion is.
+ *
+ * Both take the CORE as their user pointer, and the write reaches the PTY
+ * through core->pty rather than being handed it. That is what lets one user
+ * pointer serve two callbacks: the alternative is a second pointer on the host,
+ * and the two would have to be kept in step for no gain. core->pty is NULL
+ * until the shell has been spawned, and the check below is why an answer asked
+ * for before then is dropped rather than written into nothing. */
+static void core_vt_write(void *user, const char *bytes, int len) {
+    TermCore *core = (TermCore *)user;
+    if (core != NULL && core->pty != NULL) {
+        term_pty_write((TermPty *)core->pty, bytes, len);
+    }
+}
+
+/* An OSC 133 marker: the shell saying where its prompt ended.
+ *
+ * The body is `133;<letter>` and the letter is what matters — see
+ * term_suggest.h. Only the marker is looked at; every other OSC is still
+ * consumed by the parser and dropped, so a window title never reaches here. */
+static void core_vt_osc(void *user, const char *body, int len) {
+    TermCore *core = (TermCore *)user;
+    if (core == NULL || core->suggest == NULL || len < 5) {
+        return;
+    }
+    term_suggest_marker((TermSuggest *)core->suggest, core, body[4]);
 }
 
 /* --- life ----------------------------------------------------------------- */
@@ -528,9 +562,11 @@ int term_core_init(TermCore *core, const char *title, const char *font_name) {
     term_grid_attach_history(&core->vt.grid, &core->history);
 
     /* The parser's answers go back through the PTY, which does not exist yet —
-       the module that spawns the child fills this in. */
-    core->vt_host.write = NULL;
-    core->vt_host.user = NULL;
+       the module that spawns the child fills the PTY in, and the callbacks
+       above read core->pty at the moment they are called rather than now. */
+    core->vt_host.write = core_vt_write;
+    core->vt_host.osc = core_vt_osc;
+    core->vt_host.user = core;
     core->vt.host = core->vt_host;
 
     XMapWindow(core->display, core->window);

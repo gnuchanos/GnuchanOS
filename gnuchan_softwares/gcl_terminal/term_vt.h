@@ -84,10 +84,22 @@ typedef struct TermVtSequence {
     char  private_marker;  /* '?', '>' or '<', or 0                          */
 } TermVtSequence;
 
-/* Answers the terminal writes back. The write is a function so the parser does
-   not have to know what a PTY is — see term_pty.h for the implementation. */
+/* Answers the terminal writes back, and the strings a program sends that the
+   rest of the terminal cares about.
+ *
+ * `write` is how the parser answers a query, and it is a function so it does
+ * not have to know what a PTY is — see term_pty.h.
+ *
+ * `osc` is handed the body of every OSC string the parser has finished
+ * collecting, and it exists for exactly one family of them: the OSC 133
+ * semantic-prompt markers, which say where a shell's prompt ended and its input
+ * begins. That is the one OSC whose CONTENT the terminal has a use for, and
+ * the alternative to this callback is the parser knowing about suggestions.
+ * Everything else — a window title, a colour — is still consumed and dropped;
+ * see the file comment. */
 typedef struct TermVtHost {
     void (*write)(void *user, const char *bytes, int len);
+    void (*osc)(void *user, const char *body, int len);
     void *user;
 } TermVtHost;
 

@@ -142,15 +142,12 @@ void dm_config_defaults(DmConfig *config);
      ~/.config/GnuChanDM/GnuChanDM.py
      GnuChanDM_config/GnuChanDM.py          the copy the source tree ships
 
-   The last one is relative to the working directory and is what lets a build
-   run straight from the tree read the settings the tree ships, instead of
-   falling back to the built-in palette. It is LAST so a machine with settings
-   of its own never has the tree's file in front of it.
-
-   The greeter is started by systemd, whose working directory is `/`, so the
-   tree's copy is only found when it is started by hand from the tree — which
-   is exactly the case it exists for. An installed machine reads the file its
-   installer wrote under ~/.config.
+   The user's own ~/.config comes first of the fixed places, which is where the
+   installer writes and where a login screen's settings belong. The tree's copy
+   is relative to the working directory and is what lets a build run straight
+   from the tree read the settings the tree ships, instead of falling back to
+   the built-in palette. It is LAST so a machine with settings of its own never
+   has the tree's file in front of it.
 
    Written into buffer, which is returned. `size` is how much room there is. */
 char *dm_config_path(char *buffer, unsigned int size);

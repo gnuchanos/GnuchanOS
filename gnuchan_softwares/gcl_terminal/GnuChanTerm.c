@@ -85,6 +85,14 @@
  * user whose own startup script sets PROMPT_COMMAND keeps theirs — it is read
  * later and replaces this one — and with it their own prompt, which is theirs
  * to choose.
+ *
+ * --- and the OSC 133 markers ---
+ *
+ * A prompt the terminal CONFIGURED is wrapped in the OSC 133 semantic-prompt
+ * markers — see build_env() below and term_suggest.h. They are what lets the
+ * terminal tell the prompt from what the user typed, and so offer a suggestion.
+ * A shell that emits its own markers does not need this, and a prompt the user
+ * configured themselves is not touched.
  */
 #define _POSIX_C_SOURCE 200809L
 
@@ -101,6 +109,7 @@
 #include "term_render.h"
 #include "term_input.h"
 #include "term_style.h"
+#include "term_suggest.h"
 
 /* The name this terminal answers to. See the file comment for why it is not
    `xterm-256color`. */
@@ -188,14 +197,31 @@ static void build_env(char **env, int *env_count, const char *prompt) {
      * does. Referring to the variable keeps the text data and the command
      * code, whatever a person writes in their prompt. */
     if (has_prompt) {
-        static char prompt_ps1[TERM_CONFIG_TEXT_LENGTH + 32];
-        static char prompt_value[TERM_CONFIG_TEXT_LENGTH + 32];
+        static char prompt_ps1[TERM_CONFIG_TEXT_LENGTH * 3 + 64];
+        static char prompt_value[TERM_CONFIG_TEXT_LENGTH * 3 + 64];
         static char prompt_command[] =
             "PROMPT_COMMAND=PS1=\"$GCL_TERM_PROMPT\"";
 
-        snprintf(prompt_ps1, sizeof(prompt_ps1), "PS1=%s", prompt);
+        /* The prompt is WRAPPED in the OSC 133 semantic-prompt markers, and
+           that is the one thing this terminal needs from the shell to be able
+           to suggest at all — see term_suggest.h.
+         *
+         * `133;A` says a prompt is beginning and `133;B` says it has ended and
+         * the user may type. B is the important one: it is the shell saying
+         * "the line starts HERE", which is what lets the terminal read the
+         * command off the grid instead of guessing where the prompt stopped.
+         *
+         * The markers go in `\\[ \\]` because they take no room on the screen.
+         * Bash counts the prompt's VISIBLE width and uses that bracketing to
+         * ignore what is between them; a marker left outside would be counted
+         * as characters and make a long line wrap early. */
+        char wrapped[TERM_CONFIG_TEXT_LENGTH * 3];
+        snprintf(wrapped, sizeof(wrapped),
+                 "\\[\\e]133;A\\a\\]%s\\[\\e]133;B\\a\\]", prompt);
+
+        snprintf(prompt_ps1, sizeof(prompt_ps1), "PS1=%s", wrapped);
         snprintf(prompt_value, sizeof(prompt_value),
-                 "GCL_TERM_PROMPT=%s", prompt);
+                 "GCL_TERM_PROMPT=%s", wrapped);
 
         env[count++] = prompt_ps1;
         env[count++] = prompt_value;
@@ -275,11 +301,13 @@ static int start_shell(TermCore *core, int argc, char **argv,
         return -1;
     }
 
-    /* The parser's answers to the program's queries go back down the same PTY.
-       It is wired here because this is where the PTY comes into existence. */
-    core->vt_host.write = term_pty_vt_write;
-    core->vt_host.user = pty;
-    core->vt.host = core->vt_host;
+    /* The parser's host is NOT rewired here. It was, and that is the fault
+       this replaces: the host's user pointer was set to the PTY and its write
+       to term_pty_vt_write(), which left the OSC callback NULL — so the
+       semantic-prompt markers a shell sends were parsed and dropped, and the
+       suggestion had no way to learn where the prompt ended. The host is
+       already wired by term_core_init() with the CORE as its user, and both of
+       its callbacks reach the PTY through core->pty. Nothing to do here. */
     return 0;
 }
 
@@ -313,11 +341,16 @@ int main(int argc, char **argv) {
                   else acts on the event
          input    writes to the child, and it is last so a key that changes
                   what is drawn does not draw before it is sent
+         suggest  reads the line the shell echoes and offers a completion; it
+                  runs as a module so its tick sees the grid AFTER the echo has
+                  been drawn, which is the whole of why it is a tick and not an
+                  event handler
        
-       The cleanup runs in reverse, so input is finished with before the
-       renderer frees the buffer its events might have drawn into. */
+       The cleanup runs in reverse, so suggest is finished with before input and
+       the renderer free the things its ticks might have touched. */
     if (term_core_register(&core, &term_render_module) != 0 ||
-        term_core_register(&core, &term_input_module) != 0) {
+        term_core_register(&core, &term_input_module) != 0 ||
+        term_core_register(&core, &term_suggest_module) != 0) {
         fprintf(stderr, "gcl_terminal: too many modules\n");
         return 1;
     }

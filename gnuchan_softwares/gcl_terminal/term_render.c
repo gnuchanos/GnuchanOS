@@ -73,6 +73,7 @@
 #include "term_render_internal.h"
 #include "term_style.h"
 #include "term_select.h"
+#include "term_suggest.h"
 
 /* The blink of the cursor, in milliseconds. It is the terminfo default and the
    rate every terminal uses; a cursor that blinks at another rate looks broken
@@ -555,6 +556,87 @@ static void render_cursor(TermCore *core, TermRender *render,
     render->cursor_was_drawn = visible;
 }
 
+/* --- the suggestion -------------------------------------------------------
+ *
+ * The fish-style ghost: the tail of a remembered command, drawn faintly after
+ * the cursor on the line the user is typing — see term_suggest.h.
+ *
+ * It is drawn HERE and not as a cell, and that is the whole reason it can exist
+ * at all. The line belongs to the shell's readline: the terminal may paint over
+ * it but must not write into the grid, or the shell would regard the ghost as
+ * typed text and run it. Drawing it as pixels on top leaves the grid — and so
+ * the shell's own idea of the line — untouched.
+ *
+ * The position comes from where the suggestion module last PUT it, and not from
+ * the cursor now: the two can differ by the frame it takes the cursor to catch
+ * up. It is drawn only when the module says a ghost is standing, which is zero
+ * lines while there is nothing to offer.
+ */
+static void render_suggestion(TermCore *core, TermRender *render) {
+    if (core->suggest == NULL) {
+        return;
+    }
+    const TermSuggest *suggest = (const TermSuggest *)core->suggest;
+    int cell_h = core->style->cell_height > 0 ? core->style->cell_height : 1;
+    if (suggest->drawn_length <= 0 || suggest->drawn_y < 0 ||
+        suggest->drawn_y >= render->grid_height / cell_h) {
+        return;
+    }
+
+    int cell_w = core->style->cell_width;
+
+    /* The ghost starts where the cursor is: everything the user has typed
+       already occupies the cells to its left, and the suggestion is the part
+       after it. */
+    const TermGrid *grid = term_vt_screen(&core->vt);
+    int start_x = grid->cursor_x;
+    if (start_x < 0) {
+        start_x = 0;
+    }
+    int baseline = suggest->drawn_y * cell_h + core->style->ascent;
+
+    XftColor *ink = term_style_color_rgb(core->style,
+                                         term_style_suggestion(core->style));
+    XftFont *face = core->style->faces[TERM_FACE_NORMAL];
+
+    /* Xft takes code points, so the UTF-8 is decoded here, exactly as the bar
+       does. The ghost holds what a command holds — mostly ASCII — and the
+       decode is what makes a directory with a non-ASCII name draw. */
+    uint32_t codes[TERM_RENDER_MAX_RUN];
+    int count = 0;
+    const char *p = suggest->suggestion;
+    for (; *p != '\0' && count < TERM_RENDER_MAX_RUN; ) {
+        unsigned char c = (unsigned char)*p;
+        uint32_t cp = c;
+        int step = 1;
+        if (c >= 0xF0) {
+            cp = (uint32_t)(c & 0x07);
+            step = 4;
+        } else if (c >= 0xE0) {
+            cp = (uint32_t)(c & 0x0F);
+            step = 3;
+        } else if (c >= 0xC0) {
+            cp = (uint32_t)(c & 0x1F);
+            step = 2;
+        }
+        int have = 1;
+        for (int i = 1; i < step && p[i] != '\0'; i++) {
+            cp = (cp << 6) | (uint32_t)((unsigned char)p[i] & 0x3F);
+            have++;
+        }
+        if (have != step) {
+            break;
+        }
+        codes[count++] = cp;
+        p += step;
+    }
+
+    if (count > 0) {
+        XftDrawString32(core->style->xft_draw, ink, face,
+                        start_x * cell_w, baseline, codes, count);
+    }
+}
+
 /* --- the two surfaces ----------------------------------------------------- */
 
 /* Fill a band of rows of the GRID surface with the theme's background. Used to
@@ -800,16 +882,16 @@ void term_render_frame(TermCore *core) {
      *
      * term_core_damage() sets a flag meaning "draw again", and the loop below
        walks the DIRTY ROWS — of which there are none, because damage marks
-     nothing. The flag therefore got as far as this function and no further:
+       nothing. The flag therefore got as far as this function and no further:
        the early-out above let it through and then every row was skipped, so a
-     selection highlight, a scrollbar move and everything else that damages
-     without writing a cell drew NOTHING until some unrelated output happened
-     to mark a row.
+       selection highlight, a scrollbar move and everything else that damages
+       without writing a cell drew NOTHING until some unrelated output happened
+       to mark a row.
      *
      * Marking every row is the honest answer to "the picture changed and I do
        not know where": a caller that knows can mark the rows itself, and one
        that does not — a selection dragged across many lines — should not have
-     to guess. The cost is one frame of the visible screen, which is what a
+       to guess. The cost is one frame of the visible screen, which is what a
        redraw request means. */
     if (!full && term_core_needs_draw(core)) {
         for (int y = 0; y < mutable_grid->rows; y++) {
@@ -867,9 +949,11 @@ void term_render_frame(TermCore *core) {
     }
 
     /* No cursor while scrolled back, for the reason above: the live screen is
-       not what is being shown. */
+       not what is being shown. The ghost goes with it — it belongs to the line
+       at the prompt, and the prompt is on the live screen. */
     if (!scrolled) {
         render_cursor(core, render, grid);
+        render_suggestion(core, render);
     }
 
     /* The grid is finished. It goes down onto the window at the frame's
@@ -980,7 +1064,7 @@ static void render_module_tick(TermCore *core) {
     term_render_frame(core);
 }
 
-static void render_module_cleanup(TermCore *core) {
+static void term_render_module_cleanup(TermCore *core) {
     term_render_free(core);
 }
 
@@ -993,5 +1077,5 @@ const TermModule term_render_module = {
        how often anything is drawn, and it is not lower because the wake itself
        costs more than the drawing on an idle screen. */
     .interval_ms = 20,
-    .cleanup = render_module_cleanup,
+    .cleanup = term_render_module_cleanup,
 };

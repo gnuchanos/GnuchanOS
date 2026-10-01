@@ -52,6 +52,35 @@ static void vt_reply(TermVt *vt, const char *text) {
     }
 }
 
+/* An OSC string has ended whole. What is done with it depends on what it is,
+   and only one family is acted on: the OSC 133 semantic-prompt markers.
+ *
+ * OSC 133 is the convention a shell uses to tell the terminal where its prompt
+ * begins and ends, so the terminal can tell the PROMPT from what the user has
+ * typed. `ESC ] 133 ; B BEL` means "the prompt is over, the input starts here",
+ * and it is the one piece of information a suggestion cannot be computed
+ * without — see term_suggest.h for why the line is read off the grid and why
+ * that needs this marker to know where the line begins.
+ *
+ * Everything else is still consumed and dropped, which is what it always did:
+ * a window title and a palette change are real strings with no meaning here,
+ * and printing one would put a control sequence's text on the screen. */
+static void vt_finish_osc(TermVt *vt) {
+    vt->osc[vt->osc_len] = '\0';
+
+    if (vt->host.osc != NULL && vt->osc_len > 0) {
+        const char *body = vt->osc;
+        /* Only the 133 markers are offered: every other OSC is a string with no
+           meaning here, and handing one over would make the callback's own
+           filter the second place that has to know what a title looks like. */
+        if (strncmp(body, "133;", 4) == 0 && body[4] != '\0') {
+            vt->host.osc(vt->host.user, body, vt->osc_len);
+        }
+    }
+
+    vt->osc_len = 0;
+}
+
 /* --- the DEC special graphics set ------------------------------------------
  *
  * The VT100's alternate character set, as a translation of the ASCII range that
@@ -881,8 +910,8 @@ void term_vt_feed(TermVt *vt, const char *bytes, int len) {
          * and its content is not acted on — see the file comment. */
         if (vt->state == TERM_VT_OSC) {
             if (byte == 0x07) {              /* BEL ends it */
+                vt_finish_osc(vt);
                 vt->state = TERM_VT_GROUND;
-                vt->osc_len = 0;
                 continue;
             }
             if (byte == 0x1B) {
@@ -898,8 +927,8 @@ void term_vt_feed(TermVt *vt, const char *bytes, int len) {
             /* ESC \ is the string terminator; anything else abandons the
                string, which is what a broken program gets. */
             if (byte == '\\') {
+                vt_finish_osc(vt);
                 vt->state = TERM_VT_GROUND;
-                vt->osc_len = 0;
             } else {
                 vt->state = TERM_VT_OSC;
             }

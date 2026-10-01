@@ -15,8 +15,19 @@ on:
   workflow_dispatch:      # manual trigger
 
 # Each platform builds the FULL pipeline (full):
-#   gcl.exe (IDE + LSP + embed Lua/Python/Raylib)  ->  language/build/<os>/
+#   gcl(.exe) (IDE + LSP + embed Lua/Python/Raylib)  ->  _temp/language-build/<os>/
 #   python makefile.py   (no arguments: the whole build chain in one command)
+#
+# The output directory is _temp/language-build/<os>/, NOT language/build/<os>/.
+# See language/makefile.py: BUILD_ROOT = TEMP_ROOT / "language-build" and
+# TEMP_ROOT = <repo>/_temp. The output was moved under the gitignored _temp/
+# so a build never dirties tracked files (a build wrote into the tree before
+# and `git pull` then refused to run). Every path below has to name that
+# directory, or — as happened — upload-artifact finds nothing and the job
+# reports "No files were found with the provided path".
+#
+# <os> is exactly what platform.system().lower() gives in makefile.py:
+# "gnuLinux" on Linux and "windows" on Windows.
 # The build output is uploaded to the artifact as a single zip/tar.gz file;
 # on v* tag pushes an automatic GitHub Release is also created.
 jobs:
@@ -68,10 +79,10 @@ jobs:
         with:
           name: gcl-linux-build
           path: |
-            language/build/gnuLinux/gcl
-            language/build/gnuLinux/Library
-            language/build/gnuLinux/Assets
-            language/build/gnuLinux/Programs
+            _temp/language-build/gnuLinux/gcl
+            _temp/language-build/gnuLinux/Library
+            _temp/language-build/gnuLinux/Assets
+            _temp/language-build/gnuLinux/Programs
           # If Programs/ide.so is missing the CI must FAIL — "warn" would hide the missing IDE.
           # (In the Linux case-sensitive build, Programs/ was never created; catch this.)
           if-no-files-found: error
@@ -82,10 +93,10 @@ jobs:
         with:
           name: gcl-win-build
           path: |
-            language/build/windows/gcl.exe
-            language/build/windows/Library
-            language/build/windows/Assets
-            language/build/windows/Programs
+            _temp/language-build/windows/gcl.exe
+            _temp/language-build/windows/Library
+            _temp/language-build/windows/Assets
+            _temp/language-build/windows/Programs
           if-no-files-found: error
 
   # On v* tag pushes: attaches the packages of all platform builds

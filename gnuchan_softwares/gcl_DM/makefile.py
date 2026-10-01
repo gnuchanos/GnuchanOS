@@ -678,28 +678,32 @@ def invoking_user() -> tuple:
 def install_config() -> None:
     """Put the settings script where the greeter will read it.
 
+      ~/.config/GnuChanDM/GnuChanDM.py
+
+    dm_config_path() looks there, so a machine that never had a settings file
+    gets the shipped one written exactly where the greeter reads. Without this
+    step the greeter runs on the palette compiled into dm_style.c and an edit
+    to the shipped file would do nothing, because nothing would be reading it.
+
+    It is installed into the config directory of the account that ran sudo and
+    not into root's, because the file belongs to the person who configured the
+    machine: it is theirs to edit, and editing it must not need root.
+
+    When there is no invoking user to write for — an install run directly as
+    root, or from a script with no SUDO_USER — the copy goes to the current
+    HOME rather than being skipped. The old code returned early in that case
+    and installed nothing, which is a login screen left on its built-in
+    defaults for a reason the person installing could not see.
+
     The installed script is replaced on every run, not kept, exactly as the
     window manager's and the terminal's installers replace theirs: this
     installer owns that file, and a machine that installs a new build has to
     get the settings that build ships with rather than whichever script
     happened to be there.
-
-    It is installed for the account that ran sudo and not for root, because
-    the greeter is a login screen: it is started before anyone has logged in,
-    but the person who configured the machine is the one whose home it should
-    be read from.
     """
     if not CONFIG_SOURCE.is_file():
         detail("no settings script to install")
         return
-    user = invoking_user()
-    if user is None:
-        detail("skipped the settings: no login user to install it for")
-        return
-
-    home, uid, gid = user
-    directory = home / ".config" / CONFIG_DIR_NAME
-    target = directory / CONFIG_FILE_NAME
 
     # The source is shipped with the greeter, so it is never empty; a check
     # here turns "the login screen ignored my file" into one line naming the
@@ -709,6 +713,17 @@ def install_config() -> None:
             f"error: {CONFIG_SOURCE} is empty, so the greeter would have "
             f"nothing to read"
         )
+
+    user = invoking_user()
+    if user is not None:
+        home, uid, gid = user
+    else:
+        # No SUDO_USER: fall back to the current HOME rather than refusing.
+        home = Path(os.environ.get("HOME") or Path.home())
+        uid = gid = None
+
+    directory = home / ".config" / CONFIG_DIR_NAME
+    target = directory / CONFIG_FILE_NAME
 
     directory.mkdir(parents=True, exist_ok=True)
 
@@ -722,11 +737,12 @@ def install_config() -> None:
 
     # The file belongs to the user who will read it, not to root who wrote it,
     # or the greeter opens a file it can see but the user cannot change.
-    try:
-        os.chown(directory, uid, gid)
-        os.chown(target, uid, gid)
-    except OSError:
-        pass
+    if uid is not None:
+        try:
+            os.chown(directory, uid, gid)
+            os.chown(target, uid, gid)
+        except OSError:
+            pass
 
     detail(f"installed {target}")
 

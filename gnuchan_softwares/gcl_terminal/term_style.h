@@ -119,6 +119,14 @@ typedef struct TermStyle {
        the terminal saying where the cursor is and not the program drawing. */
     uint32_t cursor;
 
+    /* The faint text the fish-style suggestion is drawn in — see
+       term_suggest.h. It is the terminal's own and not a cell's, because the
+       ghost is not a character the program wrote: it is the terminal saying
+       "this is what you probably meant", and a program that could name it
+       could not have meant it. It is dimmer than the text so the ghost reads
+       as a suggestion and not as something already typed. */
+    uint32_t suggestion;
+
     GC  gc;
 } TermStyle;
 
@@ -207,5 +215,10 @@ void term_style_set_bar(TermStyle *style, uint32_t bg, uint32_t fg);
 /* The cursor's colour, which the renderer draws its block in. */
 uint32_t term_style_cursor(const TermStyle *style);
 void term_style_set_cursor(TermStyle *style, uint32_t rgb);
+
+/* The suggestion's colour, which the renderer draws the ghost in. Dimmer than
+   the text so it reads as something offered and not something typed. */
+uint32_t term_style_suggestion(const TermStyle *style);
+void term_style_set_suggestion(TermStyle *style, uint32_t rgb);
 
 #endif /* GNUCHANTERM_STYLE_H */

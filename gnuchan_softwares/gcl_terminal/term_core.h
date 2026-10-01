@@ -75,6 +75,7 @@ struct TermStyle;
 struct TermPty;
 struct TermRender;
 struct TermSelect;
+struct TermSuggest;
 
 typedef struct TermCore {
     Display *display;
@@ -153,6 +154,12 @@ typedef struct TermCore {
        history and the clipboard has to outlive the key that filled it, neither
        of which is a module's business. */
     struct TermSelect *select;
+
+    /* The fish-style suggestion and the command history it is drawn from — see
+       term_suggest.h. It is the core's for the same reason the selection is:
+       the input module is what acts on it (Tab, and the arrows for browsing)
+       and the renderer is what draws the ghost, and neither owns the other. */
+    struct TermSuggest *suggest;
 
     /* Where answers to the program's queries go. It is the parser's host and
        it is filled in by the PTY module. */

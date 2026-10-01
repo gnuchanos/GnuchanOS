@@ -69,6 +69,11 @@ static const uint32_t DEFAULT_PALETTE[TERM_PALETTE_SIZE] = GCL_PALETTE_INIT;
 static const uint32_t DEFAULT_BAR_BG = GCL_BAR_BG;   /* the terminal's own  */
 static const uint32_t DEFAULT_BAR_FG = GCL_BAR_FG;   /* and its text        */
 
+/* The suggestion's ghost. It is the theme's own third colour and not one of the
+   sixteen, for the same reason the bar has two of its own: the ghost is the
+   terminal speaking, not the program, and a program cannot name it. */
+static const uint32_t DEFAULT_SUGGEST = GCL_SUGGEST;
+
 /* --- one packed colour becomes an XftColor --------------------------------
  *
  * Xft wants its colour allocated against a colormap — on a TrueColor display
@@ -165,6 +170,7 @@ int term_style_init(TermStyle *style, Display *display, int screen,
     style->bar_bg = DEFAULT_BAR_BG;
     style->bar_fg = DEFAULT_BAR_FG;
     style->cursor = GCL_CURSOR;
+    style->suggestion = DEFAULT_SUGGEST;
     return 0;
 }
 
@@ -189,6 +195,14 @@ uint32_t term_style_cursor(const TermStyle *style) {
 
 void term_style_set_cursor(TermStyle *style, uint32_t rgb) {
     style->cursor = rgb;
+}
+
+uint32_t term_style_suggestion(const TermStyle *style) {
+    return style->suggestion;
+}
+
+void term_style_set_suggestion(TermStyle *style, uint32_t rgb) {
+    style->suggestion = rgb;
 }
 
 void term_style_free(TermStyle *style) {
