@@ -63,6 +63,48 @@ static int manage_is_unmanaged_type(WmCore *core, Window window) {
     return unmanaged;
 }
 
+/* The fullscreen state a client opened with.
+ *
+ * A client may set _NET_WM_STATE_FULLSCREEN on itself BEFORE it is mapped — a
+ * game that knows it wants the whole screen does exactly this — and the
+ * property is then already there when the frame is made. Reading it here is
+ * what keeps that window from opening with a title bar for one frame and then
+ * jumping to fullscreen when the ClientMessage arrives: the two would be
+ * indistinguishable on screen from the flicker this whole change exists to
+ * remove.
+ *
+ * The property is read through XA_ATOM, which is what the protocol says the
+ * _NET_WM_STATE list is made of. */
+static void manage_read_fullscreen_hint(WmCore *core, WmFrame *frame) {
+    Atom actual_type = None;
+    int actual_format = 0;
+    unsigned long items = 0;
+    unsigned long after = 0;
+    unsigned char *data = NULL;
+    int wanted = 0;
+
+    if (XGetWindowProperty(core->display, frame->client, core->net_wm_state,
+                           0, 32, False, XA_ATOM, &actual_type, &actual_format,
+                           &items, &after, &data) == Success) {
+        if (data && actual_type == XA_ATOM && actual_format == 32) {
+            Atom *atoms = (Atom *)data;
+            for (unsigned long i = 0; i < items; i++) {
+                if (atoms[i] == core->net_wm_state_fullscreen) {
+                    wanted = 1;
+                    break;
+                }
+            }
+        }
+        if (data) {
+            XFree(data);
+        }
+    }
+
+    if (wanted) {
+        wm_frame_set_fullscreen(core, frame, 1);
+    }
+}
+
 static void manage_map(WmCore *core, Window window) {
     if (manage_is_unmanaged_type(core, window)) {
         /* Mapped as the program asked, with no frame: it said it is not a
@@ -79,7 +121,59 @@ static void manage_map(WmCore *core, Window window) {
         return;
     }
 
+    /* A game that opened already asking for the whole screen is given it now,
+       before the window is on screen, rather than one frame later. */
+    manage_read_fullscreen_hint(core, frame);
+
     wm_focus_set(core, window);
+}
+
+/* The EWMH fullscreen request, as a client sends it.
+ *
+ * The message arrives on the ROOT and names the client in its window field; it
+ * is a ClientMessage with message_type _NET_WM_STATE, the action in data.l[0],
+ * the property being changed in data.l[1] and a second property in data.l[2]
+ * (which this manager does not use — it is for a client that wants two states
+ * changed at once, and there is only one state here).
+ *
+ * The action is a small number and not an atom, which is the one part of EWMH
+ * that is easy to get wrong:
+ *     0 remove, 1 add, 2 toggle.
+ * A toggle is answered against the state the window is in NOW, so two toggles
+ * never both turn it on.
+ *
+ * A message about a window this manager does not hold is ignored rather than
+ * answered: it is a client that is not managed, and there is nothing to change
+ * about it. */
+static void manage_state_message(WmCore *core, XClientMessageEvent *message) {
+    if (message->message_type != core->net_wm_state) {
+        return;
+    }
+
+    WmFrame *frame = wm_frame_find(core, message->window);
+    if (!frame) {
+        return;
+    }
+
+    /* Only a request that NAMES fullscreen is acted on. A client may ask for
+       another state in the same message — above, below, sticky — and those are
+       not ones this desktop has an answer for, so the request is dropped
+       rather than half-honoured. */
+    Atom wanted = (Atom)message->data.l[1];
+    if (wanted != core->net_wm_state_fullscreen) {
+        return;
+    }
+
+    long action = message->data.l[0];
+    int on;
+    if (action == 0) {
+        on = 0;                                     /* remove  */
+    } else if (action == 1) {
+        on = 1;                                     /* add     */
+    } else {
+        on = !wm_frame_is_fullscreen(frame);        /* toggle  */
+    }
+    wm_frame_set_fullscreen(core, frame, on);
 }
 
 static void manage_configure(WmCore *core, XConfigureRequestEvent *request) {
@@ -151,12 +245,49 @@ static void manage_destroy(WmCore *core, Window window) {
 }
 
 static void manage_property(WmCore *core, XPropertyEvent *event) {
-    if (event->atom != core->net_wm_name) {
+    WmFrame *frame = wm_frame_find(core, event->window);
+    if (!frame) {
         return;
     }
-    WmFrame *frame = wm_frame_find(core, event->window);
-    if (frame) {
+
+    if (event->atom == core->net_wm_name) {
         wm_frame_update_name(core, frame);
+        return;
+    }
+
+    /* A client may set _NET_WM_STATE itself instead of sending the message,
+       and the protocol allows both. Reading the property again is what keeps a
+       client that took that path from being held at the wrong size, and it is
+       read rather than assumed because the client may be CLEARING the state as
+       well as setting it — a game that closed its own menu and wants its title
+       bar back sets the property to the empty list, and there is no message
+       coming. */
+    if (event->atom == core->net_wm_state) {
+        Atom actual_type = None;
+        int actual_format = 0;
+        unsigned long items = 0;
+        unsigned long after = 0;
+        unsigned char *data = NULL;
+        int wanted = 0;
+
+        if (XGetWindowProperty(core->display, frame->client, core->net_wm_state,
+                               0, 32, False, XA_ATOM, &actual_type,
+                               &actual_format, &items, &after,
+                               &data) == Success) {
+            if (data && actual_type == XA_ATOM && actual_format == 32) {
+                Atom *atoms = (Atom *)data;
+                for (unsigned long i = 0; i < items; i++) {
+                    if (atoms[i] == core->net_wm_state_fullscreen) {
+                        wanted = 1;
+                        break;
+                    }
+                }
+            }
+            if (data) {
+                XFree(data);
+            }
+        }
+        wm_frame_set_fullscreen(core, frame, wanted);
     }
 }
 
@@ -207,6 +338,9 @@ static void manage_event(WmCore *core, XEvent *event) {
         break;
     case PropertyNotify:
         manage_property(core, &event->xproperty);
+        break;
+    case ClientMessage:
+        manage_state_message(core, &event->xclient);
         break;
     case ConfigureNotify:
         /* A real notification about a managed client means it moved or resized

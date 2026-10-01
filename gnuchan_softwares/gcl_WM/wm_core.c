@@ -106,6 +106,13 @@ static void core_publish_supported(WmCore *core) {
         core->net_active_window,
         core->net_client_list,
         core->net_wm_window_type,
+        /* _NET_WM_STATE and its fullscreen member. Both are advertised, and
+           both are advertised TOGETHER: a client that reads _NET_SUPPORTED to
+           decide whether the manager can be asked for fullscreen looks for the
+           pair, and a manager that listed only the property would be asked and
+           would not answer. */
+        core->net_wm_state,
+        core->net_wm_state_fullscreen,
     };
     XChangeProperty(core->display, core->root, core->net_supported,
                     XA_ATOM, 32, PropModeReplace,
@@ -200,6 +207,9 @@ int wm_core_init(WmCore *core) {
     core->net_client_list = wm_atom(core, "_NET_CLIENT_LIST");
     core->net_wm_window_type = wm_atom(core, "_NET_WM_WINDOW_TYPE");
     core->net_wm_window_type_dock = wm_atom(core, "_NET_WM_WINDOW_TYPE_DOCK");
+    core->net_wm_state = wm_atom(core, "_NET_WM_STATE");
+    core->net_wm_state_fullscreen =
+        wm_atom(core, "_NET_WM_STATE_FULLSCREEN");
     core->wm_state = wm_atom(core, "WM_STATE");
     core->wm_protocols = wm_atom(core, "WM_PROTOCOLS");
     core->wm_delete_window = wm_atom(core, "WM_DELETE_WINDOW");

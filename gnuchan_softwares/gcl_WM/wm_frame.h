@@ -195,6 +195,17 @@ typedef struct WmFrame {
        it is fitted to the frame. */
     int scaled;
 
+    /* 1 while the window has the whole screen and NO chrome — no title bar,
+       no border, the client at the screen's own (0,0). Set by the EWMH
+       fullscreen state, which is the one thing a window manager must speak for
+       a Direct3D game to be playable; see wm_frame_set_fullscreen() for what
+       happens without it, which is a picture that slides up and down for ever.
+
+       While it is set every geometry rule in wm_frame.c reads the chrome as
+       zero — frame_border_of() and frame_title_of() are the two functions that
+       answer, and nothing adds WM_TITLE_HEIGHT by hand. */
+    int fullscreen;
+
     /* Where the frame was before it was maximised, so the same button puts it
        back. Only meaningful while maximized is set. */
     int restore_x, restore_y;
@@ -310,6 +321,24 @@ void wm_frame_sync(WmCore *core, WmFrame *frame);
  * the window behaves exactly as it did before. */
 void wm_frame_toggle_scaling(WmCore *core, WmFrame *frame);
 int  wm_frame_is_scaled(const WmFrame *frame);
+
+/* --- fullscreen: the EWMH state, and why a window manager must speak it -----
+
+   Take the whole screen, or give it back. `on` is not toggled by a second
+   press: a client asks for one or the other, and a request for the state it is
+   already in does nothing.
+
+   On: the title bar and the border are dropped, the client is given the whole
+   of the screen at (0,0), and the window is raised and focused. The size it
+   had is remembered and given back when the state is dropped.
+
+   Off: the chrome comes back and the window returns to the size and place it
+   had, held to the desktop like any other window.
+
+   A window manager that does NOT speak this is one that Direct3D games fight:
+   see wm_frame_set_fullscreen() in wm_frame.c. */
+void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on);
+int  wm_frame_is_fullscreen(const WmFrame *frame);
 
 /* --- drawing -------------------------------------------------------------- */
 

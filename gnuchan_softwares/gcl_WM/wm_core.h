@@ -41,6 +41,14 @@ struct WmCore {
     Atom net_client_list;
     Atom net_wm_window_type;
     Atom net_wm_window_type_dock;
+    /* The EWMH state pair: the property a client writes to ask for fullscreen,
+       and the fullscreen member of it. Both are interned here because two
+       places name them — the manage module reads the ClientMessage, and the
+       frame module writes the state back into the property — and a manager
+       that interned them twice could get two different atoms for one name and
+       never see its own writes. */
+    Atom net_wm_state;
+    Atom net_wm_state_fullscreen;
     Atom wm_state;
     Atom wm_protocols;
     Atom wm_delete_window;
