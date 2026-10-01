@@ -46,24 +46,29 @@
 /* The chrome drawn around the client: the border on the left, right and
    bottom, and the title bar above.
  *
- * BOTH read zero while a window is fullscreen, and that is the whole of what
- * makes a fullscreen window really fullscreen. A window manager that answers
- * the EWMH fullscreen state but keeps drawing its title bar and offsetting the
- * client by (border, title) has not given the client the screen at all: the
- * client asked for the whole of it, got it less 2*border by a title bar tall,
- * saw that it did not get what it asked for, and asked AGAIN — and a Direct3D
- * game that keeps failing does not ask politely, it starts fighting the manager
- * (moving itself every frame) and, when that fails, changes the display mode.
- * Reading the chrome as zero here is what breaks that loop: the frame becomes
- * the screen, the client becomes the frame, and there is nothing left to
- * correct. Every geometry rule in this file goes through one of these two
- * functions, so this one change is the whole of it. */
+ * The chrome is kept for EVERY window, a fullscreen-like one included. That is
+ * the whole point of this desktop: a client never gets to strip the frame off
+ * itself.
+
+   The reasoning, because it is not the obvious choice. EWMH says a fullscreen
+   window has no decorations, and a game that asks for it means "give me the
+   whole screen". A manager that answers by drawing the window borderless at
+   (0,0) the size of the screen has handed the game the display — and the game
+   is then a surface with no title bar and no buttons, which the user cannot
+   move, cannot close and cannot get out of if the game hangs. That is the trap
+   this file exists to avoid: the window is a CONTAINER that happens to be as
+   large as the screen, not the screen itself.
+
+   So a fullscreen-like window here means the client fills the visible screen
+   area and the frame is drawn around it, exactly as on any other window. The
+   client is inset by (border, title) and the frame is that much larger, so the
+   title bar sits at the top of the screen and the buttons stay reachable. */
 static int frame_border_of(const WmFrame *frame) {
-    return frame->fullscreen ? 0 : frame->border;
+    return frame->border;
 }
 
 static int frame_title_of(const WmFrame *frame) {
-    return frame->fullscreen ? 0 : WM_TITLE_HEIGHT;
+    return WM_TITLE_HEIGHT;
 }
 
 static int frame_width(const WmFrame *frame) {
@@ -331,38 +336,13 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
                 : (frame->moved ? style->border_moved
                                 : style->border_unfocused);
 
-    /* A fullscreen window has NO chrome: no border band, no title bar, no
-       buttons, nothing painted over the client at all. That is the whole point
-       of the state — a game that has been given the whole screen must not have
-       a strip of the manager drawn across the top of it, and the chrome's own
-       geometry already reads as zero while this flag is set (see
-       frame_border_of / frame_title_of above).
-
-       The client's picture still has to be drawn here when it is being scaled,
-       because the server is not showing it — the compositor holds its pixels
-       and this is what puts them back. An unscaled fullscreen window is a real
-       child window filling the frame, so the server draws it and there is
-       nothing for the manager to paint. */
-    if (frame->fullscreen) {
-        if (frame->scaled) {
-            frame_ensure_buffer(core, frame, width, height);
-            Drawable scaled_target =
-                frame->buffer != None ? frame->buffer : frame->frame;
-            XSetForeground(display, core->gc, style->panel);
-            XFillRectangle(display, scaled_target, core->gc, 0, 0,
-                           (unsigned int)width, (unsigned int)height);
-            wm_compositor_draw(core, frame->client, scaled_target, 0, 0,
-                               frame->client_width, frame->client_height);
-            if (scaled_target != frame->frame) {
-                XCopyArea(display, frame->buffer, frame->frame, core->gc,
-                          0, 0, (unsigned int)width, (unsigned int)height,
-                          0, 0);
-            }
-            XFlush(display);
-        }
-        return;
-    }
-
+    /* The chrome is drawn for EVERY window, a fullscreen-like one included —
+       see frame_border_of() above for why. There is no branch on the
+       fullscreen flag here at all, and that is on purpose: a fullscreen window
+       is an ordinary window that happens to fill the screen, so it gets the
+       same border, the same bar and the same buttons as every other. The
+       client's picture is drawn into the frame's client area lower down when
+       the compositor owns it, exactly as on any other window. */
     frame_ensure_buffer(core, frame, width, height);
     Drawable target = frame->buffer != None ? frame->buffer : frame->frame;
 
@@ -679,18 +659,6 @@ static int frame_hint_size(int value, int base, int increment, int minimum) {
  * larger than the screen is left where it is — there is no place to put it
  * where both edges are inside, and moving it would only hide more of it. */
 static void frame_clamp_to_workarea(WmCore *core, WmFrame *frame) {
-    /* A fullscreen window is not clamped at all, and the early return is not
-       a shortcut — leaving it out is a bug. The workarea is the screen LESS
-       the bar, so the `frame->y < area_y` test below would shove a fullscreen
-       window down by the height of the bar; and the `frame->x + width > area`
-       test would drag it in from the right by the same, because a fullscreen
-       frame is exactly the screen and is therefore "too big" for the workarea.
-       Fullscreen means the whole screen and nothing else, so it is the one
-       window with no place and no size to be corrected. */
-    if (frame->fullscreen) {
-        return;
-    }
-
     int screen_width = core->desktop_width > 1 ? core->desktop_width
                                                : (core->width > 1 ? core->width
                                                                   : DisplayWidth(core->display,
@@ -796,15 +764,6 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
         return;
     }
 
-    int screen_width = core->desktop_width > 1 ? core->desktop_width
-                                               : (core->width > 1 ? core->width
-                                                                  : DisplayWidth(core->display,
-                                                                                 core->screen));
-    int screen_height = core->desktop_height > 1 ? core->desktop_height
-                                                 : (core->height > 1 ? core->height
-                                                                    : DisplayHeight(core->display,
-                                                                                   core->screen));
-
     /* A scaled window resizes itself as much as it likes: the content is drawn
        at whatever size the program chose, and that size is what is scaled FROM.
        So the client's new size is taken as the window's NATURAL size — the size
@@ -831,39 +790,31 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
         return;
     }
 
-    /* A fullscreen window is FIXED, and this is the other half of the fix in
-       wm_frame_set_fullscreen(). A game that could not be told it had the
-       screen falls back to placing itself every frame, and a manager that took
-       that placement would move the frame off (0,0) and start the same
-       up-and-down fight one level up — the client asking to be somewhere, the
-       manager putting it back, for ever. So a fullscreen client's own idea of
-       where it is is not read at all: the frame is put back to the whole screen
-       and the client is put back inside it.
+    /* A fullscreen-like window is pinned to the screen's corner at the
+       screen's size — its chrome included — and its own idea of where it is
+       and how big it should be is NOT read. That is the one place a client's
+       own geometry is refused, and it is refused for the reason the whole
+       fullscreen handshake exists: a game that got the screen but did not get
+       to PICK the screen will otherwise place itself every frame, the manager
+       will put it back, and the two will fight up and down the screen for ever
+       (or the game gives up on the manager and changes the DISPLAY MODE — see
+       wm_randr.c). Pinning it means there is nothing to fight about.
 
-       The size it reports is still followed, because a game that changes its
-       own resolution is asking the desktop to change with it, and that is not a
-       placement — it is a size, and taking it is what makes the change
-       stick. */
-    /* A fullscreen window: the frame is put at the screen's corner and THE
-       CLIENT'S SIZE IS NOT TOUCHED.
-
-       That is the correction to what stood here for one revision, and it
-       matters enough to say why. The client's size was forced to the screen's,
-       and a Direct3D game whose swapchain is 1920x1080 on a 1366x768 display
-       had its window resized out from under it on every sync — a size its
-       renderer was not built for, arriving while it was drawing. The picture
-       stopped coming out at all. That was "the scaled window no longer
-       renders", and it was this.
-
-       A fullscreen client sets its own size. The manager's part is to stop
-       putting chrome and offsets in the way — not to have opinions about the
-       size of a picture it is not the one drawing. What is still worth doing
-       is keeping the frame at (0,0): a fullscreen window belongs at the
-       screen's corner and nowhere else. */
+       The size is still the SCREEN less the chrome, so the client is the
+       screen minus its title bar, and the bar stays along the top of the
+       screen where the close button can be reached. */
     if (frame->fullscreen) {
+        int screen_width = core->desktop_width > 1 ? core->desktop_width
+                                                   : (core->width > 1 ? core->width
+                                                                     : DisplayWidth(core->display,
+                                                                                    core->screen));
+        int screen_height = core->desktop_height > 1 ? core->desktop_height
+                                                     : (core->height > 1 ? core->height
+                                                                        : DisplayHeight(core->display,
+                                                                                       core->screen));
         int target_width = screen_width - 2 * frame_border_of(frame);
         int target_height = screen_height - frame_title_of(frame) -
-                           frame_border_of(frame);
+                            frame_border_of(frame);
         if (target_width < 1) {
             target_width = 1;
         }
@@ -1294,20 +1245,31 @@ void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on) {
                                                                                    core->screen));
 
     if (on) {
-        /* The place and size to come back to. It is taken here and not from
-           the fields a maximise uses, because a window may be maximised and
-           then made fullscreen and has to come back to the maximise, not to
-           wherever it was before that. */
+        /* THE CONTAINER IS RESIZED, THE DESKTOP IS NOT — which is the whole
+           point of the diagram this desktop is built from.
+
+               ROOT / DESKTOP  ->  unchanged (still the size it started at)
+               CONTAINER #2    ->  resized to the whole screen
+
+           A fullscreen request means "I want the screen". The manager answers
+           by making the WINDOW as large as the screen — the frame is moved to
+           (0,0) and sized to the whole screen — and it stops exactly there. It
+           does NOT change the X server's mode and it does NOT make the desktop
+           follow: the root keeps the size the session started with, and every
+           other container on it keeps its own. That is the line the diagram
+           draws between "container resize" and "root/desktop resize", and it is
+           the line that was crossed when a Wine game resized the whole screen.
+
+           THE CHROME STAYS ON. The client is inset by (border, title) inside a
+           frame that is the whole screen, so the title bar sits along the top
+           of the screen and the close button stays reachable — a fullscreen
+           game the user cannot close is the trap this avoids. */
         frame->restore_x = frame->x;
         frame->restore_y = frame->y;
         frame->restore_width = frame->client_width;
         frame->restore_height = frame->client_height;
 
-        /* Fullscreen and maximised at once would be two answers to one
-           question, and the glyph that says which is drawn reads maximized.
-           The state asked for most recently wins, and it is this one. */
-        frame->maximized = 0;
-
+        frame->maximized = 0;   /* the two states are two answers to one thing */
         frame->fullscreen = 1;
         frame->x = 0;
         frame->y = 0;
@@ -1320,22 +1282,20 @@ void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on) {
         if (frame->client_height < 1) {
             frame->client_height = 1;
         }
-        frame_publish_fullscreen_state(core, frame, 1);
     } else {
         frame->fullscreen = 0;
         frame->x = frame->restore_x;
         frame->y = frame->restore_y;
         frame->client_width = frame->restore_width;
         frame->client_height = frame->restore_height;
-        /* The size it is coming back to was legal when it was taken, but the
-           desktop may have changed since — the screen may be smaller, the bar
-           may have moved — so the same two rules every other size path uses
-           are applied again. */
+        /* The size it comes back to was legal when it was taken, but the
+           desktop may have changed since, so the same two rules every other
+           size path uses are applied again. */
         frame_clamp_size_to_screen(core, frame);
         frame_clamp_to_workarea(core, frame);
-        frame_publish_fullscreen_state(core, frame, 0);
     }
 
+    frame_publish_fullscreen_state(core, frame, on);
     frame_apply(core, frame);
     frame_notify_configure(core, frame);
 
@@ -2164,6 +2124,21 @@ static void frame_event(WmCore *core, XEvent *event) {
 
             if (event->xconfigure.width != trusted_width ||
                 event->xconfigure.height != trusted_height) {
+                /* A client changed the display mode out from under the manager.
+                   The manager's own idea of the desktop is KEPT — and this is
+                   what stops every window being squashed into the corner the
+                   smaller mode left them in. The mode itself is put back by the
+                   randr module (see wm_randr.c), which is the half that
+                   actually undoes the change; this half only refuses to follow
+                   it in the meantime.
+
+                   NOTHING here is done to a fullscreen window, and that is a
+                   correction. It used to be forced to the trusted size — the
+                   whole screen, no chrome — on any stray root resize. That is
+                   the very stretch-to-the-screen this desktop does not do: a
+                   fullscreen window here is an ordinary container, and it is
+                   resized by the same rules as any other (or not at all, when
+                   the change was not the manager's doing). */
                 core->width = trusted_width;
                 core->height = trusted_height;
                 core->desktop_width = trusted_width;
@@ -2173,14 +2148,6 @@ static void frame_event(WmCore *core, XEvent *event) {
                     if (frame->maximized && !frame->minimized) {
                         frame->maximized = 0;   /* so maximize() fits it again */
                         wm_frame_maximize(core, frame);
-                    }
-                    if (frame->fullscreen) {
-                        frame->x = 0;
-                        frame->y = 0;
-                        frame->client_width = trusted_width;
-                        frame->client_height = trusted_height;
-                        frame_apply(core, frame);
-                        frame_notify_configure(core, frame);
                     }
                 }
                 break;

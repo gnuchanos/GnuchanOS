@@ -171,15 +171,26 @@ static void randr_event(WmCore *core, XEvent *event) {
     if (!randr_ok) {
         return;
     }
-    /* Two event types matter and there is no third to catch. A mode change
-       reaches this manager as RRScreenChangeNotify, and a CRTC change — which
-       is what a client moving a monitor or setting a mode on one actually
-       produces — reaches it as RRNotify. Both are restored from, and both are
-       safe to restore from more than once: randr_restore() writes only the
-       CRTCs that differ, so the notice the restore itself sends finds nothing
-       left to do and stops. */
+
+    /* The RandR notices, which is the clean path: a mode change reaches this
+       manager as RRScreenChangeNotify and a CRTC change as RRNotify. Both are
+       restored from, and both are safe to restore from more than once —
+       randr_restore() writes only the CRTCs that differ, so the notice the
+       restore itself sends finds nothing left to do and stops. */
     int type = event->type - randr_event_base;
     if (type == RRScreenChangeNotify || type == RRNotify) {
+        randr_restore(core);
+    }
+
+    /* And a second trigger, because not every client announces a mode change
+       the same way. A game that changed the mode with the older
+       XRRSetScreenConfig path, or through a tool that did not select for the
+       RandR events on the root, still leaves the root at a different size —
+       and the root's own ConfigureNotify always arrives. It is a cheap test
+       and it means the guard holds even when the notice it was written for
+       does not come. */
+    if (event->type == ConfigureNotify &&
+        event->xconfigure.window == core->root) {
         randr_restore(core);
     }
 }
