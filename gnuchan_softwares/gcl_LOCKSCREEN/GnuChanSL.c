@@ -391,17 +391,43 @@ int main(int argc, char **argv) {
        field did nothing and the manager's own hotkeys fired instead. If the
        grab does not succeed, a lock screen is already up and this one backs
        out rather than covering the working one. */
-    if (XGrabKeyboard(display, root, False, GrabModeAsync, GrabModeAsync,
-                      CurrentTime) != GrabSuccess) {
-        fprintf(stderr, "gnuchansl: the screen is already locked\n");
-        XCloseDisplay(display);
-        return 0;
-    }
-    if (XGrabPointer(display, root, False,
-                     ButtonPressMask | PointerMotionMask, GrabModeAsync,
-                     GrabModeAsync, None, None,
-                     CurrentTime) != GrabSuccess) {
+    /* The grab is retried for a short while before giving up.
+     *
+     * When this program is started by a key binding, the modifier key (Alt)
+     * is still held down as it runs and the window manager's passive grab on
+     * that combination is still active, so the very first attempt can fail
+     * with AlreadyGrabbed — and before this the lock screen then exited at
+     * once and nothing appeared on the screen. That is exactly why the lock
+     * key "did nothing" while the screen-saver key, whose program already
+     * retried, worked. Retrying lets the key be released and the grab succeed.
+     *
+     * A failure that outlasts the retries means a lock screen really is up,
+     * and this one leaves without covering the working one. */
+    Status keyboard_grab = GrabNotViewable;
+    Status pointer_grab = GrabNotViewable;
+    for (int attempt = 0; attempt < 15 && !s_should_stop; attempt++) {
+        keyboard_grab = XGrabKeyboard(display, root, False, GrabModeAsync,
+                                      GrabModeAsync, CurrentTime);
+        if (keyboard_grab != GrabSuccess) {
+            struct timespec pause = {0, 100 * 1000 * 1000};   /* 100 ms */
+            nanosleep(&pause, NULL);
+            continue;
+        }
+        pointer_grab = XGrabPointer(display, root, False,
+                                    ButtonPressMask | PointerMotionMask,
+                                    GrabModeAsync, GrabModeAsync, None, None,
+                                    CurrentTime);
+        if (pointer_grab == GrabSuccess) {
+            break;
+        }
         XUngrabKeyboard(display, CurrentTime);
+        struct timespec pause = {0, 100 * 1000 * 1000};
+        nanosleep(&pause, NULL);
+    }
+    if (keyboard_grab != GrabSuccess || pointer_grab != GrabSuccess) {
+        fprintf(stderr,
+                "gnuchansl: the screen is already locked (keyboard %d, "
+                "pointer %d)\n", (int)keyboard_grab, (int)pointer_grab);
         XCloseDisplay(display);
         return 0;
     }
