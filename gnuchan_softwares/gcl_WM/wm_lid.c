@@ -49,6 +49,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "wm_core.h"
@@ -56,8 +57,15 @@
 
 /* The names the two programs have when the settings script names none. They
    are the GnuchanOS programs; a machine that has neither simply gets nothing
-   run on the wake-up, which is the same as having asked for nothing. */
-#define WM_LID_DEFAULT_SCREENSAVER "GnuChanSS"
+   run on the wake-up, which is the same as having asked for nothing.
+ *
+ * The screen saver is started with --once: a wake-up is a moment that wants
+ * the saver NOW, not after IdleSeconds more of a desk that is only idle
+ * because the machine was asleep. Without the flag the saver came up, took its
+ * D-Bus name and then waited out the idle timer — which on a resume is a black
+ * screen for the length of that timer, which is exactly what a wake-up must
+ * not be. */
+#define WM_LID_DEFAULT_SCREENSAVER "GnuChanSS --once"
 #define WM_LID_DEFAULT_LOCKSCREEN "GnuChanSL"
 
 /* The path the lid's state is read from, filled in once. /proc/acpi/button/lid
@@ -84,6 +92,25 @@ static int  lid_path_searched = 0;
  * The state is recorded on the first tick and acted on only from the second. */
 static int lid_last_closed = 0;
 static int lid_seen = 0;
+
+/* The wall-clock second of the last tick, so a wake-up from the machine's OWN
+ * sleep can be told from a quiet tick.
+ *
+ * The lid is not the only thing that suspends a laptop. An idle timer, the
+ * power button and the machine's own firmware all put it to sleep with the lid
+ * untouched — and because the lid never moved, the open-lid path never ran, so
+ * nothing turned the screen back on and the machine came back to a black
+ * screen. The tick loop is frozen while the machine is asleep and resumes with
+ * it, so the wall clock jumping much further than the tick interval is the one
+ * signal, available without D-Bus, that says "the machine slept and has just
+ * woken". */
+static time_t lid_last_tick = 0;
+
+/* How far the wall clock must jump between two ticks before it is called a
+ * wake-up rather than a slow tick. The tick is two seconds; a jump of more
+ * than this many seconds means most of the ticks in between never ran, which
+ * happens only when the process was frozen — that is, when the machine slept. */
+#define WM_LID_RESUME_GAP_SECONDS 8
 
 /* Find the lid's state file, once. Sets lid_state_path and returns 1 when one
    was found and 0 when there is no lid (a desktop), in which case the search is
@@ -201,7 +228,12 @@ static void lid_on_close(WmCore *core) {
     }
 }
 
-static void lid_on_open(WmCore *core) {
+/* What a wake-up does, whatever woke the machine: turn the screen back on, and
+ * then put the screen saver and/or the lock screen up if the settings ask for
+ * them. A lid that was opened and a machine that woke from its own sleep are
+ * the same event from the user's side — the desk is back and wants covering —
+ * so both go through here. */
+static void lid_on_wake(WmCore *core) {
     lid_screen(1);
     if (core->config.lid_open_screensaver) {
         lid_run(core->config.screensaver_command, WM_LID_DEFAULT_SCREENSAVER);
@@ -211,27 +243,54 @@ static void lid_on_open(WmCore *core) {
     }
 }
 
-/* The tick: read the lid, and act when it changed. */
+/* The tick: read the lid, and act when it changed — or when the machine woke. */
 static void lid_tick(WmCore *core) {
+    /* Whether this tick came after a sleep. Read before anything can return,
+       because the clock is advanced on every tick and a wake-up has to be
+       recognised on the very tick it is seen. */
+    time_t now = time(NULL);
+    int resumed = (lid_last_tick != 0 &&
+                   now - lid_last_tick > WM_LID_RESUME_GAP_SECONDS);
+    lid_last_tick = now;
+
     int closed = 0;
-    if (!lid_read(&closed)) {
-        return;                 /* no lid, or no readable state: nothing to do */
-    }
-    if (!lid_seen) {
-        /* The first look only records where the lid is, so a session that
-           starts already closed does not immediately suspend. */
-        lid_seen = 1;
-        lid_last_closed = closed;
+    int have_lid = lid_read(&closed);
+
+    if (have_lid) {
+        if (!lid_seen) {
+            /* The first look only records where the lid is, so a session that
+               starts already closed does not immediately suspend. */
+            lid_seen = 1;
+            lid_last_closed = closed;
+            return;
+        }
+        if (closed != lid_last_closed) {
+            /* The lid moved: it was opened or closed while the session ran. */
+            lid_last_closed = closed;
+            if (closed) {
+                lid_on_close(core);
+            } else {
+                lid_on_wake(core);
+            }
+            return;
+        }
+        /* The lid did not move, but the machine may still have been asleep and
+           woken — an idle suspend, the power button, the machine's own timer.
+           With the lid open the desk is back and is covered exactly as an
+           opened lid would cover it; with the lid shut there is nobody to show
+           anything to, so nothing is done. */
+        if (resumed && !closed) {
+            lid_on_wake(core);
+        }
         return;
     }
-    if (closed == lid_last_closed) {
-        return;                 /* no change; nothing happens on a quiet tick */
-    }
-    lid_last_closed = closed;
-    if (closed) {
-        lid_on_close(core);
-    } else {
-        lid_on_open(core);
+
+    /* No lid at all (a desktop), or a lid whose state will not read. The
+       wake-up handling is still wanted — a desktop sleeps on its idle timer
+       too, and it comes back to the same black screen the lid path was fixed
+       for. Nothing here depends on the lid, only on the clock. */
+    if (resumed) {
+        lid_on_wake(core);
     }
 }
 
