@@ -52,6 +52,7 @@
 #include <X11/extensions/Xrandr.h>
 
 #include "wm_core.h"
+#include "wm_frame.h"
 #include "wm_randr.h"
 
 /* The most CRTCs the desktop's mode is remembered for. A single-head machine
@@ -119,6 +120,49 @@ static void randr_current_size(WmCore *core, int *width, int *height) {
     }
     *width = DisplayWidth(core->display, core->screen);
     *height = DisplayHeight(core->display, core->screen);
+}
+
+/* The size of the mode a CRTC is driving RIGHT NOW — the resolution a client
+   asked for when it changed the display mode. It is read before the mode is put
+   back, because it is the one place a fullscreen client states how large it
+   wants to be; wm_frame_set_fullscreen_size() is what turns it into the size of
+   the container. Zero when there is no mode to read. */
+static void randr_current_mode_size(WmCore *core, int *width, int *height) {
+    *width = 0;
+    *height = 0;
+
+    XRRScreenResources *resources =
+        XRRGetScreenResources(core->display, core->root);
+    if (!resources) {
+        return;
+    }
+
+    for (int i = 0; i < resources->ncrtc; i++) {
+        XRRCrtcInfo *info = XRRGetCrtcInfo(core->display, resources,
+                                           resources->crtcs[i]);
+        if (!info) {
+            continue;
+        }
+
+        if (info->mode != None) {
+            for (int m = 0; m < resources->nmode; m++) {
+                if (resources->modes[m].id == info->mode) {
+                    if (resources->modes[m].width > 0 &&
+                        resources->modes[m].height > 0) {
+                        *width = (int)resources->modes[m].width;
+                        *height = (int)resources->modes[m].height;
+                    }
+                    break;
+                }
+            }
+        }
+        XRRFreeCrtcInfo(info);
+        if (*width > 0) {
+            break;
+        }
+    }
+
+    XRRFreeScreenResources(resources);
 }
 
 /* Forget the saved outputs. Called once, at shutdown. */
@@ -194,6 +238,25 @@ static void randr_restore(WmCore *core) {
     int changed = 0;
     int width = 0;
     int height = 0;
+
+    /* What resolution the client asked for, read BEFORE anything is put back.
+       A mode change is the one place a fullscreen game states how large it
+       wants to be — it publishes no size hint and makes its own window at
+       whatever size Wine decides, which is the size of the screen Wine saw.
+       That resolution becomes the size of the container (see
+       wm_frame_set_fullscreen_size), so the game is shown at the size it chose
+       and not stretched to the screen, which is what left it a small picture
+       in a field of black. */
+    {
+        int want_width = 0;
+        int want_height = 0;
+        randr_current_mode_size(core, &want_width, &want_height);
+        if (want_width > 1 && want_height > 1 &&
+            (want_width != saved_screen_width ||
+             want_height != saved_screen_height)) {
+            wm_frame_set_fullscreen_size(core, want_width, want_height);
+        }
+    }
 
     /* The screen is grown FIRST, and that ordering is not cosmetic: a CRTC may
        not be set to a mode that does not fit inside the screen, so a CRTC

@@ -206,6 +206,21 @@ typedef struct WmFrame {
        answer, and nothing adds WM_TITLE_HEIGHT by hand. */
     int fullscreen;
 
+    /* The resolution a fullscreen client ASKED for, taken from the display
+       mode it tried to change to (see wm_randr.c). It is the one place a Wine
+       game states how large it wants to be: a Direct3D game changes the
+       display mode to its own resolution, and that resolution — not the
+       screen, and not the screen-sized window Wine makes afterwards — is what
+       the container is sized to. Zero when the client asked for none, in
+       which case the container keeps the size it has.
+
+       wm_frame_sync() pins the container to this size and ignores the client's
+       own report while it is set, which is what stops Wine's screen-sized
+       outer window from stretching the container back out to the screen and
+       leaving the game in a small rectangle of black. */
+    int fullscreen_width;
+    int fullscreen_height;
+
     /* Where the frame was before it was maximised, so the same button puts it
        back. Only meaningful while maximized is set. */
     int restore_x, restore_y;
@@ -339,6 +354,13 @@ int  wm_frame_is_scaled(const WmFrame *frame);
    see wm_frame_set_fullscreen() in wm_frame.c. */
 void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on);
 int  wm_frame_is_fullscreen(const WmFrame *frame);
+
+/* Give a fullscreen window the resolution its client asked for by changing the
+   display mode. Called by wm_randr.c the moment a client changes the mode,
+   before the mode is put back: `width` and `height` are the resolution the
+   client wanted, which becomes the size of the container. A window that is not
+   fullscreen is left alone. */
+void wm_frame_set_fullscreen_size(WmCore *core, int width, int height);
 
 /* --- drawing -------------------------------------------------------------- */
 

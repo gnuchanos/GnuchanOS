@@ -810,14 +810,25 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
        so a game that resized itself is followed. Its chrome is never dropped. */
     if (frame->fullscreen) {
         int changed = 0;
-        if (attributes.width > 1 &&
-            attributes.width != frame->client_width) {
-            frame->client_width = attributes.width;
+
+        /* The SIZE comes from the resolution the client asked for when it
+           changed the display mode — see wm_frame_set_fullscreen_size(). Wine's
+           own outer window is the size of the SCREEN it saw, and taking that
+           would stretch the container back to the screen and leave the game in
+           a small rectangle of black, which is exactly what was reported. The
+           resolution the game actually asked for is the one it wants, so while
+           it is known the client's own report is not read at all. */
+        int want_width = frame->fullscreen_width > 1
+                             ? frame->fullscreen_width : attributes.width;
+        int want_height = frame->fullscreen_height > 1
+                              ? frame->fullscreen_height : attributes.height;
+
+        if (want_width > 1 && want_width != frame->client_width) {
+            frame->client_width = want_width;
             changed = 1;
         }
-        if (attributes.height > 1 &&
-            attributes.height != frame->client_height) {
-            frame->client_height = attributes.height;
+        if (want_height > 1 && want_height != frame->client_height) {
+            frame->client_height = want_height;
             changed = 1;
         }
         frame_clamp_size_to_workarea(core, frame);
@@ -1299,7 +1310,61 @@ void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on) {
     if (on) {
         wm_frame_raise(core, frame);
         wm_focus_set(core, frame->client);
+    } else {
+        /* The state is dropped, so the resolution the client asked for while
+           it held is forgotten with it: a window that leaves fullscreen is an
+           ordinary window again, sized by its own report like every other. */
+        frame->fullscreen_width = 0;
+        frame->fullscreen_height = 0;
     }
+}
+
+/* Give the fullscreen window the resolution its client asked for by changing
+ * the display mode.
+ *
+ * A Direct3D game cannot say how large it wants to be in any of the ordinary
+ * ways — it publishes no size hint and creates its own window at whatever size
+ * Wine decides, which is the size of the SCREEN Wine saw. The one place it does
+ * state its resolution is the display mode: it asks the server for the mode it
+ * draws at, and wm_randr.c catches that change and calls here with the
+ * resolution before putting the desktop's own mode back.
+ *
+ * That resolution becomes the size of the CONTAINER. The window is not the
+ * screen (diagram.md); the client asked for a resolution, so the container is
+ * that resolution, chrome kept, and the game is shown at the size it chose
+ * rather than stretched to the screen — which is what left it a small picture
+ * in a field of black. The newest fullscreen window is the one that just
+ * changed the mode, so it is the one given the size. */
+void wm_frame_set_fullscreen_size(WmCore *core, int width, int height) {
+    WmFrame *target = NULL;
+
+    if (width < 1 || height < 1) {
+        return;
+    }
+
+    for (int i = core->frame_count - 1; i >= 0; i--) {
+        if (core->frames[i].fullscreen && !core->frames[i].minimized) {
+            target = &core->frames[i];
+            break;
+        }
+    }
+    if (!target) {
+        return;
+    }
+
+    target->fullscreen_width = width;
+    target->fullscreen_height = height;
+    target->client_width = width;
+    target->client_height = height;
+    frame_clamp_size_to_workarea(core, target);
+    frame_clamp_to_workarea(core, target);
+    frame_apply(core, target);
+    frame_notify_configure(core, target);
+
+    fprintf(stderr,
+            "gnuchanwm: frame: fullscreen client asked for %dx%d; "
+            "container set to %dx%d\n",
+            width, height, target->client_width, target->client_height);
 }
 
 /* --- creating and destroying ---------------------------------------------- */
