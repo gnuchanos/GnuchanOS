@@ -212,6 +212,25 @@ static void manage_configure(WmCore *core, XConfigureRequestEvent *request) {
     WmFrame *frame = wm_frame_find(core, request->window);
 
     if (frame) {
+        /* A FULLSCREEN window's geometry is refused outright, and this is what
+           stops a game shaking its own title bar.
+
+           The frame redirects structure (see the SubstructureRedirectMask in
+           wm_frame_create), so a client's own XMoveWindow/XResizeWindow arrives
+           here as a ConfigureRequest instead of being applied by the server. A
+           Wine fullscreen game re-asserts its own geometry every drawn frame —
+           it moves itself to the screen corner and sizes itself to the screen,
+           believing it is an ordinary window on the root. Applying that would
+           put the client over the frame's title bar and border and stretch the
+           container to the screen; refusing it leaves the client where the
+           manager put it, so the chrome stays visible and nothing flickers.
+           The size a fullscreen window has is the resolution the game chose by
+           changing the display mode (wm_frame_set_fullscreen_size), and it is
+           not changed here. */
+        if (wm_frame_is_fullscreen(frame)) {
+            return;
+        }
+
         /* A managed window does not get to place itself: its position on the
            screen belongs to the frame, and a client that moved itself would
            slide out from under its own title bar. Only the size is taken. */

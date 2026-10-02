@@ -1646,7 +1646,26 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
        should react to the pointer has to ask for it itself. */
     XSelectInput(core->display, frame->frame,
                  ExposureMask | ButtonPressMask | ButtonReleaseMask |
-                 PointerMotionMask | EnterWindowMask);
+                 PointerMotionMask | EnterWindowMask |
+                 SubstructureRedirectMask);
+
+    /* SubstructureRedirectMask on the FRAME, and this is what stops a game
+       from shaking its own title bar.
+     *
+     * The client is a CHILD of the frame. With the redirect selected on the
+     * frame, the client's own XMoveWindow/XResizeWindow calls are NOT applied
+     * by the server — they arrive here as ConfigureRequest events instead, and
+     * wm_manage.c answers them. A Wine fullscreen game re-places itself at the
+     * screen corner and re-sizes itself to the screen on every drawn frame;
+     * without this redirect those moves take effect, the manager moves the
+     * client back, and the two trade the window back and forth sixty times a
+     * second — the picture slides up and down and the title bar flickers,
+     * which is the fault this removes.
+     *
+     * With it, the client's moves never happen at all: the client is put at
+     * (border, title) once and stays exactly there, so the chrome is never
+     * covered and nothing flickers. The redirect costs nothing for a program
+     * that never moves itself, which is almost all of them. */
 
     /* The client is watched for its name, its size, and the pointer arriving
        on it. Without EnterWindowMask here the pointer would focus nothing when
