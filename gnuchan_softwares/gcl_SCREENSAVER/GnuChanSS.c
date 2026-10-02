@@ -143,16 +143,40 @@ static int run_show(Display *display, int screen, const SsConfig *config,
     Window root = RootWindow(display, screen);
     unsigned long black = BlackPixel(display, screen);
 
+    /* Take the keyboard and the pointer on the ROOT window, before anything is
+       drawn, and not on the saver's own window as it used to be. Two faults
+       come from doing it here and both of them happened:
+
+         - The root is always viewable, so the grab cannot fail the way a
+           just-mapped window's can (GrabNotViewable). The saver is then
+           guaranteed to receive every key, which is what makes any key end the
+           show.
+         - It is a single-instance lock. A second saver — the saver key pressed
+           twice — cannot take the keyboard, finds that out, and leaves without
+           covering the screen. Before this, the second saver drew itself on top
+           of the first but could not take the keyboard, so the key that should
+           have ended the show went to the first saver behind it and the screen
+           was left covered with nothing able to end it. */
+    if (XGrabKeyboard(display, root, False, GrabModeAsync, GrabModeAsync,
+                      CurrentTime) != GrabSuccess) {
+        return 0;   /* another saver is already up */
+    }
+    if (XGrabPointer(display, root, False,
+                     ButtonPressMask | PointerMotionMask, GrabModeAsync,
+                     GrabModeAsync, None, None,
+                     CurrentTime) != GrabSuccess) {
+        XUngrabKeyboard(display, CurrentTime);
+        return 0;   /* the pointer is held elsewhere: show nothing */
+    }
+
     /* An override-redirect window is not decorated or placed by any window
-       manager: the saver covers the whole screen with no frame, and a key is
-       delivered to it rather than to the window underneath, which is what lets
-       any key end the show. */
+       manager: the saver covers the whole screen with no frame. The keyboard
+       and the pointer arrive through the grab on the root, taken above. */
     XSetWindowAttributes attributes;
     memset(&attributes, 0, sizeof(attributes));
     attributes.override_redirect = True;
     attributes.background_pixel = black;
-    attributes.event_mask = ExposureMask | KeyPressMask | ButtonPressMask |
-                            PointerMotionMask | StructureNotifyMask;
+    attributes.event_mask = ExposureMask | StructureNotifyMask;
 
     Window window = XCreateWindow(
         display, root, 0, 0, (unsigned int)width, (unsigned int)height, 0,
@@ -160,12 +184,6 @@ static int run_show(Display *display, int screen, const SsConfig *config,
         CWOverrideRedirect | CWBackPixel | CWEventMask, &attributes);
 
     XMapRaised(display, window);
-    /* Grab the keyboard so a key press cannot go to a program underneath: a
-       saver that let a password be typed into a hidden window would be worse
-       than no saver. A failed grab (another client holds it) is not fatal —
-       the saver still shows and a click still ends it. */
-    XGrabKeyboard(display, window, True, GrabModeAsync, GrabModeAsync,
-                  CurrentTime);
 
     GC gc = XCreateGC(display, window, 0, NULL);
 
@@ -245,6 +263,7 @@ static int run_show(Display *display, int screen, const SsConfig *config,
     }
 
     XUngrabKeyboard(display, CurrentTime);
+    XUngrabPointer(display, CurrentTime);
     ss_effect_free(&effect);
     XFreePixmap(display, buffer);
     XFreeGC(display, gc);

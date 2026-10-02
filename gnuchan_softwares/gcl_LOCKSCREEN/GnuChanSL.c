@@ -379,20 +379,49 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Take the keyboard and the pointer on the ROOT window, before the lock
+       window is even mapped, and only then raise the lock over everything.
+       Held this way the grab cannot fail the way a just-mapped window's can
+       (GrabNotViewable), and — just as important — it is a single-instance
+       lock: the key that locks the screen pressed twice leaves the first
+       lock screen holding the keyboard, so the second one cannot take it and
+       leaves without covering the screen. Before this the second lock screen
+       would come up over the first but could not hold the keyboard, so every
+       keystroke went past it to the window manager underneath: the password
+       field did nothing and the manager's own hotkeys fired instead. If the
+       grab does not succeed, a lock screen is already up and this one backs
+       out rather than covering the working one. */
+    if (XGrabKeyboard(display, root, False, GrabModeAsync, GrabModeAsync,
+                      CurrentTime) != GrabSuccess) {
+        fprintf(stderr, "gnuchansl: the screen is already locked\n");
+        XCloseDisplay(display);
+        return 0;
+    }
+    if (XGrabPointer(display, root, False,
+                     ButtonPressMask | PointerMotionMask, GrabModeAsync,
+                     GrabModeAsync, None, None,
+                     CurrentTime) != GrabSuccess) {
+        XUngrabKeyboard(display, CurrentTime);
+        XCloseDisplay(display);
+        return 0;
+    }
+
     /* The window: override-redirect so no window manager decorates or places
-       it, full screen, and black until the first draw. */
+       it, full screen, and black until the first draw. The keyboard and the
+       pointer arrive through the grab on the root, taken above, so the window
+       needs only to be shown. */
     XSetWindowAttributes attributes;
     memset(&attributes, 0, sizeof(attributes));
     attributes.override_redirect = True;
     attributes.background_pixel = BlackPixel(display, screen_number);
-    attributes.event_mask = ExposureMask | KeyPressMask | ButtonPressMask |
-                            StructureNotifyMask;
+    attributes.event_mask = ExposureMask | StructureNotifyMask;
 
     state.window = XCreateWindow(
         display, root, 0, 0, (unsigned int)width, (unsigned int)height, 0,
         CopyFromParent, InputOutput, CopyFromParent,
         CWOverrideRedirect | CWBackPixel | CWEventMask, &attributes);
     XMapRaised(display, state.window);
+    XRaiseWindow(display, state.window);
 
     state.gc = XCreateGC(display, state.window, 0, NULL);
 
@@ -415,15 +444,6 @@ int main(int argc, char **argv) {
 
     /* The text is drawn onto the same off-screen buffer the shapes go to. */
     state.draw = XftDrawCreate(display, state.buffer, visual, colormap);
-
-    /* Grab the keyboard and the pointer for as long as the screen is locked: a
-       lock screen that did not hold the keyboard would let what is typed go to
-       the window under it. A failed grab is not fatal, but the screen is
-       unmapped and remapped once to make sure it is on top. */
-    XGrabKeyboard(display, state.window, True, GrabModeAsync, GrabModeAsync,
-                  CurrentTime);
-    XGrabPointer(display, state.window, True, ButtonPressMask,
-                 GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
 
     struct sigaction action;
     memset(&action, 0, sizeof(action));
@@ -466,6 +486,15 @@ int main(int argc, char **argv) {
             KeySym keysym = NoSymbol;
             int count = XLookupString(&event.xkey, text, sizeof(text),
                                       &keysym, NULL);
+
+            /* A key pressed while Alt, Ctrl or Super is held is a hotkey
+               combination, not a character of a password, so it is dropped
+               whole: Enter with Alt down must not submit the field, and no
+               combination must leave a stray character behind. Shift is left
+               alone, because a capital letter is a real part of a password. */
+            if (event.xkey.state & (ControlMask | Mod1Mask | Mod4Mask)) {
+                continue;
+            }
 
             if (keysym == XK_Return || keysym == XK_KP_Enter) {
                 if (state.password_length > 0 &&
