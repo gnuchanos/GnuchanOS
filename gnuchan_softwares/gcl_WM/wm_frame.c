@@ -702,6 +702,7 @@ static void frame_clamp_to_workarea(WmCore *core, WmFrame *frame) {
 static void frame_size_limits(WmCore *core, const WmFrame *frame,
                               int *max_width, int *max_height);
 static void frame_clamp_size_to_screen(WmCore *core, WmFrame *frame);
+static void frame_fullscreen_fit(WmCore *core, WmFrame *frame);
 
 void wm_frame_resize(WmCore *core, WmFrame *frame, int width, int height) {
     /* A scaled window's frame is the user's to size, not the client's. The
@@ -790,17 +791,42 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
         return;
     }
 
-    /* A fullscreen-like window is an ORDINARY container here, and that is the
-       correction. It used to be pinned to the screen's corner at the screen's
-       size on every sync — the window stretched to fill the display — which is
-       exactly what this desktop does not do: the window is a container on the
-       desktop, and no client's idea of the screen decides the shape of the
-       desktop or dissolves its own frame. So its geometry is read like any
-       other window's: it keeps its title bar and its border, and it is placed
-       and sized by the same rules as every other window. A fullscreen request
-       changes the STATE the window is in — see wm_frame_set_fullscreen, which
-       now writes the property and nothing else — and nothing about where it
-       sits or how large it is. */
+    /* A fullscreen-like window fills the screen WITH ITS CHROME KEPT, and the
+       client's own idea of where it is and how big it should be is NOT read.
+
+       This is the middle ground, and it is what makes a Wine game usable here:
+
+         - The chrome is NOT dropped. The title bar and the border stay on, so
+           the window is still a container the user can close and move.
+
+         - The window IS the screen's size (less the chrome), so the client gets
+           the whole screen it asked for and does not fall back to changing the
+           DISPLAY MODE (wm_randr.c is what catches that fallback).
+
+         - The client's own geometry is REFUSED here, and that is the half that
+           stops the fight. A game that got the screen but did not get to PICK
+           the screen places itself every frame; the manager puts it back; and
+           the two wrestle up and down the screen for ever, sliding the frame
+           off the bottom so the title bar and its close button go with it.
+           Pinning the window to one place means there is nothing to fight. */
+    if (frame->fullscreen) {
+        WmFrame fitted;
+        memset(&fitted, 0, sizeof(fitted));
+        fitted.border = frame->border;
+        frame_fullscreen_fit(core, &fitted);
+
+        if (frame->x != fitted.x || frame->y != fitted.y ||
+            frame->client_width != fitted.client_width ||
+            frame->client_height != fitted.client_height) {
+            frame->x = fitted.x;
+            frame->y = fitted.y;
+            frame->client_width = fitted.client_width;
+            frame->client_height = fitted.client_height;
+            frame_apply(core, frame);
+        }
+        return;
+    }
+
     int moved = attributes.x != frame_border_of(frame) ||
                 attributes.y != frame_title_of(frame);
     int resized = attributes.width != frame->client_width ||
@@ -918,6 +944,42 @@ static void frame_clamp_size_to_screen(WmCore *core, WmFrame *frame) {
     }
     if (frame->client_height > max_height) {
         frame->client_height = max_height;
+    }
+}
+
+/* Place and size a fullscreen window: the whole WORKAREA — the screen less the
+   manager's own bar — with the chrome KEPT.
+ *
+ * The workarea and not the whole screen, and that is the one detail that keeps
+ * a fullscreen game usable on this desktop. The manager draws a bar of its own
+ * across the top of the screen (see wm_desktop.c); a window placed at y=0 would
+ * put its title bar UNDER that bar, where the buttons are drawn but cannot be
+ * clicked — the bar takes the click. Fitting the window to the workarea drops
+ * its whole frame — title bar included — just below the manager's bar, so the
+ * close button is both visible and reachable. The client still gets all the
+ * room that is left, which is what "fullscreen" means on a desktop with a bar.
+ *
+ * The chrome is kept, so this is a container the size of the usable screen, not
+ * a borderless surface: see frame_border_of() for why a game with no frame is
+ * the trap this whole file exists to avoid. */
+static void frame_fullscreen_fit(WmCore *core, WmFrame *frame) {
+    int area_x = 0;
+    int area_y = 0;
+    int area_width = 0;
+    int area_height = 0;
+
+    frame_screen_size(core, &area_x, &area_y, &area_width, &area_height);
+
+    frame->x = area_x;
+    frame->y = area_y;
+    frame->client_width = area_width - 2 * frame_border_of(frame);
+    frame->client_height = area_height - frame_title_of(frame)
+                           - frame_border_of(frame);
+    if (frame->client_width < 1) {
+        frame->client_width = 1;
+    }
+    if (frame->client_height < 1) {
+        frame->client_height = 1;
     }
 }
 
@@ -1222,7 +1284,20 @@ void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on) {
        guard in wm_randr.c, which is the half that stops a client resizing the
        SCREEN itself. */
     frame->fullscreen = on;
+
+    /* Fitted at once, the same way every other geometry path applies before
+       the client is told anything. On the way in the window fills the WORKAREA
+       — the screen less the manager's bar — with its chrome kept, so its title
+       bar sits just below the desktop's own bar and the close button is
+       reachable; see frame_fullscreen_fit(). wm_frame_sync() enforces the same
+       shape on every later ConfigureNotify, so the client cannot drift it. */
+    if (on) {
+        frame_fullscreen_fit(core, frame);
+    }
+
     frame_publish_fullscreen_state(core, frame, on);
+    frame_apply(core, frame);
+    frame_notify_configure(core, frame);
 
     if (on) {
         wm_frame_raise(core, frame);
