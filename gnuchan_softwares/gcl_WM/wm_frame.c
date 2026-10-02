@@ -809,33 +809,41 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
        anyway. Only the SIZE is taken from the client — clamped to the desktop —
        so a game that resized itself is followed. Its chrome is never dropped. */
     if (frame->fullscreen) {
-        int changed = 0;
+        /* The size the frame is about to be given. It comes from the resolution
+           the client asked for when it changed the display mode (see
+           wm_frame_set_fullscreen_size); when none was seen it is the client's
+           own reported size. Wine's outer window is the size of the SCREEN it
+           saw, so the asked-for resolution — not that — is what the container
+           follows; taking the screen-sized report would leave the game a small
+           picture in a field of black.
 
-        /* The SIZE comes from the resolution the client asked for when it
-           changed the display mode — see wm_frame_set_fullscreen_size(). Wine's
-           own outer window is the size of the SCREEN it saw, and taking that
-           would stretch the container back to the screen and leave the game in
-           a small rectangle of black, which is exactly what was reported. The
-           resolution the game actually asked for is the one it wants, so while
-           it is known the client's own report is not read at all. */
-        int want_width = frame->fullscreen_width > 1
-                             ? frame->fullscreen_width : attributes.width;
-        int want_height = frame->fullscreen_height > 1
-                              ? frame->fullscreen_height : attributes.height;
+           The comparison is OLD against NEW after the clamps, and not the
+           wanted size against the stored one. The wanted size may be larger
+           than the workarea allows, so it is clamped; a test against the
+           un-clamped wanted size would then be true on every single sync — the
+           clamp lands on one value, the wanted size stays another — and the
+           frame would be resized on every event the client sends, which is a
+           busy loop that pegs a core for as long as the game runs. Comparing
+           the frame's size before and after the clamp has no such gap. */
+        int old_width = frame->client_width;
+        int old_height = frame->client_height;
 
-        if (want_width > 1 && want_width != frame->client_width) {
-            frame->client_width = want_width;
-            changed = 1;
+        if (frame->fullscreen_width > 1) {
+            frame->client_width = frame->fullscreen_width;
         }
-        if (want_height > 1 && want_height != frame->client_height) {
-            frame->client_height = want_height;
-            changed = 1;
+        if (frame->fullscreen_height > 1) {
+            frame->client_height = frame->fullscreen_height;
         }
         frame_clamp_size_to_workarea(core, frame);
         frame_clamp_to_workarea(core, frame);
 
-        if (changed || attributes.x != frame_border_of(frame) ||
-            attributes.y != frame_title_of(frame)) {
+        /* Applied only when the clamped size actually differs from what the
+           frame already has. A fullscreen game re-places itself at the screen
+           corner on every frame — Wine and SDL both do — and the frame's own
+           place is the manager's, so the client's move is not read here at all:
+           exactly as it is not read for a scaled window, two branches up. */
+        if (frame->client_width != old_width ||
+            frame->client_height != old_height) {
             frame_apply(core, frame);
         }
         return;
@@ -864,35 +872,54 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
         frame_clamp_size_to_screen(core, frame);
     }
 
-    /* A move is not undone, it is TAKEN, and it is taken as a SCREEN place.
-       The server reports the client's new place relative to its parent, which
-       is the frame — but the program has no idea it is inside a frame. It
-       believes it is a window on the root, so the coordinates it asked for are
-       the coordinates it wanted ON THE SCREEN. So the frame is put where the
-       client would then sit where it asked: the client's own place less the
-       frame's chrome, which is exactly the (border, title) offset the client
-       is drawn at inside the frame.
-           frame_screen = client_asked - (border, title)
-           client_screen = frame_screen + (border, title) = client_asked
-       Reading it as a delta from where the client already was — the obvious
-       first guess — does not survive a client that asks twice: every move is
-       measured from the place the previous one was taken to, so the window
-       walks across the screen by the sum of its own coordinates. raylib's
-       SetWindowPosition is one XMoveWindow per call, and the pong demo calls
-       it once per court, which is what made the two frames land on top of one
-       another instead of at 60 and 880. */
+    /* Where the frame sits once the client's move, if any, is honoured.
+     *
+     * A move is TAKEN, not undone, and it is taken as a SCREEN place. The
+     * server reports the client's new place relative to its parent, which is
+     * the frame — but the program has no idea it is inside a frame. It
+     * believes it is a window on the root, so the coordinates it asked for are
+     * the coordinates it wanted ON THE SCREEN, and the frame is put where the
+     * client would then sit where it asked: the client's own place less the
+     * frame's chrome.
+     *
+     * Reading it as a delta from where the client already was would not
+     * survive a client that asks twice — every move measured from the place
+     * the previous one was taken to, so the window walks across the screen by
+     * the sum of its own coordinates. It is read as an absolute place, which
+     * is what raylib's SetWindowPosition relies on.
+     *
+     * THE CLAMP RUNS BEFORE THE COMPARISON, and that ordering is the whole of
+     * this fix. A game that re-places itself at the screen corner every drawn
+     * frame — SDL and Wine both do — asks for a frame place of (0 - border,
+     * 0 - title). The workarea clamp then pulls that back to (0, 0), which is
+     * where the frame already was. Comparing the UN-clamped wish (-border)
+     * against the frame's stored place (0) is true on every single frame, so
+     * the frame was rebuilt — the title bar redrawn with a fresh pixmap and a
+     * fresh Xft pass — sixty times a second for as long as the game ran: a
+     * window manager pegging a core, and the X server behind it, for nothing.
+     * Clamping first and comparing what the clamp produced leaves the honest
+     * answer, which is "nothing moved", and nothing is redrawn. */
+    int old_x = frame->x;
+    int old_y = frame->y;
+
     if (moved) {
         frame->x = attributes.x - frame_border_of(frame);
         frame->y = attributes.y - frame_title_of(frame);
     }
-
-    /* A client that resized itself goes through the same place-only clamp a
-       requested resize does: its size is its own, its title bar is kept
-       reachable. */
     frame_clamp_to_workarea(core, frame);
-    /* frame_apply moves the client back to (frame->border, WM_TITLE_HEIGHT)
-       as well as resizing it, so the placement and the resize are one call. */
-    frame_apply(core, frame);
+
+    /* The frame is put back together — the client moved, the title bar redrawn
+       — only when its size changed or its PLACE really moved. When the place
+       is the same, the client is put back in its corner and NOTHING is
+       redrawn: the cheap move of one window, no pixmap, no text. */
+    if (resized || frame->x != old_x || frame->y != old_y) {
+        frame_apply(core, frame);
+        return;
+    }
+
+    XMoveWindow(core->display, frame->client,
+                frame_border_of(frame), frame_title_of(frame));
+    XFlush(core->display);
 }
 
 /* The area a maximised window gets: the screen less the bar. Read from the
@@ -1198,6 +1225,32 @@ int wm_frame_is_fullscreen(const WmFrame *frame) {
  * ignored and asks again for ever. The list is a single atom — the fullscreen
  * member — and an empty list when the state is dropped, which reads exactly as
  * "the states I am in, of which there are none". */
+/* ============================================================================
+ * !! PERFORMANS UYARISI — BU FONKSIYON BIR CPU DONGUSU BASLATABILIR !!
+ *
+ * Bu fonksiyon client'in _NET_WM_STATE property'sini YAZAR. Ve wm_frame_create()
+ * bu client'a PropertyChangeMask secmis durumdadir (asagida, "The client is
+ * watched for its name..." yanindaki XSelectInput). Yani burada yazilan her
+ * property, X sunucusundan YENI BIR PropertyNotify olarak geri doner ve
+ * manage_property() tekrar cagrilir.
+ *
+ * EGER manage_property() bu bildirimi KOSULSUZ olarak
+ * wm_frame_set_fullscreen() -> frame_publish_fullscreen_state() seklinde geri
+ * besleyecek olursa su dongu olusur:
+ *
+ *      YAZ -> PropertyNotify -> TEKRAR YAZ -> TEKRAR BILDIR -> ...
+ *
+ * Bu dongu saniyede binlerce kez doner, HICBIR log satiri uretmez (bu yuzden
+ * teshisi zordur) ve oyun/fullscreen bir pencere acikken hem GnuChanWM'i hem
+ * Xorg'u %80-100 CPU'ya cikarip oyunu dondurur. Teshis edilen belirti: masaustu
+ * BOSTA %0 CPU, ama fullscreen bir pencere acilinca WM ve Xorg CPU'su patlar.
+ *
+ * BU YUZDEN: bu fonksiyonu cagiran HER yol, yazmadan once durumun GERCEKTEN
+ * degistigini dogrulamalidir:
+ *   - wm_manage.c: manage_property -> wanted != wm_frame_is_fullscreen(frame)
+ *   - wm_frame.c: wm_frame_set_fullscreen -> zaten ayni durumdaysa erken cikar
+ * Bu kontrol kaldirilirsa dongu geri gelir. Kaldirma.
+ * ==========================================================================*/
 static void frame_publish_fullscreen_state(WmCore *core, WmFrame *frame,
                                            int on) {
     if (frame->client == None || core->net_wm_state == None) {
@@ -1270,6 +1323,12 @@ void wm_frame_set_fullscreen(WmCore *core, WmFrame *frame, int on) {
            told it is not has nothing to be told, and publishing an empty list
            on every unrelated call would fight a client that is setting the
            property itself. */
+        /* !! DONGU RISKI: burada da property YAZILIYOR. Ayni deger tekrar tekrar
+           yazilirsa manage_property -> set_fullscreen -> burada -> yaz ... sonsuz
+           dongusu olusur (bkz. frame_publish_fullscreen_state uyarisi). Bu dala
+           yalnizca cagiran taraf durumun GERCEKTEN degistigini dogruladiginda
+           gelinmelidir; mevcut cagiranlar bunu garanti eder
+           (wm_manage.c: wanted != wm_frame_is_fullscreen). */
         if (on) {
             frame_publish_fullscreen_state(core, frame, 1);
         }
@@ -1349,6 +1408,16 @@ void wm_frame_set_fullscreen_size(WmCore *core, int width, int height) {
         }
     }
     if (!target) {
+        return;
+    }
+
+    /* Already this size: nothing to do. Without this the mode change a
+       fullscreen game asks for is answered by a window resize on EVERY round,
+       and a game that keeps re-requesting the mode (Wine and SDL both do) is
+       then resized over and over while it starts — a fight that reads as the
+       game hanging before it has drawn a frame. */
+    if (target->fullscreen_width == width &&
+        target->fullscreen_height == height) {
         return;
     }
 
@@ -1525,7 +1594,17 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
 
     /* The client is watched for its name, its size, and the pointer arriving
        on it. Without EnterWindowMask here the pointer would focus nothing when
-       it moved straight onto the program's own window. */
+       it moved straight onto the program's own window.
+
+       !! PERFORMANS UYARISI — PropertyChangeMask BIR DONGU KAYNAGIDIR !!
+       Bu maskeyi secmek, WM'nin BU client'in property'lerine YAPTIGI her
+       yazmanin da bir PropertyNotify olarak geri gelmesi demektir. WM
+       _NET_WM_STATE'i hem OKUR (manage_property) hem YAZAR
+       (frame_publish_fullscreen_state). Eger yazma "durum gercekten degisti mi"
+       kontrolu olmadan yapilirsa sonsuz YAZ -> BILDIR -> YAZ dongusu olusur ve
+       fullscreen bir pencere acikken CPU somurulur (bkz. yukaridaki
+       frame_publish_fullscreen_state uyarisi). Maskeyi buradan KALDIRMA —
+       _NET_WM_STATE degisimlerini kacirirsin; bunun yerine yazma yolunu koru. */
     XSelectInput(core->display, client,
                  PropertyChangeMask | StructureNotifyMask | EnterWindowMask);
 
@@ -1766,10 +1845,66 @@ static int frame_is_double_click(WmFrame *frame, XButtonEvent *press) {
  * ones — reports the client, because that is the window the grab is on. Both
  * are the same window from the user's side, so both are resolved here and
  * nothing below has to know which grab answered. */
+/* The managed client that owns a window, when the window is that client or one
+ * of its descendants.
+ *
+ * A press that lands on a client's OWN CHILD WINDOW — every Wine window has
+ * them, and so does every toolkit with a real widget tree — is reported on
+ * that child, not on the client the manager holds in its frame table. A lookup
+ * by the event's window alone therefore finds no frame, and the press is then
+ * treated as one that belongs to nobody: the synchronous passive grab it
+ * activated (see wm_frame_create: XGrabButton ... GrabModeSync) is never
+ * answered with XAllowEvents, so the server keeps the pointer frozen. From the
+ * user's side that is the mouse DISAPPEARING the moment it is clicked inside
+ * such a window — which is exactly what happens in winecfg.
+ *
+ * Walking up from the event's window to the first window the table knows turns
+ * that press back into the client's. The walk is bounded and reads the tree
+ * with XQueryTree, so it costs one round trip per click and never loops.
+ *
+ * None is returned when the window is not under any managed client — the bar,
+ * the menu, the root and every override-redirect window take that path, and
+ * the callers treat None as "not ours". */
+static Window frame_client_of(WmCore *core, Window window) {
+    Window walk = window;
+
+    for (int depth = 0; depth < 64 && walk != None && walk != core->root;
+         depth++) {
+        if (wm_frame_find(core, walk)) {
+            return walk;
+        }
+
+        Window root_return = None;
+        Window parent_return = None;
+        Window *children = NULL;
+        unsigned int count = 0;
+        if (!XQueryTree(core->display, walk, &root_return, &parent_return,
+                        &children, &count)) {
+            break;
+        }
+        if (children) {
+            XFree(children);
+        }
+        if (parent_return == None || parent_return == walk) {
+            break;
+        }
+        walk = parent_return;
+    }
+    return None;
+}
+
 static WmFrame *frame_for_event(WmCore *core, Window window) {
     WmFrame *frame = wm_frame_find_by_frame(core, window);
     if (!frame) {
         frame = wm_frame_find(core, window);
+    }
+    if (!frame) {
+        /* A press or motion on a client's own child window names the child,
+           not the client — see frame_client_of(). */
+        Window client = frame_client_of(core, window);
+        if (client != None) {
+            frame = wm_frame_find(core, client);
+        }
     }
     return frame;
 }
@@ -1946,7 +2081,14 @@ static void frame_end_resize(WmCore *core, WmFrame *frame) {
  * a no-op at best and is what makes the difference between answering a grab
  * and guessing at one. */
 static void frame_allow_sync_grab(WmCore *core, XButtonEvent *press) {
-    if (wm_frame_find(core, press->window)) {
+    /* The grab may have been taken on a client the press reached through one
+       of that client's own CHILD windows, in which case the event names the
+       child and not the client. Telling those apart from a press that belongs
+       to nobody is the whole of this test: a press that is under SOME managed
+       client activated that client's grab and has to be answered, or the
+       pointer stays frozen (see frame_client_of). */
+    if (wm_frame_find(core, press->window) ||
+        frame_client_of(core, press->window) != None) {
         XAllowEvents(core->display, AsyncPointer, press->time);
     }
 }
@@ -2055,8 +2197,22 @@ static void frame_event(WmCore *core, XEvent *event) {
            was aimed at the program, so it is not answered here: the window is
            focused and raised, and the press is then replayed. Replaying is both
            what releases the synchronous grab and what hands the event on, so a
-           click meant for the program still reaches it. */
-        WmFrame *clicked = wm_frame_find(core, event->xbutton.window);
+           click meant for the program still reaches it.
+
+           The window named is resolved through the client's CHILD windows too
+           (frame_client_of): a click inside a Wine window lands on one of the
+           window's own child windows, and a lookup that only matched the client
+           would find nothing — dropping the click, and leaving the synchronous
+           grab unanswered so the pointer froze (the "mouse disappears in
+           winecfg" fault). */
+        Window client_window = event->xbutton.window;
+        if (!wm_frame_find(core, client_window)) {
+            Window owner = frame_client_of(core, client_window);
+            if (owner != None) {
+                client_window = owner;
+            }
+        }
+        WmFrame *clicked = wm_frame_find(core, client_window);
         if (clicked) {
             wm_focus_set(core, clicked->client);
             wm_frame_raise(core, clicked);

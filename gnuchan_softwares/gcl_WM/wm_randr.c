@@ -239,14 +239,25 @@ static void randr_restore(WmCore *core) {
     int width = 0;
     int height = 0;
 
-    /* What resolution the client asked for, read BEFORE anything is put back.
-       A mode change is the one place a fullscreen game states how large it
-       wants to be — it publishes no size hint and makes its own window at
-       whatever size Wine decides, which is the size of the screen Wine saw.
-       That resolution becomes the size of the container (see
-       wm_frame_set_fullscreen_size), so the game is shown at the size it chose
-       and not stretched to the screen, which is what left it a small picture
-       in a field of black. */
+    /* !! ONEMLI — BU CAGRILARIN VARLIGI BIR OZELLIKTIR; KALDIRMA. !!
+     *
+     * BIR DEFA KALDIRILDI VE SU HATAYA YOL ACTI: "wine ile bir oyun acinca
+     * pencere max boyuta geliyor". Sebep: Wine'in olusturdugu oyun penceresi
+     * EKRAN boyutundadir, cunku Wine fullscreen'de pencereyi ekran kadar yapar.
+     * Asagidaki cagri, oyunun degistirdigi o anki MOD cozunurlugunu okuyup
+     * kabi (container) o cozunurluge ayarlar; boylece oyun ekran boyutunda bir
+     * kutuya DEGIL, kendi sectigi cozunurluge oturur. Cagri kaldirilinca kap,
+     * client'in bildirdigi ekran boyutuna uyar ve pencere "max size" olur —
+     * kullanicinin bildirdigi hatanin tam kendisi.
+     *
+     * BU CAGRININ _NET_WM_STATE DONGUSUYLE HICBIR ILGISI YOKTUR. O dongunun
+     * gercek sebebi wm_frame.c / wm_manage.c icindeki property yazma dongusudur
+     * ve ayrica duzeltilmistir (bkz. wm_manage.c dosya basi uyarisi). Cozunurluk
+     * pinlemeyi onunla karistirip kaldirmak yanlisti.
+     *
+     * Donguye karsi koruma zaten wm_frame_set_fullscreen_size() icindedir: ayni
+     * boyut ikinci kez istenirse o fonksiyon erken cikar, yani bu cagri bir oyun
+     * modu tekrar tekrar istediginde sonsuz resize uretmez. */
     {
         int want_width = 0;
         int want_height = 0;

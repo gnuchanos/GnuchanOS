@@ -9,6 +9,25 @@
  * Everything after that is bookkeeping: a client that resized, renamed itself
  * or went away has to be reflected in the frame it lives in, or the bar and
  * the window under it stop agreeing.
+ *
+ * ============================================================================
+ * !! PERFORMANS UYARISI — BU DOSYADA BIR CPU DONGUSU TUZAGI VAR !!
+ *
+ * _NET_WM_STATE bir property'dir ve iki yonlu bir tuzak tasir. WM onu burada
+ * OKUR (manage_property) ve wm_frame_set_fullscreen() uzerinden AYNI client'a
+ * geri YAZAR (bkz. wm_frame.c: frame_publish_fullscreen_state). Client'a
+ * PropertyChangeMask secili oldugu icin (bkz. wm_frame_create), WM'nin KENDI
+ * yazmasi yeni bir PropertyNotify uretir ve manage_property() yeniden cagrilir.
+ *
+ * manage_property() icindeki "wanted != wm_frame_is_fullscreen(frame)" kontrolu
+ * KALDIRILIRSA su sonsuz dongu olusur:
+ *
+ *      oku -> set_fullscreen -> YAZ -> PropertyNotify -> oku -> YAZ -> ...
+ *
+ * Bu dongu log'suz doner ve oyun/fullscreen bir pencere acikken GnuChanWM ile
+ * Xorg'u %80-100 CPU'ya cikarir; masaustu bostayken %0 gorunur (teshis edilen
+ * belirti tam buydu). Kontrolu kaldirma.
+ * ============================================================================
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -300,7 +319,28 @@ static void manage_property(WmCore *core, XPropertyEvent *event) {
                 XFree(data);
             }
         }
-        wm_frame_set_fullscreen(core, frame, wanted);
+
+        /* ONLY WHEN IT DIFFERS from the state the frame already holds.
+         *
+         * This test is the whole of the fix for a busy loop that pegged a core
+         * and the X server for as long as any window was fullscreen — the
+         * "the game does not flow any more" failure. The manager ANSWERS a
+         * fullscreen request by writing this same _NET_WM_STATE property back
+         * onto the client (see frame_publish_fullscreen_state), which is what
+         * a toolkit actually waits for. Its own write is a PropertyNotify like
+         * any other, though, and this window has PropertyChangeMask selected
+         * (wm_frame_create), so the property change arrives right back here.
+         * The old code then called wm_frame_set_fullscreen() again, which
+         * wrote the property again, which notified again — a value written,
+         * re-read, rewritten, with nothing in between to break the cycle. It
+         * ran at the speed of the X server and never printed a line, which is
+         * why it looked like a mystery. When the property already says what
+         * the frame already is, there is nothing to change and nothing to
+         * write, and the cycle stops after the single answer the client was
+         * waiting for. */
+        if (wanted != wm_frame_is_fullscreen(frame)) {
+            wm_frame_set_fullscreen(core, frame, wanted);
+        }
     }
 }
 
