@@ -61,11 +61,12 @@
 # loader is already where it is, and this only changes what it draws. The theme
 # is visible from the next boot, which the script says in its last line.
 #
-# The wallpaper is 1920x1080 and GRUB crops it to whatever mode the screen is,
-# so it fills any resolution rather than being stretched. The mode itself is
-# asked for with the panel's own first, then 1920x1080, then "auto": a mode the
-# panel cannot show whole is a mode drawn past the edges of the screen, and the
-# bottom of the layout and the edges of the wallpaper are what goes missing.
+# The wallpaper is 1920x1080 and theme.txt STRETCHES it to whatever mode the
+# screen is, so the whole picture is always on screen rather than being cut
+# down to the panel's own shape. The mode itself is asked for with the panel's
+# own first, then 1920x1080, then "auto": a mode the panel cannot show whole is
+# a mode drawn past the edges of the screen, and the bottom of the layout and
+# the edges of the wallpaper are what goes missing.
 #
 # Undo
 # ----
@@ -1180,12 +1181,12 @@ def write_theme_images(log: Log, directory: Path, background: Path) -> None:
     """Write every image the theme is made of into ``directory``.
 
     The wallpaper is the one image the theme is built from rather than drawn,
-    and it is copied byte for byte: it is already 1920x1080 and GRUB scales and
-    crops it to whatever mode it ended up in, so decoding and re-encoding four
-    megabytes of photograph would cost time and lose nothing. Everything else is
-    drawn, and the panel colours are the wallpaper's own background colour with
-    the accent violet on the edges, so the boxes read as part of the wallpaper
-    rather than as rectangles laid on it.
+    and it is copied byte for byte: it is already 1920x1080 and theme.txt tells
+    GRUB to STRETCH it to whatever mode it ended up in, so decoding and
+    re-encoding four megabytes of photograph would cost time and lose nothing.
+    Everything else is drawn, and the panel colours are the wallpaper's own
+    background colour with the accent violet on the edges, so the boxes read as
+    part of the wallpaper rather than as rectangles laid on it.
     """
     copy_file(log, background, directory / BACKGROUND_FILE)
 
@@ -2017,7 +2018,7 @@ def check_grub_default(boot_dir: Path) -> list[str]:
     if mode is None:
         problems.append(
             f"{GRUB_DEFAULT_FILE} does not set GRUB_GFXMODE, so GRUB asks for the "
-            "mode its own default names and the wallpaper is cropped to that"
+            "mode its own default names and the wallpaper is stretched to that"
         )
     elif panel is not None and mode.split(",")[0].strip() not in ("auto", panel):
         problems.append(
