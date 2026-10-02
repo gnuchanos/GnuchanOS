@@ -36,4 +36,9 @@ int wm_spawn_terminal(void);
    not start — a display manager leaves no other way to see it. */
 int wm_spawn_terminal_displaying(const char *path);
 
+/* Collect any child wm_spawn() started that has since exited, so it does not
+   stay a zombie. Cheap when nothing has finished, and safe to call often: the
+   core calls it on every pass of its loop. */
+void wm_spawn_reap(void);
+
 #endif /* GNUCHANWM_SPAWN_H */

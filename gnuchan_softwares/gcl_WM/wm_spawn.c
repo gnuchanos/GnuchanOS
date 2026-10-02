@@ -19,13 +19,36 @@
  * the script's own reader uses — quotes group, a backslash escapes — so a
  * command written in the settings file is read the way it was written.
  */
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "wm_core.h"
 #include "wm_spawn.h"
+
+/* The children this module has started and not yet collected, so their exit
+   can be reaped without stealing a wait from anywhere else.
+ *
+ * A forked child that is never waited on stays a zombie until its parent
+ * exits: it holds a process-table slot and a line in `top` reading 0 bytes for
+ * ever. A session that starts programs all day — a terminal, a runner, the
+ * screen saver on a key — collects a column of them. The fix is not to wait in
+ * wm_spawn(): that would make Alt+Enter block until the terminal closed, which
+ * is the one thing a launcher must not do. Instead the pids are written down
+ * here and reaped later, off the event loop, by wm_spawn_reap().
+ *
+ * Only children started HERE are recorded, and wm_spawn_reap() waits on those
+ * pids alone — never on waitpid(-1). That is what keeps it from racing the few
+ * places that fork and wait themselves (the menu's power actions, which judge
+ * a program by its exit status): a blanket reap would take those children out
+ * from under their own waitpid and read one of them as "failed to run". */
+#define WM_SPAWN_MAX_CHILDREN 64
+static pid_t spawn_children[WM_SPAWN_MAX_CHILDREN];
+static int spawn_child_count = 0;
 
 /* The terminals this looks for, best first. The first one that exists is the
    one Alt+Enter opens.
@@ -146,7 +169,43 @@ int wm_spawn(const char *program, char *const argv[]) {
         perror("gnuchanwm: exec");
         _exit(127);
     }
+
+    /* In the parent. The pid is remembered so its exit can be collected
+       later — see the note on spawn_children above — rather than left to
+       become a zombie. If the table is full the oldest entry is dropped, and
+       its child becomes a zombie the moment it exits: a launcher that has 64
+       programs still running and uncollected is already in trouble, and
+       forgetting one is better than refusing to start another. */
+    if (spawn_child_count < WM_SPAWN_MAX_CHILDREN) {
+        spawn_children[spawn_child_count++] = pid;
+    } else {
+        spawn_children[0] = pid;
+    }
     return 0;
+}
+
+/* Collect any of this module's children that have finished, so they do not
+   sit as zombies. Called often — it is cheap when nothing has exited — and it
+   only ever waits on the pids this module started, never on any child. */
+void wm_spawn_reap(void) {
+    int kept = 0;
+    for (int i = 0; i < spawn_child_count; i++) {
+        pid_t pid = spawn_children[i];
+        int status = 0;
+        pid_t done = waitpid(pid, &status, WNOHANG);
+        if (done == pid || done < 0) {
+            /* Finished and collected, or gone (already reaped elsewhere):
+               either way it is no longer this table's to keep. done < 0 with
+               EINTR leaves the entry for the next pass. */
+            if (done < 0 && errno == EINTR) {
+                spawn_children[kept++] = pid;
+            }
+            continue;
+        }
+        /* Still running: keep it for the next pass. */
+        spawn_children[kept++] = pid;
+    }
+    spawn_child_count = kept;
 }
 
 /* A written command line, split into the words execvp wants. The words live

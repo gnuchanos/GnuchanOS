@@ -33,6 +33,7 @@
 #include <ctype.h>
 
 #include <X11/keysym.h>
+#include <X11/XKBlib.h>
 
 #include "wm_core.h"
 #include "wm_compositor.h"
@@ -529,6 +530,18 @@ static int keys_init(WmCore *core) {
     return 0;
 }
 
+/* The key currently held down, as the pair its grab was made with, so a key
+   that is held and repeating is not acted on again.
+ *
+ * Holding a key makes the server send a stream of press AND release events —
+ * auto-repeat is a press and a release, over and over — and without this the
+ * action would fire on every one. That is what left twenty screen savers on
+ * the screen: Alt+S held for a moment started one on each repeat. A binding
+ * is therefore acted on once, on the press that is NOT an auto-repeat, and
+ * not again until the key is let go. */
+static KeySym held_keysym = NoSymbol;
+static unsigned int held_modifiers = 0;
+
 /* The binding a pressed key names, or NULL. The lock modifiers are masked off
    because the grab was taken with them included. The whole binding is returned
    rather than just its action, because the action is called with the command
@@ -546,13 +559,47 @@ static const KeyBinding *keys_lookup(WmCore *core, XKeyEvent *event) {
 }
 
 static void keys_event(WmCore *core, XEvent *event) {
+    if (event->type == KeyRelease) {
+        /* A real release lets the key be used again; the release that is half
+           of an auto-repeat does not, which is what keeps a held key from
+           firing repeatedly. Between the press and a release that follows it
+           within a few milliseconds there is a KeyPress already queued behind
+           it — that is how X reports a repeat — and that is the release to
+           ignore. */
+        if (XPending(core->display) > 0) {
+            XEvent next;
+            XPeekEvent(core->display, &next);
+            if (next.type == KeyPress &&
+                next.xkey.time == event->xkey.time) {
+                return;   /* the release half of an auto-repeat */
+            }
+        }
+        KeySym keysym = XLookupKeysym(&event->xkey, 0);
+        if (keysym == held_keysym) {
+            held_keysym = NoSymbol;
+            held_modifiers = 0;
+        }
+        return;
+    }
+
     if (event->type != KeyPress) {
         return;
     }
+
     const KeyBinding *binding = keys_lookup(core, &event->xkey);
-    if (binding && binding->action) {
-        binding->action(core, binding->command);
+    if (!binding || !binding->action) {
+        return;
     }
+
+    /* The first press acts; a repeat of the same held key does not. */
+    KeySym keysym = binding->keysym;
+    unsigned int state = event->xkey.state & ~(LockMask | Mod2Mask);
+    if (keysym == held_keysym && state == held_modifiers) {
+        return;
+    }
+    held_keysym = keysym;
+    held_modifiers = state;
+    binding->action(core, binding->command);
 }
 
 static void keys_cleanup(WmCore *core) {

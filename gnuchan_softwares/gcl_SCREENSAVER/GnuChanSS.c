@@ -157,16 +157,41 @@ static int run_show(Display *display, int screen, const SsConfig *config,
            of the first but could not take the keyboard, so the key that should
            have ended the show went to the first saver behind it and the screen
            was left covered with nothing able to end it. */
-    if (XGrabKeyboard(display, root, False, GrabModeAsync, GrabModeAsync,
-                      CurrentTime) != GrabSuccess) {
-        return 0;   /* another saver is already up */
-    }
-    if (XGrabPointer(display, root, False,
-                     ButtonPressMask | PointerMotionMask, GrabModeAsync,
-                     GrabModeAsync, None, None,
-                     CurrentTime) != GrabSuccess) {
+    /* The grab is retried for a short while before giving up. When this
+       program is started by the window manager's own key, that key is still
+       held down as this runs, and the manager's grab on it can make the very
+       first attempt fail — which used to end the program instantly, so the
+       saver never appeared and the key's auto-repeat started another copy on
+       every repeat. Retrying lets the key be released and the grab succeed.
+       A failure that outlasts the retries means another screen saver really is
+       up, and then this one leaves without covering the screen. */
+    Status keyboard_grab = GrabNotViewable;
+    Status pointer_grab = GrabNotViewable;
+    for (int attempt = 0; attempt < 15 && !s_should_stop; attempt++) {
+        keyboard_grab = XGrabKeyboard(display, root, False, GrabModeAsync,
+                                      GrabModeAsync, CurrentTime);
+        if (keyboard_grab != GrabSuccess) {
+            struct timespec pause = {0, 100 * 1000 * 1000};   /* 100 ms */
+            nanosleep(&pause, NULL);
+            continue;
+        }
+        pointer_grab = XGrabPointer(display, root, False,
+                                    ButtonPressMask | PointerMotionMask,
+                                    GrabModeAsync, GrabModeAsync, None, None,
+                                    CurrentTime);
+        if (pointer_grab == GrabSuccess) {
+            break;
+        }
         XUngrabKeyboard(display, CurrentTime);
-        return 0;   /* the pointer is held elsewhere: show nothing */
+        struct timespec pause = {0, 100 * 1000 * 1000};
+        nanosleep(&pause, NULL);
+    }
+    if (keyboard_grab != GrabSuccess || pointer_grab != GrabSuccess) {
+        fprintf(stderr,
+                "gnuchanss: could not take the keyboard and pointer "
+                "(keyboard %d, pointer %d); another screen saver is probably "
+                "up\n", (int)keyboard_grab, (int)pointer_grab);
+        return 0;
     }
 
     /* An override-redirect window is not decorated or placed by any window

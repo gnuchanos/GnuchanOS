@@ -22,6 +22,7 @@
 #include <sys/select.h>
 
 #include "wm_core.h"
+#include "wm_spawn.h"
 
 Atom wm_atom(WmCore *core, const char *name) {
     return XInternAtom(core->display, name, False);
@@ -331,6 +332,12 @@ static void core_dispatch(WmCore *core, XEvent *event) {
  * that spins. */
 void wm_core_step(WmCore *core) {
     int interval = core_tick_interval(core);
+
+    /* Collect any program this session started that has since finished, so it
+       does not sit in the process table as a zombie. Cheap when nothing has
+       exited, and the loop runs often, so a child is collected within a step
+       or two of ending. */
+    wm_spawn_reap();
 
     int fd = ConnectionNumber(core->display);
 

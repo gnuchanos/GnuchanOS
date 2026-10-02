@@ -23,7 +23,8 @@
  * sharper distinction has the 256-colour and truecolor forms, and both are
  * honoured.
  */
-#ifndef GNUCHANTERM_PALETTE_H
+
+ #ifndef GNUCHANTERM_PALETTE_H
 #define GNUCHANTERM_PALETTE_H
 
 #include <stdint.h>
