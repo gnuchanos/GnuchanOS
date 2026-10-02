@@ -825,51 +825,32 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
            frame would be resized on every event the client sends, which is a
            busy loop that pegs a core for as long as the game runs. Comparing
            the frame's size before and after the clamp has no such gap. */
-        int old_width = frame->client_width;
-        int old_height = frame->client_height;
-
-        if (frame->fullscreen_width > 1) {
-            frame->client_width = frame->fullscreen_width;
-        }
-        if (frame->fullscreen_height > 1) {
-            frame->client_height = frame->fullscreen_height;
-        }
-        frame_clamp_size_to_workarea(core, frame);
-        frame_clamp_to_workarea(core, frame);
-
-        /* Applied only when the clamped size actually differs from what the
-           frame already has. A fullscreen game re-places itself at the screen
-           corner on every frame — Wine and SDL both do — and the frame's own
-           place is the manager's, so the client's move is not read here at all:
-           exactly as it is not read for a scaled window, two branches up. */
-        /* The client is put back inside the frame whenever it has moved or
-           resized ITSELF, and not only when the frame's own size changed.
-
-           THIS IS THE FIX for "the title bar and the border are gone with a
-           Wine game". A Wine fullscreen game moves its own window to (0,0) and
-           resizes it to the SCREEN on every drawn frame — it believes it is a
-           window on the root. That window is a CHILD of the frame, so it is
-           clipped to the frame and drawn OVER it: a client at (0,0) the size of
-           the screen covers the frame's title bar and border completely, and
-           the user is left with a window that has no bar to grab and cannot be
-           moved. Reacting only to the frame's own size (as this branch did)
-           left the client exactly where the game put it, and the chrome was
-           buried under it.
-
-           Comparing the client's ACTUAL place and size against where the frame
-           wants it catches both the move to (0,0) and the resize to the screen.
-           The comparison is against the client's real attributes and not
-           against a stored wish, so it settles after one correction: once the
-           client is back at (border, title) its attributes match and nothing is
-           done — the game's next move is what starts the next correction. */
-        int misplaced = attributes.x != frame_border_of(frame) ||
-                        attributes.y != frame_title_of(frame) ||
-                        attributes.width != frame->client_width ||
-                        attributes.height != frame->client_height;
-        if (frame->client_width != old_width ||
-            frame->client_height != old_height || misplaced) {
-            frame_apply(core, frame);
-        }
+        /* The container is left exactly as it is.
+         *
+         * THIS IS THE FIX for "the game moves up and down on its own and the
+         * performance falls apart". A Wine fullscreen game re-asserts its own
+         * geometry — it moves itself to (0,0) and sizes itself to the SCREEN —
+         * on every drawn frame, because it believes it is an ordinary window on
+         * the root. An earlier version of this branch answered each of those
+         * re-assertions by pushing the container's size and place back onto the
+         * client, so the game moved the window and the manager moved it back
+         * again, frame after frame: the picture slid up and down, and both the
+         * manager and the X server stayed busy every frame for a window that
+         * was never going to settle. That fight is the fault this removes.
+         *
+         * The container keeps the resolution the game chose. That resolution is
+         * set the moment the game changes the display mode (see
+         * wm_frame_set_fullscreen_size, called by wm_randr.c), and there is
+         * nothing here that changes it again: the game's own moves and resizes
+         * are simply not answered. The resolution therefore stays as it was
+         * when the game opened, exactly as asked, and the client's
+         * re-assertions cost nothing but the events that carry them.
+         *
+         * This is deliberately the opposite of the ordinary path below, which
+         * DOES honour a client's move. A fullscreen game moves itself every
+         * frame and would be in a permanent fight; an ordinary window moves
+         * rarely, and honouring its move is what makes a program's own saved
+         * geometry mean something. */
         return;
     }
 
@@ -1083,6 +1064,35 @@ void wm_frame_maximize(WmCore *core, WmFrame *frame) {
     frame->client_width = area_width - 2 * frame_border_of(frame) - 2 * inset;
     frame->client_height = area_height - frame_title_of(frame)
                            - frame_border_of(frame) - 2 * inset;
+    if (frame->client_width < 1) frame->client_width = 1;
+    if (frame->client_height < 1) frame->client_height = 1;
+
+    /* The size is snapped DOWN to the client's own resize steps.
+     *
+     * A maximised window almost never lands on a whole number of the client's
+     * cells: the workarea is some arbitrary number of pixels and a terminal's
+     * cell is another, so `area / cell` leaves a remainder. The client is told
+     * the whole cells it has and draws into them, and the remainder is a strip
+     * of background it never paints — the blank column down the right edge and
+     * the blank row along the bottom that "nano does not scale" is. Snapping
+     * DOWN (not to nearest) keeps the window inside the workarea the maximise
+     * was asked to fit, and leaves the remainder outside the frame where it
+     * belongs: on the desktop, not inside the window.
+     *
+     * A client that named no increments has a step of one pixel and passes
+     * through unchanged, so every other window maximises exactly as before. */
+    WmSizeHints hints;
+    frame_read_size_hints(core, frame, &hints);
+    if (hints.width_inc > 1) {
+        int steps = (frame->client_width - hints.base_width) / hints.width_inc;
+        if (steps < 0) steps = 0;
+        frame->client_width = hints.base_width + steps * hints.width_inc;
+    }
+    if (hints.height_inc > 1) {
+        int steps = (frame->client_height - hints.base_height) / hints.height_inc;
+        if (steps < 0) steps = 0;
+        frame->client_height = hints.base_height + steps * hints.height_inc;
+    }
     if (frame->client_width < 1) frame->client_width = 1;
     if (frame->client_height < 1) frame->client_height = 1;
 

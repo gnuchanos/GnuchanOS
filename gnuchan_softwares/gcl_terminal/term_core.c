@@ -689,6 +689,31 @@ int term_core_init(TermCore *core, const char *title, const char *font_name) {
     class_hint.res_class = (char *)"GnuChanTerm";
     XSetClassHint(core->display, core->window, &class_hint);
 
+    /* The window is a whole number of cells, and it says so.
+     *
+     * WITHOUT THIS the window manager maximises the terminal to the exact
+     * desktop size, which is almost never a whole number of cells: the grid
+     * then holds `width / cell_w` columns and the pixels past the last one are
+     * a strip of background down the right edge and along the bottom. The
+     * program (nano, a shell, anything) is told the smaller cell count and
+     * draws into the grid, so the strip stays empty and looks like a bug —
+     * which is exactly "nano does not scale, there is blank space on the right
+     * and the bottom".
+     *
+     * The increment (width_inc/height_inc) is one cell, and the base is the
+     * chrome the grid is inset by — the side margin and the bottom bar — so a
+     * manager that honours the hints lands the window on a whole number of
+     * cells and the strip is never left over. Both a maximise and a drag then
+     * give a size the program actually has. */
+    XSizeHints size_hints;
+    memset(&size_hints, 0, sizeof(size_hints));
+    size_hints.flags = PResizeInc | PBaseSize;
+    size_hints.width_inc = cell_w;
+    size_hints.height_inc = cell_h;
+    size_hints.base_width = 2 * TERM_PAD_CELLS * cell_w;
+    size_hints.base_height = TERM_BAR_ROWS * cell_h;
+    XSetWMNormalHints(core->display, core->window, &size_hints);
+
     core->gc = XCreateGC(core->display, core->window, 0, NULL);
 
     if (term_vt_init(&core->vt, core->cols, core->rows) != 0) {
