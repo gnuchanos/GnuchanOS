@@ -195,15 +195,22 @@ typedef struct WmFrame {
        it is fitted to the frame. */
     int scaled;
 
-    /* 1 while the window has the whole screen and NO chrome — no title bar,
-       no border, the client at the screen's own (0,0). Set by the EWMH
-       fullscreen state, which is the one thing a window manager must speak for
-       a Direct3D game to be playable; see wm_frame_set_fullscreen() for what
-       happens without it, which is a picture that slides up and down for ever.
+    /* 1 while the window is in the EWMH fullscreen STATE. Set by the EWMH
+       fullscreen request, which is the one thing a window manager must speak
+       for a Direct3D game to be playable; see wm_frame_set_fullscreen() for
+       what happens without it, which is a picture that slides up and down for
+       ever.
 
-       While it is set every geometry rule in wm_frame.c reads the chrome as
-       zero — frame_border_of() and frame_title_of() are the two functions that
-       answer, and nothing adds WM_TITLE_HEIGHT by hand. */
+       !! CHROME IS STILL KEPT WHILE THIS IS SET — do not "optimise" this flag
+       into dropping the title bar and border or moving the client to (0,0).
+       An earlier version did exactly that and the user could no longer grab or
+       close the window ("title bar ve border gorunmuyor"). frame_border_of()
+       and frame_title_of() ALWAYS return the real chrome; neither reads this
+       flag. What the flag actually does is: refuse the client's own geometry
+       changes (wm_manage.c: manage_configure) and pin the container to the
+       resolution the game asked for (wm_frame_sync, fullscreen_width/height).
+       The window stays a container with its chrome, its size set by the game's
+       chosen resolution. */
     int fullscreen;
 
     /* The resolution a fullscreen client ASKED for, taken from the display
@@ -343,12 +350,23 @@ int  wm_frame_is_scaled(const WmFrame *frame);
    press: a client asks for one or the other, and a request for the state it is
    already in does nothing.
 
-   On: the title bar and the border are dropped, the client is given the whole
-   of the screen at (0,0), and the window is raised and focused. The size it
-   had is remembered and given back when the state is dropped.
+   On: the window is raised and focused and the EWMH state is answered. THE
+   CHROME IS KEPT — the title bar and the border are NOT dropped, and the
+   client is NOT moved to (0,0). A fullscreen window here is a CONTAINER the
+   size of the resolution the game asked for, with its chrome intact, so it
+   can still be dragged and closed.
 
-   Off: the chrome comes back and the window returns to the size and place it
-   had, held to the desktop like any other window.
+   !! BU ACIKLAMA ESKI VE YANLISTI — DUZELTILDI. Once burada "the title bar
+   and the border are dropped, the client is given the whole of the screen at
+   (0,0)" yaziyordu. Kod bunu YAPMIYOR ve YAPMAMALI: chrome dusurulurse
+   kullanici pencereyi tutup TASIYAMAZ ve KAPATAMAZ ("title bar ve border
+   gorunmuyor" hatasi), client'i (0,0)'a koymak da frame'in uzerine cizip
+   chrome'u tamamen orter. Bu yuzden chrome HER pencerede (fullscreen dahil)
+   korunur. Bu doc'u tekrar "chrome dusurulur / pencere (0,0)'a konur" diye
+   DEGISTIRME — o degisiklik hatayi geri getirir. !!
+
+   Off: the window returns to the size and place it had, held to the desktop
+   like any other window.
 
    A window manager that does NOT speak this is one that Direct3D games fight:
    see wm_frame_set_fullscreen() in wm_frame.c. */

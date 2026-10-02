@@ -27,6 +27,25 @@
  * Bu dongu log'suz doner ve oyun/fullscreen bir pencere acikken GnuChanWM ile
  * Xorg'u %80-100 CPU'ya cikarir; masaustu bostayken %0 gorunur (teshis edilen
  * belirti tam buydu). Kontrolu kaldirma.
+ *
+ * ============================================================================
+ * !! IKINCI TUZAK — FULLSCREEN PENCERENIN GEOMETRI ISTEGI REDDEDILIR !!
+ *
+ * (Bkz. manage_configure icindeki "if (wm_frame_is_fullscreen(frame)) return;")
+ *
+ * Wine bir oyunu fullscreen acinca, oyun kendini root'ta sanip HER KAREDE
+ * kendini (0,0)'a tasir ve ekran boyutuna getirir. Frame'e
+ * SubstructureRedirectMask secildigi icin (bkz. wm_frame_create) bu istek
+ * buraya ConfigureRequest olarak duser.
+ *
+ * EGER bu istek UYGULANIRSA: client (0,0)'a gidip frame'in baslik cubugunu ve
+ * kenarligini orter ("title bar/border gorunmuyor" hatasi), kabı da ekran
+ * boyutuna buyutur. WM her karede geri alirsa oyunla saniyede ~60 kez
+ * cekisir ("titreme / yukari asagi oynama / performans bitiyor" hatasi).
+ *
+ * BU YUZDEN fullscreen pencerenin ConfigureRequest'i KOSULSUZ REDDEDILIR.
+ * Oyun hic hareket edemez; chrome gorunur kalir ve cekisme olmaz.
+ * "if (wm_frame_is_fullscreen(frame)) return;" satirini KALDIRMA.
  * ============================================================================
  */
 #include <stdio.h>

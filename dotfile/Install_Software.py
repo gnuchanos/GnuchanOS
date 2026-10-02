@@ -2,8 +2,6 @@ import os
 from re import purge
 
 
-
-
 important_things = [
     "rfkill",
     "ntpsec",

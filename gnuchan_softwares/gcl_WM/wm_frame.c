@@ -28,6 +28,41 @@
  * per redraw is what removes it, and a drag does not redraw at all: the window
  * moves and the picture inside it moves with it. 
  */
+/* ============================================================================
+ * !! KRITIK UYARILAR — BU IKI HATAYI BIR DAHA CIKARMA !!
+ *
+ * Bu iki sorun defalarca bildirildi ve ikisi de SU IKI kurala baglidir. Kodda
+ * bir sey "sadelestirirken" bunlari bozma.
+ *
+ * (1) "WINE ILE OYUN ACINCA TITLE BAR VE BORDER GORUNMUYOR."
+ *     SEBEP: client, frame'in COCUK penceresidir ve frame'i ORTER. Bir Wine
+ *     fullscreen oyunu kendini root'ta sanip her karede (0,0)'a tasinir.
+ *     Client (0,0)'da kalirsa frame'in baslik cubugunu ve kenarligini
+ *     tamamen kapatir.
+ *     KURAL: chrome (baslik + kenarlik) HER pencerede, fullscreen dahil,
+ *     KORUNUR. frame_border_of() ve frame_title_of() HER ZAMAN gercek
+ *     chrome'u dondurur; HICBIR yerde bu degerleri fullscreen'de sifira
+ *     indirme. fullscreen bayragi chrome'u DUSURMEZ.
+ *     Ayrica client, frame icinde (border, title) konumunda tutulur; onu
+ *     (0,0)'a tasima.
+ *
+ * (2) "OYUN ACILINCA TITLE BAR DAHIL FLICKER OLUYOR / OYUN KENDI KENDINE
+ *     YUKARI ASAGI OYNUYOR / PERFORMANS BITIYOR."
+ *     SEBEP: oyun her karede kendi geometrisini (0,0 + ekran boyutu) yeniden
+ *     dayatir. WM bunu her karede geri alirsa ikisi saniyede ~60 kez
+ *     cekisir; hem titreme hem CPU yuku bundandir.
+ *     KURAL: client'in KENDI move/resize'i SUNUCU tarafindan UYGULANMAMALI.
+ *     Bu yuzden frame'e SubstructureRedirectMask secilir (bkz. wm_frame_create)
+ *     ve gelen ConfigureRequest fullscreen pencerede wm_manage.c'de
+ *     REDDEDILIR. Boylece oyun hic hareket edemez; cekisme ve titreme biter.
+ *     Fullscreen pencerede client'i "geri koymak" icin frame_apply() (tam
+ *     redraw) CAGRIMA — o yolu gerek birakma.
+ *
+ * (3) "PENCERE COZUNURLUGU SABIT KALSIN, ZORLA BOYUTLANDIRMA."
+ *     Fullscreen kabinin boyutu YALNIZCA oyunun degistirdigi MOD
+ *     cozunurlugunden gelir (wm_frame_set_fullscreen_size, wm_randr.c cagirir).
+ *     Client'in bildirdigi ekran-boyutlu rapor kabı BUYUTMEZ.
+ * ============================================================================ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

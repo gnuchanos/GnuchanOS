@@ -102,6 +102,10 @@ static void register_modules(WmCore *core) {
        managed by a session that is completely up rather than one still
        arranging itself. */
     wm_register(core, &wm_autostart_module);
+    /* The laptop lid: sleep on close, screen saver / lock on open. A desktop
+       finds no lid on the first tick and does nothing, so it costs nothing to
+       always register. */
+    wm_register(core, &wm_lid_module);
 }
 
 /* Send everything the WM prints to the log as well as to stderr. Called

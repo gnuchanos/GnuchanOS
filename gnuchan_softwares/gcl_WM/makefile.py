@@ -70,6 +70,7 @@ SOURCES = (
     "wm_randr.c",
     "wm_spawn.c",
     "wm_autostart.c",
+    "wm_lid.c",
     "wm_menu.c",
     "wm_input.c",
     "wm_keys.c",

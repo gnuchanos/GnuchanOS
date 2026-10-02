@@ -309,6 +309,27 @@ typedef struct WmConfig {
     int touchpad_three_finger_swipe;
     int touchpad_four_finger_swipe;
 
+    /* --- session power: the lid, and what a wake-up does ------------------
+     *
+     * Set through `gcl_Power.Lid(...)` in the settings script. The lid is a
+     * SESSION concern and not the display manager's (see gcl_DM/dm_power.c,
+     * which says so itself and deliberately does not touch it), so it is
+     * handled by the wm_lid module and configured here.
+     *
+     * The lid module reads these out of the core's config on every tick, so a
+     * reload changes them live, exactly as every other setting does. */
+    int lid_suspend_on_close;    /* closing the lid suspends the machine     */
+    int lock_before_suspend;     /* lock before suspending, not after waking */
+    int lid_open_screensaver;    /* run the screen saver on wake             */
+    int lid_open_lockscreen;     /* lock the screen on wake                  */
+
+    /* The programs the lid module runs. Empty means "look GnuChanSS /
+       GnuChanSL up on PATH", which is what a machine that named none gets.
+       They are written commands, not program names, so the same tokeniser
+       that reads a RunProgram action reads these. */
+    char screensaver_command[WM_CONFIG_TEXT_LENGTH];
+    char lockscreen_command[WM_CONFIG_TEXT_LENGTH];
+
     /* The bars, in the order the script wrote them. A session may have none,
        one, or several; `bar_count` is how many there are and every reader
        walks the first `bar_count` of the array. */

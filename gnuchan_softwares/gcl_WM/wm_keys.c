@@ -142,6 +142,46 @@ static void action_reload_config(WmCore *core, const char *command) {
     }
 }
 
+/* Screen saver: run the session's screen saver now, on purpose.
+ *
+ * This is the key a person presses when they are leaving the desk and want the
+ * saver up before the idle timer would have raised it, so the saver is started
+ * with its "at once" flag — GnuChanSS --once — rather than left to wait out the
+ * idle time it would otherwise wait for. The binding may name its own command
+ * (`ScreenSaver(command="GnuChanSS --effect 3dwall")`); with none written, the
+ * session's own saver is looked for on PATH by name.
+ *
+ * It is a background program: the key press starts it and returns, and the
+ * saver covers the screen on its own. Nothing here waits for it. */
+static void action_screen_saver(WmCore *core, const char *command) {
+    (void)core;
+    if (command && command[0]) {
+        wm_spawn_command(command);
+        return;
+    }
+    if (wm_spawn_command("GnuChanSS --once") != 0) {
+        wm_spawn_command("/usr/local/bin/GnuChanSS --once");
+    }
+}
+
+/* Lock screen: put the session's lock screen up now.
+ *
+ * The lock screen does not return until the right password has been typed, so
+ * it is started and the WM goes on drawing behind it: the lock window covers
+ * everything while it is up. The binding may name its own command; with none
+ * written, the session's own locker is looked for by name, then in the usual
+ * install location. */
+static void action_lock_screen(WmCore *core, const char *command) {
+    (void)core;
+    if (command && command[0]) {
+        wm_spawn_command(command);
+        return;
+    }
+    if (wm_spawn_command("GnuChanSL") != 0) {
+        wm_spawn_command("/usr/local/bin/GnuChanSL");
+    }
+}
+
 /* --- switching workspace --------------------------------------------------
  *
  * Super+1 is the first workspace, Super+2 the second, and so on up to whatever
@@ -245,6 +285,15 @@ static const KeyBinding BUILT_IN[] = {
     { Mod1Mask, XK_Tab,    action_switch_window,  "" },
     { Mod4Mask, XK_Tab,    action_switch_window,  "" },
     { Mod4Mask, XK_s,      action_toggle_scaling, "" },
+    /* Alt+S raises the screen saver and Alt+L and Super+L lock the screen.
+       They are the keys a hand reaches for on the way out of a room, so they
+       are built in rather than waiting for a script. Alt+S runs
+       GnuChanSS --once (the saver now, not after the idle time); the two lock
+       keys run GnuChanSL. A script that binds any of these itself keeps its own
+       binding — see keys_init(). */
+    { Mod1Mask, XK_s,      action_screen_saver,   "" },
+    { Mod1Mask, XK_l,      action_lock_screen,    "" },
+    { Mod4Mask, XK_l,      action_lock_screen,    "" },
     /* Last, and it has to stay last: keys_init() adds this one entry when the
        script DID bind something, because it is the way back from a script that
        bound nothing usable. Anything added below it would take its place. */
@@ -301,6 +350,21 @@ static KeyAction action_for(const char *written) {
     }
     if (strcasecmp(leaf, "Reload") == 0) {
         return action_reload_config;
+    }
+    /* The screen saver and the lock screen are two actions, not one, and the
+       names are matched whole so a script can bind either: ScreenSaver (its
+       usual spelling) starts GnuChanSS, LockScreen starts GnuChanSL. The
+       spellings a person might write are all accepted; nothing matches on a
+       substring, so `LockScreenSaver` would not slip into either. */
+    if (strcasecmp(leaf, "ScreenSaver") == 0 ||
+        strcasecmp(leaf, "Screensaver") == 0 ||
+        strcasecmp(leaf, "ScreenSave") == 0) {
+        return action_screen_saver;
+    }
+    if (strcasecmp(leaf, "LockScreen") == 0 ||
+        strcasecmp(leaf, "Lockscreen") == 0 ||
+        strcasecmp(leaf, "Lock") == 0) {
+        return action_lock_screen;
     }
     return NULL;
 }

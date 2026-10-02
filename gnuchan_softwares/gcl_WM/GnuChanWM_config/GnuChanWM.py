@@ -149,6 +149,11 @@ gcl_keys.all = [
     gcl_key.MultiKey(keys=[super_key1, "r"], action=gcl_spawn.RunProgram(command=GnuChanRunner)),
     gcl_key.MultiKey(keys=[super_key1, "F4"], action=gcl_window.Close()),
     gcl_key.MultiKey(keys=[super_key1, "Tab"], action=gcl_window.Switch()),
+    # Alt+S: ekran koruyucu (GnuChanSS) hemen baslasin. Alt+L: ekrani kilitle
+    # (GnuChanSL). Ikisi de oturumun kendi programlari; WM onlari PATH'te arar.
+    # (Ada gore eslesir: ScreenSaver -> GnuChanSS, LockScreen -> GnuChanSL.)
+    gcl_key.MultiKey(keys=[super_key1, "s"], action=gcl_power.ScreenSaver()),
+    gcl_key.MultiKey(keys=[super_key1, "l"], action=gcl_power.LockScreen()),
 ]
 
 # fare behavior
@@ -166,4 +171,33 @@ gcl_touchpad.TouchpadBehavior(
     TwoFingerScroll=True,
     ThreeFingerSwipe=False,
     FourFingerSwipe=False,
+)
+
+# ---------------------------------------------------------------------------
+# Oturum gucu: dizustu kapagi (lid), uyku ve uyaninca ne olsun.
+# ---------------------------------------------------------------------------
+# Lid bir SESSION isidir, DM'in degil (bkz. gcl_DM/dm_power.c, kendisi boyle
+# diyor). Bu yuzden GnuChanWM'nin wm_lid modulu isler. Ayarlar her tick'te
+# yeniden okunur, yani bu dosyayi kaydedip config'i yeniden yukleyince aninda
+# etkili olur.
+gcl_Power.Lid(
+    # Lid kapaninca ekrani kapat ve uyku moduna gec.
+    OnLidCloseSuspend=True,
+
+    # Uykudan ONCE kilitle (acilinca zaten kilitli olsun). False ise kilit
+    # yalnizca uyaninca, asagidaki OnLidOpenLockScreen ayariyla gelebilir.
+    LockBeforeSuspend=False,
+
+    # Lid acilinca (uyandiginda) ekran koruyucu baslasin mi.
+    OnLidOpenScreenSaver=True,
+
+    # Lid acilinca kilit ekrani gelsin mi. (Uyanista kilit istiyorsan bunu True
+    # yap; ekran koruyucu ile birlikte de calisabilir.)
+    OnLidOpenLockScreen=False,
+
+    # Kullanilacak programlar. Bos birakilirsa "GnuChanSS" / "GnuChanSL"
+    # PATH'te aranir (GnuchanOS bunlari kurar). Yazili bir komut satiridir,
+    # yani "GnuChanSS --effect 3dwall" gibi arguman da verilebilir.
+    # ScreensaverCommand="GnuChanSS",
+    # LockScreenCommand="GnuChanSL",
 )

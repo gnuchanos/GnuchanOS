@@ -641,6 +641,51 @@ static void set_touchpad(WmConfig *config, const WmStatement *statement) {
     }
 }
 
+/* gcl_Power.Lid(OnLidCloseSuspend=..., LockBeforeSuspend=...,
+ *               OnLidOpenScreenSaver=..., OnLidOpenLockScreen=...,
+ *               ScreensaverCommand=..., LockScreenCommand=...)
+ *
+ * The lid and what a wake-up does. Read by wm_lid.c, which polls the lid and
+ * acts on a change; these are the settings that decide what "acts" means.
+ *
+ * The two commands are text and not booleans: a machine whose screen saver is
+ * not the shipped one names its own. Empty means the module looks GnuChanSS /
+ * GnuChanSL up on PATH itself, so a script that names neither still gets the
+ * desktop's own programs. */
+static void set_power(WmConfig *config, const WmStatement *statement) {
+    const struct {
+        const char *argument;
+        int *destination;
+        int fallback;
+    } switches[] = {
+        { "OnLidCloseSuspend",    &config->lid_suspend_on_close, 1 },
+        { "LockBeforeSuspend",    &config->lock_before_suspend,  0 },
+        { "OnLidOpenScreenSaver", &config->lid_open_screensaver, 1 },
+        { "OnLidOpenLockScreen",  &config->lid_open_lockscreen,  0 },
+    };
+    for (unsigned int i = 0; i < sizeof(switches) / sizeof(switches[0]); i++) {
+        const WmValue *argument =
+            wm_config_argument(statement, switches[i].argument);
+        if (argument) {
+            *switches[i].destination =
+                wm_config_value_bool(argument, switches[i].fallback);
+        }
+    }
+
+    const WmValue *screensaver =
+        wm_config_argument(statement, "ScreensaverCommand");
+    if (screensaver) {
+        wm_config_value_text(screensaver, config->screensaver_command,
+                             sizeof(config->screensaver_command));
+    }
+    const WmValue *lockscreen =
+        wm_config_argument(statement, "LockScreenCommand");
+    if (lockscreen) {
+        wm_config_value_text(lockscreen, config->lockscreen_command,
+                             sizeof(config->lockscreen_command));
+    }
+}
+
 /* --- key bindings --------------------------------------------------------- */
 
 /* The modifier a name stands for. The script writes its keys as names —
@@ -848,6 +893,8 @@ static void walk(Script *script, WmConfig *config,
         } else if (strcmp(statement->target,
                           "gcl_touchpad.TouchpadBehavior") == 0) {
             set_touchpad(config, statement);
+        } else if (strcmp(statement->target, "gcl_Power.Lid") == 0) {
+            set_power(config, statement);
         }
         /* Every other call is something this build does not act on. It is not
            reported: the config is shared with a runtime that gives those calls
@@ -927,6 +974,20 @@ void wm_config_defaults(WmConfig *config) {
 
     config->touchpad_tap_to_click = 1;
     config->touchpad_two_finger_scroll = 1;
+
+    /* The lid, as a machine that never wrote a script gets it: closing the lid
+       suspends the machine (what a laptop is expected to do), no lock before
+       the suspend, run the screen saver and not the lock screen on wake. These
+       are the same defaults set_power() falls back to, so a script that names
+       some of them and not others gets the same answer for the ones it left
+       out. The two commands are left empty, which wm_lid.c reads as "look
+       GnuChanSS / GnuChanSL up on PATH". */
+    config->lid_suspend_on_close = 1;
+    config->lock_before_suspend = 0;
+    config->lid_open_screensaver = 1;
+    config->lid_open_lockscreen = 0;
+    config->screensaver_command[0] = '\0';
+    config->lockscreen_command[0] = '\0';
 
     /* The bar the shipped script asks for, so a machine with no script still
        has a bar rather than an empty edge. It is one bar, the first of the
