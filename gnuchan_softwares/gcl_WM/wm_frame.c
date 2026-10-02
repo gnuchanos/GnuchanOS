@@ -842,8 +842,32 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
            corner on every frame — Wine and SDL both do — and the frame's own
            place is the manager's, so the client's move is not read here at all:
            exactly as it is not read for a scaled window, two branches up. */
+        /* The client is put back inside the frame whenever it has moved or
+           resized ITSELF, and not only when the frame's own size changed.
+
+           THIS IS THE FIX for "the title bar and the border are gone with a
+           Wine game". A Wine fullscreen game moves its own window to (0,0) and
+           resizes it to the SCREEN on every drawn frame — it believes it is a
+           window on the root. That window is a CHILD of the frame, so it is
+           clipped to the frame and drawn OVER it: a client at (0,0) the size of
+           the screen covers the frame's title bar and border completely, and
+           the user is left with a window that has no bar to grab and cannot be
+           moved. Reacting only to the frame's own size (as this branch did)
+           left the client exactly where the game put it, and the chrome was
+           buried under it.
+
+           Comparing the client's ACTUAL place and size against where the frame
+           wants it catches both the move to (0,0) and the resize to the screen.
+           The comparison is against the client's real attributes and not
+           against a stored wish, so it settles after one correction: once the
+           client is back at (border, title) its attributes match and nothing is
+           done — the game's next move is what starts the next correction. */
+        int misplaced = attributes.x != frame_border_of(frame) ||
+                        attributes.y != frame_title_of(frame) ||
+                        attributes.width != frame->client_width ||
+                        attributes.height != frame->client_height;
         if (frame->client_width != old_width ||
-            frame->client_height != old_height) {
+            frame->client_height != old_height || misplaced) {
             frame_apply(core, frame);
         }
         return;
