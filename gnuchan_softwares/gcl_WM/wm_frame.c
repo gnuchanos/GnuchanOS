@@ -825,32 +825,54 @@ void wm_frame_sync(WmCore *core, WmFrame *frame) {
            frame would be resized on every event the client sends, which is a
            busy loop that pegs a core for as long as the game runs. Comparing
            the frame's size before and after the clamp has no such gap. */
-        /* The container is left exactly as it is.
+        int old_width = frame->client_width;
+        int old_height = frame->client_height;
+
+        if (frame->fullscreen_width > 1) {
+            frame->client_width = frame->fullscreen_width;
+        }
+        if (frame->fullscreen_height > 1) {
+            frame->client_height = frame->fullscreen_height;
+        }
+        frame_clamp_size_to_workarea(core, frame);
+        frame_clamp_to_workarea(core, frame);
+
+        /* The container's size comes from the RESOLUTION the game asked for by
+           changing the display mode (wm_frame_set_fullscreen_size), never from
+           the client's own screen-sized report. So the window stays the size
+           the game chose, and it is not stretched back out to the screen. */
+        if (frame->client_width != old_width ||
+            frame->client_height != old_height) {
+            frame_apply(core, frame);
+            return;
+        }
+
+        /* The client is put back at its corner whenever the game has moved or
+           resized it away — which a Wine fullscreen game does on every drawn
+           frame, because it believes it is an ordinary window on the root and
+           keeps restoring its own (0,0) screen-sized geometry.
          *
-         * THIS IS THE FIX for "the game moves up and down on its own and the
-         * performance falls apart". A Wine fullscreen game re-asserts its own
-         * geometry — it moves itself to (0,0) and sizes itself to the SCREEN —
-         * on every drawn frame, because it believes it is an ordinary window on
-         * the root. An earlier version of this branch answered each of those
-         * re-assertions by pushing the container's size and place back onto the
-         * client, so the game moved the window and the manager moved it back
-         * again, frame after frame: the picture slid up and down, and both the
-         * manager and the X server stayed busy every frame for a window that
-         * was never going to settle. That fight is the fault this removes.
-         *
-         * The container keeps the resolution the game chose. That resolution is
-         * set the moment the game changes the display mode (see
-         * wm_frame_set_fullscreen_size, called by wm_randr.c), and there is
-         * nothing here that changes it again: the game's own moves and resizes
-         * are simply not answered. The resolution therefore stays as it was
-         * when the game opened, exactly as asked, and the client's
-         * re-assertions cost nothing but the events that carry them.
-         *
-         * This is deliberately the opposite of the ordinary path below, which
-         * DOES honour a client's move. A fullscreen game moves itself every
-         * frame and would be in a permanent fight; an ordinary window moves
-         * rarely, and honouring its move is what makes a program's own saved
-         * geometry mean something. */
+         * THE CHROME AND THE COST ARE BOTH WHY THIS IS A BARE MOVE. The client
+           is a CHILD of the frame, so a client at (0,0) the size of the screen
+           is drawn OVER the frame: it covers the title bar and the border
+           completely, and the window cannot be grabbed or closed. Putting it
+           back is what keeps the chrome visible. Doing it with frame_apply()
+           instead — the earlier version — also rebuilt and redrew the title bar
+           on every one of those frames, which is what turned a running game
+           into a core-burning tug of war. XMoveResizeWindow moves the client
+           and NOTHING is redrawn: the bar has not changed and has no reason to
+           be drawn again, so a game's re-assertions cost a move each and the
+           picture stays put. */
+        if (attributes.x != frame_border_of(frame) ||
+            attributes.y != frame_title_of(frame) ||
+            attributes.width != frame->client_width ||
+            attributes.height != frame->client_height) {
+            XMoveResizeWindow(core->display, frame->client,
+                              frame_border_of(frame), frame_title_of(frame),
+                              (unsigned int)frame->client_width,
+                              (unsigned int)frame->client_height);
+            XFlush(core->display);
+        }
         return;
     }
 
