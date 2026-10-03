@@ -110,6 +110,18 @@ typedef struct TermVtHost {
     void (*osc)(void *user, const char *body, int len);
     void (*title)(void *user, const char *text, int len);
     void (*color)(void *user, int slot, uint32_t rgb, int action);
+    /* A PICTURE, placed by the `ESC ] 1338 ; ...` sequence this terminal
+       defines — see term_image.h. The parser hands over the cell, how many
+       rows tall, and the path; it does not decode the file, because decoding a
+       picture is not something a parser of bytes can do. */
+    void (*image)(void *user, int x, int y, int cols, int rows,
+                  const char *path);
+    /* The screen has been CLEARED — `ESC [ 2 J`, `ESC [ 3 J`, or a full reset.
+       A picture placed over the cells is not part of the grid and would
+       otherwise outlive the cells it covered: `clear` in a shell sends ED, and
+       a logo left standing over the fresh prompt is the one thing a picture in
+       a terminal must not do. The caller drops the pictures it holds. */
+    void (*clear)(void *user);
     void *user;
 } TermVtHost;
 

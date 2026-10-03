@@ -74,6 +74,7 @@ SOURCES = (
     "term_config_parser.c",
     "term_config.c",
     "term_style.c",
+    "term_image.c",
     "term_pty.c",
     "term_render.c",
     "term_input.c",
@@ -92,6 +93,7 @@ HEADERS = (
     "term_scroll.h",
     "term_vt.h",
     "term_style.h",
+    "term_image.h",
     "term_pty.h",
     "term_render.h",
     "term_render_internal.h",
@@ -117,13 +119,20 @@ PACKAGE_CHECKS = (
     ("X11/Xft/Xft.h", "libxft-dev"),
     ("ft2build.h", "libfreetype-dev"),
     ("X11/extensions/Xrender.h", "libxrender-dev"),
+    # Imlib2 is what a picture is loaded and scaled with. The terminal draws a
+    # picture a program places as PIXELS, and Imlib2 is the library that reads
+    # the file and reduces it by area — a picture turned into characters is the
+    # thing this replaced, and the one thing this needs a decoder for.
+    ("Imlib2.h", "libimlib2-dev"),
 )
 
 # What the X libraries are asked for by. The fallback names them directly, for
 # a machine without pkg-config, and is right on every Debian where the
 # development packages are installed.
-PKG_CONFIG_MODULES = ("x11", "xft", "xrender", "fontconfig", "freetype2")
-FALLBACK_LIBS = ["-lX11", "-lXft", "-lXrender", "-lfontconfig", "-lfreetype"]
+PKG_CONFIG_MODULES = ("x11", "xft", "xrender", "fontconfig", "freetype2",
+                      "imlib2")
+FALLBACK_LIBS = ["-lX11", "-lXft", "-lXrender", "-lfontconfig", "-lfreetype",
+                 "-lImlib2"]
 
 
 def step(message: str) -> None:

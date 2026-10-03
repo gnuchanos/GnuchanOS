@@ -298,6 +298,11 @@ static int vt_handle_color_osc(TermVt *vt, const char *body) {
  * Everything else is still consumed and dropped, which is what it always did:
  * a window title and a palette change are real strings with no meaning here,
  * and printing one would put a control sequence's text on the screen. */
+/* Defined below with the picture it places; named here because vt_finish_osc()
+   is what calls it and a C99 build refuses a call to a function it has not yet
+   seen. */
+static void vt_handle_image_osc(TermVt *vt, const char *body);
+
 static void vt_finish_osc(TermVt *vt) {
     vt->osc[vt->osc_len] = '\0';
 
@@ -333,6 +338,11 @@ static void vt_finish_osc(TermVt *vt) {
            reports the request and moves on; a QUERY is answered there and not
            here because only the caller can look the colour up. */
         vt_handle_color_osc(vt, body);
+
+        /* OSC 1338 — a picture placed over the cells. This terminal's own
+           sequence; see term_image.h for its shape and term_vt.h for why the
+           picture is not decoded here. */
+        vt_handle_image_osc(vt, body);
     }
 
     vt->osc_len = 0;
@@ -344,6 +354,50 @@ static void vt_finish_osc(TermVt *vt) {
  * carries it. 0x5F to 0x7E are the shapes; below that the set is ASCII. The
  * table is indexed from 0x5F.
  */
+/* --- a picture placed in the terminal -------------------------------------
+ *
+ * `ESC ] 1338 ; x ; y ; rows ; path BEL` — this terminal's own sequence for
+ * putting a picture over the cells. See term_image.h for why it exists and for
+ * what the numbers mean.
+ *
+ * The three numbers come first and the path is everything after the fourth
+ * semicolon, taken as it is. That is the whole reason the path is last: a path
+ * may hold a semicolon, an `=` or anything else, and a parser that split on
+ * every one would cut a file's name in half. Taking the tail is what lets a
+ * file be called whatever it is called.
+ *
+ * The callback is handed the four numbers and the path; the picture itself is
+ * loaded by whoever owns the display, because a parser of bytes has no business
+ * opening files. */
+static void vt_handle_image_osc(TermVt *vt, const char *body) {
+    if (vt->host.image == NULL) {
+        return;
+    }
+    const char *p = body;
+    int code = 0;
+    if (osc_parse_int(&p, &code) != 0 || code != 1338) {
+        return;
+    }
+
+    /* xoff ; yoff ; cols ; rows — four numbers, then the path. */
+    int values[4];
+    for (int i = 0; i < 4; i++) {
+        if (*p != ';') {
+            return;
+        }
+        p++;
+        if (osc_parse_int(&p, &values[i]) != 0) {
+            return;
+        }
+    }
+    if (*p != ';') {
+        return;
+    }
+    p++;
+    /* Everything left is the path, taken as it is. */
+    vt->host.image(vt->host.user, values[0], values[1], values[2], values[3], p);
+}
+
 static const uint32_t DEC_GRAPHICS[0x20] = {
     0x00A0, /* _  blank                     */
     0x25C6, /* `  black diamond             */
@@ -919,7 +973,19 @@ typedef struct TermVtEntry {
    uniform while the two screens stay the parser's business. */
 static void do_sgr(TermVt *vt, const TermVtSequence *seq) { seq_sgr(vt->active, seq); }
 static void do_cup(TermVt *vt, const TermVtSequence *seq) { seq_cursor_position(vt->active, seq); }
-static void do_ed(TermVt *vt, const TermVtSequence *seq) { seq_erase_display(vt->active, seq); }
+/* ED — erase in display. A FULL erase (2 or 3) also drops the pictures the
+   program placed, because a picture is not part of the grid and would otherwise
+   stand over the cells that were just emptied — `clear` in a shell sends 2, and
+   a logo left over the fresh prompt is the one thing a picture must not do.
+   A partial erase (0 or 1) leaves them: it clears half a screen, and a picture
+   sitting in the other half was not touched. */
+static void do_ed(TermVt *vt, const TermVtSequence *seq) {
+    int mode = seq_param(seq, 0, 0);
+    seq_erase_display(vt->active, seq);
+    if ((mode == 2 || mode == 3) && vt->host.clear != NULL) {
+        vt->host.clear(vt->host.user);
+    }
+}
 static void do_el(TermVt *vt, const TermVtSequence *seq) { seq_erase_line(vt->active, seq); }
 static void do_scroll_region(TermVt *vt, const TermVtSequence *seq) { seq_scroll_region(vt->active, seq); }
 static void do_cuu(TermVt *vt, const TermVtSequence *seq) { seq_cursor_up(vt->active, seq); }
@@ -1034,6 +1100,11 @@ static void do_decstr(TermVt *vt, const TermVtSequence *seq) {
    it is switched on, and leaving any of it behind is a difference the program
    can see. */
 static void vt_full_reset(TermVt *vt) {
+    /* A reset is "as if switched on", and a terminal just switched on shows no
+       picture. `ESC [ ! p` and RIS both come through here. */
+    if (vt->host.clear != NULL) {
+        vt->host.clear(vt->host.user);
+    }
     term_grid_reset(&vt->grid);
     term_grid_reset(&vt->alt);
     vt->alt_active = 0;

@@ -75,6 +75,20 @@ void term_render_frame(TermCore *core);
    and after either of those nothing is known about what is on the window. */
 void term_render_all(TermCore *core);
 
+/* Place a picture over the grid — see term_image.h for the escape a program
+   sends. The cell is where its top-left corner goes and `cols`/`rows` are the
+   block it is fitted into, its proportions kept. The whole screen is drawn
+   again, because a picture lands over cells the dirty marks know nothing
+   about. */
+void term_render_place_image(TermCore *core, int x, int y, int cols, int rows,
+                             const char *path);
+
+/* Drop every picture the program placed. Called when the screen is CLEARED —
+   see the `clear` callback in term_vt.h — because a picture is not part of the
+   grid and would otherwise stand over cells that were just emptied. The next
+   frame redraws the rows without it. */
+void term_render_clear_images(TermCore *core);
+
 /* --- the module ----------------------------------------------------------- */
 
 /* The renderer as the core sees it: it answers Expose and Configure, draws on a

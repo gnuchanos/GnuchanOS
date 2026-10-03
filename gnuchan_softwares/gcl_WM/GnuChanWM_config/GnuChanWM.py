@@ -201,3 +201,31 @@ gcl_Power.Lid(
     # ScreensaverCommand="GnuChanSS",
     # LockScreenCommand="GnuChanSL",
 )
+
+# ---------------------------------------------------------------------------
+# Bos duran masaustu (idle): fare+klavye bir sure hareketsiz kalinca ne olsun.
+# ---------------------------------------------------------------------------
+# ONEMLI: X sunucusunun KENDI ekran karartmasi (screen blanking) ve DPMS
+# zamanlayicisi WM tarafindan KAPATILIR. Eskiden bunlar acik birakiliyordu ve
+# kimse onlari durdurmadigi icin ekran bir sure sonra DUMDUZ SIYAH oluyordu —
+# ne ekran koruyucu, ne geri gelecek bir sey. Artik karartma karari bu masaustunun
+# kendi: asagidaki ayalar ne zaman ve neyin baslayacagini belirler.
+# 
+# Ekran koruyucu ve kilit programlari yukaridaki gcl_Power.Lid ile AYNIDIR
+# (ScreensaverCommand / LockScreenCommand). Yani saver'ini bir kez yazdiysan
+# hem uyanista hem bos durusta o calisir.
+gcl_Power.Idle(
+    # Tum ozelligin anahtari. False ise hicbir sey yapilmaz — sunucunun kendi
+    # karartmasi yine kapali kalir, ama oturum kendi saver'ini baslatmaz.
+    Enabled=True,
+
+    # Klavye ve fare kac saniye hareketsiz kalinca devreye girsin.
+    Seconds=300,
+
+    # Sure dolunca ekran koruyucu baslasin mi (GnuChanSS --once).
+    ScreenSaver=True,
+
+    # Ayni anda kilit ekrani da gelsin mi (GnuChanSL). True ise kilit ONE
+    # gelir; ekran koruyucu arkada kalir. Bir odaya birakilan makine icin.
+    LockScreen=False,
+)

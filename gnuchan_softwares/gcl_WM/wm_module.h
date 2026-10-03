@@ -28,7 +28,7 @@
 
 typedef struct WmCore WmCore;
 
-#define WM_MAX_MODULES 16
+#define WM_MAX_MODULES 20
 
 /* A module that asks for more than this between ticks is a module that should
    not have asked; the core clamps rather than trusting it. */

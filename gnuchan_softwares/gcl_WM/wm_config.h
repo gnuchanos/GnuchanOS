@@ -323,6 +323,30 @@ typedef struct WmConfig {
     int lid_open_screensaver;    /* run the screen saver on wake             */
     int lid_open_lockscreen;     /* lock the screen on wake                  */
 
+    /* --- idle: the screen that goes dark because nobody is there --------
+     *
+     * Set through `gcl_Power.Idle(...)` in the settings script. The X server
+     * keeps a screen-blanking timer and a DPMS timer of its own, and on a
+     * machine that never turns them off the panel simply goes dark after a
+     * while — a black screen with no screen saver and nothing to wake: the
+     * desk looks broken and there is no picture to come back to. The window
+     * manager turns both of those off at start-up (wm_idle.c) and watches the
+     * idle clock itself, so what happens after a quiet spell is this
+     * desktop's own decision rather than the server's.
+     *
+     * `idle_enabled` is the whole feature's switch: off, the server's own
+     * blanking is left exactly as it was found. `idle_seconds` is how long the
+     * keyboard and pointer have to be still, `idle_screensaver` runs the
+     * screen saver when that passes, and `idle_lockscreen` locks the screen at
+     * the same moment — a machine that wants to come back to a password
+     * instead of a picture turns the second one on. Both programs are the ones
+     * the lid settings already name (screensaver_command / lockscreen_command),
+     * so a machine that overrode them for a wake-up gets the same ones here. */
+    int idle_enabled;            /* watch the idle clock at all              */
+    int idle_seconds;            /* how long quiet before acting             */
+    int idle_screensaver;        /* run the screen saver when it passes      */
+    int idle_lockscreen;         /* lock the screen when it passes           */
+
     /* The programs the lid module runs. Empty means "look GnuChanSS /
        GnuChanSL up on PATH", which is what a machine that named none gets.
        They are written commands, not program names, so the same tokeniser

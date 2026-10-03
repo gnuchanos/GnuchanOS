@@ -106,6 +106,15 @@ static void register_modules(WmCore *core) {
        finds no lid on the first tick and does nothing, so it costs nothing to
        always register. */
     wm_register(core, &wm_lid_module);
+    /* The idle desk: turn the X server's own blanking and DPMS off, and run
+       the session's screen saver (and lock) when the keyboard and pointer have
+       been still for the configured time. Registered last because it is the
+       one module that acts on a quiet desk rather than on an event: its init
+       runs `xset s off -dpms` once the display is up, and its tick then keeps
+       the desk from going black behind the session's back. It is a companion
+       to the lid module and shares its command lines, but the two are separate
+       because a desk can be idle with the lid open and shut with it idle. */
+    wm_register(core, &wm_idle_module);
 }
 
 /* Send everything the WM prints to the log as well as to stderr. Called

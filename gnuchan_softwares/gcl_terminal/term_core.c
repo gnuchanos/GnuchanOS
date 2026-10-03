@@ -408,6 +408,44 @@ static int core_slot_palette_index(int slot) {
     return slot;
 }
 
+/* A picture a program placed: `ESC ] 1338 ; xoff ; yoff ; cols ; rows ; path`.
+ *
+ * The offset is counted from the CURSOR, which is where the program's next
+ * character would go, so a fetch tool can print its text and place the logo
+ * beside it without the terminal and the program having to agree on an absolute
+ * column. The cursor is read here, in the core, because the core is what holds
+ * the grid; the renderer is handed the finished absolute cell. See
+ * term_image.h for why a picture is drawn as pixels.
+ *
+ * The cursor is NOT moved: the picture is drawn over the cells and the program's
+ * own text still flows from where the cursor was. */
+static void core_vt_image(void *user, int xoff, int yoff, int cols, int rows,
+                          const char *path) {
+    TermCore *core = (TermCore *)user;
+    if (core == NULL) {
+        return;
+    }
+    const TermGrid *grid = term_vt_screen(&core->vt);
+    int x = grid->cursor_x + xoff;
+    int y = grid->cursor_y + yoff;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    term_render_place_image(core, x, y, cols, rows, path);
+}
+
+/* The screen was CLEARED. The pictures a program placed are dropped with it —
+   see the `clear` callback in term_vt.h — because a picture is not part of the
+   grid and would otherwise stand over the cells that were just emptied. The
+   renderer redraws the whole screen afterwards, so the rows the pictures covered
+   are painted without them. */
+static void core_vt_clear(void *user) {
+    TermCore *core = (TermCore *)user;
+    if (core == NULL) {
+        return;
+    }
+    term_render_clear_images(core);
+}
+
 static void core_vt_color(void *user, int slot, uint32_t rgb, int action) {
     TermCore *core = (TermCore *)user;
     if (core == NULL || core->style == NULL) {
@@ -748,6 +786,8 @@ int term_core_init(TermCore *core, const char *title, const char *font_name) {
     core->vt_host.osc = core_vt_osc;
     core->vt_host.title = core_vt_title;
     core->vt_host.color = core_vt_color;
+    core->vt_host.image = core_vt_image;
+    core->vt_host.clear = core_vt_clear;
     core->vt_host.user = core;
     core->vt.host = core->vt_host;
 

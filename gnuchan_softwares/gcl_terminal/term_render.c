@@ -186,9 +186,14 @@ int term_render_init(TermCore *core) {
     render->needs_full = 1;
     render->cursor_x = -1;
     render->cursor_y = -1;
+    /* The pictures a program places — see term_image.h. An empty list is made
+       even when none is ever placed, so the frame's draw call needs no NULL
+       check of its own. */
+    render->images = term_image_list_new();
     core->render = render;
 
     if (term_render_resize(core, core->width, core->height) != 0) {
+        term_image_list_free(render->images, core->display);
         free(render);
         core->render = NULL;
         return -1;
@@ -202,6 +207,9 @@ void term_render_free(TermCore *core) {
         return;
     }
     render_free_buffer(core);
+    /* The pictures' pixmaps are freed with the display, before it closes. */
+    term_image_list_free(render->images, core->display);
+    render->images = NULL;
     free(render);
     core->render = NULL;
 }
@@ -397,6 +405,116 @@ static int pen_same(const RenderPen *a, const RenderPen *b) {
     return a->face == b->face && a->color == b->color;
 }
 
+/* --- the block elements ---------------------------------------------------
+ *
+ * A solid block — U+2580 and its family, the characters a picture drawn in
+ * text is made of — is drawn as a RECTANGLE and not as a glyph.
+ *
+ * The font's glyph for a block does not fill the cell: the em box it is drawn
+ * in stops a little short of the cell's own height, so a column of half blocks
+ * is a column of half blocks with a stripe of the background showing between
+ * every pair of rows. Drawn at the size a fetch picture is drawn, that is a
+ * picture full of horizontal stripes — and no font size removes it, because the
+ * glyph is simply not the height of the cell. The cell IS a rectangle, and a
+ * block element is a description of a rectangle inside it, so it is drawn as
+ * one: flush with the cell's edges, in the cell's ink, and a column of them is
+ * continuous.
+ *
+ * The shaded blocks (U+2591..U+2593) are left to the font: they are DITHERED,
+ * not solid, and a rectangle would draw them wrong the other way.
+ */
+static int is_block_element(uint32_t ch) {
+    if (ch < 0x2580 || ch > 0x2595) {
+        return 0;
+    }
+    if (ch >= 0x2591 && ch <= 0x2593) {
+        return 0;   /* the shaded blocks: the font's dither is right */
+    }
+    return 1;
+}
+
+/* Fill one rectangle of a cell on the grid surface. */
+static void fill_cell_rect(TermCore *core, int x, int y, int w, int h,
+                           uint32_t color) {
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    TermRender *render = render_of(core);
+    XSetForeground(core->display, core->style->gc, (unsigned long)color);
+    XFillRectangle(core->display, render->grid, core->style->gc,
+                   x, y, (unsigned)(w), (unsigned)(h));
+}
+
+/* The ink a block element is drawn in, with the reverse attribute and the
+   selection folded in the same way pen_for() folds them. */
+static uint32_t block_ink(const TermStyle *style, const TermCell *cell,
+                          int selected) {
+    int reversed = term_style_is_reversed(cell) ^ (selected ? 1 : 0);
+    return term_style_cell_color(style, cell, reversed ? 0 : 1);
+}
+
+/* Draw a block element as the rectangle it describes. Answers 1 when it drew
+   one — the caller then moves on and never hands the character to the font.
+   The background the block sits on has already been painted by the background
+   pass, so only the lit part is filled here. */
+static int draw_block_element(TermCore *core, const TermCell *cell,
+                              int col, int row, int selected) {
+    if (!is_block_element(cell->ch)) {
+        return 0;
+    }
+
+    int cell_w = core->style->cell_width;
+    int cell_h = core->style->cell_height;
+    int x = col * cell_w;
+    int y = row * cell_h;
+    uint32_t ink = block_ink(core->style, cell, selected);
+
+    switch (cell->ch) {
+    case 0x2580: {                       /* upper half block            */
+        fill_cell_rect(core, x, y, cell_w, cell_h / 2, ink);
+        break;
+    }
+    case 0x2590: {                       /* right half block            */
+        int w = cell_w / 2;
+        fill_cell_rect(core, x + cell_w - w, y, w, cell_h, ink);
+        break;
+    }
+    case 0x2588:                          /* full block                  */
+        fill_cell_rect(core, x, y, cell_w, cell_h, ink);
+        break;
+    case 0x2594: {                       /* upper one eighth block      */
+        int h = cell_h / 8;
+        if (h < 1) h = 1;
+        fill_cell_rect(core, x, y, cell_w, h, ink);
+        break;
+    }
+    case 0x2595: {                       /* right one eighth block      */
+        int w = cell_w / 8;
+        if (w < 1) w = 1;
+        fill_cell_rect(core, x + cell_w - w, y, w, cell_h, ink);
+        break;
+    }
+    default:
+        if (cell->ch >= 0x2581 && cell->ch <= 0x2587) {
+            /* Lower eighths: U+2581 is one eighth up from the bottom. */
+            int eighths = cell->ch - 0x2580;
+            int h = (cell_h * eighths) / 8;
+            if (h < 1) h = 1;
+            fill_cell_rect(core, x, y + cell_h - h, cell_w, h, ink);
+        } else if (cell->ch >= 0x2589 && cell->ch <= 0x258F) {
+            /* Left eighths: U+2589 is seven eighths and U+258F one. */
+            int eighths = 0x2590 - cell->ch;
+            int w = (cell_w * eighths) / 8;
+            if (w < 1) w = 1;
+            fill_cell_rect(core, x, y, w, cell_h, ink);
+        } else {
+            return 0;
+        }
+        break;
+    }
+    return 1;
+}
+
 /* Pass 2: the text. */
 static void render_row_text(TermCore *core, const TermGrid *grid,
                             const TermCell *cells, int cols, int y) {
@@ -415,6 +533,13 @@ static void render_row_text(TermCore *core, const TermGrid *grid,
         }
 
         int selected = cell_is_selected(core, y, x);
+
+        /* A block element is a rectangle, not a glyph — see above. */
+        if (draw_block_element(core, cell, x, y, selected)) {
+            x += cell->wide ? 2 : 1;
+            continue;
+        }
+
         RenderPen pen = pen_for(core, cell, selected);
 
         /* A wide character is drawn alone. */
@@ -432,7 +557,8 @@ static void render_row_text(TermCore *core, const TermGrid *grid,
         while (x < cols && x < core->cols &&
                run_len < TERM_RENDER_MAX_RUN) {
             const TermCell *rc = &cells[x];
-            if (rc->ch == 0 || rc->wide_cont || rc->wide) {
+            if (rc->ch == 0 || rc->wide_cont || rc->wide ||
+                is_block_element(rc->ch)) {
                 break;
             }
             /* The run breaks where the SELECTION changes as well as where the
@@ -956,6 +1082,16 @@ void term_render_frame(TermCore *core) {
         render_suggestion(core, render);
     }
 
+    /* The pictures a program placed go over the finished cells — see
+       term_image.h. They are drawn onto the GRID surface and not the window
+       one, so a picture sits exactly where its cells are and follows the frame
+       offset the one XCopyArea below already knows. Drawing them every frame
+       rather than once is what keeps them from being erased by a partial
+       redraw of the rows underneath. */
+    term_image_draw(render->images, core->display, render->grid,
+                    core->style->gc, core->style->cell_width,
+                    core->style->cell_height);
+
     /* The grid is finished. It goes down onto the window at the frame's
        offset — this line is the ONLY place that knows the frame exists, which
        is what keeps every coordinate above free of it. */
@@ -988,6 +1124,35 @@ void term_render_frame(TermCore *core) {
     render->needs_full = 0;
     term_grid_clear_dirty((TermGrid *)grid);
     term_core_draw_done(core);
+}
+
+void term_render_place_image(TermCore *core, int x, int y, int cols, int rows,
+                             const char *path) {
+    TermRender *render = render_of(core);
+    if (render == NULL || render->images == NULL || core->style == NULL) {
+        return;
+    }
+    term_image_place(render->images, core->display, core->style->visual,
+                     core->style->colormap, core->depth,
+                     core->style->cell_width, core->style->cell_height,
+                     x, y, cols, rows, path,
+                     term_style_default_bg(core->style));
+    /* A picture lands over cells the dirty marks know nothing about, so the
+       whole screen is drawn again. It is one frame, and a picture is placed
+       once. */
+    term_render_all(core);
+}
+
+void term_render_clear_images(TermCore *core) {
+    TermRender *render = render_of(core);
+    if (render == NULL || render->images == NULL) {
+        return;
+    }
+    term_image_list_clear(render->images, core->display);
+    /* The whole screen is drawn again: the picture covered cells the dirty
+       marks know nothing about, so a partial frame would leave the rows it
+       stood on holding its pixels until something else wrote over them. */
+    term_render_all(core);
 }
 
 void term_render_all(TermCore *core) {

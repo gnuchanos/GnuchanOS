@@ -686,6 +686,44 @@ static void set_power(WmConfig *config, const WmStatement *statement) {
     }
 }
 
+/* gcl_Power.Idle(Enabled=True, Seconds=300, ScreenSaver=True, LockScreen=False)
+ *
+ * The desk that goes quiet. The X server's own blanking and DPMS are turned
+ * off by wm_idle.c, and this is what replaces them: how long the keyboard and
+ * pointer have to be still, and what happens when they have been. The two
+ * "what happens" switches are separate because a machine may want the picture
+ * without the password (an office desk) or the password without the picture
+ * (a machine left in a room) — and neither is the other's special case.
+ *
+ * The programs are not named here: the same screensaver_command and
+ * lockscreen_command the lid already uses are what run, so a machine that
+ * named its own saver once gets it for both a wake-up and an idle spell. */
+static void set_idle(WmConfig *config, const WmStatement *statement) {
+    const struct {
+        const char *argument;
+        int *destination;
+        int fallback;
+    } switches[] = {
+        { "Enabled",     &config->idle_enabled,     1 },
+        { "ScreenSaver", &config->idle_screensaver, 1 },
+        { "LockScreen",  &config->idle_lockscreen,  0 },
+    };
+    for (unsigned int i = 0; i < sizeof(switches) / sizeof(switches[0]); i++) {
+        const WmValue *argument =
+            wm_config_argument(statement, switches[i].argument);
+        if (argument) {
+            *switches[i].destination =
+                wm_config_value_bool(argument, switches[i].fallback);
+        }
+    }
+
+    const WmValue *seconds = wm_config_argument(statement, "Seconds");
+    if (seconds) {
+        config->idle_seconds =
+            wm_config_value_number(seconds, config->idle_seconds);
+    }
+}
+
 /* --- key bindings --------------------------------------------------------- */
 
 /* The modifier a name stands for. The script writes its keys as names —
@@ -895,6 +933,8 @@ static void walk(Script *script, WmConfig *config,
             set_touchpad(config, statement);
         } else if (strcmp(statement->target, "gcl_Power.Lid") == 0) {
             set_power(config, statement);
+        } else if (strcmp(statement->target, "gcl_Power.Idle") == 0) {
+            set_idle(config, statement);
         }
         /* Every other call is something this build does not act on. It is not
            reported: the config is shared with a runtime that gives those calls
@@ -988,6 +1028,20 @@ void wm_config_defaults(WmConfig *config) {
     config->lid_open_lockscreen = 0;
     config->screensaver_command[0] = '\0';
     config->lockscreen_command[0] = '\0';
+
+    /* The idle desk, as a machine that never wrote a script gets it. On, at
+       five minutes — which is the same number GnuChanSS waits for on its own,
+       so a session and its saver agree about when "quiet" is — with the screen
+       saver and not the lock screen. That is what a person who sets a saver up
+       and walks away expects: a picture, not a password. The lock is the
+       setting to turn on, and it is off by default so an idle desk does not
+       surprise anyone by asking for a password. These are the same values
+       set_idle() falls back to, so a script that names some and not others
+       gets the same answer for the ones it left out. */
+    config->idle_enabled = 1;
+    config->idle_seconds = 300;
+    config->idle_screensaver = 1;
+    config->idle_lockscreen = 0;
 
     /* The bar the shipped script asks for, so a machine with no script still
        has a bar rather than an empty edge. It is one bar, the first of the

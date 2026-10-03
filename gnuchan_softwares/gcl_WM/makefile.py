@@ -71,6 +71,7 @@ SOURCES = (
     "wm_spawn.c",
     "wm_autostart.c",
     "wm_lid.c",
+    "wm_idle.c",
     "wm_menu.c",
     "wm_input.c",
     "wm_keys.c",
@@ -284,6 +285,20 @@ def randr_headers_present() -> bool:
     return header_present("X11/extensions/Xrandr.h")
 
 
+def scrnsaver_headers_present() -> bool:
+    """Whether libXss's header is here.
+
+    It is what the idle module in wm_idle.c asks "how long has the keyboard and
+    pointer been still?" with — the same idle measurement GnuChanSS reads on its
+    own. Without it the module turns the server's own blanking and DPMS off (so
+    the panel cannot go dark on its own) but cannot start the session's screen
+    saver at the configured time, because it has no clock to watch. That is a
+    degraded but not broken session, so it is a dependency of the build rather
+    than an optional one.
+    """
+    return header_present("X11/extensions/scrnsaver.h")
+
+
 def program_exists(name: str) -> bool:
     if "/" in name:
         return os.access(name, os.X_OK)
@@ -345,6 +360,12 @@ def missing_build_dependencies() -> list[str]:
     # whole desktop when it goes fullscreen — see wm_randr.c.
     if not randr_headers_present():
         needed.append("libxrandr-dev")
+    # The idle module's: it is how the session answers "how long has the desk
+    # been quiet?" and so when to run the screen saver — see wm_idle.c. Without
+    # it the server's own blanking is still turned off (no more black screen)
+    # but the saver cannot be started at the configured time.
+    if not scrnsaver_headers_present():
+        needed.append("libxss-dev")
     return needed
 
 
@@ -393,13 +414,18 @@ def x11_flags() -> tuple[list[str], list[str]]:
     """
     pkg_config = shutil.which("pkg-config")
     if pkg_config is not None:
+        # The screen-saver extension's module is named `xscrnsaver`, not `xss`
+        # (its library is libXss, but that is not what pkg-config calls it),
+        # and it needs `xext` beside it: XScreenSaverQueryInfo is an XExt call.
         cflags = run([pkg_config, "--cflags",
                       "x11", "xft", "xcursor", "imlib2",
-                      "xcomposite", "xdamage", "xrender", "xrandr"],
+                      "xcomposite", "xdamage", "xrender", "xrandr",
+                      "xscrnsaver", "xext"],
                      capture=True)
         libs = run([pkg_config, "--libs",
                     "x11", "xft", "xcursor", "imlib2",
-                    "xcomposite", "xdamage", "xrender", "xrandr"],
+                    "xcomposite", "xdamage", "xrender", "xrandr",
+                    "xscrnsaver", "xext"],
                    capture=True)
         if cflags.returncode == 0 and libs.returncode == 0:
             return cflags.stdout.split(), libs.stdout.split()
@@ -407,7 +433,8 @@ def x11_flags() -> tuple[list[str], list[str]]:
     fallback_includes += ["-I" + path for path in freetype_includes()]
     return (fallback_includes,
             ["-lX11", "-lXft", "-lXcursor", "-lImlib2",
-             "-lXcomposite", "-lXdamage", "-lXrender", "-lXrandr"])
+             "-lXcomposite", "-lXdamage", "-lXrender", "-lXrandr",
+             "-lXss", "-lXext"])
 
 
 def check_sources() -> None:

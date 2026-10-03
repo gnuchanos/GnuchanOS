@@ -12,6 +12,7 @@
 #include <X11/Xft/Xft.h>
 
 #include "term_core.h"
+#include "term_image.h"
 
 /* The longest run of characters drawn in one Xft call. Xft lays out a run of
    code points in a single call, so a row of text in one colour costs one call
@@ -74,6 +75,11 @@ typedef struct TermRender {
     /* Whether the whole window needs redrawing on the next frame: after a
        resize or an expose, nothing is known about what is on the window. */
     int needs_full;
+
+    /* The pictures a program has placed — see term_image.h. They are drawn over
+       the finished grid, so a picture stands where its cells are and the text
+       around it is untouched. */
+    TermImageList *images;
 } TermRender;
 
 #endif /* GNUCHANTERM_RENDER_INTERNAL_H */
