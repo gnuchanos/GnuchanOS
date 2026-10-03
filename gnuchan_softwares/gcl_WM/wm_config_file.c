@@ -861,6 +861,39 @@ static void add_bindings_from_list(const Script *script, WmConfig *config,
     }
 }
 
+/* gcl_autostart.all = ["GnuChanNotification", "GnuChanDock --bottom"] — the
+ * programs the session starts by itself.
+ *
+ * Each entry is a command LINE, so it is read through value_text and a name
+ * the script assigned resolves to what it assigned: the same rule the keys and
+ * every other written value follow. An entry that is empty after resolution is
+ * dropped rather than kept as a blank command, because a blank command is a
+ * line in the log that says nothing. The list is a plain list of strings and
+ * not a list of calls, so there is nothing here to give an argument name to —
+ * the whole line, arguments and all, is the entry. */
+static void add_autostart_from_list(const Script *script, WmConfig *config,
+                                    const WmValue *list) {
+    if (!list || list->kind != WM_VALUE_LIST) {
+        return;
+    }
+    for (int i = 0; i < list->item_count; i++) {
+        if (config->autostart_count >= WM_CONFIG_MAX_AUTOSTART) {
+            fprintf(stderr,
+                    "gnuchanwm: config: too many autostart programs, one "
+                    "ignored\n");
+            break;
+        }
+        char text[WM_CONFIG_TEXT_LENGTH];
+        value_text(script, &list->items[i], text, sizeof(text));
+        if (!text[0]) {
+            continue;
+        }
+        copy_text(config->autostart[config->autostart_count],
+                  WM_CONFIG_TEXT_LENGTH, text);
+        config->autostart_count++;
+    }
+}
+
 /* A name given a value, remembered so a later statement can use it: the script
    assigns super_key1 = "Mod1" and then writes keys=[super_key1, ...]. */
 static void remember_assignment(Script *script, const WmStatement *statement) {
@@ -890,6 +923,8 @@ static void walk(Script *script, WmConfig *config,
                                      sizeof(config->terminal));
             } else if (strcmp(statement->target, "gcl_keys.all") == 0) {
                 add_bindings_from_list(script, config, &statement->value);
+            } else if (strcmp(statement->target, "gcl_autostart.all") == 0) {
+                add_autostart_from_list(script, config, &statement->value);
             } else if (strcmp(statement->target,
                               "gcl_Window.BackgroundImage") == 0) {
                 /* The wallpaper, written as an assignment rather than a call:
@@ -994,6 +1029,18 @@ void wm_config_defaults(WmConfig *config) {
     /* Empty: "look at $TERMINAL, then at the usual terminals", which is what a
        machine that never wrote a script gets. */
     config->terminal[0] = '\0';
+
+    /* The programs a session starts with no script to name them. The
+       notification server is the one that matters: a program that notifies a
+       moment after it starts — a browser, a mail client, Steam — finds no
+       server and the notification is lost. It is written here as well as in
+       the shipped script so a machine with no script still gets it, and the
+       two cannot drift. The lock screen and the screen saver are NOT here:
+       they are run on demand by the idle and lid modules, and starting one at
+       login would lock a user out of their own session. */
+    copy_text(config->autostart[0], WM_CONFIG_TEXT_LENGTH,
+              "GnuChanNotification");
+    config->autostart_count = 1;
 
     /* The three names the installers in dotfile/ actually install under:
        dotfile/GTK_THEME/theme_install.py writes gnuchanpurple's GTK theme as
@@ -1102,11 +1149,14 @@ int wm_config_load(WmConfig *config, const char *path) {
        looked like most of the desktop being deleted. */
     int defines_bar = 0;
     int defines_keys = 0;
+    int defines_autostart = 0;
     for (int i = 0; i < count; i++) {
         if (strcmp(statements[i].target, "gcl_BAR.call") == 0) {
             defines_bar = 1;
         } else if (strcmp(statements[i].target, "gcl_keys.all") == 0) {
             defines_keys = 1;
+        } else if (strcmp(statements[i].target, "gcl_autostart.all") == 0) {
+            defines_autostart = 1;
         }
     }
 
@@ -1124,6 +1174,15 @@ int wm_config_load(WmConfig *config, const char *path) {
     }
     if (defines_keys) {
         parsed.binding_count = 0;
+    }
+    /* The autostart list is a collection, and it is replaced whole for the
+       same reason the bar and the keys are: a script that lists what starts
+       means exactly what it listed, not that list added to the one read
+       before. A script that says nothing about it keeps the list it had — so
+       an edit that touches only a colour does not stop the notification
+       server from starting. */
+    if (defines_autostart) {
+        parsed.autostart_count = 0;
     }
 
     /* The desktop's picture and its flat colour are single settings and not
@@ -1430,6 +1489,17 @@ static void config_report(const WmConfig *config, const char *origin) {
             config->gtk_theme[0] ? config->gtk_theme : "(default)",
             config->icon_theme[0] ? config->icon_theme : "(default)",
             config->cursor_theme[0] ? config->cursor_theme : "(default)");
+    /* The programs the session will start, one line each, so a daemon that
+       did not come up can be told apart from one that was never asked for:
+       the log says whether the script named it and whether it was started. */
+    for (int i = 0; i < config->autostart_count; i++) {
+        fprintf(stderr, "gnuchanwm: config %s: autostart %d: %s\n",
+                origin, i, config->autostart[i]);
+    }
+    if (config->autostart_count == 0) {
+        fprintf(stderr, "gnuchanwm: config %s: no autostart programs\n",
+                origin);
+    }
 }
 
 /* --- applying it to the desktop ------------------------------------------- */

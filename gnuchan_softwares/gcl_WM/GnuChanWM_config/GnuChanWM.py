@@ -156,6 +156,30 @@ gcl_keys.all = [
     gcl_key.MultiKey(keys=[super_key1, "l"], action=gcl_power.LockScreen()),
 ]
 
+# ---------------------------------------------------------------------------
+# Otomatik baslatilacak programlar. Oturum acilirken WM bunlari kendisi
+# baslatir. Terminal zaten her zaman acilir (Alt+Enter da onu acar); bu liste
+# terminalin DISINDA oturumun kendi servisleri icin.
+#
+# EN ONEMLISI: GnuChanNotification. Bildirim sunucusu, kendisini kullanan ilk
+# programdan ONCE calisiyor olmali — tarayici, posta istemcisi, Steam gibi
+# programlar acildiktan hemen sonra bildirim gonderir ve bir sunucu yoksa o
+# bildirim kaybolur. Ayrica bu programlar dogrudan oturum veri yoluna (session
+# bus) konusur; o yuzden bildirim sunucusu dogru bus'a baglanmis olmali
+# (bkz. gcl_DM'in oturumu).
+#
+# Her satir bir komut satiridir, yani arguman da alabilir:
+#   "GnuChanDock --bottom"
+# Bulunamayan bir komut yalnizca log'a yazilir; sonrakileri durdurmaz.
+gcl_autostart.all = [
+    # Bildirim sunucusu. Once baslamali ki tarayici/Steam gibi programlarin ilk
+    # bildirimleri kaybolmasin.
+    "GnuChanNotification",
+
+    # Ekranin altindaki dock. Oturum acilinca hazir olsun.
+    "GnuChanDock",
+]
+
 # fare behavior
 gcl_mouse.MouseBehavior(
     LeftClick="select",

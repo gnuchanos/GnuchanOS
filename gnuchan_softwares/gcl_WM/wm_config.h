@@ -29,6 +29,12 @@ typedef struct WmCore WmCore;
 #define WM_CONFIG_MAX_WIDGETS  64
 #define WM_CONFIG_MAX_BINDINGS 64
 
+/* How many programs a session starts by itself — see WmConfig.autostart. The
+   ceiling exists for the same reason the others do: every entry is a process
+   the session owns, and a script that asked for hundreds is a script that has
+   stopped describing a desktop. */
+#define WM_CONFIG_MAX_AUTOSTART 16
+
 /* How many bars one session may have. A script may call gcl_BAR.call(...) as
    many times as it likes — a bar along the top, another along the bottom, a
    small one down the side — and each call is one bar. There is a ceiling
@@ -272,6 +278,24 @@ typedef struct WmConfig {
     /* What Alt+Enter opens. Empty means "look at $TERMINAL, then at the usual
        terminals", which is what a machine with no config gets. */
     char terminal[WM_CONFIG_TEXT_LENGTH];
+
+    /* The programs the session starts by itself, written as a list:
+       `gcl_autostart.all = ["GnuChanNotification", "GnuChanDock"]`.
+     *
+     * Each entry is a command LINE and not a bare program name — the same
+     * thing a RunProgram action carries — so an entry may name arguments:
+     * "GnuChanDock --bottom". They are started once, at session start, by
+     * wm_autostart.c, and each is started the way every other program is:
+     * fork and execvp, never a shell. A command that cannot be found fails in
+     * its own child and costs the session nothing but one line in the log.
+     *
+     * This is where the desktop's own daemons belong — the notification server
+     * above all, which has to be running before the first program that might
+     * want to notify does. It is a setting and not a hard-coded list because
+     * what a session starts is a policy: a machine that replaces the
+     * notification server, or wants a panel, edits this and nothing else. */
+    char autostart[WM_CONFIG_MAX_AUTOSTART][WM_CONFIG_TEXT_LENGTH];
+    int autostart_count;
 
     /* How many workspaces the desktop has. It is the config's number and not a
        constant, because the keys that switch between them are written from it:

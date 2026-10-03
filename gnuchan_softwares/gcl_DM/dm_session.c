@@ -131,6 +131,46 @@ static void set_session_environment(const struct passwd *user, const char *home,
     setenv("XAUTHORITY", auth_path, 1);
     setenv("XDG_SESSION_TYPE", "x11", 1);
 
+    /* The session's runtime directory and its D-Bus address.
+     *
+     * These are what make the session a SESSION and not merely a program on
+     * an X display, and without them the desktop's own daemons are crippled.
+     * The notification server is the clearest case: it holds the name
+     * org.freedesktop.Notifications on the session bus, and a browser, a mail
+     * client and Steam all reach that name over the bus — not over the X
+     * display. With no bus address in the environment, a program that looks
+     * for one either finds nothing and gives up, or (worse) starts a second,
+     * invisible bus of its own with dbus-launch that nothing else is on, so
+     * every notification lands where no server is listening.
+     *
+     * systemd creates /run/user/$UID and the user's bus when a session opens,
+     * and this greeter starts the session itself rather than through a login
+     * that would do it. So the two are pointed at here when they exist. They
+     * are looked for rather than assumed: a machine with no systemd user
+     * session has no /run/user/$UID, and inventing a bus address that is not
+     * there would be worse than leaving it unset — a program would try to
+     * connect to a socket nobody is listening on and stop, where an unset
+     * variable lets it fall back to its own dbus-launch. */
+    /* The paths are short — /run/user/NNNN and its bus socket — so the buffers
+       are sized for that and not for a general path. A larger buffer here
+       would only move the room into the concatenations below, where the
+       compiler can no longer prove the result fits. */
+    char runtime[256];
+    snprintf(runtime, sizeof(runtime), "/run/user/%u", (unsigned)user->pw_uid);
+    struct stat runtime_info;
+    if (stat(runtime, &runtime_info) == 0 && S_ISDIR(runtime_info.st_mode)) {
+        setenv("XDG_RUNTIME_DIR", runtime, 1);
+
+        char bus_path[280];
+        snprintf(bus_path, sizeof(bus_path), "%s/bus", runtime);
+        struct stat bus_info;
+        if (stat(bus_path, &bus_info) == 0) {
+            char bus[300];
+            snprintf(bus, sizeof(bus), "unix:path=%s", bus_path);
+            setenv("DBUS_SESSION_BUS_ADDRESS", bus, 1);
+        }
+    }
+
     const char *current = getenv("PATH");
     static char path[4096];
     snprintf(path, sizeof(path), "/usr/local/bin:/usr/bin:/bin:/usr/games%s%s",

@@ -20,8 +20,12 @@ desktop — is **not ready**.
     <p>GnuChanRunner --> GnuChan Simple Program Runner like rofi</p>
     <p>GnuChanTerm --> GnuChan Terminal is simple xterm like terminal</p>
     <p>GnuChanFetch --> GnuChan Fetch is simple neofetch like program supports .png</p>
+    <p>GnuChanDock --> GnuChan Simple Dockprobram</p>
     <p></p>
     <p></p>
+    <p></p>
+    <p></p>
+
 
 [GNUCHANOS DOTFILE]
     <p>READY: GRUN THEME</p>

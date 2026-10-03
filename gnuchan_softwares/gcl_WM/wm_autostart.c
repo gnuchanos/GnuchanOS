@@ -22,11 +22,35 @@
  */
 #include <stdio.h>
 
+#include "wm_config.h"
 #include "wm_core.h"
 #include "wm_spawn.h"
 
+/* Start every program the settings script named through gcl_autostart.all.
+   Each entry is a command line, so it goes through the same tokeniser a
+   RunProgram action does — a name with arguments in it is read the way it was
+   written. A command that cannot be found fails in its own child and is logged
+   there; it does not stop the ones after it, because a missing dock must not
+   cost a session its notification server. */
+static void start_autostart(const WmCore *core) {
+    if (!core) {
+        return;
+    }
+    for (int i = 0; i < core->config.autostart_count; i++) {
+        const char *command = core->config.autostart[i];
+        if (!command[0]) {
+            continue;
+        }
+        if (wm_spawn_command(command) != 0) {
+            fprintf(stderr,
+                    "gnuchanwm: autostart: could not start '%s'\n", command);
+        } else {
+            fprintf(stderr, "gnuchanwm: autostart: started '%s'\n", command);
+        }
+    }
+}
+
 static int autostart_init(WmCore *core) {
-    (void)core;
     if (wm_spawn_terminal() != 0) {
         /* Not fatal. A machine with no terminal installed, or one whose
            $TERMINAL points at something missing, still has a working window
@@ -44,6 +68,11 @@ static int autostart_init(WmCore *core) {
                                "install one (xterm, alacritty) or set $TERMINAL",
                                "");
     }
+
+    /* Then whatever the script named: the session's daemons, the notification
+       server above all, so it is running before the first program that might
+       notify does. */
+    start_autostart(core);
     return 0;
 }
 

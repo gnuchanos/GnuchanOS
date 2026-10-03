@@ -196,6 +196,27 @@ static void manage_map(WmCore *core, Window window) {
  * A message about a window this manager does not hold is ignored rather than
  * answered: it is a client that is not managed, and there is nothing to change
  * about it. */
+/* The EWMH activation request, as the dock (and any task list or pager) sends
+   it. It arrives on the ROOT and names the client in its window field; it is a
+   ClientMessage with message_type _NET_ACTIVE_WINDOW, a source indication in
+   data.l[0] and a timestamp in data.l[1] which this manager does not need.
+ *
+ * Without an answer here, a program that asks this manager to bring a window
+ * forward — the dock's category list clicking a row, a task list clicking an
+ * entry — is asking nothing: the request is dropped and the window the user
+ * chose stays where it is. The manager already knows what "go to this window"
+ * means (wm_frame_activate: restore, raise, focus), so this is only the wire
+ * that carries the request to it. */
+static void manage_active_message(WmCore *core, XClientMessageEvent *message) {
+    if (message->message_type != core->net_active_window) {
+        return;
+    }
+    WmFrame *frame = wm_frame_find(core, message->window);
+    if (frame) {
+        wm_frame_activate(core, frame);
+    }
+}
+
 static void manage_state_message(WmCore *core, XClientMessageEvent *message) {
     if (message->message_type != core->net_wm_state) {
         return;
@@ -431,7 +452,15 @@ static void manage_event(WmCore *core, XEvent *event) {
         manage_property(core, &event->xproperty);
         break;
     case ClientMessage:
-        manage_state_message(core, &event->xclient);
+        /* Two client messages this manager answers: the fullscreen state, and
+           the activation request a dock or task list sends to bring a window
+           to the front. They arrive on the same wire and are told apart by
+           their message type. */
+        if (event->xclient.message_type == core->net_active_window) {
+            manage_active_message(core, &event->xclient);
+        } else {
+            manage_state_message(core, &event->xclient);
+        }
         break;
     case ConfigureNotify:
         /* A real notification about a managed client means it moved or resized
