@@ -11,7 +11,8 @@ important_things = [
     "python3-libtorrent",
     "python3-setuptools",
     "deluged",
-    "openssh-server"
+    "openssh-server",
+    "irqbalance"
 ]
 
 commands = [
@@ -25,7 +26,8 @@ commands = [
     "sudo apt autoremove --purge -y",
     "sudo apt purge lightdm-gtk-greeter -y",
     "sudo apt purgefirefox-esr -y",
-    "sudo apt clean"
+    "sudo apt clean",
+    "sudo systemctl enable --now irqbalance"
 ]
 
 if __name__ == "__main__":

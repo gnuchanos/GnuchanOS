@@ -21,7 +21,7 @@ desktop — is **not ready**.
     <p>GnuChanTerm --> GnuChan Terminal is simple xterm like terminal</p>
     <p>GnuChanFetch --> GnuChan Fetch is simple neofetch like program supports .png</p>
     <p>GnuChanDock --> GnuChan Simple Dockprobram</p>
-    <p></p>
+    <p>GnuChanBrowser --> GnuChan Simple Qt Engine Browser</p>
     <p></p>
     <p></p>
     <p></p>

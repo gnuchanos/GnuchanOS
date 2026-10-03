@@ -99,13 +99,25 @@ def _write_index(root: Path) -> None:
     Both are written because different programs read different ones: GTK reads
     ``index.theme``, the X cursor library reads ``cursor.theme``, and a theme
     that has only one of them is a theme that is invisible to half the desktop.
+
+    ``Inherits`` names Adwaita and NOT ``default``. That is not a detail: the
+    ``default`` theme (written by :mod:`install`) inherits from THIS theme, so a
+    theme that inherits back from ``default`` is a cycle - ``default`` ->
+    ``GnuChanMouseIcons`` -> ``default`` -> ... The X cursor loader in
+    libxcb-cursor does not detect the cycle and recurses until the stack
+    overflows, which is a segmentation fault inside ``strstr`` while it reads
+    the theme's ``index.theme`` on the way round. It was measured: taking a page
+    that makes the toolkit resolve a cursor - YouTube - crashed the whole
+    program with SIGSEGV, and removing the ``,default`` below stopped it. Adwaita
+    is on every GTK system and is the real fallback, so nothing is lost by
+    dropping the pointer to ``default``.
     """
     body = "\n".join(
         [
             "[Icon Theme]",
             f"Name={THEME_NAME}",
             f"Comment={COMMENT}",
-            f"Inherits={INHERITS},default",
+            f"Inherits={INHERITS}",
             "Example=default",
             "",
         ]
