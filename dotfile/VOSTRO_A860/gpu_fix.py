@@ -183,9 +183,11 @@ BACKUP_PATH = CONFIG_PATH.with_name(CONFIG_PATH.name + ".backup")
 #: RC6'yi kapatan modprobe kurali.
 RC6_PATH = Path("/etc/modprobe.d/99-gnuchan-i915.conf")
 
-#: Gen4 takilmalarini duzelten Mesa'nin geldigi yer ve paketler. Debian 13'un
-#: kendi Mesa'si (25.0.7) duzeltmeleri icermez; backports'ta 26.x vardir.
-MESA_BACKPORTS = "trixie-backports"
+#: Mesa paketlerinin stok deb13 deposundan kurulmasi icin kullanilan dagitim
+#: adi. ONEMLI: bu makinede Mesa 26 (trixie-backports) sunucuyu libgallium
+#: icinde abort ettiriyor; stok 25.0.7 sorunsuz kosar. Bu yuzden burada
+#: backports DEGIL, birincil depo kullanilir.
+MESA_STOCK = "trixie"
 MESA_PACKAGES = (
     "mesa-libgallium",
     "libgl1-mesa-dri",
@@ -625,11 +627,11 @@ def report_hangs(log: Log) -> None:
     log.detail(f"son 30 gunde {len(hits)} kayit; sonuncusu:")
     log.detail(f"  {hits[-1].split(']: ', 1)[-1].strip()[:110]}")
     log.detail("GPU bir komut kuyrugunu bitirmemis ve surucu cipi")
-    log.detail("sifirlamis; Xorg genelde bu yuzden duser. Iki adim gerekir:")
-    log.detail("  1. Mesa 26 (hizlandirmayi korur):")
-    log.detail("       sudo python3 gpu_fix.py --mesa-upgrade")
-    log.detail("  2. Chromium'u GPU'dan uzak tut (olculdu ki sart):")
-    log.detail("       sudo python3 disable_gpu_for_chromium.py")
+    log.detail("sifirlamis. Bu ayri bir arizadir. Sunucunun EN SIK cokme sebebi")
+    log.detail("baska bir seydir ve OLCULDU: Mesa 26 (backports) glamor yolunda")
+    log.detail("libgallium icinde abort ediyor. Stok Mesa'ya donmek icin:")
+    log.detail("       sudo python3 gpu_fix.py --mesa-stock")
+    log.detail("(Xorg gunlugunde `libgallium` + `Caught signal 6` varsa sebep bu.)")
 
 
 # --- dosya yazma --------------------------------------------------------------
@@ -825,29 +827,33 @@ def rc6(log: Log, disable: bool) -> int:
 
 
 def mesa_upgrade(log: Log) -> int:
-    """Mesa'yi trixie-backports'tan yukselt; gen4 takilmalarinin BIR parcasi.
+    """Mesa'yi STOK surume dondur; sunucunun libgallium'da abort etmesini bitir.
 
-    Mesa 26 i915/glamor takilmalarinin duzeltmelerini getirir ve HIZLANDIRMAYI
-    KORUR (crocus/DRI2 aynen kalir). Ancak bu makinede OLCULDU ki TEK BASINA
-    YETMEZ: agir bir Chromium sayfasi Mesa 26 altinda bile Xorg'u takip
-    oldurebiliyor. Cozumun ikinci parcasi Chromium'u GPU'dan uzak tutmaktir;
-    bkz. disable_gpu_for_chromium.py. Ikisi birlikte kullanilmalidir.
+    ADI TARIHI: eskiden bu fonksiyon Mesa'yi TRIXIE-BACKPORTS'TAN YUKSELTIYORDU
+    ve bu makinede OLCULDU ki TAM DA ARIZAYI YARATIYORDU: yukseltilen Mesa 26,
+    sunucunun glamor yolunda libgallium icinde abort() ediyor ve X sunucusu
+    oluyor (kanit: /var/log/Xorg.0.log.old icinde `libgallium-26.1.6` + SIGABRT).
+    Bu yuzden davranis TERS cevrildi: artik stok deb13 Mesa'sina (25.x)
+    INDIRIR, ki bu surum ayni GPU'da sorunsuz kosar ve hizlandirmayi
+    (crocus/DRI2) korur.
 
-    Yalnizca EGL/GL kitapliklari kurulur; X sunucusu yeniden baslayana kadar
-    eski Mesa bellekte kalir, sonra yenisi yuklenir. Kurulan surum dpkg ile
-    okunur ve rapor edilir.
+    Yalnizca EGL/GL kitapliklari degistirilir; X sunucusu yeniden baslayana
+    kadar eski Mesa bellekte kalir, sonra yenisi yuklenir.
     """
     if which("apt-get") is None:
         log.warn("apt-get yok; Mesa elle kurulmali")
         return 1
 
     before = Facts().mesa_version
-    log.step("Mesa yukseltiliyor (" + MESA_BACKPORTS + ")")
+    log.step("Mesa STOK surume donduruluyor (" + MESA_STOCK + ")")
     log.detail(f"once:  {before or '(bilinmiyor)'}")
 
+    # Stok surum, backports'tan DEGIL, birincil depodan gelir. Paket adlari
+    # surumden bagimsiz birakilir: apt, birincil depodaki en yeni surumu
+    # (25.x) secer. `--allow-downgrades` olmadan apt dusurmeyi reddeder.
     command = [
-        "apt-get", "install", "-y",
-        "-t", MESA_BACKPORTS,
+        "apt-get", "install", "-y", "--allow-downgrades",
+        "-t", MESA_STOCK,
         *MESA_PACKAGES,
     ]
     environment = dict(os.environ)
@@ -855,8 +861,8 @@ def mesa_upgrade(log: Log) -> int:
     result = subprocess.run(command, check=False, text=True, env=environment)
     if result.returncode != 0:
         log.warn(
-            "Mesa yukseltilemedi. Backports deposu tanimli mi?  "
-            "Kontrol:  grep -r backports /etc/apt/sources.list*"
+            "Mesa stok surume dondurulemedi. Paket ve depo durumu:  "
+            "apt-cache policy mesa-libgallium"
         )
         return 1
 
@@ -865,17 +871,19 @@ def mesa_upgrade(log: Log) -> int:
 
     if after == before:
         log.warn(
-            "surum degismedi. Backports'ta daha yeni Mesa yok ya da depo "
-            "etkin degil."
+            "surum degismedi. Makine zaten stok Mesa'da olabilir; "
+            "`--status` ile hangi surumun kostugunu gorun."
         )
         return 1
 
     log.note()
-    log.note("Mesa yukseltildi ve hizlandirma korundu. Simdi X yeniden baslasin:")
+    log.note("Mesa stok surume dondu ve hizlandirma korundu (crocus). Simdi X")
+    log.note("yeniden baslasin:")
     log.note("    sudo systemctl restart gnuchandm     # ya da: sudo reboot")
     log.note()
     log.note("Sonra dogrulayin:")
     log.note("    python3 gpu_fix.py --status")
+    log.note("Beklenen: GL DONANIMDA (crocus) ve Xorg gunlugunde abort YOK.")
     return 0
 
 
@@ -892,7 +900,7 @@ def usage() -> None:
         "  --revert        eski hale don\n"
         "  --rc6-off       RC6'yi kapat (bu GPU'da ETKISIZ; bkz. dosya basi)\n"
         "  --rc6-on        RC6 kuralini geri al\n"
-        "  --mesa-upgrade  Mesa'yi yukselt (TEK BASINA YETMEZ; disable_gpu'ya bak)\n"
+        "  --mesa-stock    Mesa'yi STOK surume dondur (Mesa 26 abort'unu bitirir)\n"
     )
 
 
@@ -926,7 +934,7 @@ def main() -> int:
         ensure_root(log)
         return rc6(log, disable=False)
 
-    if "--mesa-upgrade" in arguments:
+    if "--mesa-upgrade" in arguments or "--mesa-stock" in arguments:
         ensure_root(log)
         return mesa_upgrade(log)
 
