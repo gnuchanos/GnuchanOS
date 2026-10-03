@@ -106,6 +106,15 @@ typedef struct TermSuggest {
     int    input_y;
     int    input_known;   /* 0 until a prompt end has been seen             */
 
+    /* Whether the line on the screen is readline's REVERSE SEARCH and not the
+       prompt. Ctrl+R puts readline into a mode of its own — the line reads
+       `(reverse-i-search)`...`: command` — and in that mode readline owns the
+       keyboard completely: the arrows, Right and End are its own navigation,
+       and a ghost computed from the search line would be nonsense. While this
+       is set the terminal offers nothing and claims no key, so Ctrl+R behaves
+       exactly as it does in any other terminal. */
+    int    isearching;
+
     /* What is being offered: the tail of a remembered command, with the typed
        line taken off the front. Empty when there is nothing to offer. */
     char   suggestion[TERM_SUGGEST_LINE_MAX];

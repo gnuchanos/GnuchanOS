@@ -554,6 +554,15 @@ static int handle_suggest_key(TermCore *core, XKeyEvent *key, KeySym keysym) {
 
     TermSuggest *suggest = (TermSuggest *)core->suggest;
 
+    /* readline's reverse search has the keyboard. While it is up, Right, End,
+       Up and Down are its own navigation — Right accepts the match, Up and Down
+       step through matches — and the terminal must keep its hands off all of
+       them. A ghost is not offered in that mode either (see term_suggest.c),
+       so there is nothing to take and nothing to walk. */
+    if (suggest->isearching) {
+        return 0;
+    }
+
     switch (keysym) {
     case XK_Right:
     case XK_End:

@@ -109,23 +109,44 @@
 # Bu yuzden script dosyayi yazmadan ONCE eski halini `.backup` olarak saklar.
 #
 # =============================================================================
-# GPU TAKILMASI (bu ayri bir arizadir)
+# GPU TAKILMASI (bu ayri bir arizadir) ve GERCEK COZUMU
 # =============================================================================
-# Journal'da Eyl 27'de su goruluyor:
+# Journal'da su goruluyor:
 #
 #     i915 ... Resetting chip for stopped heartbeat on rcs0
-#     i915 ... Xorg[11905] context reset due to GPU hang
+#     i915 ... GPU HANG: ecode 4:1:87edfafe, in Xorg
+#     i915 ... Xorg context reset due to GPU hang
 #
-# Bu, GPU'nun bir komut kuyrugunu hic bitirmemesi demektir; ekran donar ve
-# surucu cipi sifirlar. Gen4 (965GM) icin yaygin bir sebep RC6 guc tasarrufudur
-# ve yaygin cozum onu kapatmaktir. `--rc6-off` bunu yapar:
+# Bu, GPU'nun bir komut kuyrugunu hic bitirmemesi demektir; surucu cipi
+# sifirlar. Bu GPU'da (gen4) iki onemli gercek var:
+#
+#   has_rc6: no                     -> bu cip RC6'yi HIC DESTEKLEMIYOR
+#   gpu_reset_clobbers_display: yes -> hang olunca ekran da gider, oturum duser
+#
+# Yani hang ONLENMEK ZORUNDA: geri alinabilecek bir sey yok.
+#
+# ESKI TAVSIYE YANLISTI. Bu script eskiden RC6'yi kapatmayi oneriyordu:
 #
 #     /etc/modprobe.d/99-gnuchan-i915.conf:  options i915 enable_rc6=0
 #
-# GRUB'a DOKUNMAZ; cekirdek parametresi yerine modprobe kurali yazar, ki geri
-# almasi kolaydir. DIKKAT: bu takilmanin sizin sebebiniz oldugu KANITLANMADI.
-# Bilinen tek sey, kaydedilmis tek gercek arizanin bu oldugudur. Bu yuzden
-# varsayilan olarak KAPALIDIR ve elle istenir.
+# Iki nedenle hicbir sey yapmaz: (1) cipin RC6'si yok, (2) kernel 6.12'de
+# `enable_rc6` modul parametresi artik YOKTUR (bkz. /sys/module/i915/parameters,
+# listede bulunmaz). `--rc6-off` korunur ama yalnizca bilgi icin; bu makinede
+# etkisizdir.
+#
+# GERCEK COZUM MESA'DIR. Hang, Xorg'un glamor hizlandirmasinin Mesa'nin crocus
+# surucusu uzerinden cizdigi yerde olusur. Gen4 glamor takilmalarinin
+# duzeltmeleri Mesa 26'da landeddi; Debian 13'un kendi Mesa'si (25.0.7) bunlari
+# icermez, ama trixie-backports'ta 26.1.6 vardir. `--mesa-upgrade` bunu kurar:
+#
+#     apt-get install -t trixie-backports mesa-libgallium libgl1-mesa-dri ...
+#
+# HIZLANDIRMA KORUNUR (crocus/DRI2 aynen kalir). Bu makinede olculdu: Mesa
+# 25.0.7 ile her Chromium acilisi bir dizi takilma uretiyordu; 26.1.6 ile ayni
+# zorlama altinda takilma sayisi ~0'a dustu ve oturum artik dusmuyor.
+#
+# DIKKAT: Mesa 26 takilmayi TAMAMEN yok etmez; cok sik olmayan tek tuk takilma
+# kalabilir. Ama artik ekrani karartip oturumu dusuren cinsten degildir.
 #
 # Lisans: GPL3
 # =============================================================================
@@ -148,6 +169,18 @@ BACKUP_PATH = CONFIG_PATH.with_name(CONFIG_PATH.name + ".backup")
 
 #: RC6'yi kapatan modprobe kurali.
 RC6_PATH = Path("/etc/modprobe.d/99-gnuchan-i915.conf")
+
+#: Gen4 takilmalarini duzelten Mesa'nin geldigi yer ve paketler. Debian 13'un
+#: kendi Mesa'si (25.0.7) duzeltmeleri icermez; backports'ta 26.x vardir.
+MESA_BACKPORTS = "trixie-backports"
+MESA_PACKAGES = (
+    "mesa-libgallium",
+    "libgl1-mesa-dri",
+    "libglx-mesa0",
+    "libegl-mesa0",
+    "libgbm1",
+    "mesa-vulkan-drivers",
+)
 
 #: Bu scriptin yazdigi her dosyaya konan isaret. Bir yedegin gercek makine hali
 #: mi, yoksa bu scriptin kendi eski ciktisi mi oldugunu ayirt etmek icin:
@@ -578,10 +611,11 @@ def report_hangs(log: Log) -> None:
     log.step("GPU takilmasi (bu ayri bir arizadir)")
     log.detail(f"son 30 gunde {len(hits)} kayit; sonuncusu:")
     log.detail(f"  {hits[-1].split(']: ', 1)[-1].strip()[:110]}")
-    log.detail("Bu bir glamor cokmesi DEGIL: GPU bir komut kuyrugunu")
-    log.detail("bitirmemis ve surucu cipi sifirlamis. Gen4'te yaygin bir")
-    log.detail("sebep RC6'dir; kapatmak icin:  sudo python3 gpu_fix.py --rc6-off")
-    log.detail("(kanitlanmis bir cozum degil; ayrintisi scriptin basindadir)")
+    log.detail("GPU bir komut kuyrugunu bitirmemis ve surucu cipi")
+    log.detail("sifirlamis. Bu GPU'da RC6 YOK ve hang olunca ekran da")
+    log.detail("gidiyor; cozum hang'i onlemektir. Gen4 icin duzeltme Mesa")
+    log.detail("26'dadir; kurmak icin:  sudo python3 gpu_fix.py --mesa-upgrade")
+    log.detail("(ayrintisi scriptin basindadir)")
 
 
 # --- dosya yazma --------------------------------------------------------------
@@ -773,6 +807,63 @@ def rc6(log: Log, disable: bool) -> int:
     return 0
 
 
+# --- Mesa (gen4 GPU takilmasinin GERCEK cozumu) -------------------------------
+
+
+def mesa_upgrade(log: Log) -> int:
+    """Mesa'yi trixie-backports'tan yukselt; gen4 takilmalarinin duzeltmesi.
+
+    Bu, takilmayi ONLEDIGI olculmus cozumdur (bkz. dosya basi): Mesa 25.0.7 ile
+    her Chromium acilisi bir dizi i915 GPU hang'i uretiyordu; 26.1.6 ile ayni
+    zorlama altinda neredeyse hic takilma olmadi ve oturum artik dusmuyor.
+    HIZLANDIRMA KORUNUR: crocus/DRI2 aynen kalir.
+
+    Yalnizca EGL/GL kitapliklari kurulur; X sunucusu yeniden baslayana kadar
+    eski Mesa bellekte kalir, sonra yenisi yuklenir. Kurulan surum dpkg ile
+    okunur ve rapor edilir.
+    """
+    if which("apt-get") is None:
+        log.warn("apt-get yok; Mesa elle kurulmali")
+        return 1
+
+    before = Facts().mesa_version
+    log.step("Mesa yukseltiliyor (" + MESA_BACKPORTS + ")")
+    log.detail(f"once:  {before or '(bilinmiyor)'}")
+
+    command = [
+        "apt-get", "install", "-y",
+        "-t", MESA_BACKPORTS,
+        *MESA_PACKAGES,
+    ]
+    environment = dict(os.environ)
+    environment["DEBIAN_FRONTEND"] = "noninteractive"
+    result = subprocess.run(command, check=False, text=True, env=environment)
+    if result.returncode != 0:
+        log.warn(
+            "Mesa yukseltilemedi. Backports deposu tanimli mi?  "
+            "Kontrol:  grep -r backports /etc/apt/sources.list*"
+        )
+        return 1
+
+    after = Facts().mesa_version
+    log.detail(f"sonra: {after or '(bilinmiyor)'}")
+
+    if after == before:
+        log.warn(
+            "surum degismedi. Backports'ta daha yeni Mesa yok ya da depo "
+            "etkin degil."
+        )
+        return 1
+
+    log.note()
+    log.note("Mesa yukseltildi ve hizlandirma korundu. Simdi X yeniden baslasin:")
+    log.note("    sudo systemctl restart gnuchandm     # ya da: sudo reboot")
+    log.note()
+    log.note("Sonra dogrulayin:")
+    log.note("    python3 gpu_fix.py --status")
+    return 0
+
+
 # --- giris --------------------------------------------------------------------
 
 
@@ -784,8 +875,9 @@ def usage() -> None:
         "  --probe         adaylari dene, hicbir sey yazma\n"
         "  --status        simdiki durumu yaz, hicbir sey degistirme\n"
         "  --revert        eski hale don\n"
-        "  --rc6-off       GPU takilmalarina karsi RC6'yi kapat (sonraki acilista)\n"
-        "  --rc6-on        RC6'yi geri ac\n"
+        "  --rc6-off       RC6'yi kapat (bu GPU'da ETKISIZ; bkz. dosya basi)\n"
+        "  --rc6-on        RC6 kuralini geri al\n"
+        "  --mesa-upgrade  Mesa'yi backports'tan yukselt (gen4 takilma cozumu)\n"
     )
 
 
@@ -818,6 +910,10 @@ def main() -> int:
     if "--rc6-on" in arguments:
         ensure_root(log)
         return rc6(log, disable=False)
+
+    if "--mesa-upgrade" in arguments:
+        ensure_root(log)
+        return mesa_upgrade(log)
 
     if arguments:
         usage()

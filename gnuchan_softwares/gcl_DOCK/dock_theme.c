@@ -46,8 +46,12 @@ static int readable(const char *path) {
 static int check_file(const char *directory, const char *name,
                       const char *extension, char *out, unsigned int size) {
     char candidate[DOCK_THEME_TEXT * 2];
-    snprintf(candidate, sizeof(candidate), "%s/%s.%s", directory, name,
-             extension);
+    /* Each part is bounded so the result provably fits the buffer. A directory
+       or name longer than a quarter of this is not a path any theme file lives
+       under, and a longer one is truncated rather than overrunning. */
+    snprintf(candidate, sizeof(candidate), "%.*s/%.*s.%s",
+             (int)(sizeof(candidate) / 4), directory,
+             (int)(sizeof(candidate) / 4), name, extension);
     if (!readable(candidate)) {
         return 0;
     }
@@ -124,7 +128,9 @@ static void parse_entry(const char *path, char *wm_class,
 static void desktop_stem(const char *path, char *out, unsigned int size) {
     const char *slash = strrchr(path, '/');
     const char *name = slash ? slash + 1 : path;
-    snprintf(out, size, "%s", name);
+    /* The copy is bounded by the destination, so a file name longer than the
+       buffer is cut instead of the compiler having to assume it cannot be. */
+    snprintf(out, size, "%.*s", (int)(size > 0 ? size - 1 : 0), name);
     char *dot = strrchr(out, '.');
     if (dot && strcmp(dot, ".desktop") == 0) {
         *dot = '\0';
@@ -247,8 +253,11 @@ static void scan_icon_root(const char *root, const char *name, int want,
                 continue;
             }
             char apps[DOCK_THEME_TEXT * 2];
-            snprintf(apps, sizeof(apps), "%s/%s/apps", theme_dir,
-                     entry->d_name);
+            /* Bounded, both parts, so the joined path cannot overrun: half the
+               buffer for the theme directory, a quarter for the size name. */
+            snprintf(apps, sizeof(apps), "%.*s/%.*s/apps",
+                     (int)(sizeof(apps) / 2), theme_dir,
+                     (int)(sizeof(apps) / 4), entry->d_name);
             consider(apps, name, want, side, out, size, best);
         }
         closedir(sizes);

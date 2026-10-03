@@ -372,9 +372,34 @@ void term_suggest_update(TermCore *core) {
         return;
     }
 
+    /* The line runs up to, but NOT INCLUDING, the cursor's own cell. The
+       cursor sits on the cell the NEXT character will take — it is empty until
+       a key arrives — and read_line_cells() reads an empty cell as a space.
+       Reading it in therefore made the line one character longer than what is
+       on the screen: with `python3` typed, the line came back as `python3 `
+       with a trailing space that is not there, the suggestion was computed as
+       `main.py`, and it was drawn from the cursor's cell — giving
+       `python3main.py` on the screen with the space swallowed. Stopping one
+       cell short is what keeps the line and the suggestion the same width as
+       the screen. */
     suggest->line_length = read_line_cells(
-        grid, suggest->input_y, suggest->input_x, grid->cursor_x,
+        grid, suggest->input_y, suggest->input_x, grid->cursor_x - 1,
         suggest->line, (int)sizeof(suggest->line));
+
+    /* readline's reverse search owns the line and the keyboard while it is up:
+       its prompt reads `(reverse-i-search)`...`: `. Nothing here is about a
+       command being typed — the line is search text and a matched command at
+       once — so no ghost is offered and, through isearching, no key is claimed
+       either. The test is on the marker readline itself prints, which is the
+       only thing the terminal can see. */
+    suggest->isearching =
+        strstr(suggest->line, "reverse-i-search") != NULL ||
+        strstr(suggest->line, "failed reverse-i-search") != NULL;
+    if (suggest->isearching) {
+        term_suggest_drop(suggest);
+        suggest_sync_drawn(core, suggest);
+        return;
+    }
 
     const char *best = newest_with_prefix(suggest, suggest->line,
                                           suggest->line_length);

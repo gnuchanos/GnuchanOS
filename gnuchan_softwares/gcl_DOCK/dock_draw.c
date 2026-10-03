@@ -288,7 +288,11 @@ static void draw_badge(DockCore *core, XftDraw *draw, XftColor *text_colour,
     int bx = icon_x + size - side + DOCK_PLATE_PAD;
     int by = icon_y - DOCK_PLATE_PAD;
 
-    char number[8];
+    /* A window count is small, but an int is up to eleven characters, so the
+       buffer is sized for the number and not for what the number usually is:
+       a count that overflowed here would be a truncated badge, which is a lie
+       about how many windows the category holds. */
+    char number[16];
     snprintf(number, sizeof(number), "%d", count);
 
     Display *display = core->display;
