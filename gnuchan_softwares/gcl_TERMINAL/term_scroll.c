@@ -2,7 +2,8 @@
  * term_scroll.c — the history ring, and the view into it.
  *
  * See term_scroll.h for what is kept and why a line is named by one absolute
- * number. What is here is a fixed-size ring of line buffers, and three
+ * number. What is here is a ring of line buffers — bounded by the ceiling the
+ * header names, but grown towards it only as lines arrive — and three
  * arithmetic operations on it.
  *
  * --- why a ring, and why one width ---
@@ -30,6 +31,52 @@
 #include <string.h>
 
 #include "term_scroll.h"
+
+/* How many line records the ring comes up with, before it has to grow. The
+   ceiling is four thousand lines, but a terminal that has printed ten of them
+   has no reason to hold the room for four thousand: the table starts here and
+   doubles as lines arrive, up to TERM_SCROLL_MAX_LINES. A short session — a
+   one-off command, a login shell closed after a minute — never grows past the
+   first step, and the records it does not touch are records the machine keeps.
+ *
+ * This is the table of POINTERS and not the lines themselves: the cells are
+ * allocated one line at a time as the grid hands lines over, so they are
+ * already as lazy as they can be. What was eager was the table, and it is what
+ * this bounds. */
+#define TERM_SCROLL_INITIAL_LINES 256
+
+/* Double the ring's table, moving the lines into the new one oldest-first.
+ *
+ * Growing is not a reallocation: the records are copied into a table of the
+ * new size with the head reset to zero, and the count, the width and every
+ * line buffer are untouched — only the small table of pointers moves. Every
+ * reader keeps working, because the wrap arithmetic is written against
+ * `capacity` and `capacity` is the thing that changed.
+ *
+ * Returns 1 when it grew, 0 at the ceiling or when the allocation failed, in
+ * which case the ring is left exactly as it was. */
+static int grow_ring(TermScroll *scroll) {
+    int wanted = scroll->capacity * 2;
+    if (wanted > TERM_SCROLL_MAX_LINES) {
+        wanted = TERM_SCROLL_MAX_LINES;
+    }
+    if (wanted <= scroll->capacity) {
+        return 0;
+    }
+
+    TermLine *grown = (TermLine *)calloc((size_t)wanted, sizeof(TermLine));
+    if (grown == NULL) {
+        return 0;
+    }
+    for (int i = 0; i < scroll->count; i++) {
+        grown[i] = scroll->slots[(scroll->head + i) % scroll->capacity];
+    }
+    free(scroll->slots);
+    scroll->slots = grown;
+    scroll->capacity = wanted;
+    scroll->head = 0;
+    return 1;
+}
 
 void term_scroll_init(TermScroll *scroll) {
     if (scroll == NULL) {
@@ -117,15 +164,16 @@ int term_scroll_push(TermScroll *scroll, TermCell *cells, int cols) {
     }
 
     /* The table comes up on the first push, at the width that push arrived
-       with. It is the ring's width from then on — see the file comment. */
+       with, and small — it grows on its own as lines arrive. It is the ring's
+       width from the first push on — see the file comment. */
     if (scroll->slots == NULL) {
-        scroll->slots = (TermLine *)calloc(TERM_SCROLL_MAX_LINES,
+        scroll->slots = (TermLine *)calloc(TERM_SCROLL_INITIAL_LINES,
                                            sizeof(TermLine));
         if (scroll->slots == NULL) {
             free(cells);
             return 0;
         }
-        scroll->capacity = TERM_SCROLL_MAX_LINES;
+        scroll->capacity = TERM_SCROLL_INITIAL_LINES;
         scroll->cols = cols;
     }
 
@@ -160,7 +208,16 @@ int term_scroll_push(TermScroll *scroll, TermCell *cells, int cols) {
 
     int released = 0;
     if (scroll->count == scroll->capacity) {
-        released = drop_oldest(scroll);
+        /* The ring is full. Until the ceiling it GROWS rather than dropping
+           anything: no history is thrown away before there is more of it than
+           the ring promised to keep. Only at the ceiling — four thousand lines
+           — does the oldest line go, which is what makes it a ring and not a
+           list that grows with the session. A failed growth falls back to
+           dropping, so a machine out of memory behaves as the fixed ring it
+           used to be rather than refusing the line. */
+        if (!grow_ring(scroll)) {
+            released = drop_oldest(scroll);
+        }
     }
 
     int slot = (scroll->head + scroll->count) % scroll->capacity;

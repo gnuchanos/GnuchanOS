@@ -38,18 +38,17 @@
 
 #include "term_grid.h"
 
-/* The lines kept above the screen.
+/* The most lines kept above the screen.
  *
- * It is a ceiling and not an allocation: the ring's table is made when the
- * first line is pushed and holds this many records, and each record is a
- * pointer to a buffer the GRID allocated and gave away. Four thousand lines of
- * an 80-column terminal is about 13 MB of cells, which is what every terminal
- * spends on scrollback and is the number that makes `ls -l` scrollable through
- * rather than lost.
- *
- * At the ceiling the oldest line is let go, which is what makes it a ring and
- * not a growing list: a session that has been open for a week has a scrollback
- * of four thousand lines, not of a week. */
+ * It is a CEILING and not an allocation: the ring's table starts small — see
+ * TERM_SCROLL_INITIAL_LINES in the .c — and doubles as lines arrive, and each
+ * record is a pointer to a buffer the GRID allocated and gave away. The cells
+ * are the memory: four thousand lines of an 80-column terminal is about 13 MB,
+ * and they are allocated one line at a time as the screen hands lines over, so
+ * a session that has printed ten lines holds ten lines and not four thousand.
+ * This number is where the oldest line is let go, which is what makes it a
+ * ring and not a list that grows with the session — a session open for a week
+ * has a scrollback of four thousand lines, not of a week. */
 #define TERM_SCROLL_MAX_LINES 4096
 
 typedef struct TermScroll {

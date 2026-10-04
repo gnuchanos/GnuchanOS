@@ -21,4 +21,11 @@
    neighbours are drawn larger, which is what makes the row a dock. */
 void dock_draw(DockCore *core);
 
+/* Drop the colours the labels were resolved against, so a restyle picks up the
+   new ones. The pixels are otherwise kept until the name they came from
+   changes — see dock_draw.c — and a settings script that changes a colour name
+   or the palette under it is what this is for. Must be called while the
+   display is still open. */
+void dock_draw_forget_colours(DockCore *core);
+
 #endif /* GNUCHANDOCK_DRAW_H */

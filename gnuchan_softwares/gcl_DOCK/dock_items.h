@@ -56,6 +56,13 @@ void dock_items_build(DockCore *core);
 void dock_items_clear(DockCore *core);
 int dock_items_index_at(const DockCore *core, int x, int y);
 
+/* Drop every icon the dock remembers for a program. The icons are kept between
+   builds — see dock_items.c — so that a window opening or closing does not
+   make every other window's icon be decoded again, and this is what empties
+   that store: a restyle, since an icon is scaled and composited for the dock
+   it is in, and the end of the program. */
+void dock_items_free_icons(DockCore *core);
+
 /* What a window is called: its _NET_WM_NAME as UTF-8, or its older WM_NAME
    when it published none. Empty when it is named by neither. The menu reads
    every row's name this way, which is the same answer the items were built

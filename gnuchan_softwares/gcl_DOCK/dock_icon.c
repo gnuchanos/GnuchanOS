@@ -386,6 +386,37 @@ int dock_icon_load_window(Display *display, Window root, Visual *visual,
     unpack_background(visual, background, &br, &bg, &bb);
 
     const unsigned long *cards = (const unsigned long *)data;
+
+    /* The whole icon is built in memory and put down in ONE request.
+     *
+     * This is not a micro-optimisation, it is the difference between a dock
+     * that works and one that takes the session down. The icon used to be
+     * drawn a pixel at a time with XDrawPoint — a `side` square is a few
+     * thousand SEPARATE requests to the server — and every one of them is
+     * copied into the X server's GL command buffer by its 2D acceleration.
+     * A burst of a few thousand requests from one window (chromium, whose
+     * published icon is large) was enough to fill and hang that buffer on an
+     * old Intel GPU: the display went black and the window manager was gone
+     * with it. The pixels are identical; there is now one XPutImage instead of
+     * one request per pixel. */
+    XImage *canvas = XCreateImage(display, visual, (unsigned int)depth,
+                                  ZPixmap, 0, NULL, (unsigned int)side,
+                                  (unsigned int)side, 32, 0);
+    if (!canvas) {
+        XFreeGC(display, gc);
+        XFreePixmap(display, pixmap);
+        XFree(data);
+        return -1;
+    }
+    canvas->data = calloc((size_t)side, (size_t)canvas->bytes_per_line);
+    if (!canvas->data) {
+        XDestroyImage(canvas);
+        XFreeGC(display, gc);
+        XFreePixmap(display, pixmap);
+        XFree(data);
+        return -1;
+    }
+
     for (int y = 0; y < side; y++) {
         unsigned long sy = (unsigned long)y * source_side / (unsigned long)side;
         for (int x = 0; x < side; x++) {
@@ -396,19 +427,20 @@ int dock_icon_load_window(Display *display, Window root, Visual *visual,
             unsigned int green = (unsigned int)((argb >> 8) & 0xff);
             unsigned int blue = (unsigned int)(argb & 0xff);
 
-            unsigned long combined;
-            if (alpha == 0xff) {
-                combined = pixel_from_masks(visual, red, green, blue);
-            } else {
+            if (alpha != 0xff) {
                 red = (unsigned int)((red * alpha + br * (255 - alpha)) / 255);
                 green = (unsigned int)((green * alpha + bg * (255 - alpha)) / 255);
                 blue = (unsigned int)((blue * alpha + bb * (255 - alpha)) / 255);
-                combined = pixel_from_masks(visual, red, green, blue);
             }
-            XSetForeground(display, gc, combined);
-            XDrawPoint(display, pixmap, gc, x, y);
+            XPutPixel(canvas, x, y,
+                      pixel_from_masks(visual, red, green, blue));
         }
     }
+
+    XPutImage(display, pixmap, gc, canvas, 0, 0, 0, 0,
+              (unsigned int)side, (unsigned int)side);
+    XDestroyImage(canvas);
+
     XFreeGC(display, gc);
     XFree(data);
 

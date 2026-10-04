@@ -375,7 +375,15 @@ int notif_dbus_dispatch(NotifDBus *bus, int timeout_ms) {
     if (!bus || !bus->connection) {
         return 0;
     }
-    dbus_connection_read_write(bus->connection, timeout_ms);
+    /* read_write() answers FALSE once the connection is closed — the session
+       bus going away, which is how this daemon loses its name. Its answer has
+       to be read, and this is the whole bug when it is not: a closed
+       connection is not waited on at all, so the call returns at once, and the
+       loop around it spins on a dead bus at full speed for ever. So the FALSE
+       is passed up as -1 and the caller stops. */
+    if (!dbus_connection_read_write(bus->connection, timeout_ms)) {
+        return -1;
+    }
 
     int handled = 0;
     for (;;) {

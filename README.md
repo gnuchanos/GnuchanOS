@@ -28,7 +28,7 @@ desktop — is **not ready**.
 
 
 [GNUCHANOS DOTFILE]
-    <p>READY: GRUN THEME</p>
+    <p>READY: GRUB THEME</p>
     <p>READY: GTK THEME</p>
     <p>READY: ICON THEME</p>
     <p>READY: MOUSE ICON THEME</p>

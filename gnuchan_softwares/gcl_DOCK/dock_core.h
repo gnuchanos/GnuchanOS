@@ -58,6 +58,16 @@ typedef struct DockCore {
 
     int hover_index;
     int running;
+
+    /* Set when something the dock DRAWS has changed — a window opened or
+       closed, a title changed — and cleared once the row has been rebuilt and
+       painted. It is what turns the dock from a program that rebuilt and
+       repainted its whole row five times a second for ever, whether or not
+       anything had happened, into one that draws only when there is something
+       new to draw. On a two-core laptop with no GPU acceleration that
+       difference is a core left free — and the redraw storm was also what
+       pushed the X server's 2D acceleration into a GPU hang. */
+    int dirty;
 } DockCore;
 
 int dock_core_init(DockCore *core);

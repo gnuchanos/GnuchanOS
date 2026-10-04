@@ -229,6 +229,10 @@ void notif_render_free(NotifRender *render) {
     if (!render || !render->display) {
         return;
     }
+    if (render->xft_draw != NULL) {
+        XftDrawDestroy(render->xft_draw);
+        render->xft_draw = NULL;
+    }
     if (render->buffer != None) {
         XFreePixmap(render->display, render->buffer);
         render->buffer = None;
@@ -362,6 +366,12 @@ void notif_render_layout(NotifRender *render, NotifStack *stack) {
     if (render->buffer != None &&
         (render->buffer_width != render->window_width ||
          render->buffer_height != render->window_height)) {
+        /* The drawable points at the buffer and has to let go before it, or
+           it holds a drawable the server has already destroyed. */
+        if (render->xft_draw != NULL) {
+            XftDrawDestroy(render->xft_draw);
+            render->xft_draw = NULL;
+        }
         XFreePixmap(render->display, render->buffer);
         render->buffer = None;
     }
@@ -372,6 +382,9 @@ void notif_render_layout(NotifRender *render, NotifStack *stack) {
                                        (unsigned int)render->depth);
         render->buffer_width = render->window_width;
         render->buffer_height = render->window_height;
+        /* The text's drawable, made once with the buffer it points at. */
+        render->xft_draw = XftDrawCreate(render->display, render->buffer,
+                                         render->visual, render->colormap);
     }
 
     notif_render_place(render);
@@ -528,13 +541,11 @@ void notif_render_draw(NotifRender *render, NotifStack *stack) {
                    (unsigned int)render->window_width,
                    (unsigned int)render->window_height);
 
-    XftDraw *draw = XftDrawCreate(display, render->buffer, render->visual,
-                                  render->colormap);
+    /* The drawable is the buffer's and outlives this call (see the layout),
+       so the text does not cost a pair of requests on every tick. */
+    XftDraw *draw = render->xft_draw;
     for (int i = 0; i < stack->count; i++) {
         draw_bubble(render, draw, &stack->items[i]);
-    }
-    if (draw) {
-        XftDrawDestroy(draw);
     }
 
     XCopyArea(display, render->buffer, render->window, gc, 0, 0,

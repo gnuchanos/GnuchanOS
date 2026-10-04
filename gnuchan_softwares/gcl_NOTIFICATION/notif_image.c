@@ -5,6 +5,9 @@
 #include <unistd.h>
 
 #include <X11/Xlib.h>
+/* XCreateImage, XPutPixel, XPutImage and XDestroyImage live here rather than
+   in Xlib.h, which does not pull this in on its own. */
+#include <X11/Xutil.h>
 #include <Imlib2.h>
 
 #include "notif_config.h"
@@ -240,6 +243,34 @@ int notif_image_load_argb(Display *display, Window root, Visual *visual,
     unsigned int bg = unmask_channel(background, visual->green_mask);
     unsigned int bb = unmask_channel(background, visual->blue_mask);
 
+    /* The picture is built in memory and put down in ONE request rather than
+     * drawn a pixel at a time.
+     *
+     * A bubble icon is a `side` square, so drawing it with XDrawPoint is a few
+     * thousand SEPARATE requests to the server, and the server's 2D
+     * acceleration copies every one of them into the GL command buffer it
+     * shares with the rest of the session. A notification that carries an icon
+     * — which is most of them — was therefore a burst big enough to fill and
+     * hang that buffer on an old Intel GPU, and the display went black with
+     * the window manager. It is exactly the fault the dock's
+     * dock_icon_load_window() had, and it is fixed the same way: one XPutImage
+     * instead of one request per pixel. */
+    XImage *canvas = XCreateImage(display, visual, (unsigned int)depth,
+                                  ZPixmap, 0, NULL, (unsigned int)side,
+                                  (unsigned int)side, 32, 0);
+    if (!canvas) {
+        XFreeGC(display, gc);
+        XFreePixmap(display, pixmap);
+        return -1;
+    }
+    canvas->data = calloc((size_t)side, (size_t)canvas->bytes_per_line);
+    if (!canvas->data) {
+        XDestroyImage(canvas);
+        XFreeGC(display, gc);
+        XFreePixmap(display, pixmap);
+        return -1;
+    }
+
     for (int y = 0; y < side; y++) {
         long sy = (long)y * height / side;
         for (int x = 0; x < side; x++) {
@@ -257,11 +288,15 @@ int notif_image_load_argb(Display *display, Window root, Visual *visual,
                 blue = (unsigned int)((blue * alpha +
                                        bb * (255 - alpha)) / 255);
             }
-            XSetForeground(display, gc,
-                           pixel_from_masks(visual, red, green, blue));
-            XDrawPoint(display, pixmap, gc, x, y);
+            XPutPixel(canvas, x, y,
+                      pixel_from_masks(visual, red, green, blue));
         }
     }
+
+    XPutImage(display, pixmap, gc, canvas, 0, 0, 0, 0,
+              (unsigned int)side, (unsigned int)side);
+    XDestroyImage(canvas);
+
     XFreeGC(display, gc);
 
     image->pixmap = pixmap;

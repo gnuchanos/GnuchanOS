@@ -43,6 +43,11 @@ typedef struct DockBuffer {
     Display *display;
     Pixmap pixmap;
     Picture picture;
+    /* The Xft drawable the labels go through, made with the pixmap and freed
+       with it. It used to be made and destroyed on every repaint — and the
+       dock repaints on every pointer motion across the row — which is a pair
+       of server requests per motion for a drawable that never changes. */
+    XftDraw *draw;
     XRenderPictFormat *format;
     int width;
     int height;
@@ -50,6 +55,20 @@ typedef struct DockBuffer {
 } DockBuffer;
 
 static DockBuffer dock_buffer;
+
+/* The two colours the labels are drawn in, kept by the name they were
+   allocated from. XftColorAllocName is an XAllocColor round trip to the
+   server, and dock_draw() runs on every pointer motion, so resolving the same
+   two names on every repaint was two round trips a motion for an answer that
+   never changes. The pixel is kept until the name does. */
+typedef struct DockColour {
+    char name[DOCK_TEXT_LENGTH];
+    XftColor colour;
+    int have;
+} DockColour;
+
+static DockColour dock_text_colour;
+static DockColour dock_accent_colour;
 
 static int clamp_int(int value, int low, int high) {
     if (value < low) {
@@ -103,6 +122,11 @@ static int buffer_ready(DockCore *core) {
     }
 
     if (dock_buffer.display) {
+        /* The drawable must be released before the pixmap it points at, or it
+           holds a drawable the server has already destroyed. */
+        if (dock_buffer.draw) {
+            XftDrawDestroy(dock_buffer.draw);
+        }
         if (dock_buffer.picture != None) {
             XRenderFreePicture(dock_buffer.display, dock_buffer.picture);
         }
@@ -113,6 +137,7 @@ static int buffer_ready(DockCore *core) {
     dock_buffer.display = core->display;
     dock_buffer.picture = None;
     dock_buffer.pixmap = None;
+    dock_buffer.draw = NULL;
     dock_buffer.format = NULL;
     dock_buffer.width = 0;
     dock_buffer.height = 0;
@@ -135,6 +160,9 @@ static int buffer_ready(DockCore *core) {
                                                    dock_buffer.pixmap,
                                                    dock_buffer.format, 0, NULL);
     }
+    /* The labels' drawable, made once with the pixmap it points at. */
+    dock_buffer.draw = XftDrawCreate(core->display, dock_buffer.pixmap,
+                                     core->visual, core->colormap);
     dock_buffer.width = core->width;
     dock_buffer.height = core->height;
     dock_buffer.depth = core->depth;
@@ -264,12 +292,47 @@ static int draw_icon_scaled(DockCore *core, const DockIcon *icon, int x, int y,
     return 1;
 }
 
-static int make_colour(DockCore *core, const char *name, XftColor *out) {
+/* Resolve a colour name to an XftColor, keeping the answer until the name
+   changes. Every other redraw — and there is one per pointer motion — asks for
+   the same two names, so the round trip is paid once and read from memory
+   after. The pixel does not change on a screen whose palette does not, and the
+   name is the whole of the cache key. */
+static XftColor *dock_colour_get(DockCore *core, DockColour *cache,
+                                 const char *name) {
     if (!name || !name[0]) {
-        return 0;
+        return NULL;
     }
-    return XftColorAllocName(core->display, core->visual, core->colormap, name,
-                             out) ? 1 : 0;
+    if (cache->have && strcmp(cache->name, name) == 0) {
+        return &cache->colour;
+    }
+    if (cache->have) {
+        XftColorFree(core->display, core->visual, core->colormap,
+                     &cache->colour);
+        cache->have = 0;
+    }
+    if (!XftColorAllocName(core->display, core->visual, core->colormap, name,
+                           &cache->colour)) {
+        cache->name[0] = '\0';
+        return NULL;
+    }
+    snprintf(cache->name, sizeof(cache->name), "%s", name);
+    cache->have = 1;
+    return &cache->colour;
+}
+
+/* Drop the cached colours, which has to happen while the display is still
+   open. Called when the dock restyles, so a config change is seen. */
+void dock_draw_forget_colours(DockCore *core) {
+    if (dock_text_colour.have) {
+        XftColorFree(core->display, core->visual, core->colormap,
+                     &dock_text_colour.colour);
+        dock_text_colour.have = 0;
+    }
+    if (dock_accent_colour.have) {
+        XftColorFree(core->display, core->visual, core->colormap,
+                     &dock_accent_colour.colour);
+        dock_accent_colour.have = 0;
+    }
 }
 
 /* The count a category wears: how many windows its slot stands for. Drawn on
@@ -395,15 +458,15 @@ void dock_draw(DockCore *core) {
     int label_baseline = icon_bottom + DOCK_LABEL_GAP +
                          (core->font ? core->font->ascent : 0);
 
-    XftColor text_colour;
-    XftColor accent_colour;
-    int have_text = make_colour(core, core->config.text, &text_colour);
-    int have_accent = make_colour(core, core->config.accent, &accent_colour);
+    /* Both colours come from the cache: the answer is the same on every
+       repaint until the names change, and a repaint happens on every pointer
+       motion. The drawable comes from the buffer and outlives the call. */
+    XftColor *text_colour = dock_colour_get(core, &dock_text_colour,
+                                            core->config.text);
+    XftColor *accent_colour = dock_colour_get(core, &dock_accent_colour,
+                                              core->config.accent);
 
-    XftDraw *draw = NULL;
-    if (label_band > 0 || core->font) {
-        draw = XftDrawCreate(display, target, core->visual, core->colormap);
-    }
+    XftDraw *draw = dock_buffer.draw;
 
     for (int i = 0; i < core->item_count; i++) {
         DockItem *item = &core->items[i];
@@ -427,9 +490,9 @@ void dock_draw(DockCore *core) {
             XSetForeground(display, gc, core->field);
             fill_rounded(display, target, gc, ix, iy, size, size,
                          core->config.corner);
-            if (draw && have_text && item->label[0] && core->font) {
+            if (draw && text_colour && item->label[0] && core->font) {
                 char letter[2] = { item->label[0], '\0' };
-                draw_text_centred(draw, core, &text_colour, letter, centre_x,
+                draw_text_centred(draw, core, text_colour, letter, centre_x,
                                   iy + size / 2 + core->font->ascent / 2);
             }
         }
@@ -437,8 +500,8 @@ void dock_draw(DockCore *core) {
         /* A category wears how many windows it holds, so the row says "more
            than one" without the list being opened to find out. */
         if (dock_item_is_category(item)) {
-            draw_badge(core, draw, have_text ? &text_colour : NULL,
-                       item->window_count, ix, iy, size);
+            draw_badge(core, draw, text_colour, item->window_count, ix, iy,
+                       size);
         }
 
         if (draw && label_band > 0 && item->label[0]) {
@@ -452,23 +515,16 @@ void dock_draw(DockCore *core) {
             fit_label(core, item->label, pitch, shown, sizeof(shown));
             if (shown[0]) {
                 int hovered = i == core->hover_index;
-                XftColor *colour = (hovered && have_accent) ? &accent_colour
-                                    : (have_text ? &text_colour : NULL);
+                XftColor *colour = (hovered && accent_colour) ? accent_colour
+                                    : text_colour;
                 draw_text_centred(draw, core, colour, shown, centre_x,
                                   label_baseline);
             }
         }
     }
 
-    if (draw) {
-        XftDrawDestroy(draw);
-    }
-    if (have_text) {
-        XftColorFree(display, core->visual, core->colormap, &text_colour);
-    }
-    if (have_accent) {
-        XftColorFree(display, core->visual, core->colormap, &accent_colour);
-    }
+    /* The colours and the drawable are the buffer's and the cache's: they
+       outlive this call and are not freed here. */
 
     XCopyArea(display, target, core->window, gc, 0, 0,
               (unsigned int)core->width, (unsigned int)core->height, 0, 0);

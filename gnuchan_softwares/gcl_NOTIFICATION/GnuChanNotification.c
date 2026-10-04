@@ -288,7 +288,17 @@ int main(int argc, char **argv) {
 
     fprintf(stderr, "%s %s is running\n", PROGRAM_NAME, PROGRAM_VERSION);
     for (;;) {
-        notif_dbus_dispatch(&daemon.bus, NOTIF_TICK_MS);
+        /* A negative answer means the connection is gone — the session bus
+           stopped, which is how a daemon outlives the bus it was started
+           beside. There is nothing left to serve and waiting on a closed
+           connection does not wait, so the loop stops rather than running at
+           full speed for ever. The session's own supervisor starts a new one
+           when a bus is back. */
+        if (notif_dbus_dispatch(&daemon.bus, NOTIF_TICK_MS) < 0) {
+            fprintf(stderr, "%s: the session bus is gone; stopping\n",
+                    PROGRAM_NAME);
+            break;
+        }
 
         long long now = now_milliseconds();
 

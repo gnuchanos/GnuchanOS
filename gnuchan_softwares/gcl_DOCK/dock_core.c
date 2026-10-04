@@ -10,10 +10,9 @@
 #include <X11/Xatom.h>
 
 #include "dock_core.h"
+#include "dock_draw.h"
 #include "dock_menu.h"
 #include "dock_shape.h"
-
-#define DOCK_TICK_MS 400
 
 /* The size and place the dock window was last configured to. The window is
    resized only when these change — a window reconfigured on every repaint is a
@@ -172,12 +171,22 @@ void dock_core_refresh(DockCore *core) {
     dock_items_build(core);
     dock_core_relayout(core);
     dock_draw(core);
+    core->dirty = 0;
 }
 
 void dock_core_restyle(DockCore *core) {
     /* The list is drawn in the old colours, so it is put away before they
        change; the next click on a slot opens a fresh one. */
     dock_menu_close(&core->menu);
+    /* The label colours are cached by the name they came from (see
+       dock_draw.c), so a restyle has to drop them or a script that changed a
+       colour would keep drawing the old one. */
+    dock_draw_forget_colours(core);
+    /* The per-program icons are cached too (see dock_items.c), and they were
+       scaled and composited for the size and the background now being
+       replaced: they are dropped so the next build makes them again in the new
+       dock. */
+    dock_items_free_icons(core);
     dock_config_load_default(&core->config);
     core_resolve_palette(core);
     core_open_font(core);
@@ -287,6 +296,18 @@ void dock_core_run(DockCore *core) {
     core->running = 1;
     int dock_fd = ConnectionNumber(core->display);
 
+    /* The dock wakes on the changes it DRAWS: a window opening or closing,
+       the client list being republished, focus moving. The root is watched
+       for exactly those and nothing else. This is what replaced a loop that
+       rebuilt and repainted its whole row several times a second whether or
+       not anything had happened — the redraw storm that cost a core and
+       pushed the X server's 2D acceleration into a GPU hang. An idle desktop
+       now wakes this program not at all: it sits in select() and costs
+       nothing until something it shows has actually changed. */
+    XSelectInput(core->display, core->root,
+                 PropertyChangeMask | SubstructureNotifyMask);
+    XFlush(core->display);
+
     while (core->running) {
         while (XPending(core->display) > 0) {
             XEvent event;
@@ -302,6 +323,8 @@ void dock_core_run(DockCore *core) {
 
             switch (event.type) {
             case Expose:
+                /* The dock's own pixels were uncovered: paint them at once,
+                   it is not a rebuild. */
                 if (event.xexpose.count == 0) {
                     dock_draw(core);
                 }
@@ -315,9 +338,31 @@ void dock_core_run(DockCore *core) {
             case LeaveNotify:
                 core_handle_leave(core);
                 break;
+            case PropertyNotify:
+                /* The client list, or which window is active, changed: the
+                   row the dock draws is out of date and is rebuilt on the way
+                   out of the event loop. Any other property on the root is
+                   not something the dock shows. */
+                if (event.xproperty.atom == core->net_client_list ||
+                    event.xproperty.atom == core->net_active_window) {
+                    core->dirty = 1;
+                }
+                break;
+            case MapNotify:
+            case UnmapNotify:
+                /* A window appeared or left. Its own Map/Unmap arrives on the
+                   dock's window too — that one is ignored, or the dock would
+                   mark itself dirty every time it mapped — and anything else
+                   may have changed the row. */
+                if (event.xany.window != core->window) {
+                    core->dirty = 1;
+                }
+                break;
             case DestroyNotify:
                 if (event.xdestroywindow.window == core->window) {
                     core->running = 0;
+                } else {
+                    core->dirty = 1;
                 }
                 break;
             default:
@@ -325,17 +370,39 @@ void dock_core_run(DockCore *core) {
             }
         }
 
+        if (!core->running) {
+            break;
+        }
+
+        /* Rebuild and repaint only when something the row shows changed.
+           Between changes this is never reached, and the loop falls into the
+           wait below with nothing to draw. */
+        if (core->dirty) {
+            dock_core_refresh(core);
+        }
+
+        /* Wait for the next thing the server has to say, and for NOTHING ELSE.
+         *
+         * There is no timer here, and that is the point. The dock draws what
+         * the screen has open, and the screen does not change on a clock: no
+         * window opens because a second passed. A timeout would wake this
+         * program every so often to rebuild and repaint a row that is already
+         * correct — the redraw storm the event-driven loop above was written
+         * to end — and on a two-core laptop with no GPU acceleration that is a
+         * core spent redrawing a picture that never changed.
+         *
+         * NULL as the timeout blocks until an event arrives. Every change the
+         * dock shows — a window opening or closing, the client list or the
+         * active window changing — is delivered on this connection and wakes
+         * the select. An idle desktop wakes this program not at all. */
         fd_set read_set;
         FD_ZERO(&read_set);
         FD_SET(dock_fd, &read_set);
-        struct timeval timeout;
-        timeout.tv_sec = DOCK_TICK_MS / 1000;
-        timeout.tv_usec = (DOCK_TICK_MS % 1000) * 1000;
 
-        int ready = select(dock_fd + 1, &read_set, NULL, NULL, &timeout);
-        if (ready == 0) {
-            dock_core_refresh(core);
-        } else if (ready < 0) {
+        int ready = select(dock_fd + 1, &read_set, NULL, NULL, NULL);
+        if (ready < 0) {
+            /* A signal, or a connection that has gone: either way the next
+             * pass of the loop re-reads whatever it can and waits again. */
             continue;
         }
     }
@@ -399,6 +466,9 @@ int dock_core_init(DockCore *core) {
 void dock_core_shutdown(DockCore *core) {
     dock_menu_close(&core->menu);
     dock_items_clear(core);
+    /* The per-program icons the cache owns, which dock_items_clear() left
+       alone: every pixmap must be freed while the display is still open. */
+    dock_items_free_icons(core);
     dock_icon_free(core->display, &core->settings_icon);
     dock_icon_free(core->display, &core->terminal_icon);
     core_close_font(core);

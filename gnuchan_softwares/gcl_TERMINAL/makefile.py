@@ -71,6 +71,7 @@ SOURCES = (
     "term_grid.c",
     "term_scroll.c",
     "term_vt.c",
+    "term_vt_osc.c",
     "term_config_parser.c",
     "term_config.c",
     "term_style.c",
@@ -92,6 +93,7 @@ HEADERS = (
     "term_grid.h",
     "term_scroll.h",
     "term_vt.h",
+    "term_vt_osc.h",
     "term_style.h",
     "term_image.h",
     "term_pty.h",
@@ -537,4 +539,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

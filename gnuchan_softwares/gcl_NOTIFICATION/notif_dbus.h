@@ -84,7 +84,10 @@ void notif_dbus_set_handlers(NotifDBus *bus, NotifNotifyHandler on_notify,
 
 /* Read and answer whatever is waiting on the bus, waiting no longer than
    `timeout_ms` for the first message (a negative waits for ever, which a
-   tick-driven loop never wants). Returns the number of messages handled. */
+   tick-driven loop never wants). Returns the number of messages handled, or
+   -1 when the connection is gone — the session bus went away — in which case
+   the caller must stop: there is no bus to serve and waiting on a closed
+   connection returns at once, which would spin the loop at full speed. */
 int notif_dbus_dispatch(NotifDBus *bus, int timeout_ms);
 
 /* Tell every client that a notification was closed and why, as the protocol

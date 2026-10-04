@@ -55,6 +55,13 @@ typedef struct NotifRender {
     int buffer_width;
     int buffer_height;
 
+    /* The Xft drawable the text goes through, made with the buffer and freed
+       with it. It used to be made and destroyed on every draw — and a stack
+       with a bubble counting down draws on every tick — which is a pair of
+       server requests per frame for a drawable that only changes when the
+       buffer does. */
+    XftDraw *xft_draw;
+
     int window_width;
     int window_height;
 

@@ -41,6 +41,9 @@
 
 #include <X11/cursorfont.h>
 #include <X11/Xcursor/Xcursor.h>
+/* XCreateImage, XPutPixel, XPutImage and XDestroyImage live here rather than
+   in Xlib.h, which does not pull this in on its own. */
+#include <X11/Xutil.h>
 
 #include "wm_core.h"
 #include "wm_frame.h"
@@ -286,7 +289,28 @@ static Pixmap desktop_cursor_shape(WmCore *core, int grow) {
     XSetForeground(core->display, gc, 0);
     XFillRectangle(core->display, pixmap, gc, 0, 0,
                    DESKTOP_CURSOR_SIDE, DESKTOP_CURSOR_SIDE);
-    XSetForeground(core->display, gc, 1);
+
+    /* The shape is built in memory and put down in one request rather than a
+       pixel at a time — the same change the dock's icons needed, and for the
+       same reason: a request per lit pixel is a request per lit pixel however
+       small the picture, and each one is copied into the server's accelerated
+       command buffer. The arrow is small and drawn once, so this is not a
+       fault being fixed so much as the rule being kept everywhere. */
+    XImage *image = XCreateImage(core->display,
+                                 DefaultVisual(core->display, core->screen),
+                                 1, ZPixmap, 0, NULL, DESKTOP_CURSOR_SIDE,
+                                 DESKTOP_CURSOR_SIDE, 8, 0);
+    if (!image) {
+        XFreeGC(core->display, gc);
+        return pixmap;
+    }
+    image->data = calloc((size_t)image->bytes_per_line,
+                         (size_t)DESKTOP_CURSOR_SIDE);
+    if (!image->data) {
+        XDestroyImage(image);
+        XFreeGC(core->display, gc);
+        return pixmap;
+    }
 
     for (int y = 0; y < DESKTOP_CURSOR_SIDE; y++) {
         for (int x = 0; x < DESKTOP_CURSOR_SIDE; x++) {
@@ -305,10 +329,19 @@ static Pixmap desktop_cursor_shape(WmCore *core, int grow) {
                 }
             }
             if (set) {
-                XDrawPoint(core->display, pixmap, gc, x, y);
+                XPutPixel(image, x, y, 1);
             }
         }
     }
+
+    /* A one-bit drawable draws the image through the GC's colours: a 1 is the
+       foreground and a 0 is the background, so the foreground is set to 1
+       here. */
+    XSetForeground(core->display, gc, 1);
+    XSetBackground(core->display, gc, 0);
+    XPutImage(core->display, pixmap, gc, image, 0, 0, 0, 0,
+              DESKTOP_CURSOR_SIDE, DESKTOP_CURSOR_SIDE);
+    XDestroyImage(image);
 
     XFreeGC(core->display, gc);
     return pixmap;

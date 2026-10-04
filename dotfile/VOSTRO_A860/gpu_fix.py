@@ -1,69 +1,45 @@
 #!/usr/bin/env python3
 # =============================================================================
-# gpu_fix.py - Dell Vostro A860 (Intel GM965 / GMA X3100) uzerinde OpenGL'yi
-# donanim surucusune (crocus) dondurur. Tek dosya, yalnizca standart kutuphane.
+# gpu_fix.py - Dell Vostro A860 (Intel GM965 / GMA X3100) icin grafik duzeltmesi.
+# Tek dosya, yalnizca standart kutuphane. Bir kez calistirilir; gerisi kendi.
+#
+#     sudo python3 gpu_fix.py            # her seyi kur (asagidaki iki is)
+#     python3 gpu_fix.py --status        # simdi ne kosuyor, hicbir sey yazmaz
+#     sudo python3 gpu_fix.py --revert   # kurdugu her seyi geri al
+#     python3 gpu_fix.py --probe         # adaylari dene, hicbir sey yazma
 #
 # =============================================================================
-# SORUN
+# NE YAPAR
 # =============================================================================
-# Oyun 2 FPS kosuyordu ve sebep yavas bir GPU degil, GPU'nun HIC
-# KULLANILMAMASIYDI:
+# Iki isi birlikte yapar, cunku ikisi ayri cozum degil tek bir dengedir:
 #
-#     glxinfo -B
-#         OpenGL renderer string: llvmpipe (LLVM 19.1.7, 128 bits)
-#         Accelerated: no
+#   1. GL'yi donanima dondurur (crocus). Oyunlar hizli kosar. Bunu
+#      /etc/X11/xorg.conf.d/99-gnuchan-glamor.conf yazarak yapar.
 #
-# `llvmpipe`, cizimin GPU'da degil CPU'da yapildigi anlamina gelir. glxinfo
-# 4.5 gosterir ama bu llvmpipe'in taklit ettigi surumdur; donanimi gostermez.
+#   2. Chromium'u GPU'dan uzak tutar. /etc/chromium.d/zz-gnuchan-disable-gpu
+#      yazar; chromium bu dosyayi okur ve GPU'yu kullanmaz.
 #
-# =============================================================================
-# ONCEKI TESHIS YANLISTI (ve kaniti yok)
-# =============================================================================
-# Bu dosyanin onceki hali "X server glamor uzerinden libgallium icinde signal 6
-# ile cokuyordu" diyor ve cozum olarak intel DDX'ine geciyordu. Bu teshis
-# yanlistir. Makinede olculdu:
-#
-#   * /var/log/Xorg.0.log ve Xorg.1.log: `signal`, `abort`, `FATAL` YOK.
-#     Ikisi de normal biter ("Server terminated successfully (0)").
-#   * `coredumpctl list` BOSTUR. Signal ile olen bir surec kayit birakir.
-#   * Journal'da gorulen tek gercek olay bir i915 GPU HANG'idir:
-#
-#         i915 0000:00:02.0: [drm] GT0: Resetting chip for stopped heartbeat
-#         i915 0000:00:02.0: [drm] Xorg[11905] context reset due to GPU hang
-#
-#     Bu bambaska bir arizadir (donanim kuyrugu yanit vermedi), glamor cokmesi
-#     degildir, ve yapilandirma yazilmadan ONCE olmustur.
+# NEDEN IKI PARCA: Xorg'un 2D hizlandirmasi (glamor) bu Gen4 cipte agir bir
+# GL istemcisi altinda takilabiliyor; takilma ekrani da sifirladigi icin butun
+# oturum duser. Chromium'u GPU'dan cikarmak, GPU'yu oyunlara birakir ve tek
+# tetikleyiciyi keser. Oyunlar donanimda kalir (hizli), tarayici islemcide
+# kosar (takilmaz).
 #
 # =============================================================================
-# GERCEK SEBEP
+# GERCEK SEBEP (olculdu, varsayim degil)
 # =============================================================================
 # Mesa 25 eski `i965` surucusunu KALDIRDI ve yerine `crocus` koydu. Ama
 # xf86-video-intel (2.99.917, 2021 tarihli) hala sabit olarak eski adi ister:
 #
-#     (II) intel(0): [DRI2]   DRI driver: i965
 #     (EE) AIGLX error: dlopen of .../dri/i965_dri.so failed: No such file
-#     (EE) AIGLX error: unable to load driver i965
 #     (II) IGLX: Loaded and initialized swrast
 #     (II) GLX: Initialized DRISWRAST GL provider for screen 0
 #
-# Yani `Driver "intel"` yazmak crocus'u KAPATIR. Onceki hal tam olarak bunu
-# yapiyordu: sorunu cozmek yerine YARATIYORDU. Bu makinede o dosya silinip
-# yerine modesetting yazilana kadar llvmpipe'tan cikilamaz.
-#
-# =============================================================================
-# COZUM
-# =============================================================================
-# `Driver "modesetting"`. Bu surucu DRI2 saglayicisini sunar ve surucu secimini
-# Mesa'ya birakir, yani Mesa 25'te crocus'u bulur:
-#
-#     (II) modeset(0): glamor X acceleration enabled on Mesa Intel(R) 965GM
-#     (II) modeset(0): [DRI2]   DRI driver: crocus
-#     (II) AIGLX: Loaded and initialized crocus
-#     (II) GLX: Initialized DRI2 GL provider for screen 0
-#
-# `AccelMethod` YAZILMAZ. Yazilmadigi surece glamor varsayilandir; `none`
-# yazmak (ki onceki halin yaptigi buydu) DRI2'yi de kaldirir ve oyunu yazilima
-# geri dondurur. Bu makinede uc ayri X sunucusunda canli olculdu:
+# Yani `Driver "intel"` yazmak crocus'u KAPATIR ve her seyi yazilima dondurur.
+# Cozum `Driver "modesetting"`: surucu secimini Mesa'ya birakir, crocus'u
+# bulur. `AccelMethod` YAZILMAZ; yazilmadigi surece glamor varsayilandir ve
+# glamor DRI2'yi (yani donanim yolunu) getirir. Bu makinede uc ayri X
+# sunucusunda canli olculdu:
 #
 #     modesetting, AccelMethod yok   ->  crocus        DONANIM
 #     modesetting, AccelMethod none  ->  DRISWRAST     yazilim
@@ -72,94 +48,26 @@
 # =============================================================================
 # ONCE DOGRULA, SONRA YAZ
 # =============================================================================
-# Onceki hal bir VARSAYIM yaziyordu ve yanlis cikti. Bu script yazmadan once
-# dener: aday yapilandirmayi AYRI bir X sunucusunda (kullanicinin oturumuna
-# dokunmadan, ayri bir display numarasinda) baslatir, log'una bakar ve ancak
-# `crocus` gorurse yazar. Gormezse hicbir sey yazmaz ve nedenini soyler.
-#
-# Bu, scriptteki en onemli parca: bir yapilandirmanin ise yarayip yaramadigini
-# iddia etmek yerine olcer.
+# Bu script yazmadan once dener: aday yapilandirmayi AYRI bir X sunucusunda
+# (kullanicinin oturumuna dokunmadan, ayri bir display numarasinda) baslatir,
+# log'una bakar ve ancak `crocus` gorurse yazar. Gormezse hicbir sey yazmaz ve
+# nedenini soyler. Bir iddiayi olcmek, ona guvenmekten iyidir.
 #
 # =============================================================================
-# KULLANIM
+# GPU TAKILMASI (ayri bir ariza) HAKKINDA
 # =============================================================================
-#     sudo python3 gpu_fix.py            # dogrula ve kur (donanim / crocus)
-#     python3 gpu_fix.py --probe         # yalnizca dene, hicbir sey yazma
-#     python3 gpu_fix.py --status        # simdi ne kosuyor
-#     sudo python3 gpu_fix.py --revert   # eski hale don
+# Journal'da su gorulur:
 #
-#     sudo python3 gpu_fix.py --rc6-off  # GPU takilmalarina karsi (asagiya bak)
-#     sudo python3 gpu_fix.py --rc6-on   # onu geri al
-#
-# KURDUKTAN SONRA
-# ---------------
-# X yeniden baslatilmali, sonra `python3 gpu_fix.py --status`. Beklenen satir:
-#
-#     GL renderer    Mesa Intel(R) 965GM (CL)
-#
-# Hala `llvmpipe` yaziyorsa yeni yapilandirma okunmamis demektir.
-#
-# X ACILMAZSA
-# -----------
-# Ctrl+Alt+F3 ile bir TTY'ye gecin, giris yapin ve:
-#
-#     sudo python3 /yol/gpu_fix.py --revert
-#     sudo reboot
-#
-# Bu yuzden script dosyayi yazmadan ONCE eski halini `.backup` olarak saklar.
-#
-# =============================================================================
-# GPU TAKILMASI (bu ayri bir arizadir) ve GERCEK COZUMU
-# =============================================================================
-# Journal'da su goruluyor:
-#
-#     i915 ... Resetting chip for stopped heartbeat on rcs0
 #     i915 ... GPU HANG: ecode 4:1:87edfafe, in Xorg
 #     i915 ... Xorg context reset due to GPU hang
 #
-# Bu, GPU'nun bir komut kuyrugunu hic bitirmemesi demektir; surucu cipi
-# sifirlar. Bu GPU'da (gen4) iki onemli gercek var:
+# Bu GPU'da (gen4) `gpu_reset_clobbers_display: yes` oldugu icin takilma
+# ekrani da sifirlar ve oturum duser; yani takilma ONLENMEK ZORUNDA. Chromium'u
+# GPU'dan uzak tutmak (yukaridaki 2. is) olculdu ki bunu basarir: ayni zorlama
+# altinda disable-gpu ACIKken Xorg ayakta kaldi, KAPALIYken oldu.
 #
-#   has_rc6: no                     -> bu cip RC6'yi HIC DESTEKLEMIYOR
-#   gpu_reset_clobbers_display: yes -> hang olunca ekran da gider, oturum duser
-#
-# Yani hang ONLENMEK ZORUNDA: geri alinabilecek bir sey yok.
-#
-# ESKI TAVSIYE YANLISTI. Bu script eskiden RC6'yi kapatmayi oneriyordu:
-#
-#     /etc/modprobe.d/99-gnuchan-i915.conf:  options i915 enable_rc6=0
-#
-# Iki nedenle hicbir sey yapmaz: (1) cipin RC6'si yok, (2) kernel 6.12'de
-# `enable_rc6` modul parametresi artik YOKTUR (bkz. /sys/module/i915/parameters,
-# listede bulunmaz). `--rc6-off` korunur ama yalnizca bilgi icin; bu makinede
-# etkisizdir.
-#
-# COZUM IKI PARCALIDIR, ve ikisi de bu makinede OLCULDU.
-#
-# 1. MESA. Hang, Xorg'un glamor hizlandirmasinin Mesa'nin crocus surucusu
-#    uzerinden cizdigi yerde olusur; gen4 duzeltmeleri Mesa 26'dadir ve
-#    Debian 13'un kendi Mesa'si (25.0.7) bunlari icermez. `--mesa-upgrade`
-#    trixie-backports'tan 26.1.6'yi kurar:
-#
-#        apt-get install -t trixie-backports mesa-libgallium libgl1-mesa-dri ...
-#
-#    HIZLANDIRMA KORUNUR (crocus/DRI2 aynen kalir).
-#
-#    AMA MESA 26 TEK BASINA YETMEZ. Olculdu: Mesa 26 kurulu ve Xorg crocus
-#    uzerindeyken bile agir bir Chromium sayfasi 45 saniyede Xorg'u takip
-#    oldurebiliyor (dmesg: `GPU HANG ... in Xorg:gdrv0`; ardindan Xorg yeniden
-#    baslar ve butun pencereler "X connection to :0 broken" ile duser). Onceki
-#    bir surumde "takilmalar bitti" demek YANLISTI; kisa pencere gostermemisti.
-#
-# 2. CHROMIUM'U GPU'DAN UZAK TUTMAK. `disable_gpu_for_chromium.py` bunu yapar
-#    ve OLCULDU ki ise yarar. Ayni 45 saniyelik zorlama, iki durumda:
-#
-#        disable-gpu ACIK : 1 takilma, Xorg HAYATTA KALDI
-#        disable-gpu KAPALI: 2 takilma, Xorg OLDU (pid degisti)
-#
-#    Yani sorunu asil cozen sey Chromium'un GPU'yu kullanmamasidir. Bu dosya
-#    yine de onemlidir: hizlandirmayi korur ve Xorg'un kendi glamor isini
-#    saglamlastirir; ama TEK COZUM DEGILDIR.
+# NOT: eskiden `--rc6-off` vardi; bu cipin RC6'si YOK ve kernel 6.12'de
+# `enable_rc6` parametresi kaldirildi, yani etkisizdi. Kaldirildi.
 #
 # Lisans: GPL3
 # =============================================================================
@@ -174,48 +82,28 @@ import tempfile
 import time
 from pathlib import Path
 
-#: Bu scriptin sahip oldugu X yapilandirmasi.
+#: Bu scriptin sahip oldugu X yapilandirmasi (hizlandirma / crocus).
 CONFIG_PATH = Path("/etc/X11/xorg.conf.d/99-gnuchan-glamor.conf")
 
 #: Eski halin saklandigi yer. `--revert` buradan geri koyar.
 BACKUP_PATH = CONFIG_PATH.with_name(CONFIG_PATH.name + ".backup")
 
-#: RC6'yi kapatan modprobe kurali.
-RC6_PATH = Path("/etc/modprobe.d/99-gnuchan-i915.conf")
-
-#: Mesa paketlerinin stok deb13 deposundan kurulmasi icin kullanilan dagitim
-#: adi. ONEMLI: bu makinede Mesa 26 (trixie-backports) sunucuyu libgallium
-#: icinde abort ettiriyor; stok 25.0.7 sorunsuz kosar. Bu yuzden burada
-#: backports DEGIL, birincil depo kullanilir.
-MESA_STOCK = "trixie"
-MESA_PACKAGES = (
-    "mesa-libgallium",
-    "libgl1-mesa-dri",
-    "libglx-mesa0",
-    "libegl-mesa0",
-    "libgbm1",
-    "mesa-vulkan-drivers",
-)
+#: Chromium'u GPU'dan uzak tutan dosya. /usr/bin/chromium bunu SOURCE eder.
+CHROMIUM_FLAGS_PATH = Path("/etc/chromium.d/zz-gnuchan-disable-gpu")
 
 #: Bu scriptin yazdigi her dosyaya konan isaret. Bir yedegin gercek makine hali
-#: mi, yoksa bu scriptin kendi eski ciktisi mi oldugunu ayirt etmek icin:
-#: scriptin kendi ciktisini "geri almak", kullaniciyi yine bozuk bir hale
-#: dondurur.
+#: mi, yoksa bu scriptin kendi eski ciktisi mi oldugunu ayirt etmek icin.
 MARKER = "Written by gpu_fix.py"
 
-#: Xorg'un yazilabilecegi yerler. Debian'da /usr/lib/xorg/Xorg'tur ve PATH'te
-#: olmayabilir.
+#: Xorg'un yazilabilecegi yerler. Debian'da /usr/lib/xorg/Xorg'tur.
 XORG_PATHS = ("/usr/lib/xorg/Xorg", "/usr/bin/Xorg")
 
 #: Bir deneme sunucusunun ayakta kalmasini bekledigimiz sure. Bir X sunucusu
 #: ilk cizimi yaptiktan SONRA kendiliginden kapanmaz: hala calisiyorsa
-#: basarili olmustur. Bu yuzden bu bir "bekleme" suresidir, "basarisizlik"
-#: suresi degil — dolunca sureci biz kapatir ve log'u okuruz.
+#: basarili olmustur. Dolunca sureci biz kapatir ve log'u okuruz.
 PROBE_SECONDS = 10.0
 
-#: Bekleme sirasinda surecin olup olmedigine ne siklikla bakilir. Kucuk
-#: tutulur ki erken cikan bir sunucu (bozuk bir yapilandirma 100 milisaniyede
-#: oleblir) bosuna on saniye bekletmesin.
+#: Bekleme sirasinda surecin olup olmedigine ne siklikla bakilir.
 PROBE_POLL = 0.2
 
 #: Aday yapilandirma. `AccelMethod` YOKTUR ve olmamasi onemlidir: yazilmadigi
@@ -241,6 +129,30 @@ Section "Device"
     Identifier "GnuchanOS Intel"
     Driver "modesetting"
 EndSection
+"""
+
+#: Chromium'u GPU'dan uzak tutan dosya. Oyunlar GPU'yu kullanmaya devam eder;
+#: yalnizca tarayici GPU'dan cikar, ki Xorg'un glamor yolu agir bir pencere-ici
+#: GL istemcisi yuzunden takilmasin (takilma oturumu dusurur).
+CHROMIUM_FLAGS_TEXT = f"""\
+# GnuChanWM / GnuchanOS: Chromium'u bu makinede GPU'dan uzak tutar.
+#
+# {MARKER}
+#
+# /usr/bin/chromium bu dosyayi SOURCE eder; buradaki CHROMIUM_FLAGS komut
+# satirina eklenir. Oyunlar GPU'yu kullanmaya devam eder; yalnizca tarayici
+# GPU'dan cikar, ki Xorg'un glamor yolu agir bir pencere-ici GL istemcisi
+# yuzunden takilmasin (takilma oturumu dusurur).
+#
+# Geri almak icin:  sudo python3 gpu_fix.py --revert
+
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-gpu"
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-gpu-compositing"
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-gpu-rasterization"
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-accelerated-2d-canvas"
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --use-gl=angle"
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --use-angle=swiftshader"
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-unsafe-swiftshader"
 """
 
 
@@ -347,8 +259,7 @@ class Engine:
       loaded      AIGLX'in GERCEKTEN yukledigi surucu. Donanim yolu budur.
       provider    GLX saglayicisi: "DRI2" donanim, "DRISWRAST" yazilim.
 
-    Karar `loaded` ile `provider` uzerinden verilir; `announced` yalnizca
-    teshis icin saklanir.
+    Karar `loaded` ile `provider` uzerinden verilir.
     """
 
     def __init__(self) -> None:
@@ -405,10 +316,6 @@ def probe(log: Log, xorg: str, config_text: str) -> Engine:
     `-noreset` (cikarken otekini sifirlamaz). Sunucu kendi kendine kapanmaz —
     ayakta duran bir sunucu basarili bir sunucudur — bu yuzden bir sure
     beklenir, log okunur ve surec kapatilir.
-
-    Yapilandirma bos bir metinse `-configdir` bos bir dizine bakar: X hicbir
-    Device bolumu gormez ve surucuyu KENDISI secer. Bu, "elle bir sey yazmaya
-    gerek var mi" sorusunu cevaplar.
     """
     display = free_display()
     number = display[1:]
@@ -579,6 +486,11 @@ def report(log: Log, facts: Facts) -> None:
     log.step("Su an kosan oturum (:0)")
     log.detail(f"yapilandirma  {facts.config_summary()}")
     log.detail(f"GL yolu       {running.headline}")
+    log.detail(
+        "chromium      "
+        + ("GPU'dan uzak (dosya kurulu)" if is_ours(CHROMIUM_FLAGS_PATH)
+           else "GPU'yu kullaniyor (dosya yok)")
+    )
 
     if which("glxinfo") is not None:
         display = os.environ.get("DISPLAY")
@@ -623,15 +535,11 @@ def report_hangs(log: Log) -> None:
     if not hits:
         return
     log.note()
-    log.step("GPU takilmasi (bu ayri bir arizadir)")
+    log.step("GPU takilmasi (ayri bir ariza)")
     log.detail(f"son 30 gunde {len(hits)} kayit; sonuncusu:")
     log.detail(f"  {hits[-1].split(']: ', 1)[-1].strip()[:110]}")
-    log.detail("GPU bir komut kuyrugunu bitirmemis ve surucu cipi")
-    log.detail("sifirlamis. Bu ayri bir arizadir. Sunucunun EN SIK cokme sebebi")
-    log.detail("baska bir seydir ve OLCULDU: Mesa 26 (backports) glamor yolunda")
-    log.detail("libgallium icinde abort ediyor. Stok Mesa'ya donmek icin:")
-    log.detail("       sudo python3 gpu_fix.py --mesa-stock")
-    log.detail("(Xorg gunlugunde `libgallium` + `Caught signal 6` varsa sebep bu.)")
+    log.detail("Gen4'te takilma ekrani da sifirlar, oturum duser. Onlemek icin")
+    log.detail("chromium GPU'dan uzak tutulur (bu script onu zaten yapar).")
 
 
 # --- dosya yazma --------------------------------------------------------------
@@ -661,11 +569,18 @@ def write_config(log: Log, text: str) -> None:
     log.detail(f"yazildi: {CONFIG_PATH}")
 
 
+def write_chromium_flags(log: Log) -> None:
+    CHROMIUM_FLAGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CHROMIUM_FLAGS_PATH.write_text(CHROMIUM_FLAGS_TEXT, encoding="utf-8")
+    CHROMIUM_FLAGS_PATH.chmod(0o644)
+    log.detail(f"yazildi: {CHROMIUM_FLAGS_PATH}")
+
+
 # --- kurulum -----------------------------------------------------------------
 
 
 def install(log: Log) -> int:
-    """Donanim yolunu dogrula ve kur. 0 = basarili."""
+    """Hizlandirmayi dogrula, kur; chromium'u GPU'dan cikar. 0 = basarili."""
     facts = Facts()
 
     xorg = find_xorg()
@@ -674,7 +589,7 @@ def install(log: Log) -> int:
         return 1
 
     log.step("Once dogrulaniyor: aday yapilandirma ayri bir X sunucusunda")
-    log.detail(f"denenen: Driver \"modesetting\", AccelMethod yazilmadi")
+    log.detail("denenen: Driver \"modesetting\", AccelMethod yazilmadi")
     engine = probe(log, xorg, CONFIG_TEXT)
 
     if engine.loaded == "crocus":
@@ -692,21 +607,20 @@ def install(log: Log) -> int:
         return 1
     else:
         log.detail("sonuc:   belirlenemedi (log okunamadi ya da eksik)")
-        log.detail("yapilandirma yine de yazilacak: bilinen iyi hal budur, ve")
-        log.detail("dogrulama basarisizligi onu yanlis yapmaz.")
+        log.detail("yapilandirma yine de yazilacak: bilinen iyi hal budur.")
 
     log.note()
     log.step("Kuruluyor")
     backup(log)
     write_config(log, CONFIG_TEXT)
+    write_chromium_flags(log)
 
     log.note()
     log.note("Kurulum tamam. Simdi X'i yeniden baslatin:")
     log.note("    sudo systemctl restart gnuchandm     # ya da: sudo reboot")
     log.note()
-    log.note("Sonra dogrulayin:")
-    log.note("    python3 gpu_fix.py --status")
-    log.note("Beklenen: GL renderer  Mesa Intel(R) 965GM (CL)")
+    log.note("Sonra dogrulayin:  python3 gpu_fix.py --status")
+    log.note("Beklenen: GL DONANIMDA (crocus); oyunlar hizli, tarayici takmaz.")
     log.note()
     log.note("X ACILMAZSA: Ctrl+Alt+F3 ile bir TTY'ye gecin ve")
     log.note(f"    sudo python3 {Path(__file__).resolve()} --revert")
@@ -745,12 +659,12 @@ def probe_only(log: Log) -> int:
 
 
 def revert(log: Log) -> int:
-    """Eski hale don.
+    """Bu scriptin yazdigi her seyi geri al.
 
     Yedek varsa VE gercek makine hali ise o geri konur. Yoksa ya da yedek bu
-    scriptin kendi eski (bozuk) ciktisiysa dosya SILINIR: X surucuyu kendi
-    secer, ki bu makinede olculdugu uzere crocus'u bulur. Bozuk bir
-    yapilandirmayi "geri koymak" geri almak degildir.
+    scriptin kendi eski ciktisiysa dosya SILINIR: X surucuyu kendi secer, ki bu
+    makinede olculdugu uzere crocus'u bulur. Chromium dosyasi da silinir; boylece
+    tarayici GPU'yu yeniden kullanir.
     """
     log.step("Geri aliniyor")
 
@@ -773,117 +687,18 @@ def revert(log: Log) -> int:
             log.warn(f"silinemedi: {error}")
             return 1
 
+    try:
+        CHROMIUM_FLAGS_PATH.unlink()
+        log.detail(f"silindi: {CHROMIUM_FLAGS_PATH}")
+    except FileNotFoundError:
+        log.detail(f"{CHROMIUM_FLAGS_PATH} zaten yok")
+    except OSError as error:
+        log.warn(f"silinemedi: {error}")
+        return 1
+
     log.note()
     log.note("Eski hale donuldu. X'i yeniden baslatin:")
     log.note("    sudo systemctl restart gnuchandm     # ya da: sudo reboot")
-    return 0
-
-
-# --- RC6 (GPU takilmasina karsi, elle istenen) --------------------------------
-
-
-def rc6(log: Log, disable: bool) -> int:
-    """RC6 guc tasarrufunu kapat ya da geri ac.
-
-    `/etc/modprobe.d/` altina bir kural yazar; GRUB'a ve cekirdek komut
-    satirina DOKUNMAZ. Etkisi bir sonraki acilista baslar.
-    """
-    log.step("RC6 " + ("kapatiliyor" if disable else "geri aciliyor"))
-
-    if disable:
-        RC6_PATH.parent.mkdir(parents=True, exist_ok=True)
-        RC6_PATH.write_text(
-            f"# {MARKER}\n"
-            "#\n"
-            "# Gen4 (965GM) uzerinde GPU takilmalarina karsi: RC6 guc tasarrufu\n"
-            "# kapatilir. GRUB'a dokunulmaz; bu bir modprobe kuralidir.\n"
-            "#\n"
-            "# DIKKAT: takilmanin sebebinin bu oldugu KANITLANMADI. Bilinen tek\n"
-            "# sey kaydedilmis tek gercek arizanin bir i915 GPU hang'i oldugudur.\n"
-            "#\n"
-            "# Geri almak icin:  sudo python3 gpu_fix.py --rc6-on\n"
-            "options i915 enable_rc6=0\n",
-            encoding="utf-8",
-        )
-        RC6_PATH.chmod(0o644)
-        log.detail(f"yazildi: {RC6_PATH}")
-    else:
-        try:
-            RC6_PATH.unlink()
-            log.detail(f"silindi: {RC6_PATH}")
-        except FileNotFoundError:
-            log.detail(f"{RC6_PATH} yok; yapilacak bir sey yok")
-        except OSError as error:
-            log.warn(f"silinemedi: {error}")
-            return 1
-
-    log.note()
-    log.note("Etkisi bir sonraki acilista baslar. Yeniden baslatmak icin:")
-    log.note("    sudo reboot")
-    return 0
-
-
-# --- Mesa (gen4 GPU takilmasinin GERCEK cozumu) -------------------------------
-
-
-def mesa_upgrade(log: Log) -> int:
-    """Mesa'yi STOK surume dondur; sunucunun libgallium'da abort etmesini bitir.
-
-    ADI TARIHI: eskiden bu fonksiyon Mesa'yi TRIXIE-BACKPORTS'TAN YUKSELTIYORDU
-    ve bu makinede OLCULDU ki TAM DA ARIZAYI YARATIYORDU: yukseltilen Mesa 26,
-    sunucunun glamor yolunda libgallium icinde abort() ediyor ve X sunucusu
-    oluyor (kanit: /var/log/Xorg.0.log.old icinde `libgallium-26.1.6` + SIGABRT).
-    Bu yuzden davranis TERS cevrildi: artik stok deb13 Mesa'sina (25.x)
-    INDIRIR, ki bu surum ayni GPU'da sorunsuz kosar ve hizlandirmayi
-    (crocus/DRI2) korur.
-
-    Yalnizca EGL/GL kitapliklari degistirilir; X sunucusu yeniden baslayana
-    kadar eski Mesa bellekte kalir, sonra yenisi yuklenir.
-    """
-    if which("apt-get") is None:
-        log.warn("apt-get yok; Mesa elle kurulmali")
-        return 1
-
-    before = Facts().mesa_version
-    log.step("Mesa STOK surume donduruluyor (" + MESA_STOCK + ")")
-    log.detail(f"once:  {before or '(bilinmiyor)'}")
-
-    # Stok surum, backports'tan DEGIL, birincil depodan gelir. Paket adlari
-    # surumden bagimsiz birakilir: apt, birincil depodaki en yeni surumu
-    # (25.x) secer. `--allow-downgrades` olmadan apt dusurmeyi reddeder.
-    command = [
-        "apt-get", "install", "-y", "--allow-downgrades",
-        "-t", MESA_STOCK,
-        *MESA_PACKAGES,
-    ]
-    environment = dict(os.environ)
-    environment["DEBIAN_FRONTEND"] = "noninteractive"
-    result = subprocess.run(command, check=False, text=True, env=environment)
-    if result.returncode != 0:
-        log.warn(
-            "Mesa stok surume dondurulemedi. Paket ve depo durumu:  "
-            "apt-cache policy mesa-libgallium"
-        )
-        return 1
-
-    after = Facts().mesa_version
-    log.detail(f"sonra: {after or '(bilinmiyor)'}")
-
-    if after == before:
-        log.warn(
-            "surum degismedi. Makine zaten stok Mesa'da olabilir; "
-            "`--status` ile hangi surumun kostugunu gorun."
-        )
-        return 1
-
-    log.note()
-    log.note("Mesa stok surume dondu ve hizlandirma korundu (crocus). Simdi X")
-    log.note("yeniden baslasin:")
-    log.note("    sudo systemctl restart gnuchandm     # ya da: sudo reboot")
-    log.note()
-    log.note("Sonra dogrulayin:")
-    log.note("    python3 gpu_fix.py --status")
-    log.note("Beklenen: GL DONANIMDA (crocus) ve Xorg gunlugunde abort YOK.")
     return 0
 
 
@@ -892,15 +707,14 @@ def mesa_upgrade(log: Log) -> int:
 
 def usage() -> None:
     print(
-        "kullanim: python3 gpu_fix.py [secenek]\n"
+        "kullanim: python3 gpu_fix.py            (sudo ile) her seyi kur\n"
+        "         python3 gpu_fix.py --status    durumu yaz, hicbir sey degistirme\n"
+        "         python3 gpu_fix.py --revert    eski hale don\n"
+        "         python3 gpu_fix.py --probe     adaylari dene, hicbir sey yazma\n"
         "\n"
-        "  (parametresiz)  dogrula ve donanim yolunu kur (modesetting / crocus)\n"
-        "  --probe         adaylari dene, hicbir sey yazma\n"
-        "  --status        simdiki durumu yaz, hicbir sey degistirme\n"
-        "  --revert        eski hale don\n"
-        "  --rc6-off       RC6'yi kapat (bu GPU'da ETKISIZ; bkz. dosya basi)\n"
-        "  --rc6-on        RC6 kuralini geri al\n"
-        "  --mesa-stock    Mesa'yi STOK surume dondur (Mesa 26 abort'unu bitirir)\n"
+        "Varsayilan calistirma iki isi birlikte yapar:\n"
+        "  1. GL'yi donanima dondurur (crocus) -> oyunlar hizli.\n"
+        "  2. Chromium'u GPU'dan uzak tutar    -> tarayici oturumu dusurmez.\n"
     )
 
 
@@ -925,18 +739,6 @@ def main() -> int:
     if "--revert" in arguments:
         ensure_root(log)
         return revert(log)
-
-    if "--rc6-off" in arguments:
-        ensure_root(log)
-        return rc6(log, disable=True)
-
-    if "--rc6-on" in arguments:
-        ensure_root(log)
-        return rc6(log, disable=False)
-
-    if "--mesa-upgrade" in arguments or "--mesa-stock" in arguments:
-        ensure_root(log)
-        return mesa_upgrade(log)
 
     if arguments:
         usage()
