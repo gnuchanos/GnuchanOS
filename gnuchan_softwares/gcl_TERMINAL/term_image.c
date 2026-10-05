@@ -29,6 +29,22 @@
  * on a black rectangle. The colour is filled into the pixmap before the picture
  * is drawn over it, which is the one operation X does well and needs no blend
  * of its own.
+ *
+ * --- the picture is anchored to a LINE ---
+ *
+ * A picture belongs to a place in the TEXT, and the text moves. It is therefore
+ * kept against the absolute line it was placed on — the number the history
+ * numbers lines with, see term_grid_line_number() — and the screen row to draw
+ * it at is worked out fresh on every frame from the grid that is showing. A
+ * picture kept against a screen ROW would stay where it was put while the text
+ * above it scrolled away, which is a logo that slowly floats down the screen;
+ * kept against a line it rises with the text and follows the view when the user
+ * scrolls back, which is what a picture in a place in the text means.
+ *
+ * Each picture also remembers WHICH screen it was placed on, so a logo the
+ * shell put on the main screen is not drawn over a full-screen program's
+ * alternate screen — a picture has no business standing on a screen it was not
+ * placed on.
  */
  
 #define _POSIX_C_SOURCE 200809L
@@ -42,6 +58,7 @@
 #include <Imlib2.h>
 
 #include "term_image.h"
+#include "term_grid.h"
 
 /* The most pictures placed at once. A program places the ones it is showing;
    a number past this is a program redrawing a slideshow faster than the screen
@@ -50,13 +67,21 @@
 #define TERM_IMAGE_MAX 16
 
 typedef struct TermImage {
-    /* The cell it is anchored at, and the block of cells it fills. */
+    /* The column it is anchored at, on the screen it belongs to. */
     int x;
-    int y;
+
+    /* The ABSOLUTE line it is anchored to — the number the history counts by —
+       and the screen it was placed on: 0 the main one, 1 the alternate. The
+       screen row to draw at is worked out from `line` on every frame; see the
+       file comment. */
+    int line;
+    int alt;
+
+    /* The block of cells it fills. */
     int cols;
     int rows;
 
-    /* The pixels, the size of the block it fills, on the server. */
+    /* The pixels, the size of the block, on the server. */
     Pixmap pixmap;
     int    width;
     int    height;
@@ -97,20 +122,35 @@ void term_image_list_free(TermImageList *list, Display *display) {
     free(list);
 }
 
-void term_image_list_clear(TermImageList *list, Display *display) {
+void term_image_clear_screen(TermImageList *list, Display *display, int alt) {
     if (list == NULL) {
         return;
     }
-    /* The pixels go back to the display and the count is reset, so the list is
-       empty and ready to hold the next picture. The array itself is kept: it is
-       a fixed set of slots and re-making it would be work for nothing. */
-    if (display != NULL) {
-        for (int i = 0; i < list->count; i++) {
-            drop_pixels(display, &list->items[i]);
+    /* Only the pictures of the screen that was cleared go. The screen is kept
+       apart because the two are cleared independently: `clear` at the shell
+       empties the main screen and must take the logo placed there, while a
+       full-screen program leaving its alternate screen must take the pictures
+       IT placed and leave the shell's alone. */
+    int out = 0;
+    for (int i = 0; i < list->count; i++) {
+        if (list->items[i].alt == alt) {
+            if (display != NULL) {
+                drop_pixels(display, &list->items[i]);
+            }
+            continue;
         }
+        if (out != i) {
+            list->items[out] = list->items[i];
+        }
+        out++;
     }
-    memset(list->items, 0, sizeof(list->items));
-    list->count = 0;
+    /* The slots past the new count held pictures that have just been given
+       back; clearing them keeps a stale pixmap id from being freed twice if the
+       list is walked again before it is filled. */
+    for (int i = out; i < list->count; i++) {
+        memset(&list->items[i], 0, sizeof(TermImage));
+    }
+    list->count = out;
 }
 
 /* --- the file -------------------------------------------------------------- */
@@ -146,8 +186,8 @@ static int resolve_path(const char *name, char *out, unsigned int size) {
 void term_image_place(TermImageList *list, Display *display,
                       Visual *visual, Colormap colormap, int depth,
                       int cell_width, int cell_height,
-                      int x, int y, int cols, int rows, const char *path,
-                      uint32_t background) {
+                      int x, int line, int alt, int cols, int rows,
+                      const char *path, uint32_t background) {
     if (list == NULL || display == NULL) {
         return;
     }
@@ -230,11 +270,15 @@ void term_image_place(TermImageList *list, Display *display,
     if (offset_x < 0) offset_x = 0;
     if (offset_y < 0) offset_y = 0;
 
-    /* A picture already anchored at this cell is replaced, so a program
-       redrawing a panel does not stack copies on top of one another. */
+    /* A picture already anchored at this column, line and screen is replaced,
+       so a program redrawing a panel does not stack copies on top of one
+       another. The screen is part of the identity: a picture at the same column
+       and line on the OTHER screen is a different picture in a different
+       place. */
     int slot = -1;
     for (int i = 0; i < list->count; i++) {
-        if (list->items[i].x == x && list->items[i].y == y) {
+        if (list->items[i].x == x && list->items[i].line == line &&
+            list->items[i].alt == alt) {
             slot = i;
             break;
         }
@@ -284,7 +328,8 @@ void term_image_place(TermImageList *list, Display *display,
 
     TermImage *image = &list->items[slot];
     image->x = x;
-    image->y = y;
+    image->line = line;
+    image->alt = alt;
     image->cols = cols;
     image->rows = rows;
     image->pixmap = pixmap;
@@ -295,26 +340,78 @@ void term_image_place(TermImageList *list, Display *display,
 /* --- drawing --------------------------------------------------------------- */
 
 void term_image_draw(const TermImageList *list, Display *display,
-                     Drawable grid, GC gc,
-                     int cell_width, int cell_height) {
-    if (list == NULL || display == NULL) {
+                     Drawable grid, GC gc, const TermGrid *screen_grid,
+                     int alt_active, int cell_width, int cell_height) {
+    if (list == NULL || display == NULL || screen_grid == NULL) {
         return;
     }
     if (cell_width < 1) cell_width = 8;
     if (cell_height < 1) cell_height = 16;
+
+    /* The absolute line the TOP row of the screen is showing: the grids's own
+       line-number arithmetic, asked once. A picture's screen row is its line
+       minus this, so a picture rises with the text above it as the screen
+       scrolls, and follows the view when the user scrolls back — the same
+       number term_grid_row_cells() resolves cells against. */
+    int top_line = term_grid_line_number(screen_grid, 0);
+    int rows = screen_grid->rows;
 
     for (int i = 0; i < list->count; i++) {
         const TermImage *image = &list->items[i];
         if (image->pixmap == None) {
             continue;
         }
-        /* The cell the picture was anchored at becomes the pixel it goes to:
-           the picture sits exactly where the program put it, lined up with the
-           text around it. */
+        /* A picture placed on the other screen is not drawn: it belongs to a
+           screen that is not showing. */
+        if (image->alt != alt_active) {
+            continue;
+        }
+
+        int screen_row = image->line - top_line;
+
+        /* The picture occupies `image->rows` text rows from `screen_row` down,
+           and it is CLIPPED to the screen and not skipped whole.
+         *
+         * This is the difference between a logo that scrolls up with the text
+         * above it and one that vanishes the moment the screen moves by a
+         * single line. The picture is anchored to its line and the screen row
+         * is how far it has risen; its TOP row goes off the top long before the
+         * picture does, and dropping the whole thing because the first of its
+         * sixteen rows is out of view is what made a picture disappear on the
+         * first Enter after the text scrolled. Only a picture that is ENTIRELY
+         * off the screen — its bottom above the top edge, or its top below the
+         * bottom edge — is not drawn at all. */
+        int picture_rows = image->rows > 0 ? image->rows : 1;
+        if (screen_row >= rows || screen_row + picture_rows <= 0) {
+            continue;
+        }
+
+        /* The visible band, in pixels: the part of the picture between the
+           screen's top edge and its bottom edge. A negative top clips the
+           picture's own first rows, and a bottom past the screen clips its
+           last; whatever is left is copied in one operation. Nothing is drawn
+           for a band of no height, which can only happen when the picture is
+           exactly at an edge. */
+        int top_px = screen_row * cell_height;
+        int source_y = 0;
+        int destination_y = top_px;
+        int height = image->height;
+        if (destination_y < 0) {
+            source_y = -destination_y;
+            height -= source_y;
+            destination_y = 0;
+        }
+        int screen_bottom = rows * cell_height;
+        if (destination_y + height > screen_bottom) {
+            height = screen_bottom - destination_y;
+        }
+        if (height <= 0) {
+            continue;
+        }
+
         int x = image->x * cell_width;
-        int y = image->y * cell_height;
         XCopyArea(display, image->pixmap, grid, gc,
-                  0, 0, (unsigned)image->width, (unsigned)image->height,
-                  x, y);
+                  0, source_y, (unsigned)image->width, (unsigned)height,
+                  x, destination_y);
     }
 }

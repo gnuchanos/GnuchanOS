@@ -74,7 +74,6 @@
 #include "term_render_internal.h"
 #include "term_style.h"
 #include "term_select.h"
-#include "term_suggest.h"
 
 /* The blink of the cursor, in milliseconds. It is the terminfo default and the
    rate every terminal uses; a cursor that blinks at another rate looks broken
@@ -683,87 +682,6 @@ static void render_cursor(TermCore *core, TermRender *render,
     render->cursor_was_drawn = visible;
 }
 
-/* --- the suggestion -------------------------------------------------------
- *
- * The fish-style ghost: the tail of a remembered command, drawn faintly after
- * the cursor on the line the user is typing — see term_suggest.h.
- *
- * It is drawn HERE and not as a cell, and that is the whole reason it can exist
- * at all. The line belongs to the shell's readline: the terminal may paint over
- * it but must not write into the grid, or the shell would regard the ghost as
- * typed text and run it. Drawing it as pixels on top leaves the grid — and so
- * the shell's own idea of the line — untouched.
- *
- * The position comes from where the suggestion module last PUT it, and not from
- * the cursor now: the two can differ by the frame it takes the cursor to catch
- * up. It is drawn only when the module says a ghost is standing, which is zero
- * lines while there is nothing to offer.
- */
-static void render_suggestion(TermCore *core, TermRender *render) {
-    if (core->suggest == NULL) {
-        return;
-    }
-    const TermSuggest *suggest = (const TermSuggest *)core->suggest;
-    int cell_h = core->style->cell_height > 0 ? core->style->cell_height : 1;
-    if (suggest->drawn_length <= 0 || suggest->drawn_y < 0 ||
-        suggest->drawn_y >= render->grid_height / cell_h) {
-        return;
-    }
-
-    int cell_w = core->style->cell_width;
-
-    /* The ghost starts where the cursor is: everything the user has typed
-       already occupies the cells to its left, and the suggestion is the part
-       after it. */
-    const TermGrid *grid = term_vt_screen(&core->vt);
-    int start_x = grid->cursor_x;
-    if (start_x < 0) {
-        start_x = 0;
-    }
-    int baseline = suggest->drawn_y * cell_h + core->style->ascent;
-
-    XftColor *ink = term_style_color_rgb(core->style,
-                                         term_style_suggestion(core->style));
-    XftFont *face = core->style->faces[TERM_FACE_NORMAL];
-
-    /* Xft takes code points, so the UTF-8 is decoded here, exactly as the bar
-       does. The ghost holds what a command holds — mostly ASCII — and the
-       decode is what makes a directory with a non-ASCII name draw. */
-    uint32_t codes[TERM_RENDER_MAX_RUN];
-    int count = 0;
-    const char *p = suggest->suggestion;
-    for (; *p != '\0' && count < TERM_RENDER_MAX_RUN; ) {
-        unsigned char c = (unsigned char)*p;
-        uint32_t cp = c;
-        int step = 1;
-        if (c >= 0xF0) {
-            cp = (uint32_t)(c & 0x07);
-            step = 4;
-        } else if (c >= 0xE0) {
-            cp = (uint32_t)(c & 0x0F);
-            step = 3;
-        } else if (c >= 0xC0) {
-            cp = (uint32_t)(c & 0x1F);
-            step = 2;
-        }
-        int have = 1;
-        for (int i = 1; i < step && p[i] != '\0'; i++) {
-            cp = (cp << 6) | (uint32_t)((unsigned char)p[i] & 0x3F);
-            have++;
-        }
-        if (have != step) {
-            break;
-        }
-        codes[count++] = cp;
-        p += step;
-    }
-
-    if (count > 0) {
-        XftDrawString32(core->style->xft_draw, ink, face,
-                        start_x * cell_w, baseline, codes, count);
-    }
-}
-
 /* --- the two surfaces ----------------------------------------------------- */
 
 /* Fill a band of rows of the GRID surface with the theme's background. Used to
@@ -1076,11 +994,9 @@ void term_render_frame(TermCore *core) {
     }
 
     /* No cursor while scrolled back, for the reason above: the live screen is
-       not what is being shown. The ghost goes with it — it belongs to the line
-       at the prompt, and the prompt is on the live screen. */
+       not what is being shown. */
     if (!scrolled) {
         render_cursor(core, render, grid);
-        render_suggestion(core, render);
     }
 
     /* The pictures a program placed go over the finished cells — see
@@ -1088,10 +1004,13 @@ void term_render_frame(TermCore *core) {
        one, so a picture sits exactly where its cells are and follows the frame
        offset the one XCopyArea below already knows. Drawing them every frame
        rather than once is what keeps them from being erased by a partial
-       redraw of the rows underneath. */
+       redraw of the rows underneath — and is what lets a picture rise with the
+       text above it, because the grid it is resolved against is this frame's.
+       Only the showing screen's pictures are drawn: the grid here IS the screen
+       that is showing, and alt_active says which one that is. */
     term_image_draw(render->images, core->display, render->grid,
-                    core->style->gc, core->style->cell_width,
-                    core->style->cell_height);
+                    core->style->gc, grid, core->vt.alt_active,
+                    core->style->cell_width, core->style->cell_height);
 
     /* The grid is finished. It goes down onto the window at the frame's
        offset — this line is the ONLY place that knows the frame exists, which
@@ -1133,10 +1052,17 @@ void term_render_place_image(TermCore *core, int x, int y, int cols, int rows,
     if (render == NULL || render->images == NULL || core->style == NULL) {
         return;
     }
+    /* The screen row the core handed in becomes the ABSOLUTE line the picture
+       belongs to, so it rises with the text above it as the screen scrolls and
+       follows the view when the user scrolls back — see term_image.h. The line
+       is read from the grid that is SHOWING, and the picture is recorded as
+       belonging to that screen, so it is not drawn on the other one. */
+    const TermGrid *grid = term_vt_screen(&core->vt);
+    int line = term_grid_line_number(grid, y);
     term_image_place(render->images, core->display, core->style->visual,
                      core->style->colormap, core->depth,
                      core->style->cell_width, core->style->cell_height,
-                     x, y, cols, rows, path,
+                     x, line, core->vt.alt_active, cols, rows, path,
                      term_style_default_bg(core->style));
     /* A picture lands over cells the dirty marks know nothing about, so the
        whole screen is drawn again. It is one frame, and a picture is placed
@@ -1144,12 +1070,12 @@ void term_render_place_image(TermCore *core, int x, int y, int cols, int rows,
     term_render_all(core);
 }
 
-void term_render_clear_images(TermCore *core) {
+void term_render_clear_images(TermCore *core, int alt) {
     TermRender *render = render_of(core);
     if (render == NULL || render->images == NULL) {
         return;
     }
-    term_image_list_clear(render->images, core->display);
+    term_image_clear_screen(render->images, core->display, alt);
     /* The whole screen is drawn again: the picture covered cells the dirty
        marks know nothing about, so a partial frame would leave the rows it
        stood on holding its pixels until something else wrote over them. */

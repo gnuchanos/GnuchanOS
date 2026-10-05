@@ -35,12 +35,6 @@
 /* For the selection and the clipboard, which are the terminal's own and not
    the program's: a drag with the left button and Ctrl+Shift+C. */
 #include "term_select.h"
-/* For the suggestion: Right takes the ghost, the arrows walk the history, and
-   Enter stores the line. All three are the terminal's own and not the
-   program's, so they are claimed before a program can see them. Tab is NOT
-   one of them — it belongs to the shell's completion — and the note above
-   handle_suggest_key() says why. */
-#include "term_suggest.h"
 
 /* The most bytes one key press can produce. A function key with every modifier
    is the longest at fourteen; this is that with room to spare. */
@@ -507,100 +501,6 @@ static int handle_terminal_key(TermCore *core, XKeyEvent *key, KeySym keysym) {
     }
 }
 
-/* --- the terminal's own keys at a prompt ----------------------------------
- *
- * The gestures that belong to the terminal, and each is claimed before the
- * program can see it:
- *
- *   Right, End  take the suggestion, if there is one
- *   Up, Down    walk the command history
- *   Enter       stores the line as a finished command
- *
- * TAB IS DELIBERATELY NOT HERE, and it is worth saying why, because it was and
- * that was wrong. TAB IS THE SHELL'S COMPLETION KEY. A path typed up to a
- * partial directory — `cd ~/wine/drive_c/Program` — is completed by the SHELL,
- * which knows the filesystem; the terminal knows only the commands it has seen
- * run before. While Tab was claimed, a session with any stored command
- * beginning with what was typed had its Tab eaten by the ghost: the terminal
- * finished the LINE from its own history and the shell's completion never ran,
- * so the path past the first partial directory could not be completed at all.
- * The ghost is a convenience and completion is not; the convenience yields.
- *
- * Right and End take it instead, which is what the shells that do this use and
- * for the same reason: they are the keys that mean "to the end of the line",
- * and a suggestion is the rest of the line. BOTH ARE ONLY CLAIMED WHEN THERE IS
- * SOMETHING TO TAKE — with no suggestion they return 0 and fall through, so
- * Right still moves the cursor and End still goes to the line's end. That is
- * what keeps this from being a key the user has lost.
- *
- * "Only while a shell is waiting" is not a guess and it is not a heuristic: it
- * is what the OSC 133 marker set — see term_suggest.h — so a full-screen
- * program that reads its own arrows (an editor, a pager, a game) never has them
- * taken, because no marker said a prompt was up.
- *
- * Returns 1 when the key was the terminal's and has been dealt with.
- */
-static int handle_suggest_key(TermCore *core, XKeyEvent *key, KeySym keysym) {
-    if (core->suggest == NULL) {
-        return 0;
-    }
-
-    /* A modifier means the key is not the plain gesture: Shift+Tab is a
-       program's, Ctrl+Up is a program's, Alt+Down is a program's. Only the
-       bare key is taken. */
-    if (key->state & (ShiftMask | ControlMask | Mod1Mask)) {
-        return 0;
-    }
-
-    TermSuggest *suggest = (TermSuggest *)core->suggest;
-
-    /* readline's reverse search has the keyboard. While it is up, Right, End,
-       Up and Down are its own navigation — Right accepts the match, Up and Down
-       step through matches — and the terminal must keep its hands off all of
-       them. A ghost is not offered in that mode either (see term_suggest.c),
-       so there is nothing to take and nothing to walk. */
-    if (suggest->isearching) {
-        return 0;
-    }
-
-    switch (keysym) {
-    case XK_Right:
-    case XK_End:
-        /* The rest of the line, taken — see the note above for why these and
-           not Tab.
-
-           NOT CLAIMED WHEN THERE IS NOTHING TO TAKE, and that is the whole of
-           the safety: term_suggest_accept() returns 0 when the suggestion is
-           empty, and the key then falls through to the shell, where Right
-           moves the cursor and End goes to the end of the line exactly as they
-           always did. A user who never wants a suggestion never notices these
-           keys exist. */
-        return term_suggest_accept(core);
-
-    case XK_Return:
-    case XK_KP_Enter:
-        /* The line is stored BEFORE the newline is sent, because the shell
-           echoes the command and moves on as soon as it gets the Enter — after
-           that the grid no longer holds the line that was run.
-         *
-         * The key is NOT claimed: the shell has to receive the newline, or the
-         * command is never run. The remembering is a side effect and the send
-         * that follows is the main event. */
-        term_suggest_update(core);
-        term_suggest_remember(suggest, suggest->line);
-        return 0;
-
-    case XK_Up:
-        return term_suggest_history(core, 1);
-
-    case XK_Down:
-        return term_suggest_history(core, -1);
-
-    default:
-        return 0;
-    }
-}
-
 /* The wheel and the buttons.
  *
  * The wheel scrolls the view when the program does not want the mouse. A
@@ -677,16 +577,6 @@ static void input_module_event(TermCore *core, XEvent *event) {
     case KeyPress: {
         XKeyEvent *key = &event->xkey;
         KeySym keysym = XLookupKeysym(key, 0);
-
-        /* The suggestion's keys come first of all. They are the terminal's and
-           they are only live at a prompt, and each is claimed only when there
-           is something to take — so Right, End, Up, Down and Enter all keep
-           their ordinary meaning everywhere else, and Tab is never claimed at
-           all. See handle_suggest_key(). */
-        if (handle_suggest_key(core, key, keysym)) {
-            term_core_claim_event(core);
-            return;
-        }
 
         /* The terminal's own keys come first, before the program's: they are
            the ones with a modifier that means "the terminal, not you", and

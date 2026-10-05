@@ -80,15 +80,21 @@ void term_render_all(TermCore *core);
    sends. The cell is where its top-left corner goes and `cols`/`rows` are the
    block it is fitted into, its proportions kept. The whole screen is drawn
    again, because a picture lands over cells the dirty marks know nothing
-   about. */
+   about.
+ *
+ * The picture is anchored to the ABSOLUTE line of that screen row — worked out
+ * here from the grid that is showing — and to the screen that is showing, so it
+ * rises with the text above it and is not drawn on the other screen. See
+ * term_image.h. */
 void term_render_place_image(TermCore *core, int x, int y, int cols, int rows,
                              const char *path);
 
-/* Drop every picture the program placed. Called when the screen is CLEARED —
-   see the `clear` callback in term_vt.h — because a picture is not part of the
-   grid and would otherwise stand over cells that were just emptied. The next
-   frame redraws the rows without it. */
-void term_render_clear_images(TermCore *core);
+/* Drop the pictures of ONE screen. Called when that screen is CLEARED — see the
+   `clear` callback in term_vt.h — because a picture is not part of the grid
+   and would otherwise stand over cells that were just emptied. The next frame
+   redraws the rows without it. `alt` is the screen: 0 the main one, 1 the
+   alternate. */
+void term_render_clear_images(TermCore *core, int alt);
 
 /* --- the module ----------------------------------------------------------- */
 

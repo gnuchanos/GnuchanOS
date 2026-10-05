@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <sys/utsname.h>
@@ -25,6 +26,14 @@
 #include <pwd.h>
 
 #include "fetch_info.h"
+
+/* The process probe, defined further down with the other readers that use it.
+   read_server() and read_wm() both ask it which of a set of programs is
+   running, and read_server() sits above the definitions, so the two are
+   declared here rather than moved. */
+static int process_running(const char *name);
+static int first_running(const char *const *names, unsigned int count,
+                         char *out, unsigned int size);
 
 /* --- small helpers --------------------------------------------------------- */
 
@@ -141,6 +150,136 @@ static void read_kernel(char *out, unsigned int size) {
         return;
     }
     snprintf(out, size, "%s", info.release);
+}
+
+/* Whether dpkg says a package is installed. The status line is what is read
+   and not the version column, because a package that is present but removed
+   ("rc") still has a version and is not installed. */
+static int package_installed(const char *name) {
+    char command[256];
+    snprintf(command, sizeof(command),
+             "dpkg-query -W -f='${Status}' %s 2>/dev/null", name);
+    FILE *file = popen(command, "r");
+    if (!file) {
+        return 0;
+    }
+    char line[256];
+    line[0] = '\0';
+    fgets(line, sizeof(line), file);
+    pclose(file);
+    return strstr(line, "install ok installed") != NULL;
+}
+
+/* Whether the X server this machine runs is XLibre rather than X.Org.
+ *
+ * The RUNNING server is asked first, because what is serving the session is the
+ * honest answer and XLibre kept the X.Org binary's name and layout — the file
+ * is still /usr/lib/xorg/Xorg even when the package behind it is
+ * xserver-xlibre-core. The server reports itself in its own vendor string
+ * (`xdpyinfo` asks it over the display), and that is not a guess: it is the
+ * program's own name for itself.
+ *
+ * The INSTALLED PACKAGE is the fallback, for a fetch run from a console with no
+ * display to ask. XLibre's core is the package `xserver-xlibre-core`; the X.Org
+ * one is `xserver-xorg-core`.
+ *
+ * Answers 1 for XLibre and 0 for anything else, including "no X at all". */
+static int x_server_is_xlibre(void) {
+    FILE *file = popen("xdpyinfo 2>/dev/null | grep -i 'vendor string'", "r");
+    if (file) {
+        char line[256];
+        line[0] = '\0';
+        if (fgets(line, sizeof(line), file)) {
+            pclose(file);
+            return strstr(line, "XLibre") != NULL;
+        }
+        pclose(file);
+    }
+    if (package_installed("xserver-xlibre-core")) {
+        return 1;
+    }
+    return 0;
+}
+
+/* Whether any X server is installed on this machine, by its package. */
+static int x_server_installed(void) {
+    return package_installed("xserver-xlibre-core") ||
+           package_installed("xserver-xorg-core");
+}
+
+/* The display server: the protocol the session speaks and the program serving
+ * it, named as the machine actually has it.
+ *
+ * Wayland and X11 are told apart by the session's own account of itself —
+ * WAYLAND_DISPLAY means a Wayland compositor, DISPLAY means X — and the NAME is
+ * whatever is really running. Under X11 that is the X server itself, and it is
+ * read from the server and from what is installed rather than assumed: a
+ * machine with XLibre installed says XLibre, one with X.Org says X.Org, and the
+ * binary's file name is not consulted because XLibre keeps X.Org's. Under
+ * Wayland there is no single server — the COMPOSITOR is one — and it is named
+ * from the variable it exports or from the process that is running.
+ *
+ * A machine with no display server of any kind is left with an empty line, and
+ * the caller drops it: a Server row that named nothing would be worse than no
+ * row at all. There is no "tty" here on purpose — a console is not a display
+ * server, and saying so is not an answer to the question this field asks. */
+static void read_server(char *out, unsigned int size) {
+    const char *session = getenv("XDG_SESSION_TYPE");
+    const char *wayland = getenv("WAYLAND_DISPLAY");
+    const char *display = getenv("DISPLAY");
+
+    int is_wayland = (wayland && wayland[0]) ||
+                     (session && strcasecmp(session, "wayland") == 0);
+
+    /* The buffer a process-name lookup fills; see the note in read_wm(). */
+    char running[64];
+    running[0] = '\0';
+
+    if (is_wayland) {
+        const char *compositor = NULL;
+        if (getenv("SWAYSOCK")) {
+            compositor = "sway";
+        } else if (getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
+            compositor = "Hyprland";
+        } else if (getenv("WAYFIRE_SOCKET")) {
+            compositor = "Wayfire";
+        } else if (getenv("XDG_CURRENT_DESKTOP") &&
+                   strcasecmp(getenv("XDG_CURRENT_DESKTOP"), "GNOME") == 0) {
+            compositor = "Mutter";
+        } else if (getenv("XDG_CURRENT_DESKTOP") &&
+                   strstr(getenv("XDG_CURRENT_DESKTOP"), "KDE")) {
+            compositor = "KWin";
+        } else {
+            static const char *const KNOWN[] = {
+                "sway", "Hyprland", "wayfire", "river", "labwc",
+                "mutter", "kwin_wayland", "weston", "gamescope",
+            };
+            if (first_running(KNOWN, sizeof(KNOWN) / sizeof(KNOWN[0]),
+                              running, sizeof(running))) {
+                compositor = running;
+            }
+        }
+        if (compositor) {
+            snprintf(out, size, "Wayland (%s)", compositor);
+        } else {
+            snprintf(out, size, "Wayland");
+        }
+        return;
+    }
+
+    /* X11: answer only when there is an X server here to name — one serving
+       the session now, or one installed to be started. */
+    if ((display && display[0]) || x_server_installed()) {
+        if (x_server_is_xlibre()) {
+            snprintf(out, size, "X11 (XLibre)");
+        } else {
+            snprintf(out, size, "X11 (X.Org)");
+        }
+        return;
+    }
+
+    /* Nothing here serves a display. */
+    out[0] = '\0';
 }
 
 /* The uptime, made into "3 hours, 12 minutes". /proc/uptime is seconds with a
@@ -625,6 +764,7 @@ static const FieldReader READERS[] = {
     {"host",     "Host",     FETCH_FIELD_HOST,     read_host},
     {"os",       "OS",       FETCH_FIELD_OS,       read_os},
     {"kernel",   "Kernel",   FETCH_FIELD_KERNEL,   read_kernel},
+    {"server",   "Server",   FETCH_FIELD_SERVER,   read_server},
     {"uptime",   "Uptime",   FETCH_FIELD_UPTIME,   read_uptime},
     {"packages", "Packages", FETCH_FIELD_PACKAGES, read_packages},
     {"shell",    "Shell",    FETCH_FIELD_SHELL,    read_shell},

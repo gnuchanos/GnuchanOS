@@ -39,6 +39,8 @@ gcl_Fetch.Main(
     #   "host"     -> makine adi
     #   "os"       -> isletim sistemi (Debian surumu vb.)
     #   "kernel"   -> cekirdek surumu
+    #   "server"   -> goruntu sunucusu: protokol ve program
+    #                 (orn. "Wayland (sway)" ya da "X11 (XLibre)")
     #   "uptime"   -> ne zamandir acik
     #   "packages" -> kurulu paket sayisi (dpkg)
     #   "shell"    -> kabuk
@@ -60,6 +62,7 @@ gcl_Fetch.Main(
         "host",
         "os",
         "kernel",
+        "server",
         "uptime",
         "packages",
         "shell",

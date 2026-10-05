@@ -53,7 +53,6 @@
 #include "term_render.h"
 #include "term_input.h"
 #include "term_select.h"
-#include "term_suggest.h"
 
 /* The scrollbar's width in pixels. It is a fixed number of pixels and not a
    cell: a bar sized in cells would be eight pixels on one font and twenty on
@@ -63,6 +62,14 @@
 /* The shortest the thumb may be drawn, so a history of ten thousand lines
    still has something to see and something to grab. */
 #define TERM_SCROLLBAR_MIN_THUMB 16
+
+/* How often the window's real size is read from the server as a safety net,
+   in milliseconds. It is the backstop under ConfigureNotify: if that notice is
+   ever missed, the child would never be told it was resized and a program like
+   nano would keep drawing at the old, smaller grid — the terminal grown but the
+   content tiny in its corner. A fifth of a second is fast enough to look
+   instant and slow enough that an idle session pays almost nothing for it. */
+#define TERM_SIZE_CHECK_MS 200
 
 /* The window's own event mask. StructureNotify is what a resize arrives as and
    ExposureMask what a redraw request does; both are the core's to subscribe to
@@ -300,19 +307,6 @@ static void core_vt_write(void *user, const char *bytes, int len) {
     }
 }
 
-/* An OSC 133 marker: the shell saying where its prompt ended.
- *
- * The body is `133;<letter>` and the letter is what matters — see
- * term_suggest.h. Only the marker is looked at; every other OSC is still
- * consumed by the parser and dropped, so a window title never reaches here. */
-static void core_vt_osc(void *user, const char *body, int len) {
-    TermCore *core = (TermCore *)user;
-    if (core == NULL || core->suggest == NULL || len < 5) {
-        return;
-    }
-    term_suggest_marker((TermSuggest *)core->suggest, core, body[4]);
-}
-
 /* An OSC 0, 1 or 2 TITLE: the program naming the window.
  *
  * The text goes straight to XStoreName and that is the whole of it — the
@@ -434,17 +428,19 @@ static void core_vt_image(void *user, int xoff, int yoff, int cols, int rows,
     term_render_place_image(core, x, y, cols, rows, path);
 }
 
-/* The screen was CLEARED. The pictures a program placed are dropped with it —
-   see the `clear` callback in term_vt.h — because a picture is not part of the
-   grid and would otherwise stand over the cells that were just emptied. The
-   renderer redraws the whole screen afterwards, so the rows the pictures covered
-   are painted without them. */
+/* The screen was CLEARED. The pictures placed on THAT screen are dropped with
+   it — see the `clear` callback in term_vt.h — because a picture is not part of
+   the grid and would otherwise stand over the cells that were just emptied. The
+   screen is the one that is SHOWING: an erase happens on the screen the program
+   is writing to, and the other screen's pictures belong to the other screen and
+   are left alone. The renderer redraws the whole screen afterwards, so the rows
+   the pictures covered are painted without them. */
 static void core_vt_clear(void *user) {
     TermCore *core = (TermCore *)user;
     if (core == NULL) {
         return;
     }
-    term_render_clear_images(core);
+    term_render_clear_images(core, core->vt.alt_active);
 }
 
 static void core_vt_color(void *user, int slot, uint32_t rgb, int action) {
@@ -784,7 +780,6 @@ int term_core_init(TermCore *core, const char *title, const char *font_name) {
        the module that spawns the child fills the PTY in, and the callbacks
        above read core->pty at the moment they are called rather than now. */
     core->vt_host.write = core_vt_write;
-    core->vt_host.osc = core_vt_osc;
     core->vt_host.title = core_vt_title;
     core->vt_host.color = core_vt_color;
     core->vt_host.image = core_vt_image;
@@ -1029,6 +1024,42 @@ void term_core_step(TermCore *core) {
     }
     if (!core->running) {
         return;
+    }
+
+    /* THE REAL SIZE OF THE WINDOW IS READ FROM THE SERVER, as a backstop under
+       the ConfigureNotify the dispatch above acts on.
+     *
+     * That notice is the normal way a resize reaches the grid, and it is what
+       carries the new cell count to the child. But this terminal is reparented
+       by the window manager — its own window becomes a child of a frame — and a
+       reparenting manager may deliver the resize in a way that produces no
+       ConfigureNotify this process ever sees (a synthetic event, or a resize
+       that lands between two reads of the queue). When that happens the child
+       is never told it was resized: a program like nano keeps drawing at its
+       old, smaller grid, so the window is bigger and the text stays tiny in the
+       corner. That is the whole of "terminal is maximised but nano stays
+       small".
+     *
+     * Reading the size back is authoritative and cannot be missed the way an
+       event can, so it is checked here on its own slow timer: when it differs
+       from the size the grid was built for, it goes through the SAME path a
+       ConfigureNotify would have used. The check costs one round trip per
+       interval and nothing at all when the size is already right. */
+    {
+        static unsigned long last_size_check_ms;
+        unsigned long now_ms = term_core_now_ms();
+        if (now_ms - last_size_check_ms >= TERM_SIZE_CHECK_MS) {
+            last_size_check_ms = now_ms;
+            XWindowAttributes attributes;
+            if (XGetWindowAttributes(core->display, core->window,
+                                     &attributes)) {
+                if (attributes.width != core->width ||
+                    attributes.height != core->height) {
+                    term_core_request_size(core, attributes.width,
+                                          attributes.height);
+                }
+            }
+        }
     }
 
     int x_fd = ConnectionNumber(core->display);

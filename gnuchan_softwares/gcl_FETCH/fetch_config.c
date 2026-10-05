@@ -37,7 +37,7 @@
    are the lines a fetch program is expected to print, and every one of them has
    a reader in fetch_info.c. */
 static const char *const DEFAULT_FIELDS[] = {
-    "model", "user", "host", "os", "kernel", "uptime",
+    "model", "user", "host", "os", "kernel", "server", "uptime",
     "packages", "shell", "wm", "dm", "theme", "icons", "cursor",
     "terminal", "cpu", "gpu", "memory", "disk",
 };

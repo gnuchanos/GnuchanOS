@@ -80,7 +80,6 @@ SOURCES = (
     "term_render.c",
     "term_input.c",
     "term_select.c",
-    "term_suggest.c",
     "term_core.c",
     "GnuChanTerm.c",
 )
@@ -101,7 +100,6 @@ HEADERS = (
     "term_render_internal.h",
     "term_input.h",
     "term_select.h",
-    "term_suggest.h",
     "term_core.h",
 )
 
