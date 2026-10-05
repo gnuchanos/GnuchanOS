@@ -129,19 +129,39 @@ static void menu_paint(DockMenu *menu) {
             snprintf(title, sizeof(title), "window");
         }
 
+        /* Whether this row is the window with the focus, read from the same
+           _NET_ACTIVE_WINDOW the dock was built from. The marker is part of
+           the text rather than a separate glyph so the row is one string to
+           trim and one to draw — and the two rows a person compares are then
+           "path (focus)" against "path (not focus)", which says the answer in
+           words. */
+        int focused = (menu->items[i] == core->active_window);
+        char row[DOCK_TEXT_LENGTH];
+        snprintf(row, sizeof(row), "%s (%s)", title,
+                 focused ? "focus" : "not focus");
+
         int max_title = menu->width - DOCK_MENU_PADDING * 2;
-        fit_title(core, title, max_title, title, sizeof(title));
+        fit_title(core, row, max_title, row, sizeof(row));
 
         int baseline = y + (height +
                             (core->font ? core->font->ascent -
                                           core->font->descent : 0)) / 2;
-        XftColor *colour = (i == menu->hover_index && have_accent)
-                               ? &accent_colour
-                               : (have_text ? &text_colour : NULL);
-        if (draw && colour && core->font && title[0]) {
+        /* The focused row is drawn in the accent whenever it is not hovered,
+           so the row the user is in is the one that stands out without the
+           pointer having to find it. The hover still wins where the two meet:
+           a hovered row is the one about to be clicked. */
+        XftColor *colour;
+        if (i == menu->hover_index && have_accent) {
+            colour = &accent_colour;
+        } else if (focused && have_accent) {
+            colour = &accent_colour;
+        } else {
+            colour = have_text ? &text_colour : NULL;
+        }
+        if (draw && colour && core->font && row[0]) {
             XftDrawStringUtf8(draw, colour, core->font, DOCK_MENU_PADDING,
-                              baseline, (const FcChar8 *)title,
-                              (int)strlen(title));
+                              baseline, (const FcChar8 *)row,
+                              (int)strlen(row));
         }
     }
 

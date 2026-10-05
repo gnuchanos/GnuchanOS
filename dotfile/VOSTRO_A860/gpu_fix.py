@@ -226,6 +226,31 @@ def find_xorg() -> str | None:
     return which("Xorg")
 
 
+def display_hardware_present() -> bool:
+    """Bu makinede denetlenecek bir GPU var mi.
+
+    Deneme sunucusu yalnizca SURUCU SECIMINI dogrular: donanim varsa crocus
+    yuklenir, yoksa swrast kalir. DRI aygit dugumu olmayan bir makinede - bir
+    ISO derleme chroot'u, bir konteyner, GPU'su olmayan bir sunucu - swrast
+    sonucu yapilandirma hakkinda HICBIR SEY soylemez: ortada denenecek
+    donanim yoktur. O durumda "yazilimda kaldi" demek yanlis teshis olur ve
+    dosya hic yazilmadigi icin imaja da hic girmez - GnuchanOS ISO'sunda GPU
+    duzeltmesinin bulunmamasinin sebebi tam olarak buydu.
+
+    /dev/dri altinda card* varsa denenecek bir aygit var demektir. Dosya
+    sistemi erisilemezse /sys/class/drm de sorulur; ikisi de yoksa makinede
+    denenecek bir GPU yoktur.
+    """
+    for directory in (Path("/dev/dri"), Path("/sys/class/drm")):
+        try:
+            for entry in directory.iterdir():
+                if entry.name.startswith("card"):
+                    return True
+        except OSError:
+            continue
+    return False
+
+
 def free_display() -> str:
     """Kullanilmayan bir X display numarasi.
 
@@ -588,13 +613,20 @@ def install(log: Log) -> int:
         log.warn("Xorg ikilisi bulunamadi; dogrulama yapilamaz")
         return 1
 
+    has_hardware = display_hardware_present()
+
     log.step("Once dogrulaniyor: aday yapilandirma ayri bir X sunucusunda")
     log.detail("denenen: Driver \"modesetting\", AccelMethod yazilmadi")
+    if not has_hardware:
+        log.detail(
+            "bu makinede /dev/dri altinda bir GPU aygiti yok (bir derleme "
+            "chroot'u, konteyner ya da ekransiz sunucu olabilir)"
+        )
     engine = probe(log, xorg, CONFIG_TEXT)
 
     if engine.loaded == "crocus":
         log.detail(f"sonuc:   crocus YUKLENDI, GLX saglayicisi {engine.provider}")
-    elif engine.provider == "DRISWRAST":
+    elif engine.provider == "DRISWRAST" and has_hardware:
         log.detail(f"sonuc:   yazilim / swrast  (istenen: {engine.announced or '?'})")
         for error in engine.errors:
             log.detail(f"         {error}")
@@ -605,6 +637,19 @@ def install(log: Log) -> int:
             "    `crocus_dri.so` yoksa donanim yolu bu kurulumda mumkun degil."
         )
         return 1
+    elif engine.provider == "DRISWRAST":
+        # Denedigi bir GPU yok: swrast sonucu yapilandirma hakkinda bir sey
+        # soylemez. Dosya imajin icine girmelidir ki makine gercek donanimla
+        # ilk acilista hazir olsun - imajin derlendigi chroot'ta dogrulanacak
+        # bir yol yoktur, ama yazilacak DOGRU dosya vardir.
+        log.detail(
+            "sonuc:   yazilim / swrast, ama denenecek GPU yok; bu sonuc "
+            "yapilandirmayi yanlislamaz"
+        )
+        log.detail(
+            "bilinen iyi yapilandirma yine de yazilacak: gercek makinede ilk "
+            "acilista crocus'u devreye sokar"
+        )
     else:
         log.detail("sonuc:   belirlenemedi (log okunamadi ya da eksik)")
         log.detail("yapilandirma yine de yazilacak: bilinen iyi hal budur.")

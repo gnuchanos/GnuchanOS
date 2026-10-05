@@ -307,6 +307,33 @@ static void core_vt_write(void *user, const char *bytes, int len) {
     }
 }
 
+/* Give the window its X name: what the program asked for with an OSC title, or
+   the child's working directory when it asked for nothing, or the terminal's
+   own name as a last resort.
+ *
+ * XStoreName is what WM_NAME becomes, and that is what the window manager shows
+ * in its title bar and, in turn, what a dock or task list lists. Terminals that
+ * never name themselves — every plain shell does not — all carried the same
+ * "GnuChanTerm", so a dock showed a row of identical entries with no way to
+ * tell one from another. The working directory is the one thing that differs
+ * between them and is what a person reads to pick the right one, so it is what
+ * the window is called until the program says otherwise. */
+static void core_update_window_name(TermCore *core) {
+    if (core == NULL || core->display == NULL || core->window == None) {
+        return;
+    }
+    const char *name;
+    if (core->program_title[0] != '\0') {
+        name = core->program_title;
+    } else if (core->title[0] != '\0') {
+        name = core->title;
+    } else {
+        name = "GnuChanTerm";
+    }
+    XStoreName(core->display, core->window, name);
+    XFlush(core->display);
+}
+
 /* An OSC 0, 1 or 2 TITLE: the program naming the window.
  *
  * The text goes straight to XStoreName and that is the whole of it — the
@@ -340,12 +367,9 @@ static void core_vt_title(void *user, const char *text, int len) {
     core->program_title[len] = '\0';
 
     /* The name X is given. A program that clears its title sends an empty one
-       and gets the window's own name back, which is the honest answer: the
-       terminal is what the window is when nothing else says otherwise. */
-    XStoreName(core->display, core->window,
-               core->program_title[0] != '\0' ? core->program_title
-                                              : "GnuChanTerm");
-    XFlush(core->display);
+       and the working directory comes back, which is the honest answer: the
+       directory is what the window is when the program says nothing. */
+    core_update_window_name(core);
 }
 
 /* An OSC colour: the program repainting the palette, the foreground, the
@@ -581,6 +605,10 @@ void term_core_refresh_title(TermCore *core) {
     if (strcmp(built, core->title) != 0) {
         snprintf(core->title, sizeof(core->title), "%s", built);
         core->title_dirty = 1;
+        /* The window's own X name follows the directory when no program has
+           named it, so a dock or title bar shows the path rather than a row of
+           identical "GnuChanTerm" entries. */
+        core_update_window_name(core);
         /* The bar has to be drawn again, and the frame the renderer would
            otherwise skip on an idle screen is exactly the one that draws it. */
         term_core_damage(core);

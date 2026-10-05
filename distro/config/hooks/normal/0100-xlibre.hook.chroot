@@ -1,0 +1,36 @@
+#!/bin/sh
+# GnuchanOS - install XLibre, the X server the desktop runs on.
+#
+# XLibre is not in Debian, so it comes from the unofficial xlibre-debian
+# repository (https://github.com/xlibre-debian/debian). That repository is
+# installed by dotfile/XLIBRE/Install_xlibre.py, and that script is the ONE
+# place the repository's shape is written down: its key, its single `main`
+# suite, the `stable`/`testing` component a release channel reads, and the
+# backports the stable channel needs. This hook does not repeat any of it - it
+# runs the script, so the ISO and an installed machine are configured by the
+# same code.
+#
+# The script re-runs itself through sudo when it is not root. In the image
+# build it already IS root, so its ensure_root() returns at once and it works
+# directly on the chroot.
+set -eu
+
+log() { printf '==> xlibre: %s\n' "$1"; }
+
+INSTALLER=/opt/gnuchanos/dotfile/XLIBRE/Install_xlibre.py
+
+if [ ! -f "$INSTALLER" ]; then
+    log "no $INSTALLER; XLibre is not installed by this image"
+    exit 0
+fi
+
+log "running dotfile/XLIBRE/Install_xlibre.py"
+# The script prints the repository's state and then installs. Its exit status
+# is 0 only when the xlibre package really ended up installed, so a failure
+# here is a failure of the image: a live ISO with no X server draws nothing.
+if ! python3 "$INSTALLER"; then
+    log "the installer did not finish; the image has no XLibre in it"
+    exit 1
+fi
+
+log "done"

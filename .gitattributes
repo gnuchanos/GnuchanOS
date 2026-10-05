@@ -6,6 +6,13 @@
 
 # Shell and boot scripts must always use LF
 *.sh      text eol=lf
+# The live ISO's build tree (distro/). These files are executed: build.sh
+# configures and builds, and live-build runs config/hooks/*.chroot inside the
+# image. A CRLF checkout would break every shebang (a "#!/bin/sh\r" is a
+# different interpreter name) and leave the hooks unrunnable, so they are
+# pinned to LF regardless of the platform they are edited on.
+distro/build.sh            text eol=lf
+*.hook.chroot              text eol=lf
 os/boot/init    text eol=lf
 os/boot/initrc  text eol=lf
 os/boot/inittab text eol=lf

@@ -56,3 +56,13 @@ __pycache__/
 *.pyc
 wwww
 export.py
+# ── GnuchanOS live ISO (distro/) ──────────────────────────
+# distro/_build is where build.sh writes: the working copy of the live-build
+# tree, the chroot and binary trees, and the finished .iso. None of it is
+# source and all of it is large.
+distro/_build/
+# auto/config copies the source trees into the overlay before the build, so
+# that live-build can copy them into the image. That copy is build output and
+# is regenerated on every run; the authored configuration is beside it under
+# config/, which IS tracked.
+distro/config/includes.chroot/opt/gnuchanos/

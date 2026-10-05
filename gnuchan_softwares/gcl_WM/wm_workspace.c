@@ -157,6 +157,12 @@ static void workspace_settle(WmCore *core, int workspace) {
 
     wm_workspace_apply(core);
 
+    /* Tell the root which desktop is current, so a pager or a dock follows the
+       switch rather than showing the windows of the desk the user just left.
+       It is published for every switch, whether a window moved or not: the
+       number the dock reads is the one this writes. */
+    core_publish_desktops(core);
+
     /* The layout widget draws the workspaces and says which one is current, so
        both a switch and a move make it wrong until it is drawn again. It is
        drawn here rather than on a timer because this is the one moment the
@@ -209,6 +215,10 @@ void wm_workspace_move(WmCore *core, int workspace) {
        again and the mark has done its job. */
     frame->workspace = workspace;
     frame->moved = 1;
+    /* The client's own desktop property is updated with it, so a dock reading
+       _NET_WM_DESKTOP sees the window on the desk it was sent to and not on
+       the one it left. */
+    wm_frame_publish_desktop(core, frame);
 
     /* And the user goes with it. This is the half that makes the key worth
        pressing: a window sent to a desk the user is not on is a window that
@@ -253,6 +263,10 @@ void wm_workspace_place(WmCore *core, struct WmFrame *frame) {
 
 static int workspace_init(WmCore *core) {
     core->current_workspace = 0;
+    /* Publish the starting desktop and the count as soon as the module starts,
+       so a program that reads them before the first switch finds an answer
+       rather than a missing property. */
+    core_publish_desktops(core);
     return 0;
 }
 

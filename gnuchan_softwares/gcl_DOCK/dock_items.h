@@ -50,6 +50,12 @@ typedef struct DockItem {
        none. */
     Window windows[DOCK_MAX_ITEMS];
     int window_count;
+
+    /* 1 when one of the windows this slot stands for is the one with the
+       keyboard focus, read from _NET_ACTIVE_WINDOW. The dock draws such a slot
+       differently and its list marks the row, so the row says which window the
+       user is actually in without it having to be raised to find out. */
+    int has_focus;
 } DockItem;
 
 void dock_items_build(DockCore *core);

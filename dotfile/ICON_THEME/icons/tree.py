@@ -23,7 +23,11 @@ of times. With it, the number of pixels drawn is the number of distinct glyphs.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
@@ -101,6 +105,40 @@ CONTEXT_TINT_KEY: dict[str, str] = {
     catalogue.STATUS: "status",
     catalogue.UI: "ui",
 }
+
+
+#: How many icons are rendered at once. Every icon is independent of every other
+#: one, so the work is handed to a pool sized to the machine: one worker per
+#: core, and four on a machine that will not say how many it has.
+WORKERS = os.cpu_count() or 4
+
+#: The record of what the installed tree was built from, kept inside the theme.
+#: It is read before anything is rendered and written after everything is: when
+#: it matches, the tree is left exactly as it stands and a second install costs
+#: one hash rather than the whole build. It matters most on the machine this
+#: theme is meant for - an old laptop, where the build is minutes long.
+STAMP_FILE = ".gnuchan-build-stamp"
+
+
+def build_signature() -> str:
+    """A hash of everything a generated tree depends on.
+
+    The whole package's own source is hashed - the glyphs, the palette, the
+    catalogue tables, this file's size ladders and helpers - because any of
+    them can change a rendered pixel. It is deliberately coarse: a comment in
+    an unrelated module also invalidates the cache, which costs one rebuild and
+    can never serve a stale icon. The alternative is a hand-kept list of which
+    changes matter, and that is the thing that goes out of step.
+    """
+    digest = hashlib.sha256()
+    package_dir = Path(__file__).resolve().parent
+    for path in sorted(package_dir.glob("*.py")):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(path.read_bytes())
+    digest.update(
+        repr((PNG_SIZES, SVG_SIZES, SYMBOLIC_SIZE, ROOT_SCALABLE_SIZE)).encode("utf-8")
+    )
+    return digest.hexdigest()
 
 
 def is_our_theme(root: Path) -> bool:
@@ -289,6 +327,12 @@ class Builder:
             f"{len(entries)} icons, {len(symbolic)} symbolic, {len(contexts)} contexts"
         )
 
+        cached = self.cached_counts()
+        if cached is not None:
+            report.stage("checking the installed tree")
+            report.finish("built from these sources already; nothing to redo")
+            return cached
+
         report.stage("clearing the target directory")
         if self.root.exists():
             if not is_our_theme(self.root):
@@ -303,6 +347,11 @@ class Builder:
         counted = {"png": 0, "svg": 0, "symbolic": 0, "animated": 0}
 
         report.stage(f"drawing {len(entries)} icons")
+        # The distinct pictures are drawn first, in parallel: forty names share
+        # one folder and eighty share one text page, so what is actually
+        # rendered is a few hundred glyphs and not a few thousand files. The
+        # write loops below then find every one of them already in the cache.
+        self.warm_caches(entries, symbolic)
         for index, entry in enumerate(entries, start=1):
             tint = tint_for(entry.context)
             for size in PNG_SIZES:
@@ -349,7 +398,96 @@ class Builder:
         self.write("README.md", _readme(entries, symbolic, counted["animated"]))
         counted["glyphs"] = len(self.png_cache)
         report.finish(f"index.theme lists {len(contexts)} contexts")
+
+        self.write_stamp(counted)
         return counted
+
+    # --- the build cache -----------------------------------------------------
+
+    def stamp_path(self) -> Path:
+        """Where the record of what this tree was built from lives."""
+        return self.root / STAMP_FILE
+
+    def cached_counts(self) -> dict[str, int] | None:
+        """The counts of an existing tree that is still current, or None.
+
+        The tree is left where it is only when two things hold: it is really
+        this theme - so an unrelated directory is never mistaken for a cache -
+        and the sources it was built from have not changed since. Any edit to
+        the artwork, the palette, the catalogue or the size ladder changes the
+        signature, so a source change always rebuilds.
+        """
+        if not is_our_theme(self.root):
+            return None
+        try:
+            data = json.loads(self.stamp_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        if data.get("signature") != build_signature():
+            return None
+        counts = data.get("counts")
+        if not isinstance(counts, dict):
+            return None
+        result: dict[str, int] = {}
+        for key in ("png", "svg", "symbolic", "animated", "glyphs"):
+            value = counts.get(key)
+            if not isinstance(value, int):
+                return None
+            result[key] = value
+        return result
+
+    def write_stamp(self, counted: dict[str, int]) -> None:
+        """Record what was built, so the next run can skip the whole build."""
+        payload = {"signature": build_signature(), "counts": counted}
+        self.stamp_path().write_text(
+            json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+        )
+
+    # --- rendering -----------------------------------------------------------
+
+    def render_png(self, glyph_name: str, tint: str, size: int) -> bytes:
+        """One icon as PNG bytes, at one size."""
+        return raster.render(
+            self.shapes(glyph_name, tint), size, 100.0, samples=samples_for(size)
+        ).to_png()
+
+    def render_svg(self, glyph_name: str, tint: str, size: int) -> str:
+        """One icon as an SVG document, at one size."""
+        return svg.document(self.shapes(glyph_name, tint), size)
+
+    def warm_caches(self, entries, symbolic) -> None:
+        """Render every distinct picture once, in parallel.
+
+        The keys are collected before anything is drawn, so each picture is
+        rendered exactly once and the pool is given work and not duplicates.
+        Results are put into the caches on this thread, so the dictionaries are
+        only ever written from one place.
+        """
+        png_jobs: set[tuple[str, str, int]] = set()
+        svg_jobs: set[tuple[str, str, int]] = set()
+        for entry in entries:
+            tint = tint_for(entry.context)
+            for size in PNG_SIZES:
+                png_jobs.add((entry.glyph, tint, size))
+            for size in SVG_SIZES:
+                svg_jobs.add((entry.glyph, tint, size))
+            svg_jobs.add((entry.glyph, tint, ROOT_SCALABLE_SIZE))
+        for entry in symbolic:
+            svg_jobs.add((entry.glyph, palette.SYMBOLIC, SYMBOLIC_SIZE))
+
+        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+            png_results = [
+                (key, pool.submit(self.render_png, *key)) for key in png_jobs
+            ]
+            svg_results = [
+                (key, pool.submit(self.render_svg, *key)) for key in svg_jobs
+            ]
+            for key, future in png_results:
+                self.png_cache[key] = future.result()
+            for key, future in svg_results:
+                self.svg_cache[key] = future.result()
 
     def write_spinner(self) -> int:
         """Write the animated ``process-working`` GIF into every PNG size.

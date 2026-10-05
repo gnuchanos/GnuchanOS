@@ -99,6 +99,7 @@ import subprocess
 import sys
 import tempfile
 import zlib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
@@ -233,6 +234,14 @@ def hex_to_rgba(value: str, alpha: int = 255) -> RGBA:
 PALETTE: dict[str, RGBA] = {
     name: hex_to_rgba(value) for name, value in _PALETTE.items()
 }
+
+#: How many images are drawn at once. Every image this theme is built from is
+#: independent of every other one - a box style does not depend on an icon, and
+#: no image is read by another - so they are handed to a pool sized to the
+#: machine: one worker per core, and four on a machine that will not say how
+#: many it has.
+WORKERS = os.cpu_count() or 4
+
 #: The environment variable that stops a sudo which fails to change the user
 #: from re-running the script for ever.
 ELEVATED_VARIABLE = "GNUGHAN_GRUB_ELEVATED"
@@ -1153,30 +1162,6 @@ def render_icon(name: str) -> Raster:
     return icon
 
 
-def write_box_style(
-    log: Log,
-    directory: Path,
-    prefix: str,
-    fill: RGBA,
-    border: RGBA,
-    radius: float,
-    size: int = SLICE_SIZE,
-) -> None:
-    """Write the nine images of one box style into the theme directory."""
-    for name, image in box_slices(fill, border, radius, size).items():
-        image.write_readable(directory / f"{prefix}_{name}.png")
-    log.detail(f"wrote the {prefix}_*.png box style ({len(BOX_NAMES)} images)")
-
-
-def write_icons(log: Log, directory: Path) -> None:
-    """Write one icon per entry class, under icons/."""
-    icons = directory / "icons"
-    icons.mkdir(parents=True, exist_ok=True)
-    for name in ICON_NAMES:
-        render_icon(name).write_readable(icons / f"{name}.png")
-    log.detail(f"wrote {len(ICON_NAMES)} entry icons into {icons}")
-
-
 def write_theme_images(log: Log, directory: Path, background: Path) -> None:
     """Write every image the theme is made of into ``directory``.
 
@@ -1199,29 +1184,44 @@ def write_theme_images(log: Log, directory: Path, background: Path) -> None:
     thumb_fill = PALETTE["accent"] + (200,)
     thumb_border = PALETTE["accent_light"] + (235,)
 
-    write_box_style(log, directory, "menu", panel_fill, panel_border, float(SLICE_RADIUS))
-    write_box_style(
-        log,
-        directory,
-        "select",
-        select_fill,
-        select_border,
-        float(ITEM_SLICE_RADIUS),
-        ITEM_SLICE_SIZE,
+    # Every image below is independent of every other one, so all of them are
+    # handed to the pool at once: the four box styles are drawn and the icons
+    # with them, and the finished ones are written as they come back.
+    styles = (
+        ("menu", panel_fill, panel_border, float(SLICE_RADIUS), SLICE_SIZE),
+        ("select", select_fill, select_border, float(ITEM_SLICE_RADIUS), ITEM_SLICE_SIZE),
+        (
+            "terminal_box",
+            terminal_fill,
+            terminal_border,
+            float(SLICE_RADIUS),
+            SLICE_SIZE,
+        ),
+        (
+            "scrollbar_thumb",
+            thumb_fill,
+            thumb_border,
+            float(ITEM_SLICE_RADIUS),
+            ITEM_SLICE_SIZE,
+        ),
     )
-    write_box_style(
-        log, directory, "terminal_box", terminal_fill, terminal_border, float(SLICE_RADIUS)
-    )
-    write_box_style(
-        log,
-        directory,
-        "scrollbar_thumb",
-        thumb_fill,
-        thumb_border,
-        float(ITEM_SLICE_RADIUS),
-        ITEM_SLICE_SIZE,
-    )
-    write_icons(log, directory)
+    icons = directory / "icons"
+    icons.mkdir(parents=True, exist_ok=True)
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        box_futures = [
+            (prefix, pool.submit(box_slices, fill, border, radius, size))
+            for prefix, fill, border, radius, size in styles
+        ]
+        icon_futures = [(name, pool.submit(render_icon, name)) for name in ICON_NAMES]
+
+        for prefix, future in box_futures:
+            for name, image in future.result().items():
+                image.write_readable(directory / f"{prefix}_{name}.png")
+            log.detail(f"wrote the {prefix}_*.png box style ({len(BOX_NAMES)} images)")
+        for name, future in icon_futures:
+            future.result().write_readable(icons / f"{name}.png")
+        log.detail(f"wrote {len(ICON_NAMES)} entry icons into {icons}")
 # --- the font -------------------------------------------------------------------
 # GRUB looks a font up by the name written *inside* the .pf2 file and not by the
 # file name, and the theme loader only ever *selects* a font that grub.cfg has

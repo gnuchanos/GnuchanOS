@@ -1,0 +1,146 @@
+# GnuchanOS - the packages the live image carries.
+#
+# live-build installs this list into the chroot. It holds three kinds of
+# package, and they are kept together because a live image is not a package
+# set with optional parts: what is not here is not on the ISO.
+#
+#   1. the base of a live X session - init, a shell, the X libraries, fonts,
+#      the input and video drivers under XLibre;
+#   2. the tools the Gnuchan programs are BUILT with, because the hook
+#      compiles them inside the image (the programs' own makefiles would ask
+#      for these one at a time; naming them here is one apt run instead of
+#      ten, and it is the same list either way);
+#   3. small programs the session needs to be usable out of the box.
+#
+# XLibre itself is NOT here: it is not in Debian, so it is added by a hook
+# from its own repository before this list is installed.
+
+# --- a bootable live system ---
+live-boot
+live-config
+live-config-systemd
+systemd
+systemd-sysv
+dbus
+
+# --- the boot splash. plymouth is what draws the GnuchanOS theme the Plymouth
+#     hook installs; without the daemon and its script module the hook's theme
+#     has nothing to draw it and the boot falls back to text. The initramfs
+#     tools are what put the theme inside the initramfs, where plymouth runs
+#     from before the root filesystem is mounted. ---
+plymouth
+plymouth-themes
+initramfs-tools
+
+# --- the X server's own parts (XLibre provides the server; these are what it
+#     is built against and what its drivers need) ---
+xkb-data
+x11-xkb-utils
+x11-utils
+x11-xserver-utils
+xauth
+xinit
+keyboard-configuration
+libinput10
+udev
+libgl1
+libgl1-mesa-dri
+libegl1
+libgbm1
+procps
+pciutils
+usbutils
+
+# --- fonts ---
+xfonts-base
+fonts-dejavu-core
+fonts-dejavu-extra
+fonts-liberation2
+
+# --- the tools the Gnuchan programs are built with ---
+build-essential
+pkg-config
+python3
+python3-setuptools
+ca-certificates
+curl
+gnupg
+git
+
+# --- what the programs link against ---
+libx11-dev
+libxft-dev
+libfreetype-dev
+libxcursor-dev
+libimlib2-dev
+libxcomposite-dev
+libxdamage-dev
+libxrender-dev
+libxrandr-dev
+libxss-dev
+libxext-dev
+libxmu-dev
+libxpm-dev
+libpng-dev
+libjpeg-dev
+# GnuChanDM (the display manager) authenticates through PAM, so it is built
+# against libpam's header. It is listed here rather than left to the DM's own
+# makefile, which would apt-install it mid-build: the image should carry what
+# its programs are built from, and one apt run at image time is one fewer thing
+# to go wrong inside the chroot.
+libpam0g-dev
+libpam-modules
+libpam-runtime
+# The X server wrapper that reads Xwrapper.config. It is what lets a normal
+# user start X, which is how the live session comes up (see the session hook).
+xserver-xorg-legacy
+# dbus-x11 provides the session bus helpers a desktop session expects; the
+# notification server and every program that talks to it want a session bus.
+dbus-x11
+
+# --- GnuChanBrowser is a Qt program ---
+qt6-base-dev
+qt6-base-dev-tools
+libqt6widgets6
+libqt6network6
+libqt6webenginewidgets6
+libqt6webenginecore6
+
+# --- networking, so the live image is actually usable online ---
+# NetworkManager is what gives `nmcli`, the little applet in the bar and the
+# whole connect-to-wifi flow. It is not optional on a live image: a machine
+# that boots with no way to join a network is a machine that can do nothing
+# with the network it was downloaded onto. wpasupplicant is what NetworkManager
+# drives to authenticate a WPA network; without it every secured network is
+# refused with no visible reason.
+network-manager
+wpasupplicant
+wireless-tools
+rfkill
+# The kernel firmware the wireless cards need. The firmware is not optional and
+# is easy to leave out by accident: a card with no firmware has NO interface at
+# all, so `nmcli` shows nothing to connect to and the card looks like it is not
+# supported. firmware-linux pulls the lot; the named ones are the common
+# wireless chipsets and are listed so a build that trims the metapackage still
+# carries them.
+firmware-linux
+firmware-iwlwifi
+firmware-atheros
+firmware-realtek
+firmware-brcm80211
+firmware-ralink
+firmware-misc-nonfree
+
+# --- the session's helpers: sound, a browser backend, the pointer theme ---
+alsa-utils
+xterm
+x11-apps
+nano
+sudo
+irqbalance
+ntpsec
+openssh-server
+
+# --- locale and time ---
+locales
+tzdata

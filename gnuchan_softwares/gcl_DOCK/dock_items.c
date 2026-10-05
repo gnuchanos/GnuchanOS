@@ -164,6 +164,47 @@ static int is_terminal_window(const char *wm_class, const char *instance) {
             strcasecmp(instance, DOCK_TERMINAL_INSTANCE) == 0);
 }
 
+/* Which workspace a window is on, read from its _NET_WM_DESKTOP. Returns -1
+   when the window published none — a window the manager has not tagged, or a
+   session with no EWMH manager — and the caller then shows it rather than
+   hiding it: a window that cannot be placed is a window the user would be
+   unable to find if the dock dropped it. */
+static long window_desktop(DockCore *core, Window client) {
+    Atom actual_type = None;
+    int actual_format = 0;
+    unsigned long items = 0;
+    unsigned long after = 0;
+    unsigned char *data = NULL;
+    long desktop = -1;
+
+    if (XGetWindowProperty(core->display, client, core->net_wm_desktop, 0, 1,
+                           False, XA_CARDINAL, &actual_type, &actual_format,
+                           &items, &after, &data) == Success) {
+        if (data && actual_format == 32 && items > 0) {
+            desktop = (long)(*(unsigned long *)data);
+        }
+        if (data) {
+            XFree(data);
+        }
+    }
+    return desktop;
+}
+
+/* Whether a window belongs on the dock right now: it is on the workspace that
+   is showing. With no current desktop published by the manager (have_desktop
+   is 0) every window belongs, which is the safe answer for a plain X session —
+   the alternative hides windows on a screen that has told the dock nothing. */
+static int window_on_current_desktop(DockCore *core, Window client) {
+    if (!core->have_desktop) {
+        return 1;
+    }
+    long desktop = window_desktop(core, client);
+    if (desktop < 0) {
+        return 1;
+    }
+    return desktop == core->current_desktop;
+}
+
 static int window_is_skippable(DockCore *core, Window client) {
     Atom actual_type = None;
     int actual_format = 0;
@@ -261,6 +302,11 @@ static void group_window(DockCore *core, Window client, const char *wm_class,
     if (found->window_count < DOCK_MAX_ITEMS) {
         found->windows[found->window_count++] = client;
     }
+    /* The slot with the focused window in it is the one the user is in, and it
+       is marked so the dock can draw it apart from the rest. */
+    if (client == core->active_window) {
+        found->has_focus = 1;
+    }
 }
 
 static void items_add_windows(DockCore *core, DockItem *terminal) {
@@ -289,6 +335,12 @@ static void items_add_windows(DockCore *core, DockItem *terminal) {
         if (client == None || window_is_skippable(core, client)) {
             continue;
         }
+        /* Windows on another workspace are not on this screen, and a dock that
+           listed them would be offering to raise windows the user cannot see.
+           They are left out until the workspace they are on is showing. */
+        if (!window_on_current_desktop(core, client)) {
+            continue;
+        }
 
         char wm_class[DOCK_TEXT_LENGTH];
         char instance[DOCK_TEXT_LENGTH];
@@ -299,6 +351,9 @@ static void items_add_windows(DockCore *core, DockItem *terminal) {
             /* Every terminal, into the one terminal slot. */
             if (terminal && terminal->window_count < DOCK_MAX_ITEMS) {
                 terminal->windows[terminal->window_count++] = client;
+                if (client == core->active_window) {
+                    terminal->has_focus = 1;
+                }
             }
             continue;
         }

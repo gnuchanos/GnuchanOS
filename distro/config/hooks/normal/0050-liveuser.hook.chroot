@@ -1,0 +1,78 @@
+#!/bin/sh
+# GnuchanOS - create the live user before anything is installed for them.
+#
+# The image logs in as one user, and several installers write settings into that
+# user's home: the terminal, the window manager and the display manager each put
+# their settings script under ~/.config of the invoking user, and the theme
+# installers write into the same home. Every one of them resolves that home from
+# SUDO_USER (the account that ran sudo) or from HOME, and every one of them
+# chowns what it writes to that account.
+#
+# So the account has to EXIST while the image is built, and its home has to be
+# there before the installers run. It is created here, first, and not left to
+# live-config at boot: at boot it would be created after everything that reads
+# its home has already run, which is the wrong order for a home that was
+# configured at build time.
+#
+# The name here is the same name the boot parameters ask for (username=gnuchanos
+# in build.sh): live-config reuses an account that already exists by name, so the
+# two have to agree or a second, empty account is made at boot.
+#
+# The account is given a REAL password, and that is a deliberate change. The
+# lock screen (GnuChanSL) and the greeter (GnuChanDM) both authenticate through
+# PAM against this account, so a locked account is an account neither can ever
+# open — which is what "my password does not work on the lock screen" was. The
+# live image is a throwaway demo system, so a known password is the right trade:
+# the user is told it is gnuchanos/gnuchanos and can log in, unlock the screen
+# and reach a text console with it.
+set -eu
+
+log() { printf '==> liveuser: %s\n' "$1"; }
+
+LIVE_USER=gnuchanos
+LIVE_PASSWORD=gnuchanos
+LIVE_HOME=/home/$LIVE_USER
+
+# The groups a desktop session wants the user in, when the image has them.
+WANTED_GROUPS="audio video cdrom floppy dialout plugdev games netdev bluetooth lpadmin"
+
+if id "$LIVE_USER" >/dev/null 2>&1; then
+    log "$LIVE_USER already exists"
+else
+    log "creating $LIVE_USER"
+    # --create-home would make the home 0755 owned by the user, which is what
+    # is wanted; the shell is bash because that is what the session's own
+    # profiles (written by the program installers) expect to be read.
+    useradd --create-home --shell /bin/bash "$LIVE_USER"
+fi
+
+mkdir -p "$LIVE_HOME"
+
+# The extra groups, each only when the image actually has that group.
+for group in $WANTED_GROUPS; do
+    if getent group "$group" >/dev/null 2>&1; then
+        usermod -aG "$group" "$LIVE_USER" || true
+    fi
+done
+
+# A real password, set through chpasswd so it is hashed by the system's own
+# crypt instead of being written into /etc/shadow by hand. The lock screen and
+# the greeter check this account through PAM, so it has to be able to
+# authenticate: `passwd -l` (which the first version of this hook did) is
+# exactly what stops them.
+log "setting the password for $LIVE_USER"
+echo "$LIVE_USER:$LIVE_PASSWORD" | chpasswd
+
+# The account is an administrator, so the live session can run sudo without a
+# password prompt — which is what a live demo image wants: the person trying it
+# out should not have to be told a second password to install a package or read
+# a log.
+if getent group sudo >/dev/null 2>&1; then
+    usermod -aG sudo "$LIVE_USER" || true
+fi
+install -d /etc/sudoers.d
+printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$LIVE_USER" > /etc/sudoers.d/90-gnuchanos-live
+chmod 0440 /etc/sudoers.d/90-gnuchanos-live
+
+log "home: $LIVE_HOME"
+log "password: set (the live user can log in, unlock and use sudo)"

@@ -21,12 +21,24 @@
  *
  * At start-up it turns both of the server's timers OFF (`xset s off`, then
  * `xset -dpms`, as two commands — see idle_disable_server_timers() for why they
- * cannot be one line), so the only thing that ever darkens this desk is this
- * module and the programs it runs. Then it watches the idle clock itself,
- * through the X ScreenSaver extension — the same measurement the server uses,
- * and the same one GnuChanSS reads on its own — and when the keyboard and
- * pointer have been still for Idle.Seconds it runs the session's screen saver,
- * and its lock screen too when the settings ask for it.
+ * cannot be one line), so the only thing that ever darkens this desk is the
+ * session's own screen saver and the lock it may raise. Then it watches the
+ * idle clock itself, through the X ScreenSaver extension — the same measurement
+ * the server uses, and the same one GnuChanSS reads on its own — and when the
+ * keyboard and pointer have been still for Idle.Seconds it raises the lock
+ * screen if the settings ask for one.
+ *
+ * --- why it does NOT start the screen saver from the tick ---
+ *
+ * The picture is GnuChanSS's, and GnuChanSS runs for the WHOLE session: this
+ * module starts it ONCE at init (idle_start_saver_daemon), WITHOUT `--once`, and
+ * it then holds the org.freedesktop.ScreenSaver name so a video player can
+ * inhibit it. That name is the only way a film can say "not now", and a copy
+ * started from the tick would not hold it — worse, the `--once` such a copy
+ * would need to show the moment the clock says so skips the inhibit check AND
+ * the live idle reading, so it dropped over a hand that had just started typing
+ * and over a film that was playing. So the tick starts no saver: it raises the
+ * lock when asked and leaves the picture to the daemon started at init.
  *
  * --- why a tick and not an event ---
  *
@@ -49,10 +61,9 @@
  * --- what it does NOT do ---
  *
  * It does not blank the screen itself and it does not draw: the picture is
- * GnuChanSS's job and the password is GnuChanSL's. This module only decides
- * WHEN, and hands off to the programs the settings name. That is the same
- * split the lid module has, and the two share the command lines: a machine
- * that named its own screen saver for a wake-up gets the same one here.
+ * GnuChanSS's job, run as the resident saver daemon, and the password is
+ * GnuChanSL's. This module raises the lock at the configured idle time and
+ * otherwise leaves the desk alone.
  */
 #include <stdio.h>
 #include <string.h>
@@ -63,20 +74,18 @@
 #include "wm_core.h"
 #include "wm_spawn.h"
 
-/* The programs to run when the settings name none. They are the GnuchanOS
- * programs, and they are named with the flags that make them show at once:
+/* The lock screen's program, when the settings name none. GnuChanSL has no
+   timer of its own; the session decides when it comes up.
  *
- *   GnuChanSS --once   shows immediately rather than waiting out ITS OWN idle
- *                      timer. The session has already waited; asking the saver
- *                      to wait the same length again would mean the desk sits
- *                      dark for one more IdleSeconds on top of the one just
- *                      spent — which is the black screen this is meant to
- *                      remove.
- *   GnuChanSL          the lock screen, which has no timer of its own.
- *
- * A machine that has neither simply runs nothing, which is the same as having
- * asked for nothing. */
-#define WM_IDLE_DEFAULT_SCREENSAVER "GnuChanSS --once"
+ * The SCREEN SAVER is deliberately NOT run from the tick any more. It is
+ * started ONCE, from idle_init() below, and stays up for the whole session
+ * holding the org.freedesktop.ScreenSaver name — which is what lets a video
+ * player inhibit it. Running a second copy from the tick — with `--once`, so it
+ * showed the instant the clock said so — is exactly what dropped the saver over
+ * a hand that had only just started typing, and over a film that was playing:
+ * `--once` skips both the inhibit check and the live idle reading. So the tick
+ * makes no saver call of its own and only brings the lock up when the settings
+ * ask for it. */
 #define WM_IDLE_DEFAULT_LOCKSCREEN  "GnuChanSL"
 
 /* Whether the extension is here at all. Probed once; a server without it (very
@@ -121,9 +130,9 @@ static void idle_disable_server_timers(void) {
     if (wm_spawn_command("xset s off") != 0) {
         fprintf(stderr,
                 "gnuchanwm: idle: xset was not found, so the server's own "
-                "blanking stays on; the screen saver below still runs at the "
-                "configured idle time, but the server may darken the panel "
-                "first\n");
+                "blanking stays on; the session's screen saver still runs "
+                "itself at the configured idle time, but the server may "
+                "darken the panel first\n");
         /* Without xset there is no point trying the DPMS name either. */
         return;
     }
@@ -141,6 +150,39 @@ static void idle_run(const char *command, const char *fallback) {
         wm_spawn_command(command);
     } else if (fallback && fallback[0]) {
         wm_spawn_command(fallback);
+    }
+}
+
+/* Start the session's screen saver ONCE, at login, as a resident daemon.
+ *
+ * This is the whole of the fix for the saver dropping over a hand that had just
+ * started typing, or over a film that was playing. The saver is started WITHOUT
+ * `--once` and left running for the session, so it:
+ *
+ *   - holds the org.freedesktop.ScreenSaver name for the whole session, which
+ *     is the only way a video player's Inhibit call can reach it; a saver
+ *     started fresh each idle spell was not there to be told "not now";
+ *   - reads the idle clock and the inhibit itself, every half second, so it
+ *     shows only when the desk has really gone quiet and nothing has asked it
+ *     to hold off — unlike `--once`, which shows the instant the caller's timer
+ *     says so.
+ *
+ * It is started here and not from the tick because the name has to be held from
+ * the start of the session, not from the first idle spell: a film that begins a
+ * minute after login wants to inhibit a saver that is already listening. The
+ * module's own tick therefore never starts a saver; it raises the lock.
+ *
+ * A custom ScreensaverCommand is honoured, and only a missing one falls back to
+ * the shipped program by name, then to where the installer puts it. */
+static void idle_start_saver_daemon(WmCore *core) {
+    const char *command = core->config.screensaver_command;
+    if (command && command[0]) {
+        if (wm_spawn_command(command) == 0) {
+            return;
+        }
+    }
+    if (wm_spawn_command("GnuChanSS") != 0) {
+        wm_spawn_command("/usr/local/bin/GnuChanSS");
     }
 }
 
@@ -165,10 +207,15 @@ static double idle_seconds(Display *display) {
  * holding everything. With the lock up the saver is behind it and unseen, which
  * is what "lock" means. */
 static void idle_fire(WmCore *core) {
-    if (core->config.idle_screensaver) {
-        idle_run(core->config.screensaver_command,
-                 WM_IDLE_DEFAULT_SCREENSAVER);
-    }
+    /* The screen saver is not started here. It is the resident daemon started at
+     * login (see the note on WM_IDLE_DEFAULT_LOCKSCREEN): it holds the
+     * ScreenSaver name so a video can inhibit it, and it reads the idle clock
+     * and the inhibit itself. A copy forced from this tick would show the
+     * instant the clock said so — over a hand that had started typing again, or
+     * over a film — which is the fault this module no longer causes.
+     *
+     * What is acted on here is only the lock, and it comes up so it is in place
+     * before anything could be drawn behind it. */
     if (core->config.idle_lockscreen) {
         idle_run(core->config.lockscreen_command, WM_IDLE_DEFAULT_LOCKSCREEN);
     }
@@ -202,8 +249,12 @@ static void idle_tick(WmCore *core) {
             s_fired = 1;
             fprintf(stderr,
                     "gnuchanwm: idle: the desk has been quiet for %.0f "
-                    "second(s); running the screen saver%s\n",
-                    idle, core->config.idle_lockscreen ? " and lock" : "");
+                    "second(s); %s\n",
+                    idle,
+                    core->config.idle_lockscreen
+                        ? "bringing the lock up (the screen saver runs "
+                          "itself)"
+                        : "leaving it to the screen saver, which runs itself");
             idle_fire(core);
         }
         return;
@@ -245,6 +296,17 @@ static int idle_init(WmCore *core) {
                 "extension, so the idle clock cannot be read; the screen "
                 "saver will not start on idle here\n");
     }
+
+    /* The resident screen saver, started once. It is gated by the same two
+       switches the tick used to honour, so Idle.Enabled=False or
+       Idle.ScreenSaver=False still means no saver runs — the difference is
+       only that a saver which DOES run is the resident one, holding the
+       ScreenSaver name, rather than a `--once` copy per idle spell. See
+       idle_start_saver_daemon(). */
+    if (core->config.idle_enabled && core->config.idle_screensaver) {
+        idle_start_saver_daemon(core);
+    }
+
     s_fired = 0;
     return 0;
 }

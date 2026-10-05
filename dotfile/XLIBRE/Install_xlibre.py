@@ -74,6 +74,14 @@ from pathlib import Path
 REPO_BASE = "https://xlibre-debian.github.io/debian/"
 REPO_SUITE = "main"
 
+#: The architectures the repository actually publishes, taken from its Release
+#: file ("Architectures: amd64 arm64"). A machine whose dpkg architecture is not
+#: one of these finds no packages at all, and apt does not say so plainly: the
+#: sources file names an architecture the suite has no index for, apt-get update
+#: downloads nothing for it, and the install then fails with "no installation
+#: candidate". Checking here turns that into a sentence the reader can act on.
+REPO_ARCHITECTURES = ("amd64", "arm64")
+
 #: The two components the repository publishes, one per release channel.
 COMPONENT_STABLE = "stable"
 COMPONENT_TESTING = "testing"
@@ -238,6 +246,16 @@ def architecture() -> str:
     """dpkg's architecture, which is what the sources file's line must name."""
     result = run([tool("dpkg"), "--print-architecture"], capture=True)
     return result.stdout.strip() or "amd64"
+
+
+def architecture_supported() -> bool:
+    """Whether the repository publishes packages for this machine's architecture.
+
+    False means the repository's Release file names other architectures than the
+    one this machine runs, and nothing in it can be installed however the
+    sources file is written.
+    """
+    return architecture() in REPO_ARCHITECTURES
 
 
 def is_debian() -> bool:
@@ -425,6 +443,7 @@ class RepoState:
     def __init__(self) -> None:
         self.codename = codename()
         self.arch = architecture()
+        self.arch_supported = architecture_supported()
         self.component = component()
         self.known_channel = known_channel()
         self.key_present = KEY_PATH.is_file()
@@ -438,7 +457,10 @@ class RepoState:
 def report(log: Log, state: RepoState) -> None:
     log.step(f"XLibre status ({distro_description()})")
     log.detail(f"codename          {state.codename or '(unknown)'}")
-    log.detail(f"architecture      {state.arch}")
+    log.detail(
+        f"architecture      {state.arch}"
+        f"{'' if state.arch_supported else ' (NOT published by the repository; it has amd64 and arm64 only)'}"
+    )
     log.detail(
         f"component         {state.component}"
         f"{'' if state.known_channel else ' (assumed; this codename is not one the repository names)'}"
@@ -465,6 +487,17 @@ def report(log: Log, state: RepoState) -> None:
 
 def install(log: Log, state: RepoState) -> int:
     report(log, state)
+
+    # The repository has no index for this architecture, so nothing in it can
+    # be installed. Writing the sources file anyway would leave the machine with
+    # a third-party source that can never satisfy anything, and an apt error
+    # about a missing candidate rather than the real reason.
+    if not state.arch_supported:
+        log.warn(
+            f"the repository publishes amd64 and arm64, not {state.arch}; "
+            "XLibre cannot be installed from it on this machine"
+        )
+        return 1
 
     missing = [p for p in BOOTSTRAP_PACKAGES if not package_installed(p)]
     if missing:

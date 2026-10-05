@@ -1,0 +1,63 @@
+#!/bin/sh
+# GnuchanOS - take the sources back out of the image.
+#
+# /opt/gnuchanos is where build.sh staged the source trees - the programs, the
+# dotfiles and the language - for the hooks before this one to build and install
+# from. The finished image should carry the INSTALLED programs and not the tree
+# they were built from: leaving it in would put a full checkout - and every
+# object file the language build wrote under its _temp/ - on the ISO, doubling
+# its size for files nobody at a live session has any use for.
+#
+# The book is the one thing worth keeping, and it is kept for the same reason
+# the language is on the image at all: it is the documentation for it. It is
+# moved out before the tree goes.
+set -eu
+
+log() { printf '==> cleanup: %s\n' "$1"; }
+
+STAGE=/opt/gnuchanos
+
+# --- keep the documentation --------------------------------------------------
+
+if [ -d "$STAGE/book" ]; then
+    install -d /usr/share/gnuchanos
+    rm -rf /usr/share/gnuchanos/book
+    cp -a "$STAGE/book" /usr/share/gnuchanos/book
+    log "kept the GCL book at /usr/share/gnuchanos/book"
+fi
+
+# --- drop the sources --------------------------------------------------------
+
+if [ -d "$STAGE" ]; then
+    rm -rf "$STAGE"
+    log "removed $STAGE (the source trees and the build output under them)"
+fi
+
+# The build chain also writes scratch under the tree's own _temp/ when it is
+# run from it; that is under $STAGE and went with it. Nothing else is left.
+
+# --- one last look -----------------------------------------------------------
+
+# The point of the whole image is a desktop that starts, so the two programs a
+# live session needs are checked before the image is packed. Both are cheap and
+# both are fatal if missing, and finding out here is better than a black screen
+# on someone's laptop.
+#
+# They are looked for where each one actually goes and not on root's PATH:
+# GnuChanWM is installed system-wide into /usr/local/bin, while `gcl` is a
+# per-user install (its own installer writes ~/.local/bin/gcl, because the
+# build ran with SUDO_USER set to the live user - see the programs hook). So
+# the two are asked for in the two different places.
+wm_missing=0
+gcl_missing=0
+[ -x /usr/local/bin/GnuChanWM ] || wm_missing=1
+[ -x /home/gnuchanos/.local/bin/gcl ] || gcl_missing=1
+
+if [ "$wm_missing" -eq 1 ]; then
+    log "WARNING: /usr/local/bin/GnuChanWM is not in the finished image"
+fi
+if [ "$gcl_missing" -eq 1 ]; then
+    log "WARNING: /home/gnuchanos/.local/bin/gcl is not in the finished image"
+fi
+
+log "done"

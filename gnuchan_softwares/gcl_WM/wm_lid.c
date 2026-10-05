@@ -93,24 +93,43 @@ static int  lid_path_searched = 0;
 static int lid_last_closed = 0;
 static int lid_seen = 0;
 
-/* The wall-clock second of the last tick, so a wake-up from the machine's OWN
- * sleep can be told from a quiet tick.
+/* The clock readings of the last tick, so a wake-up from the machine's OWN
+ * sleep can be told from a tick that merely arrived late.
  *
  * The lid is not the only thing that suspends a laptop. An idle timer, the
  * power button and the machine's own firmware all put it to sleep with the lid
  * untouched — and because the lid never moved, the open-lid path never ran, so
  * nothing turned the screen back on and the machine came back to a black
  * screen. The tick loop is frozen while the machine is asleep and resumes with
- * it, so the wall clock jumping much further than the tick interval is the one
- * signal, available without D-Bus, that says "the machine slept and has just
- * woken". */
-static time_t lid_last_tick = 0;
+ * it, so a clock jumping much further than the tick interval is the signal,
+ * available without D-Bus, that says "the machine slept and has just woken".
+ *
+ * It has to be TWO clocks, and that is the whole of a bug this module used to
+ * have. The wall clock alone cannot tell a real suspend from a tick that was
+ * simply late: this process is a window manager, and a slow frame, a fork that
+ * took a while, or a busy machine moves no clock but does delay the tick. When
+ * that delay passed the old threshold the tick was read as a wake-up, the
+ * wake-up path ran `GnuChanSS --once` — which skips the idle check and the
+ * inhibit check by design, because a wake-up wants the saver NOW — and the
+ * screen was covered under a hand that was still moving the mouse. That is
+ * exactly the fault reported: "the screen saver opens even though I am moving
+ * the mouse".
+ *
+ * CLOCK_MONOTONIC does not advance while the machine is suspended; the wall
+ * clock does. So a real sleep shows up as the wall clock having advanced far
+ * more than the monotonic clock since the last tick, and a merely late tick
+ * shows up as the two having advanced by the same amount. Comparing the two
+ * tells them apart with no D-Bus and no libsystemd, which is why it is done
+ * this way rather than by subscribing to a logind signal. */
+static time_t lid_last_wall = 0;
+static struct timespec lid_last_monotonic;
 
-/* How far the wall clock must jump between two ticks before it is called a
- * wake-up rather than a slow tick. The tick is two seconds; a jump of more
- * than this many seconds means most of the ticks in between never ran, which
- * happens only when the process was frozen — that is, when the machine slept. */
-#define WM_LID_RESUME_GAP_SECONDS 8
+/* How far the wall clock may run ahead of the monotonic clock between two
+ * ticks before the gap is called a wake-up rather than a late tick. A real
+ * suspend is seconds to hours long; a starved event loop is well under this.
+ * Four seconds against a two-second tick leaves room for one missed tick and
+ * no more. */
+#define WM_LID_RESUME_GAP_SECONDS 4
 
 /* Find the lid's state file, once. Sets lid_state_path and returns 1 when one
    was found and 0 when there is no lid (a desktop), in which case the search is
@@ -246,12 +265,26 @@ static void lid_on_wake(WmCore *core) {
 /* The tick: read the lid, and act when it changed — or when the machine woke. */
 static void lid_tick(WmCore *core) {
     /* Whether this tick came after a sleep. Read before anything can return,
-       because the clock is advanced on every tick and a wake-up has to be
-       recognised on the very tick it is seen. */
-    time_t now = time(NULL);
-    int resumed = (lid_last_tick != 0 &&
-                   now - lid_last_tick > WM_LID_RESUME_GAP_SECONDS);
-    lid_last_tick = now;
+       because the clocks are advanced on every tick and a wake-up has to be
+       recognised on the very tick it is seen.
+     *
+     * The test is the wall clock having advanced far more than the monotonic
+     * clock since the last tick — see the note on lid_last_wall. The wall clock
+     * advancing on its own, by the same amount as the monotonic clock, is a
+     * late tick and not a wake-up; only a real suspend leaves the monotonic
+     * clock behind. */
+    time_t now_wall = time(NULL);
+    struct timespec now_monotonic;
+    clock_gettime(CLOCK_MONOTONIC, &now_monotonic);
+    int resumed = 0;
+    if (lid_last_wall != 0) {
+        long long wall_gap = (long long)(now_wall - lid_last_wall);
+        long long monotonic_gap =
+            (long long)(now_monotonic.tv_sec - lid_last_monotonic.tv_sec);
+        resumed = (wall_gap - monotonic_gap) > WM_LID_RESUME_GAP_SECONDS;
+    }
+    lid_last_wall = now_wall;
+    lid_last_monotonic = now_monotonic;
 
     int closed = 0;
     int have_lid = lid_read(&closed);

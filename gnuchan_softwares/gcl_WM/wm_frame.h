@@ -324,6 +324,13 @@ void wm_frame_free_icon(WmCore *core, WmFrame *frame);
 int wm_frame_draw_icon(WmCore *core, WmFrame *frame, Drawable target,
                        int x, int y, int side);
 
+/* Write the client's _NET_WM_DESKTOP to the workspace the frame is on. Read by
+   a dock or a pager that wants one workspace's windows at a time; without it
+   such a program cannot tell which desk a window belongs to and shows them all
+   at once. Called when a frame is created and whenever it is moved between
+   workspaces. */
+void wm_frame_publish_desktop(WmCore *core, WmFrame *frame);
+
 /* Bring the frame back in step with a client that moved or resized itself.
    Called when the server reports the client changed. */
 void wm_frame_sync(WmCore *core, WmFrame *frame);

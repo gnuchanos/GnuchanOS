@@ -36,6 +36,22 @@ typedef struct DockCore {
     Atom net_wm_window_type;
     Atom net_wm_window_type_dock;
     Atom net_wm_window_type_desktop;
+    /* The EWMH desktop atoms the dock reads to show one workspace at a time.
+       _NET_CURRENT_DESKTOP says which workspace is on screen; _NET_WM_DESKTOP,
+       on each client, says which one that window is on. A dock that did not
+       read these would show every window on every workspace at once, and the
+       row would fill with windows the user cannot see. */
+    Atom net_current_desktop;
+    Atom net_wm_desktop;
+    /* The workspace currently on screen, and the window with the focus, read
+       from the root at the start of a build. Zero when the manager publishes
+       neither, in which case every window is shown — the safe answer for a
+       manager that does not speak EWMH. */
+    long current_desktop;
+    Window active_window;
+    /* 1 when the manager published a current desktop for this build, so a
+       window whose own desktop cannot be read is shown rather than hidden. */
+    int have_desktop;
 
     DockConfig config;
     unsigned long background;

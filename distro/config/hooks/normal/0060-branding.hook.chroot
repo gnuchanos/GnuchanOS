@@ -1,0 +1,111 @@
+#!/bin/sh
+# GnuchanOS - name the machine GnuChanOS.
+#
+# This hook is the one that makes the running system call itself GnuChanOS and
+# not "Debian GNU/Linux 13". Debian's own identity lives in /etc/os-release,
+# /etc/issue, /etc/issue.net and /etc/motd, and every one of them is written
+# from the base distribution's package, so a live image made with live-build
+# says "Debian GNU/Linux 13 (trixie)" on the console, in the boot splash
+# messages and in every program that reads os-release - however GnuChanOS the
+# rest of the image is.
+#
+# WHAT IS KEPT, AND WHY IT MATTERS
+# VERSION_CODENAME stays `trixie` and ID_LIKE stays `debian`. Those two lines
+# are not cosmetic: dotfile/XLIBRE/Install_xlibre.py picks the repository's
+# component (`stable` vs `testing`) from VERSION_CODENAME, and the backports
+# suite it enables on a stable release is derived from the same value. A themed
+# os-release that dropped them would make the XLibre install fall back to the
+# stable channel on a different release, or refuse the repository outright.
+# The base distribution is still Debian 13 underneath, and this file says so.
+#
+# The `trixie` codename is named here rather than read from what was there, on
+# purpose: a hook that copied Debian's own value would keep working when the
+# base moves, but a live-build tree that is pinned to trixie wants an image
+# whose own VERSION_CODENAME matches the base it was built on. If the base
+# distribution moves, the codename in this file moves with it.
+set -eu
+
+log() { printf '==> branding: %s\n' "$1"; }
+
+PRETTY_NAME="GnuChanOS GNU/Linux (Based on Debian 13)"
+NAME="GnuChanOS"
+VERSION="1.0"
+VERSION_ID="1.0"
+CODENAME="trixie"
+DEBIAN_CODENAME="13"
+
+# --- /etc/os-release ---------------------------------------------------------
+
+# The file every program reads. Written whole rather than patched line by line:
+# the fields are a fixed set and a half-rewritten file is a file whose meaning
+# depends on which lines happened to be there. HOME_URL and SUPPORT_URL point
+# at the project; BUG_REPORT_URL is the issue tracker, which is where a report
+# from a live session can actually be filed.
+cat > /etc/os-release <<EOF
+PRETTY_NAME="$PRETTY_NAME"
+NAME="$NAME"
+VERSION="$VERSION"
+VERSION_ID="$VERSION_ID"
+VERSION_CODENAME=$CODENAME
+ID=gnuchanos
+ID_LIKE="debian"
+HOME_URL="https://github.com/gnuchanos/GnuchanOS"
+SUPPORT_URL="https://github.com/gnuchanos/GnuchanOS"
+BUG_REPORT_URL="https://github.com/gnuchanos/GnuchanOS/issues"
+DEBIAN_CODENAME="$DEBIAN_CODENAME"
+EOF
+chmod 0644 /etc/os-release
+log "wrote /etc/os-release ($PRETTY_NAME)"
+
+# The `lsb_release` file, for the programs that read it instead. It is not
+# installed on a minimal image, and writing it is harmless when it is not read.
+cat > /etc/lsb-release <<EOF
+DISTRIB_ID=GnuChanOS
+DISTRIB_RELEASE=$VERSION_ID
+DISTRIB_CODENAME=$CODENAME
+DISTRIB_DESCRIPTION="$PRETTY_NAME"
+EOF
+chmod 0644 /etc/lsb-release
+
+# --- the login banner --------------------------------------------------------
+
+# /etc/issue is what the console prints above the login prompt, and it is the
+# first thing a person sees when the splash has finished. The `\n`/`\l` escapes
+# are the getty ones: hostname on one line, tty on the next.
+cat > /etc/issue <<EOF
+$PRETTY_NAME
+Kernel \\r on an \\m (\\l)
+
+EOF
+
+# The same text for the network login prompt. Kept short: a remote finger does
+# not need the build details, and Debian's own says less here than on the
+# console.
+cat > /etc/issue.net <<EOF
+$PRETTY_NAME
+EOF
+
+# --- the message of the day --------------------------------------------------
+
+# Shown after a successful login. It says what the image is, how to log in, and
+# the one command a person on a live system most often wants.
+cat > /etc/motd <<EOF
+$PRETTY_NAME
+
+The live session logs in as  gnuchanos  (password: gnuchanos).
+
+  Alt+Enter   open a terminal
+  Alt+R       the application runner
+  Alt+S       screen saver      Alt+L  lock the screen
+
+Everything on this image is installed; nothing is fetched at boot.
+
+EOF
+
+# --- the console font message ------------------------------------------------
+
+# live-config prints its own banner from its own files; the ones above are the
+# system's. Nothing else here touches the boot splash - that is Plymouth's, and
+# its theme is installed by the dotfiles hook.
+
+log "done"

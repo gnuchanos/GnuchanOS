@@ -13,10 +13,27 @@
  *
  * --- the two ways it starts ---
  *
- * The lid module of GnuChanWM runs it on a wake-up (OnLidOpenScreenSaver), and
- * a session may start it once at login to idle in the background. Both land
- * here: without --once it first waits until the keyboard and pointer have been
- * still for IdleSeconds, then shows; with --once it shows the moment it starts.
+ * Without --once it is the SESSION DAEMON: it stays up for the whole session
+ * holding the org.freedesktop.ScreenSaver name, waits until the keyboard and
+ * pointer have been still for IdleSeconds, shows, and — when something ends the
+ * show — goes back to waiting. It is started once at login (GnuChanWM's
+ * autostart list names it) and it is the ONLY thing that shows the saver on
+ * idle, because only a name held for the whole session can be inhibited by a
+ * video. See ss_dbus.h. Running the whole session is the point: a saver that
+ * only came up once the clock said so would not be there to be told "not now".
+ *
+ * With --once it shows the moment it starts and then exits. That is the
+ * explicit path: the saver key (Alt+S), the lid module of GnuChanWM on a
+ * wake-up (OnLidOpenScreenSaver), and anything else that wants the picture now
+ * rather than at the end of a timer. It does NOT wait out IdleSeconds first —
+ * the caller has already decided.
+ *
+ * The idle wait is what keeps a video from being covered, and it is read LIVE:
+ * both the idle clock and the inhibit are re-read every half second, so a key
+ * pressed a moment after the wait began (or a film that started playing) leaves
+ * the desk alone. Showing at once on a timer's word instead — which is what the
+ * window manager used to force with --once — is what dropped the saver over a
+ * hand that had only just started typing again.
  *
  * --- the two ways it stops ---
  *
@@ -232,8 +249,30 @@ static int run_show(Display *display, int screen, const SsConfig *config,
                    (unsigned int)width, (unsigned int)height);
     XFlush(display);
 
+    /* Where the pointer is when the show begins, so the FIRST real move can
+       end the show.
+     *
+     * This used to start at -1, which meant the first MotionNotify was taken
+     * as "the position we do not know yet" and only recorded, and the move
+     * that ended the show was the SECOND one. A person who saw the saver come
+     * up and gave the mouse one quick push therefore watched it stay: the one
+     * move they made was swallowed as the baseline and there was no second
+     * move to compare against. Querying the pointer here makes the baseline
+     * the real position, so every motion after it — the first one included —
+     * is measured against where the pointer actually was, and one real move
+     * ends the show. */
     int last_x = -1;
     int last_y = -1;
+    {
+        Window root_return, child_return;
+        int root_x, root_y, window_x, window_y;
+        unsigned int mask;
+        if (XQueryPointer(display, root, &root_return, &child_return,
+                          &root_x, &root_y, &window_x, &window_y, &mask)) {
+            last_x = root_x;
+            last_y = root_y;
+        }
+    }
     int running = 1;
 
     while (running && !s_should_stop) {
@@ -364,16 +403,49 @@ int main(int argc, char **argv) {
                 "will not be able to pause the show\n");
     }
 
-    if (!run_once) {
-        wait_for_idle(display, config.idle_seconds);
-    }
+    unsigned long primary = pixel_of(display, screen, config.primary,
+                                     WhitePixel(display, screen));
+    unsigned long background = pixel_of(display, screen, config.background,
+                                        BlackPixel(display, screen));
 
-    if (!s_should_stop) {
-        unsigned long primary = pixel_of(display, screen, config.primary,
-                                         WhitePixel(display, screen));
-        unsigned long background = pixel_of(display, screen, config.background,
-                                            BlackPixel(display, screen));
-        run_show(display, screen, &config, primary, background);
+    if (run_once) {
+        /* Show now, once, and exit. The explicit path — see the file comment. */
+        if (!s_should_stop) {
+            run_show(display, screen, &config, primary, background);
+        }
+    } else {
+        /* THE SESSION DAEMON. It loops rather than showing once and exiting,
+           and that is the whole fix for two faults:
+         *
+         *   - The name org.freedesktop.ScreenSaver is held for the WHOLE
+         *     session, so a video player's Inhibit call — made against that
+         *     name — actually reaches us. A saver that exited after each show
+         *     was not there to be inhibited, so every film got a saver dropped
+         *     over it once the idle clock reached the limit.
+         *
+         *   - The idle clock and the inhibit are re-read every half second
+         *     before anything is drawn, so a hand that starts typing a moment
+         *     after the wait began is noticed and the desk is left alone.
+         *
+         * run_show() returns when something ends the show (a key, a click, a
+         * pointer move); the loop then goes straight back to waiting, which
+         * arms the saver for the next quiet spell. */
+        while (!s_should_stop) {
+            wait_for_idle(display, config.idle_seconds);
+            if (s_should_stop) {
+                break;
+            }
+            run_show(display, screen, &config, primary, background);
+            /* A short pause before looking again. A show that ended because the
+               user came back leaves the idle clock at zero, so the next
+               wait_for_idle() blocks and this costs nothing. The pause is for
+               the OTHER case: run_show() also returns at once when it could not
+               take the keyboard — another screen saver is up — and without this
+               the loop would spin, re-deciding to show and failing to grab, as
+               fast as the processor allows. Half a second bounds that. */
+            struct timespec retry = {0, 500 * 1000 * 1000};
+            nanosleep(&retry, NULL);
+        }
     }
 
     ss_dbus_release();

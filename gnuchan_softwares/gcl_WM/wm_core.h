@@ -41,6 +41,15 @@ struct WmCore {
     Atom net_client_list;
     Atom net_wm_window_type;
     Atom net_wm_window_type_dock;
+    /* The EWMH desktop atoms. _NET_CURRENT_DESKTOP and _NET_NUMBER_OF_DESKTOPS
+       are published on the root so a pager or a dock can tell which workspace
+       is current and how many there are; _NET_WM_DESKTOP is published on each
+       managed client so such a program can tell which workspace THAT window is
+       on. Without them a dock shows every window on every workspace at once,
+       which is the confusion this set exists to remove. */
+    Atom net_current_desktop;
+    Atom net_number_of_desktops;
+    Atom net_wm_desktop;
     /* The EWMH state pair: the property a client writes to ask for fullscreen,
        and the fullscreen member of it. Both are interned here because two
        places name them — the manage module reads the ClientMessage, and the
@@ -128,6 +137,12 @@ void wm_core_run(WmCore *core);
 void wm_core_shutdown(WmCore *core);
 
 Atom wm_atom(WmCore *core, const char *name);
+
+/* wm_core.c — publish how many desktops there are and which one is current,
+   on the root, as _NET_NUMBER_OF_DESKTOPS and _NET_CURRENT_DESKTOP. Read by a
+   pager or a dock. Called at start-up and again whenever the current desktop
+   changes (wm_workspace.c) or the number does (a reload). */
+void core_publish_desktops(WmCore *core);
 
 /* Register a module. Call before wm_core_init(). Returns 0 on success. */
 int  wm_register(WmCore *core, const WmModule *module);

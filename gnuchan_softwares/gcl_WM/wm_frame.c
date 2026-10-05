@@ -289,6 +289,20 @@ void wm_frame_move(WmCore *core, WmFrame *frame, int x, int y) {
     XFlush(core->display);
 }
 
+/* Write the client's _NET_WM_DESKTOP. It is the workspace the frame is on,
+   published on the CLIENT (not the root) so a dock or pager can ask each window
+   which desk holds it rather than inferring it. Done when the frame is made and
+   again whenever the window is moved between workspaces (wm_workspace.c). */
+void wm_frame_publish_desktop(WmCore *core, WmFrame *frame) {
+    long workspace = frame->workspace;
+    if (workspace < 0) {
+        workspace = 0;
+    }
+    XChangeProperty(core->display, frame->client, core->net_wm_desktop,
+                    XA_CARDINAL, 32, PropModeReplace,
+                    (unsigned char *)&workspace, 1);
+}
+
 void wm_frame_raise(WmCore *core, WmFrame *frame) {
     XRaiseWindow(core->display, frame->frame);
     /* The bar is left where it is, below the windows. It used to be put back
@@ -976,6 +990,9 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
     memset(frame, 0, sizeof(*frame));
     frame->client = client;
     wm_workspace_place(core, frame);
+    /* The desk the window landed on is published on the client itself, so a
+       dock reading _NET_WM_DESKTOP can tell which workspace it belongs to. */
+    wm_frame_publish_desktop(core, frame);
     frame->client_width = attributes.width > 1 ? attributes.width : 80;
     frame->client_height = attributes.height > 1 ? attributes.height : 24;
     frame->border = style_border_width(core);

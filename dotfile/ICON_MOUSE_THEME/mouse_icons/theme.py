@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import build, names, palette
@@ -44,6 +45,12 @@ THEME_NAME = "GnuChanMouseIcons"
 INHERITS = "Adwaita"
 
 COMMENT = "Alien violet hardware: lit armour, hex rings and cold energy lines"
+
+#: How many states are drawn at once. Every state is independent of every other
+#: one - a pointer and a caret share no state - so the drawing is handed to a
+#: pool sized to the machine: one worker per core, and four on a machine that
+#: will not say how many it has.
+WORKERS = os.cpu_count() or 4
 
 
 def all_states() -> dict[str, State]:
@@ -168,15 +175,34 @@ def write_theme(root: Path, report=None) -> dict[str, int]:
         shutil.rmtree(root)
     cursors.mkdir(parents=True)
 
-    stats = {"states": 0, "names": 0, "links": 0, "frames": 0}
-    for state_name, spellings in sorted(names_by_state().items()):
-        state = states.get(state_name)
-        if state is None:
-            continue
-        primary = cursors / spellings[0]
+    grouped = names_by_state()
+
+    def render_one(state):
+        """Every frame of one state, at every size, in one list."""
         images = []
         for size in palette.SIZES:
             images.extend(build.render_state(state, size))
+        return images
+
+    # The drawing is the slow half and every state's is independent of every
+    # other's, so they are drawn in parallel and written afterwards, in the
+    # same sorted order the sequential version wrote them in. Writing on this
+    # thread is deliberate: the aliases are links to the file just written, so
+    # the primary has to be on disk before its aliases are made.
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        futures = {
+            state_name: pool.submit(render_one, states[state_name])
+            for state_name in sorted(grouped)
+            if state_name in states
+        }
+        rendered = {name: future.result() for name, future in futures.items()}
+
+    stats = {"states": 0, "names": 0, "links": 0, "frames": 0}
+    for state_name, spellings in sorted(grouped.items()):
+        if state_name not in states:
+            continue
+        primary = cursors / spellings[0]
+        images = rendered[state_name]
         write_cursor(str(primary), images)
         stats["states"] += 1
         stats["names"] += 1

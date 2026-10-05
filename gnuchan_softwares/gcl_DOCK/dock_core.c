@@ -27,8 +27,7 @@ static int dock_window_x;
 static int dock_window_y;
 
 static int core_error(Display *display, XErrorEvent *error) {
-    if (error->error_code == BadWindow || error->error_code == BadMatch ||
-        error->error_code == BadDrawable || error->error_code == BadGC) {
+    if (error->error_code == BadWindow || error->error_code == BadMatch ||  error->error_code == BadDrawable || error->error_code == BadGC) {
         return 0;
     }
     char text[256];
@@ -38,18 +37,12 @@ static int core_error(Display *display, XErrorEvent *error) {
 }
 
 static void core_resolve_palette(DockCore *core) {
-    core->background = dock_config_colour(core->display, core->screen,
-                                          core->config.background, 0x1a0b2e);
-    core->edge = dock_config_colour(core->display, core->screen,
-                                    core->config.background_edge, 0x7b2cbf);
-    core->field = dock_config_colour(core->display, core->screen,
-                                     core->config.field, 0x241033);
-    core->text = dock_config_colour(core->display, core->screen,
-                                    core->config.text, 0xe0c3fc);
-    core->accent = dock_config_colour(core->display, core->screen,
-                                      core->config.accent, 0xc77dff);
-    core->badge = dock_config_colour(core->display, core->screen,
-                                     core->config.badge, 0x1a0b2e);
+    core->background = dock_config_colour(core->display, core->screen,  core->config.background, 0x1a0b2e);
+    core->edge = dock_config_colour(core->display, core->screen, core->config.background_edge, 0x7b2cbf);
+    core->field = dock_config_colour(core->display, core->screen, core->config.field, 0x241033);
+    core->text = dock_config_colour(core->display, core->screen, core->config.text, 0xe0c3fc);
+    core->accent = dock_config_colour(core->display, core->screen, core->config.accent, 0xc77dff);
+    core->badge = dock_config_colour(core->display, core->screen, core->config.badge, 0x1a0b2e);
 }
 
 static void core_close_font(DockCore *core) {
@@ -63,8 +56,53 @@ static void core_open_font(DockCore *core) {
     core_close_font(core);
     core->font = XftFontOpenName(core->display, core->screen, core->config.font);
     if (!core->font) {
-        core->font = XftFontOpenName(core->display, core->screen,
-                                     "monospace:pixelsize=11");
+        core->font = XftFontOpenName(core->display, core->screen, "monospace:pixelsize=11");
+    }
+}
+
+/* Read the two root properties that say WHAT to show: which desktop is current
+   and which window has the focus. Called at the start of every build, before
+   the slots are gathered, so the gathering can use them.
+ *
+ * A manager that publishes neither leaves have_desktop at 0 and current_desktop
+ * at 0, and the gathering then shows every window — the safe answer, and the one
+ * that keeps the dock usable on a plain X session with no EWMH manager. */
+static void core_read_desktop_state(DockCore *core) {
+    core->have_desktop = 0;
+    core->current_desktop = 0;
+    core->active_window = None;
+
+    Atom actual_type = None;
+    int actual_format = 0;
+    unsigned long items = 0;
+    unsigned long after = 0;
+    unsigned char *data = NULL;
+
+    if (XGetWindowProperty(core->display, core->root, core->net_current_desktop,
+                           0, 1, False, XA_CARDINAL, &actual_type,
+                           &actual_format, &items, &after, &data) == Success) {
+        /* The value comes back as one unsigned long per item whatever the
+           format, so a 32-bit card is read as a long and not as an int. */
+        if (data && actual_format == 32 && items > 0) {
+            core->current_desktop = (long)(*(unsigned long *)data);
+            core->have_desktop = 1;
+        }
+        if (data) {
+            XFree(data);
+        }
+    }
+
+    data = NULL;
+    actual_type = None;
+    if (XGetWindowProperty(core->display, core->root, core->net_active_window,
+                           0, 1, False, XA_WINDOW, &actual_type, &actual_format,
+                           &items, &after, &data) == Success) {
+        if (data && actual_format == 32 && items > 0) {
+            core->active_window = (Window)(*(unsigned long *)data);
+        }
+        if (data) {
+            XFree(data);
+        }
     }
 }
 
@@ -168,6 +206,9 @@ void dock_core_relayout(DockCore *core) {
 }
 
 void dock_core_refresh(DockCore *core) {
+    /* What to show is read first: the gathering below decides which windows are
+       on the current desktop and which one is focused from these two values. */
+    core_read_desktop_state(core);
     dock_items_build(core);
     dock_core_relayout(core);
     dock_draw(core);
@@ -344,7 +385,8 @@ void dock_core_run(DockCore *core) {
                    out of the event loop. Any other property on the root is
                    not something the dock shows. */
                 if (event.xproperty.atom == core->net_client_list ||
-                    event.xproperty.atom == core->net_active_window) {
+                    event.xproperty.atom == core->net_active_window ||
+                    event.xproperty.atom == core->net_current_desktop) {
                     core->dirty = 1;
                 }
                 break;
@@ -436,6 +478,9 @@ int dock_core_init(DockCore *core) {
         XInternAtom(core->display, "_NET_WM_WINDOW_TYPE_DOCK", False);
     core->net_wm_window_type_desktop =
         XInternAtom(core->display, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
+    core->net_current_desktop =
+        XInternAtom(core->display, "_NET_CURRENT_DESKTOP", False);
+    core->net_wm_desktop = XInternAtom(core->display, "_NET_WM_DESKTOP", False);
 
     dock_config_load_default(&core->config);
     core_resolve_palette(core);

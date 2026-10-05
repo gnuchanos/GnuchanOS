@@ -47,6 +47,7 @@ import struct
 import subprocess
 import sys
 import zlib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
@@ -374,6 +375,12 @@ TITLE_CAP_WIDTH = 8
 
 BUTTON_STATES = ("active", "inactive", "prelight", "pressed")
 
+#: How many decoration images are drawn at once. Every one of them is
+#: independent of every other - a title segment does not depend on a button -
+#: so the drawing is handed to a pool sized to the machine: one worker per
+#: core, and four on a machine that will not say how many it has.
+WORKERS = os.cpu_count() or 4
+
 BUTTON_FUNCTIONS = (
     "close",
     "hide",
@@ -533,26 +540,41 @@ def render_xfwm4_assets(theme_dir: Path, report: Callable[[str], None] | None = 
     Returns the number of images written.
     """
     target = Path(theme_dir) / "xfwm4"
-    written = 0
+    target.mkdir(parents=True, exist_ok=True)
+
+    # Every image and the name it is written under, collected first so the pool
+    # can be handed work and not a generator that mutates as it goes.
+    jobs: list[tuple[str, Callable[[], Canvas]]] = []
     for function in BUTTON_FUNCTIONS:
         for state in BUTTON_STATES:
-            render_button(function, state).save(target / f"{function}-{state}.png")
-            written += 1
-            if report is not None:
-                report(f"xfwm4/{function}-{state}.png")
+            jobs.append(
+                (f"{function}-{state}.png", (lambda f=function, s=state: render_button(f, s)))
+            )
     for index in (1, 2, 3, 4, 5):
         for active, suffix in ((True, "active"), (False, "inactive")):
-            render_title_segment(index, active).save(target / f"title-{index}-{suffix}.png")
-            written += 1
-            if report is not None:
-                report(f"xfwm4/title-{index}-{suffix}.png")
+            jobs.append(
+                (
+                    f"title-{index}-{suffix}.png",
+                    (lambda i=index, a=active: render_title_segment(i, a)),
+                )
+            )
     for name in FRAME_EDGES:
         for active, suffix in ((True, "active"), (False, "inactive")):
-            render_frame_edge(active).save(target / f"{name}-{suffix}.png")
-            written += 1
+            jobs.append(
+                (f"{name}-{suffix}.png", (lambda a=active: render_frame_edge(a)))
+            )
+
+    # The drawing happens in the pool and the writing happens here, on one
+    # thread: a Canvas holds a byte buffer and the saving is what puts it on
+    # disk, so keeping every write on this thread keeps the tree written in one
+    # place rather than from a dozen workers at once.
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        futures = [(filename, pool.submit(draw)) for filename, draw in jobs]
+        for filename, future in futures:
+            future.result().save(target / filename)
             if report is not None:
-                report(f"xfwm4/{name}-{suffix}.png")
-    return written
+                report(f"xfwm4/{filename}")
+    return len(jobs)
 
 
 def render_thumbnail() -> Canvas:

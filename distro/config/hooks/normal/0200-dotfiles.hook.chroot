@@ -1,0 +1,124 @@
+#!/bin/sh
+# GnuchanOS - install the desktop's own files from dotfile/.
+#
+# The dotfile scripts install themselves and each reads its own inputs, so what
+# this does is run them in the two contexts their targets live in: the boot
+# themes are the machine's (GRUB, Plymouth) and are run as root, and the themes
+# and settings a session loads are the live user's and are run with HOME and the
+# XDG directories pointed at that user's home. Running them all as root would
+# put the GTK theme, the icon theme and the cursor theme in /root, where the
+# session that logs in as the live user would never look.
+#
+# Assets come from /opt/gnuchanos/assets, which build.sh staged: the scripts
+# look for assets/ a few directories above their own file, and inside the image
+# their file is under /opt/gnuchanos/dotfile, whose repository root is
+# /opt/gnuchanos - so /opt/gnuchanos/assets is exactly where they look.
+set -eu
+
+log() { printf '==> dotfiles: %s\n' "$1"; }
+
+SRC=/opt/gnuchanos/dotfile
+[ -d "$SRC" ] || { log "no $SRC; nothing to install"; exit 0; }
+
+# The live user, from the same word the boot parameters use. Their home is where
+# a session's themes are read from, so it is made here rather than left to the
+# live boot to create - a theme installed into a home that does not exist yet
+# ends up in a directory nothing reads.
+LIVE_USER=gnuchanos
+LIVE_HOME=/home/$LIVE_USER
+mkdir -p "$LIVE_HOME"
+
+# --- themes loaded by the boot loader (the machine's) ------------------------
+
+run_as_root() {
+    script=$1
+    [ -f "$script" ] || { log "no $script, skipped"; return 0; }
+    log "running $(basename "$(dirname "$script")")/$(basename "$script")"
+    python3 "$script" || log "  ! $script exited $?"
+}
+
+run_as_root "$SRC/GRUB_THEME/settings_grub.py"
+run_as_root "$SRC/PLYMOUTH_THEME/settings_plymouth.py"
+
+# --- themes and settings a session reads (the live user's) -------------------
+
+run_as_user() {
+    script=$1
+    [ -f "$script" ] || { log "no $script, skipped"; return 0; }
+    log "running $(basename "$(dirname "$script")")/$(basename "$script") as $LIVE_USER"
+    # HOME and the XDG variables are the whole of what makes each of these write
+    # into the live user's home rather than root's: every one of them resolves
+    # its target from them through os.path.expanduser and the XDG variables.
+    HOME="$LIVE_HOME" \
+    XDG_CONFIG_HOME="$LIVE_HOME/.config" \
+    XDG_DATA_HOME="$LIVE_HOME/.local/share" \
+    XDG_CACHE_HOME="$LIVE_HOME/.cache" \
+    USER="$LIVE_USER" \
+    LOGNAME="$LIVE_USER" \
+        python3 "$script" || log "  ! $script exited $?"
+}
+
+run_as_user "$SRC/GTK_THEME/theme_install.py"
+run_as_user "$SRC/ICON_THEME/settings_icons.py"
+run_as_user "$SRC/ICON_MOUSE_THEME/settings_mouse_icon.py"
+run_as_user "$SRC/XTERM/settings_xterm.py"
+
+# --- system settings that are not a theme ------------------------------------
+
+# The touchpad settings and the two machine fixes write system configuration
+# (Xorg snippets, module options) and are the machine's, not a user's.
+run_as_root "$SRC/TOUCHPAD_SETTINGS/settings_touchpad.py"
+
+# --- the per-machine hardware fixes ------------------------------------------
+
+# Everything under dotfile/ has to be ON the image, ready and installed, and
+# that includes the two fixes that are not a theme: the Intel 965GM graphics
+# fix (gpu_fix.py) and the Atheros AR242x wifi fix (wifi_fix.py). They were
+# written for one laptop but they are the repository's own programs, and an
+# image that shipped the themes and left the fixes behind would be missing
+# exactly the files that make a specific machine work.
+#
+# gpu_fix.py is run on its OWN and not only by this hook's error handling:
+# inside the chroot there is no /dev/dri and no running X, so its probe cannot
+# confirm the accelerator and it writes the known-good configuration anyway
+# (see its "belirlenemedi" branch). That is the behaviour wanted here - the
+# file lands in the image and takes effect at first boot on the real hardware.
+#
+# wifi_fix.py writes a modprobe option and a systemd recovery service; neither
+# needs any hardware to be present at build time.
+if [ -d "$SRC/VOSTRO_A860" ]; then
+    run_as_root "$SRC/VOSTRO_A860/gpu_fix.py"
+    run_as_root "$SRC/VOSTRO_A860/wifi_fix.py"
+else
+    log "no $SRC/VOSTRO_A860; the hardware fixes are not in this tree"
+fi
+
+# --- the desktop wallpaper ---------------------------------------------------
+
+# GnuChanWM reads its wallpaper from ~/.config/GnuChanWM/bg.png (see the shipped
+# GnuChanWM.py), and the image was coming up with the flat desktop colour
+# because nothing ever put a picture there. assets/bg.png is the repository's
+# own wallpaper, so it is copied to exactly the path the configured script
+# names.
+if [ -f /opt/gnuchanos/assets/bg.png ]; then
+    install -d "$LIVE_HOME/.config/GnuChanWM"
+    cp /opt/gnuchanos/assets/bg.png "$LIVE_HOME/.config/GnuChanWM/bg.png"
+    log "installed the wallpaper at $LIVE_HOME/.config/GnuChanWM/bg.png"
+else
+    log "no assets/bg.png; the desktop keeps its flat colour"
+fi
+
+# --- the live user owns what was just written for them -----------------------
+
+# Everything above ran as root and is therefore root's on disk. The session that
+# logs in as the live user has to be able to write inside its own home - GTK
+# writes caches, a shell writes history - so the home is handed over whole once
+# the installers are done with it.
+if id "$LIVE_USER" >/dev/null 2>&1; then
+    uid=$(id -u "$LIVE_USER")
+    gid=$(id -g "$LIVE_USER")
+    chown -R "$uid:$gid" "$LIVE_HOME"
+    log "gave $LIVE_HOME to $LIVE_USER"
+fi
+
+log "done"

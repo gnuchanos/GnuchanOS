@@ -99,6 +99,22 @@ static void core_publish_client_list(WmCore *core) {
                     (unsigned char *)clients, client_count);
 }
 
+/* Publish how many desktops there are and which one is current, on the root.
+   Both are read by a pager or a dock; the number is a plain cardinal and the
+   current one is an index into it. Called at start-up, on every switch, and
+   after every reload (the number can change when the script's layout widget
+   names a different range). */
+void core_publish_desktops(WmCore *core) {
+    long count = wm_workspace_count(core);
+    long current = core->current_workspace;
+    XChangeProperty(core->display, core->root, core->net_number_of_desktops,
+                    XA_CARDINAL, 32, PropModeReplace,
+                    (unsigned char *)&count, 1);
+    XChangeProperty(core->display, core->root, core->net_current_desktop,
+                    XA_CARDINAL, 32, PropModeReplace,
+                    (unsigned char *)&current, 1);
+}
+
 static void core_publish_supported(WmCore *core) {
     Atom supported[] = {
         core->net_supported,
@@ -114,6 +130,11 @@ static void core_publish_supported(WmCore *core) {
            would not answer. */
         core->net_wm_state,
         core->net_wm_state_fullscreen,
+        /* The desktop set, so a pager or dock knows the manager answers
+           _NET_CURRENT_DESKTOP and _NET_WM_DESKTOP. */
+        core->net_current_desktop,
+        core->net_number_of_desktops,
+        core->net_wm_desktop,
     };
     XChangeProperty(core->display, core->root, core->net_supported,
                     XA_ATOM, 32, PropModeReplace,
@@ -213,6 +234,9 @@ int wm_core_init(WmCore *core) {
     core->net_wm_state = wm_atom(core, "_NET_WM_STATE");
     core->net_wm_state_fullscreen =
         wm_atom(core, "_NET_WM_STATE_FULLSCREEN");
+    core->net_current_desktop = wm_atom(core, "_NET_CURRENT_DESKTOP");
+    core->net_number_of_desktops = wm_atom(core, "_NET_NUMBER_OF_DESKTOPS");
+    core->net_wm_desktop = wm_atom(core, "_NET_WM_DESKTOP");
     core->wm_state = wm_atom(core, "WM_STATE");
     core->wm_protocols = wm_atom(core, "WM_PROTOCOLS");
     core->wm_delete_window = wm_atom(core, "WM_DELETE_WINDOW");
@@ -247,6 +271,10 @@ int wm_core_init(WmCore *core) {
     core->check_window = core_create_check_window(core);
     core_publish_supported(core);
     core_publish_client_list(core);
+    /* How many desktops there are, and which is current, published before
+       anything can be placed on one. A dock reads these to decide which
+       workspace to show. */
+    core_publish_desktops(core);
     XSync(core->display, False);
 
     return 0;

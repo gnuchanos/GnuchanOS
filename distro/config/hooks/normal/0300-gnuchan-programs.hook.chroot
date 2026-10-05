@@ -1,0 +1,79 @@
+#!/bin/sh
+# GnuchanOS - build and install every Gnuchan program, and the GCL language.
+#
+# The programs are installed by gnuchan_softwares/install_all.py, which is the
+# one list of what they are and the one order they install in. This hook does
+# not repeat that list: it runs the script, so a program added there is on the
+# ISO without a second list here to keep in step.
+#
+# The language is installed by language/makefile.py, which is the program's own
+# build chain: it fetches Lua, Python and Raylib, compiles the interpreter, its
+# modules and the IDE, and puts `gcl` where a shell finds it.
+#
+# SUDO_USER is set to the live user for both, and that is not cosmetic. Several
+# of these installers put a settings script (GnuChanTerm.py, GnuChanWM.py,
+# GnuChanDM.py) under the home of the account that ran sudo, read back from
+# SUDO_USER, and chown it to that account. Under a plain root build SUDO_USER is
+# unset, so every one of those files would land in /root and the live session -
+# which logs in as `gnuchanos` - would read none of them, falling back to the
+# built-in colours.
+set -eu
+
+log() { printf '==> programs: %s\n' "$1"; }
+
+LIVE_USER=gnuchanos
+LIVE_HOME=/home/$LIVE_USER
+STAGE=/opt/gnuchanos
+
+# --- the Gnuchan programs ----------------------------------------------------
+
+PROGRAMS="$STAGE/gnuchan_softwares/install_all.py"
+if [ -f "$PROGRAMS" ]; then
+    log "running gnuchan_softwares/install_all.py"
+    # The installers are run as the environment of the live user: SUDO_USER
+    # names whose settings these are, HOME is where a program with no SUDO_USER
+    # would otherwise look, and the XDG variables keep a theme from landing in
+    # root's data directory.
+    SUDO_USER="$LIVE_USER" \
+    HOME="$LIVE_HOME" \
+    USER="$LIVE_USER" \
+    LOGNAME="$LIVE_USER" \
+    XDG_CONFIG_HOME="$LIVE_HOME/.config" \
+    XDG_DATA_HOME="$LIVE_HOME/.local/share" \
+    XDG_CACHE_HOME="$LIVE_HOME/.cache" \
+        python3 "$PROGRAMS" install || {
+            log "install_all.py reported a failure; see its summary above"
+            exit 1
+        }
+else
+    log "no $PROGRAMS; no Gnuchan programs in this image"
+fi
+
+# --- the GCL language --------------------------------------------------------
+
+LANGUAGE="$STAGE/language/makefile.py"
+if [ -f "$LANGUAGE" ]; then
+    log "running language/makefile.py install"
+    # The build chain resolves its own tree relative to its own file, so it is
+    # run from its own directory. It needs network for Lua, Python and Raylib,
+    # which the image build has. `install` both builds and installs.
+    ( cd "$STAGE/language" && \
+      SUDO_USER="$LIVE_USER" HOME="$LIVE_HOME" \
+          python3 "$LANGUAGE" install ) || {
+            log "the GCL build reported a failure; see its summary above"
+            exit 1
+      }
+else
+    log "no $LANGUAGE; GCL is not in this image"
+fi
+
+# --- the live user owns what was written for them ----------------------------
+
+if id "$LIVE_USER" >/dev/null 2>&1; then
+    uid=$(id -u "$LIVE_USER")
+    gid=$(id -g "$LIVE_USER")
+    chown -R "$uid:$gid" "$LIVE_HOME"
+    log "gave $LIVE_HOME back to $LIVE_USER"
+fi
+
+log "done"

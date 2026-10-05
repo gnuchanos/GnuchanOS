@@ -1,0 +1,95 @@
+#!/bin/sh
+# GnuchanOS - brand the boot menu the ISO shows before anything is loaded.
+#
+# This is a BINARY hook, not a chroot one, and that is the whole reason it is a
+# separate file. The `.chroot` hooks run while the live filesystem is being
+# built; the boot menu is not in that filesystem at all - live-build generates
+# the ISOLINUX/GRUB bootloader configuration in the BINARY stage, from its own
+# templates, and until it does the menu does not exist to be changed. A hook
+# that tried to brand it from the chroot stage would find nothing to write.
+#
+# WHAT IT FIXES
+# The menu the image boots to says "Debian GNU/Linux" on every line: the title
+# bar of the menu, the live entry, the failsafe entry and the memtest entry all
+# name the base distribution, because live-build fills them in from the Debian
+# templates. That is what a person sees first when the ISO starts, before any
+# of the system's own branding has had a chance to apply, so it is the one
+# place the base name cannot be left as it is.
+#
+# The replacement is textual and narrow: only the menu titles are touched, and
+# only the exact strings live-build writes. Every kernel command line, every
+# path, every timeout and every other line of these files is left exactly as
+# live-build generated it - a boot menu that no longer boots is a far worse
+# outcome than one that says the wrong name.
+#
+# WHERE THE FILES ARE
+# live-build runs a binary hook from inside the binary tree, so ISOLINUX is at
+# `isolinux/` and GRUB at `boot/grub/` from here. The binary tree has also been
+# seen as `binary/` under the hook's directory, depending on the live-build
+# version, so BOTH are looked for rather than assumed: the layout is discovered
+# and the branding is written wherever the menu actually is. Assuming one made
+# the hook silently do nothing on the versions that use the other, which is
+# exactly the quiet failure this is written to avoid.
+#
+# Which of ISOLINUX and GRUB exists is a choice of the build (BIOS vs EFI), so a
+# missing one is not an error. Both are rewritten when present.
+set -eu
+
+log() { printf '==> boot-branding: %s\n' "$1"; }
+
+TITLE="GnuChanOS GNU/Linux (Based on Debian 13)"
+
+# Rewrite the menu titles in one file. The strings are written out in full
+# rather than matched with a pattern, so a substring that happens to appear in a
+# path or a kernel command line is never touched.
+replace_titles() {
+    file=$1
+    [ -f "$file" ] || return 0
+    sed -i \
+        -e 's/Debian GNU\/Linux/GnuChanOS GNU\/Linux/g' \
+        -e "s|^menu title .*|menu title ${TITLE}|" \
+        "$file" 2>/dev/null || true
+    log "branded $file"
+}
+
+# Brand every menu file in a directory, by name. Only the files live-build's
+# templates emit are looked at; anything else in the directory is left alone.
+brand_directory() {
+    directory=$1
+    [ -d "$directory" ] || return 0
+    log "looking in $directory"
+    for file in "$directory"/*.cfg "$directory"/*.txt; do
+        [ -e "$file" ] || continue
+        replace_titles "$file"
+    done
+}
+
+# --- find the binary tree ----------------------------------------------------
+
+# The two layouts seen in the wild, relative to this hook's directory:
+#   isolinux/...            (live-build runs the hook from inside binary/)
+#   binary/isolinux/...     (the tree is one level down)
+# The first that holds an isolinux or grub directory is the one used.
+ROOT=""
+for candidate in . ./binary; do
+    if [ -d "$candidate/isolinux" ] || [ -d "$candidate/boot/grub" ]; then
+        ROOT="$candidate"
+        break
+    fi
+done
+
+if [ -z "$ROOT" ]; then
+    log "no isolinux/ or boot/grub/ found under $PWD or $PWD/binary; nothing to brand"
+    exit 0
+fi
+log "binary tree: $ROOT"
+
+# --- ISOLINUX (the BIOS menu) ------------------------------------------------
+
+brand_directory "$ROOT/isolinux"
+
+# --- GRUB (the EFI menu, and the config grub-mkstandalone reads) -------------
+
+brand_directory "$ROOT/boot/grub"
+
+log "done"
