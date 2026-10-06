@@ -5,66 +5,54 @@
 # separate file. The `.chroot` hooks run while the live filesystem is being
 # built; the boot menu is not in that filesystem at all - live-build generates
 # the ISOLINUX/GRUB bootloader configuration in the BINARY stage, from its own
-# templates, and until it does the menu does not exist to be changed. A hook
-# that tried to brand it from the chroot stage would find nothing to write.
+# templates, and the menu it draws is live-build's own. Running the GRUB theme
+# installer (dotfile/GRUB_THEME/settings_grub.py) from a chroot hook changes
+# what an INSTALLED system would draw, and does nothing to the menu the ISO
+# itself boots with.
 #
-# WHAT IT FIXES
-# The menu the image boots to says "Debian GNU/Linux" on every line: the title
-# bar of the menu, the live entry, the failsafe entry and the memtest entry all
-# name the base distribution, because live-build fills them in from the Debian
-# templates. That is what a person sees first when the ISO starts, before any
-# of the system's own branding has had a chance to apply, so it is the one
-# place the base name cannot be left as it is.
+# THE ISO HAS TWO BOOT MENUS, AND THEY ARE DRAWN IN TWO DIFFERENT WAYS.
 #
-# The replacement is textual and narrow: only the menu titles are touched, and
-# only the exact strings live-build writes. Every kernel command line, every
-# path, every timeout and every other line of these files is left exactly as
-# live-build generated it - a boot menu that no longer boots is a far worse
-# outcome than one that says the wrong name.
+# The BACKGROUND of both menus - the wallpaper, the logo and the name, all in
+# one bitmap - comes from `config/bootloaders/splash.svg`. That file is the
+# whole of the ISO's boot-menu look: live-build copies it into each bootloader
+# tree and renders it with rsvg-convert, at 640x480 for the ISOLINUX menu
+# (binary/isolinux/splash.png, drawn under the menu with `menu background`) and
+# at 800x600 for the GRUB menu (binary/boot/grub/splash.png). live-build would
+# otherwise use its OWN splash.svg - a black screen with the Debian swirl and
+# "Debian GNU/Linux" on it - and that one file is exactly why the first screen
+# said Debian, carried the Debian logo and had an unchanged background. It is a
+# build INPUT beside this hook rather than something the hook draws, so all
+# this hook does about it is confirm it landed.
 #
-# WHERE THE FILES ARE
-# live-build runs a binary hook from inside the binary tree, so ISOLINUX is at
-# `isolinux/` and GRUB at `boot/grub/` from here. The binary tree has also been
-# seen as `binary/` under the hook's directory, depending on the live-build
-# version, so BOTH are looked for rather than assumed: the layout is discovered
-# and the branding is written wherever the menu actually is. Assuming one made
-# the hook silently do nothing on the versions that use the other, which is
-# exactly the quiet failure this is written to avoid.
+# THE GRUB (EFI) MENU is themed from a theme DIRECTORY, and that part this hook
+# does install: the GnuchanOS GRUB theme the dotfiles hook built inside the
+# chroot is copied into the ISO's own boot/grub, and the file that really
+# selects the theme - `theme.cfg`, which grub.cfg merely sources - is pointed at
+# it. Selecting it in grub.cfg instead would do nothing, because grub.cfg
+# sources theme.cfg after whatever it is given, and theme.cfg's own `set theme=`
+# is what GRUB ends up reading. The theme the ISO boots with is then the same
+# theme an installed machine gets, made by the same installer, so the two
+# cannot drift.
 #
-# Which of ISOLINUX and GRUB exists is a choice of the build (BIOS vs EFI), so a
-# missing one is not an error. Both are rewritten when present.
+# WHAT ELSE THIS HOOK DOES IS THE TEXT. live-build fills its templates from
+# `${_PROJECT}`, which it sets to "Debian GNU/Linux", and that string reaches
+# the ISOLINUX labels and the GRUB entries alike.
+#
+# WHERE THE FILES ARE. live-build runs a binary hook from inside the binary
+# tree, so ISOLINUX is at `isolinux/` and GRUB at `boot/grub/`. Older layouts
+# put the tree one level down as `binary/`, so both are looked for. The built
+# chroot - where the installed theme lives - sits beside the binary tree, so it
+# is looked for beside and one level up. Which of ISOLINUX and GRUB exists is a
+# choice of the build (BIOS vs EFI), so a missing one is not an error: whatever
+# is present is branded.
 set -eu
 
 log() { printf '==> boot-branding: %s\n' "$1"; }
 
 TITLE="GnuChanOS GNU/Linux (Based on Debian 13)"
+THEME_NAME="GnuchanOS"
 
-# Rewrite the menu titles in one file. The strings are written out in full
-# rather than matched with a pattern, so a substring that happens to appear in a
-# path or a kernel command line is never touched.
-replace_titles() {
-    file=$1
-    [ -f "$file" ] || return 0
-    sed -i \
-        -e 's/Debian GNU\/Linux/GnuChanOS GNU\/Linux/g' \
-        -e "s|^menu title .*|menu title ${TITLE}|" \
-        "$file" 2>/dev/null || true
-    log "branded $file"
-}
-
-# Brand every menu file in a directory, by name. Only the files live-build's
-# templates emit are looked at; anything else in the directory is left alone.
-brand_directory() {
-    directory=$1
-    [ -d "$directory" ] || return 0
-    log "looking in $directory"
-    for file in "$directory"/*.cfg "$directory"/*.txt; do
-        [ -e "$file" ] || continue
-        replace_titles "$file"
-    done
-}
-
-# --- find the binary tree ----------------------------------------------------
+# --- locate the binary tree --------------------------------------------------
 
 # The two layouts seen in the wild, relative to this hook's directory:
 #   isolinux/...            (live-build runs the hook from inside binary/)
@@ -84,12 +72,114 @@ if [ -z "$ROOT" ]; then
 fi
 log "binary tree: $ROOT"
 
-# --- ISOLINUX (the BIOS menu) ------------------------------------------------
+# --- the text ----------------------------------------------------------------
 
-brand_directory "$ROOT/isolinux"
+# Rewrite the distribution's own name wherever a label still carries it, in one
+# file. The string is written out in full rather than matched with a loose
+# pattern, so a substring that happens to appear in a path or a kernel command
+# line is never touched. This catches GRUB `menuentry` labels and any ISOLINUX
+# `menu label` a template filled from the distribution's name.
+brand_labels() {
+    file=$1
+    [ -f "$file" ] || return 0
+    sed -i 's/Debian GNU\/Linux/GnuChanOS GNU\/Linux/g' "$file" 2>/dev/null || true
+    log "branded the labels in $file"
+}
 
-# --- GRUB (the EFI menu, and the config grub-mkstandalone reads) -------------
+# The title bar of the top-level ISOLINUX menu. live-build's menu.cfg opens with
+# `menu title Boot menu`, and that one line is the whole title; it is replaced
+# here and nowhere else, and only its first matching line. That restriction is
+# correctness rather than style: `menu title` is the directive every NESTED
+# submenu also carries - "Utilities", "Advanced install options", "Text
+# installer" - each in a file of its own, and renaming them all to the
+# distribution string would leave a list of submenus that cannot be told apart.
+brand_menu_title() {
+    file=$1
+    [ -f "$file" ] || return 0
+    if grep -q '^menu title ' "$file" 2>/dev/null; then
+        sed -i "0,/^menu title /s|^menu title .*|menu title ${TITLE}|" "$file" 2>/dev/null || true
+        log "branded the menu title in $file"
+    fi
+}
 
-brand_directory "$ROOT/boot/grub"
+ISOLINUX_DIR="$ROOT/isolinux"
+if [ -d "$ISOLINUX_DIR" ]; then
+    for file in "$ISOLINUX_DIR"/*.cfg "$ISOLINUX_DIR"/*.txt; do
+        [ -e "$file" ] || continue
+        brand_labels "$file"
+    done
+    brand_menu_title "$ISOLINUX_DIR/menu.cfg"
+
+    # The background the menu is drawn over. It is the splash live-build
+    # rendered from config/bootloaders/splash.svg; a missing one is not fatal,
+    # but it is the single file whose absence is the difference between the
+    # GnuchanOS first screen and a plain one, so it is reported either way.
+    if [ -f "$ISOLINUX_DIR/splash.png" ]; then
+        log "ISOLINUX background: $ISOLINUX_DIR/splash.png"
+    else
+        log "no ISOLINUX splash.png; the BIOS menu draws on the console colour"
+    fi
+fi
+
+# --- the GRUB (EFI) menu -----------------------------------------------------
+
+GRUB_DIR="$ROOT/boot/grub"
+if [ ! -d "$GRUB_DIR" ]; then
+    log "no GRUB directory in this tree; the BIOS menu is branded and that is all"
+    log "done"
+    exit 0
+fi
+
+brand_labels "$GRUB_DIR/grub.cfg"
+
+# The theme the dotfiles hook built inside the chroot. The INSTALLED copy is
+# what is wanted and not the source tree: settings_grub.py substitutes the
+# machine's font name into theme.txt and renders every image, so the installed
+# directory is the finished theme. It is looked for beside the binary tree, one
+# level up from it, and on the build host itself - the first that is a directory
+# wins, and none being there is handled below rather than being fatal.
+THEME_SRC=""
+for candidate in \
+    "chroot/boot/grub/themes/$THEME_NAME" \
+    "../chroot/boot/grub/themes/$THEME_NAME" \
+    "/boot/grub/themes/$THEME_NAME" \
+    "chroot/usr/share/grub/themes/$THEME_NAME" \
+    "../chroot/usr/share/grub/themes/$THEME_NAME" \
+    "/usr/share/grub/themes/$THEME_NAME"
+do
+    if [ -d "$candidate" ]; then
+        THEME_SRC="$candidate"
+        break
+    fi
+done
+
+THEME_DST="$GRUB_DIR/themes/$THEME_NAME"
+if [ -n "$THEME_SRC" ]; then
+    rm -rf "$THEME_DST"
+    mkdir -p "$GRUB_DIR/themes"
+    cp -a "$THEME_SRC" "$THEME_DST"
+    log "installed the GnuChanOS GRUB theme into $THEME_DST"
+else
+    log "no built GnuChanOS GRUB theme found; the EFI menu keeps its own"
+fi
+
+# Point GRUB at the theme, in the file that really selects it. live-build's GRUB
+# menu draws its theme through `theme.cfg`, which its `config.cfg` sources and
+# whose own `set theme=/boot/grub/live-theme/theme.txt` is what GRUB reads last:
+# a `set theme=` written into grub.cfg would be overridden by that source, so
+# the line is rewritten where it stands. The path is the conventional absolute
+# one - at boot GRUB's root is the ISO - so /boot/grub/themes/... is where it
+# reads the file from. The replacement is of the exact live-build line, and only
+# happens once the theme really landed.
+THEME_CFG="$GRUB_DIR/theme.cfg"
+if [ -d "$THEME_DST" ] && [ -f "$THEME_CFG" ]; then
+    THEME_PATH="/boot/grub/themes/$THEME_NAME/theme.txt"
+    if grep -q 'set theme=/boot/grub/live-theme/theme.txt' "$THEME_CFG" 2>/dev/null; then
+        sed -i "s|set theme=/boot/grub/live-theme/theme.txt|set theme=$THEME_PATH|" "$THEME_CFG"
+        log "pointed GRUB at $THEME_PATH (in theme.cfg)"
+    else
+        log "theme.cfg does not name live-build's own theme; it is left as it is"
+    fi
+fi
 
 log "done"

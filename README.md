@@ -8,36 +8,49 @@ desktop — is **not ready**.
 # Language And Platform -> Ready
 
 [Language README(language \ _SRC \ readme.md)]
-    <p>GCL -> RAYLIB and RAYGUI native MODULE</p>
-        <p>EXTRA PYTHON EMBED SYSTEM -> PyRaylib and PyRaygui</p>
-        <p>EXTRA LUA EMBED SYSTEM -> LuaRaylib and LuaRaygui</p>
+
+- GCL -> RAYLIB and RAYGUI native MODULE
+  - EXTRA PYTHON EMBED SYSTEM -> PyRaylib and PyRaygui
+  - EXTRA LUA EMBED SYSTEM -> LuaRaylib and LuaRaygui
 
 [GNUCHANOS Softwares] [Need More Test But Working on Very Old COMPUTER: Vostro A860]
-    <p>GnuChanDM --> GnuChan Display Manager is simple display manager</p>
-    <p>GnuChanWM --> GnuChan Window Manager is simple x11 Window Manager</p>
-    <p>GnuChanSL --> GnuChan Screen Lock is simple x11 Screen Lock</p>
-    <p>GnuChanSS --> GnuChan Screen Saver is simple x11 Screen Saver</p>
-    <p>GnuChanRunner --> GnuChan Simple Program Runner like rofi</p>
-    <p>GnuChanTerm --> GnuChan Terminal is simple xterm like terminal</p>
-    <p>GnuChanFetch --> GnuChan Fetch is simple neofetch like program supports .png</p>
-    <p>GnuChanDock --> GnuChan Simple Dockprobram</p>
-    <p>GnuChanBrowser --> GnuChan Simple Qt Engine Browser</p>
-    <p></p>
-    <p></p>
-    <p></p>
 
+- GnuChanDM --> GnuChan Display Manager is simple display manager
+  - IMAGE COMING SOON
+- GnuChanWM --> GnuChan Window Manager is simple x11 Window Manager
+  - IMAGE COMING SOON
+- GnuChanSL --> GnuChan Screen Lock is simple x11 Screen Lock
+  - IMAGE COMING SOON
+- GnuChanSS --> GnuChan Screen Saver is simple x11 Screen Saver
+  - IMAGE COMING SOON
+- GnuChanRunner --> GnuChan Simple Program Runner like rofi
+  - IMAGE COMING SOON
+- GnuChanTerm --> GnuChan Terminal is simple xterm like terminal
+  - IMAGE COMING SOON
+- GnuChanFetch --> GnuChan Fetch is simple neofetch like program supports .png
+  - IMAGE COMING SOON
+- GnuChanDock --> GnuChan Simple Dockprobram
+  - IMAGE COMING SOON
+- GnuChanBrowser --> GnuChan Simple Qt Engine Browser
+  - IMAGE COMING SOON
 
 [GNUCHANOS DOTFILE]
-    <p>READY: GRUB THEME</p>
-    <p>READY: GTK THEME</p>
-    <p>READY: ICON THEME</p>
-    <p>READY: MOUSE ICON THEME</p>
-    <p>READY: PLYMOUTH THEME</p>
-    <p>READY: TOUCHPAD SETTINGS</p>
-    <p>READY: VOSTRO, X440WAK settings and fix</p>
+
+- READY: GRUB THEME
+- READY: GTK THEME
+- READY: ICON THEME
+- READY: MOUSE ICON THEME
+- READY: PLYMOUTH THEME
+- READY: TOUCHPAD SETTINGS
+- READY: VOSTRO, X440WAK settings and fix
 
 [SIMPLE INSTALL SCRIPT] [IT SIMPLE SCRIPT JUST INSTALLING PROGRAMS FIRST READ SCRIPT]
-    <p>dotfile/Install_Software.py </p>
 
+- dotfile/Install_Software.py
+
+[GNUCHANOS] [DISTRO STILL WORK IN PROGRESS]
+
+- GOAL: ISO LIVE DESKTOP
+- IMAGE COMING SOON
 
 I NEED SLEEP

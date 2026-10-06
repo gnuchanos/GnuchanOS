@@ -37,8 +37,29 @@ run_as_root() {
     python3 "$script" || log "  ! $script exited $?"
 }
 
+# The theme installer needs a GRUB to install into: with neither /boot/grub
+# nor /boot/grub2 present it refuses to draw anything - "there is no menu to
+# theme" - and stops. grub-common is in the package list and creates /boot/grub
+# on Debian, but the directory is made here as well so the theme is built even
+# where the package did not. The theme this produces is what the ISO's OWN boot
+# menu is given by the .hook.binary next to this file: the chroot here is the
+# live filesystem, and the binary stage copies this theme out of it.
+install -d /boot/grub
+
 run_as_root "$SRC/GRUB_THEME/settings_grub.py"
 run_as_root "$SRC/PLYMOUTH_THEME/settings_plymouth.py"
+</content>
+<task_progress>
+- [x] 0080 binary hook: GRUB teması ISO menüsüne kurulur
+- [x] package-list: grub-common eklendi
+- [x] 0200 hook: /boot/grub dizinini garanti et
+- [ ] README güncelle
+- [ ] Sözdizimi/CRLF doğrula
+</task_progress>
+</replace_in_file>
+</｜｜DSML｜｜ parameter>
+</task_progress>
+</replace_in_file>
 
 # --- themes and settings a session reads (the live user's) -------------------
 

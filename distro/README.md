@@ -60,6 +60,10 @@ the source tree.
     config/              the live-build configuration tree
     config/package-lists/  the packages the image carries
     config/hooks/normal/   scripts run inside the image, in name order
+    config/bootloaders/    files live-build copies into the ISO's own
+                           bootloader tree (the /boot and /isolinux of the
+                           image, not of an installed system);
+                           splash.svg is the first screen of the ISO
 
 `config/` is a plain live-build tree. `build.sh` copies it into
 `distro/_build/work/`, stages the source trees into the overlay, runs
@@ -94,11 +98,32 @@ be expressed as a package:
     0060-branding            name the machine GnuChanOS (os-release, issue,
                              motd, lsb-release), so the console does not say
                              "Debian GNU/Linux 13"
-    0080-boot-branding       a BINARY hook: rename the ISOLINUX/GRUB boot menu
-                             entries from "Debian GNU/Linux" to GnuChanOS. It
-                             is a .hook.binary and not a .hook.chroot because
-                             the boot menu is generated in the binary stage,
-                             after the live filesystem hooks have run.
+    0080-boot-branding       a BINARY hook: give the ISO's OWN boot menu the
+                             GnuchanOS look. The ISO has TWO boot menus and they
+                             are drawn differently, which is the whole reason
+                             this is one hook and not a theme installer:
+                             the BIOS menu is ISOLINUX, which has no theme and
+                             whose background, logo and name are a single
+                             bitmap, `isolinux/splash.png`; the EFI menu is
+                             GRUB, which IS themed from a theme directory.
+                             The bitmap is a BUILD INPUT, not something this
+                             hook draws: the repository ships
+                             `config/bootloaders/splash.svg` (the GnuchanOS
+                             wallpaper with the GnuchanOS mascot on it, both
+                             embedded in the file), live-build copies it into
+                             each bootloader tree and renders it to splash.png
+                             with the same step it uses for its own Debian
+                             splash. This hook rewrites the menu
+                             TEXT that still names the base distribution and
+                             copies the GRUB theme the dotfiles hook built
+                             inside the chroot into the ISO's EFI bootloader
+                             tree, so the EFI menu boots with the same purple
+                             theme an installed machine gets. It is a
+                             .hook.binary and not a .hook.chroot because the
+                             boot menu is generated in the binary stage, after
+                             the live filesystem hooks have run; a chroot hook
+                             themes the INSTALLED system's GRUB, not the ISO's.
+                             (See "Boot menu branding" below.)
     0100-xlibre              run dotfile/XLIBRE/Install_xlibre.py
     0200-dotfiles            run the theme and settings installers under dotfile/,
                              the per-machine hardware fixes, and install the
@@ -135,6 +160,48 @@ lock screen unable to open.
 
 The notification server and the dock are started by GnuChanWM from its own
 autostart list in `~/.config/GnuChanWM/GnuChanWM.py`.
+
+## Boot menu branding
+
+The ISO shows **two** boot menus, and they are not drawn the same way, which is
+why the boot branding is two mechanisms and not one theme:
+
+  * **BIOS/legacy machines boot through ISOLINUX.** ISOLINUX has no theme of its
+    own: everything behind the menu - the background, the logo and the
+    distribution's name - is a **single bitmap**, and the menu is drawn over it
+    (`menu background splash.png` in live-build's `stdmenu.cfg`). live-build
+    generates that bitmap from *its own* Debian `splash.svg` (a black screen
+    with the Debian swirl and "Debian GNU/Linux …"), which is why the image came
+    up on Debian's splash however well the installed copy was themed. **The fix
+    is a build input:** the repository ships `config/bootloaders/splash.svg` -
+    the GnuchanOS wallpaper with the GnuchanOS mascot (`assets/logo.png`)
+    centred on it, both embedded in the file as data URIs so it carries its own
+    pictures - and live-build copies it into **each** bootloader tree ahead of
+    the hooks and renders it to `splash.png` with the very same `rsvg-convert`
+    step it uses for its own: at 640x480 for the ISOLINUX menu, at 800x600 for
+    the GRUB one. There is nothing to run at build time; the file being there is
+    the whole change, and it is why neither menu says Debian or carries the
+    Debian swirl any more.
+
+  * **EFI machines boot through GRUB**, and GRUB *is* themed from a theme
+    directory. The `0080-boot-branding` binary hook copies the theme the
+    dotfiles hook built inside the chroot (`/boot/grub/themes/GnuchanOS`, made by
+    `dotfile/GRUB_THEME/settings_grub.py`) into the ISO's own `boot/grub/`, and
+    points GRUB at it, so the EFI menu boots with the same purple theme an
+    installed machine gets.
+
+The hook also rewrites the menu **text** that still names the base distribution
+(live-build fills its templates from `_PROJECT = "Debian GNU/Linux"`). It changes
+the top-level ISOLINUX title only in `menu.cfg` on purpose: `menu title` is the
+directive every nested submenu carries too ("Utilities", "Advanced install
+options"), and rewriting them all would leave a list of submenus that cannot be
+told apart.
+
+Because these are files of the ISO's *bootloader* tree and not its filesystem,
+they are configured by their presence under `config/bootloaders/` and by the
+`0080` binary hook, **not** by an installer inside the image: a chroot hook runs
+against the installed system's GRUB, which is a different thing from the menu the
+ISO itself boots with.
 
 ## What is added later
 

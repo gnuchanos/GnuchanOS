@@ -13,6 +13,12 @@
 # pinned to LF regardless of the platform they are edited on.
 distro/build.sh            text eol=lf
 *.hook.chroot              text eol=lf
+*.hook.binary              text eol=lf
+# The bootloader splash the live ISO is built with (distro/config/bootloaders/).
+# It is rendered to a PNG by the build, and XML treats a stray CR as ordinary
+# whitespace, so CRLF would not break it - but the rest of the build tree is
+# pinned to LF and a file that is the odd one out is a file that gets forgotten.
+*.svg                      text eol=lf
 os/boot/init    text eol=lf
 os/boot/initrc  text eol=lf
 os/boot/inittab text eol=lf

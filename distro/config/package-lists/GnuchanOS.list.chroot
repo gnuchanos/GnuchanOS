@@ -32,6 +32,27 @@ plymouth
 plymouth-themes
 initramfs-tools
 
+# --- GRUB, for the ISO's own boot menu to be themed. The theme installer
+#     (dotfile/GRUB_THEME/settings_grub.py) REFUSES to render a theme on a
+#     machine with no GRUB - it answers "there is no menu to theme" and stops -
+#     so without grub-common the chroot never builds the GnuChanOS theme and the
+#     binary hook (0080-boot-branding) has nothing to copy into the ISO's boot
+#     menu. This is not GRUB as a boot loader (the ISO's is its own); it is the
+#     theme files and the tools the installer looks for. ---
+grub-common
+</content>
+<task_progress>
+- [x] 0080 binary hook: GRUB teması ISO menüsüne kurulur
+- [x] package-list: grub-common eklendi (tema chroot'ta üretilebilsin)
+- [ ] 0200 hook: /boot/grub dizinini garanti et
+- [ ] README güncelle
+- [ ] Doğrula
+</task_progress>
+</replace_in_file>
+</｜｜DSML｜｜ parameter>
+</task_progress>
+</replace_in_file>
+
 # --- the X server's own parts (XLibre provides the server; these are what it
 #     is built against and what its drivers need) ---
 xkb-data
