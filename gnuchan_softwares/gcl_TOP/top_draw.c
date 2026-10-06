@@ -182,24 +182,28 @@ void top_draw_frame(const TopFrame *frame) {
     printf("   up %lluh%llum   sort:%s   [arrows] move  [k] kill  [s] sort  [q] quit",
            hours, minutes, top_sort_name(frame->config->sort));
 
-    /* The top band: CPU left, GPU right, splitting the width in two. */
+    /* The top band. When there is a GPU to report it takes the right half and
+       the CPU the left, which is the shape btop has. When there is not — an
+       Intel part old enough to have no busy counter anywhere in sysfs, a
+       virtual machine, a driver that reports nothing — the CPU takes the whole
+       width. A reserved half with nothing to put in it would be a hole in the
+       frame, and this is the layout that says "one processor to watch" instead
+       of "the second one is broken". */
     int band_top = 2;
-    int half = width / 2;
-    draw_panel(band_top, 1, half - 1, "CPU", frame->cpu->overall,
-               frame->cpu->core_count, frame->cpu_history,
-               CPU_R, CPU_G, CPU_B);
-
-    if (frame->config->show_gpu && frame->gpu->present) {
+    int has_gpu = frame->config->show_gpu && frame->gpu->present;
+    if (has_gpu) {
+        int half = width / 2;
+        draw_panel(band_top, 1, half - 1, "CPU", frame->cpu->overall,
+                   frame->cpu->core_count, frame->cpu_history,
+                   CPU_R, CPU_G, CPU_B);
         const char *gpu_title = frame->gpu->name[0] ? frame->gpu->name : "GPU";
         double gpu_value = frame->gpu->has_reading ? frame->gpu->usage : 0.0;
         draw_panel(band_top, half + 1, width - half - 1, gpu_title, gpu_value,
                    0, frame->gpu_history, GPU_R, GPU_G, GPU_B);
     } else {
-        /* No GPU reading: the right half says so rather than lying with a zero. */
-        to(band_top, half + 1);
-        fg(DIM_R, DIM_G, DIM_B);
-        printf("GPU   no reading on this machine");
-        fputs(RESET, stdout);
+        draw_panel(band_top, 1, width, "CPU", frame->cpu->overall,
+                   frame->cpu->core_count, frame->cpu_history,
+                   CPU_R, CPU_G, CPU_B);
     }
 
     /* Memory, then the column header, then the list. */

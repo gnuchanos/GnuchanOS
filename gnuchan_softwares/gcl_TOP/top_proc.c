@@ -63,6 +63,11 @@ static TopProc *push_row(TopProcs *list) {
     }
     TopProc *row = &list->items[list->count];
     memset(row, 0, sizeof(*row));
+    /* The row is claimed here, not by the caller: the caller fills it and has
+       no reason to know that the list has grown, and a caller that forgot to
+       advance the count would write every process over the first row and then
+       report an empty list. */
+    list->count++;
     return row;
 }
 
