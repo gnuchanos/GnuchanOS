@@ -22,6 +22,8 @@ typedef enum {
     TOP_KEY_NONE = 0,
     TOP_KEY_UP,
     TOP_KEY_DOWN,
+    TOP_KEY_LEFT,
+    TOP_KEY_RIGHT,
     TOP_KEY_PAGE_UP,
     TOP_KEY_PAGE_DOWN,
     TOP_KEY_HOME,

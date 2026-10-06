@@ -156,13 +156,15 @@ int top_term_read_key(TopKey *key, int timeout_ms) {
     if (first == 0x1b) {
         if (got >= 3 && buffer[1] == '[') {
             switch (buffer[2]) {
-                case 'A': key->kind = TOP_KEY_UP;        return 1;
-                case 'B': key->kind = TOP_KEY_DOWN;      return 1;
-                case 'H': key->kind = TOP_KEY_HOME;      return 1;
-                case 'F': key->kind = TOP_KEY_END;       return 1;
-                case '5': key->kind = TOP_KEY_PAGE_UP;   return 1; /* ESC [ 5 ~ */
-                case '6': key->kind = TOP_KEY_PAGE_DOWN; return 1; /* ESC [ 6 ~ */
-                default:  key->kind = TOP_KEY_ESCAPE;    return 1;
+                case 'A': key->kind = TOP_KEY_UP;         return 1;
+                case 'B': key->kind = TOP_KEY_DOWN;       return 1;
+                case 'C': key->kind = TOP_KEY_RIGHT;      return 1;
+                case 'D': key->kind = TOP_KEY_LEFT;       return 1;
+                case 'H': key->kind = TOP_KEY_HOME;       return 1;
+                case 'F': key->kind = TOP_KEY_END;        return 1;
+                case '5': key->kind = TOP_KEY_PAGE_UP;    return 1; /* ESC [ 5 ~ */
+                case '6': key->kind = TOP_KEY_PAGE_DOWN;  return 1; /* ESC [ 6 ~ */
+                default:  key->kind = TOP_KEY_ESCAPE;     return 1;
             }
         }
         key->kind = TOP_KEY_ESCAPE;

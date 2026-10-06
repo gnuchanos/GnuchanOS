@@ -19,6 +19,13 @@ typedef struct {
     int    core_count;                 /* cores the last read saw */
     double usage[TOP_MAX_CORES];       /* 0..100, busy share of the interval */
     double overall;                    /* 0..100 across every core together */
+
+    /* Temperatures in degrees Celsius, from the hwmon sensors. A machine with
+       no readable sensor leaves `has_temp` at 0 and the drawing shows no
+       temperature rather than a zero that would read as freezing. */
+    int    has_temp;                   /* 1 when any temperature was read */
+    double temp_core[TOP_MAX_CORES];   /* per core, 0 when unknown */
+    double temp_package;               /* the package/hottest sensor */
 } TopCpu;
 
 /* Read /proc/stat. The first call has nothing to compare with, so the usage

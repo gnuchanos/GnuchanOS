@@ -163,16 +163,25 @@ static int confirm_kill(TopState *state) {
     return 0;
 }
 
-/* Cycle the sort key: cpu -> mem -> pid -> name -> cpu, and remember it in the
-   config so a running program sorts the way the last `s` asked. */
-static void cycle_sort(TopState *state) {
-    switch (state->config.sort) {
-        case TOP_SORT_CPU:  state->config.sort = TOP_SORT_MEM;  break;
-        case TOP_SORT_MEM:  state->config.sort = TOP_SORT_PID;  break;
-        case TOP_SORT_PID:  state->config.sort = TOP_SORT_NAME; break;
-        case TOP_SORT_NAME:
-        default:            state->config.sort = TOP_SORT_CPU;  break;
+/* Cycle the sort key and remember it in the config, so a running program sorts
+   the way the last key asked. `step` is +1 forward (cpu -> mem -> pid -> name)
+   or -1 back, which is what makes the right and left arrows walk the orders in
+   opposite directions rather than both stepping forward. */
+static void cycle_sort(TopState *state, int step) {
+    static const TopSortKey order[] = {
+        TOP_SORT_CPU, TOP_SORT_MEM, TOP_SORT_PID, TOP_SORT_NAME
+    };
+    const int count = (int)(sizeof(order) / sizeof(order[0]));
+
+    int index = 0;
+    for (int i = 0; i < count; i++) {
+        if (order[i] == state->config.sort) {
+            index = i;
+            break;
+        }
     }
+    index = (index + step + count) % count;
+    state->config.sort = order[index];
     top_procs_sort(&state->procs, state->config.sort);
 }
 
@@ -211,6 +220,14 @@ int top_ui_run(TopState *state) {
                     top_procs_move(&state->procs, visible_rows(), visible_rows());
                     needs_draw = 1;
                     break;
+                case TOP_KEY_LEFT:
+                    cycle_sort(state, -1);
+                    needs_draw = 1;
+                    break;
+                case TOP_KEY_RIGHT:
+                    cycle_sort(state, 1);
+                    needs_draw = 1;
+                    break;
                 case TOP_KEY_HOME:
                     top_procs_move(&state->procs, -state->procs.count,
                                    visible_rows());
@@ -231,7 +248,7 @@ int top_ui_run(TopState *state) {
                         confirm_kill(state);
                         needs_draw = 1;
                     } else if (key.ch == 's' || key.ch == 'S') {
-                        cycle_sort(state);
+                        cycle_sort(state, 1);
                         needs_draw = 1;
                     }
                     break;
