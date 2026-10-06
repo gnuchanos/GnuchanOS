@@ -8,22 +8,31 @@
  *      driver is 0x1002/AMD, but the file's presence is the real test and the
  *      vendor is only used to label the panel.
  *
- *   2. i915. There is no percentage, only per-engine millisecond counters under
+ *   2. i915, newer parts. Per-engine millisecond counters under
  *      /sys/class/drm/cardN/gt/gt0/engines/<engine>/busy. The busiest engine's
  *      growth over the interval, against the wall-clock milliseconds that
  *      passed, is the percentage. The engine list differs between chips, so the
  *      files are discovered by reading the directory rather than by name.
  *
+ *   3. i915, older parts. The driver publishes a perf PMU whose rcs0-busy event
+ *      counts the render engine's busy nanoseconds; the growth of that counter
+ *      over the wall-clock interval is the percentage. This is the only reading
+ *      a GMA-era chip offers, and it needs the CAP_PERFMON the installer grants.
+ *
  * A reading that cannot be taken leaves `present` at 0, and the caller draws the
- * CPU alone; that is not an error, it is a machine with no GPU to report.
+ * panel with `n/a`; that is not an error, it is a machine with no readable GPU.
  */
 #include "top_gpu.h"
 
 #include <dirent.h>
+#include <linux/perf_event.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/syscall.h>
 #include <time.h>
+#include <unistd.h>
 
 /* The card this reads, which is the first one. */
 #define GPU_CARD_DIR "/sys/class/drm/card0"
@@ -185,17 +194,92 @@ static int sample_i915(TopGpu *gpu) {
     return 0;
 }
 
+/* --- the i915 perf path ---------------------------------------------------- */
+
+/* The perf PMU the i915 driver publishes, and the render engine's busy event in
+   it. The type number the PMU answers to is read from the PMU's own `type` file
+   rather than assumed, because the kernel assigns it per boot. */
+#define I915_PMU_DIR   "/sys/bus/event_source/devices/i915"
+#define I915_BUSY_EVENT 0x0    /* rcs0-busy, busy nanoseconds of the render engine */
+
+static int       perf_fd = -1;
+static long long perf_last_busy_ns = 0;
+static long long perf_last_wall_ns = 0;
+static int       perf_seen = 0;
+
+static long long now_nanos(void) {
+    struct timespec time;
+    clock_gettime(CLOCK_MONOTONIC, &time);
+    return (long long)time.tv_sec * 1000000000LL + time.tv_nsec;
+}
+
+/* Open the i915 PMU's busy event once. Returns 0 when the event is open, -1
+   when this machine has no such PMU or the kernel refused the open — the last
+   is the CAP_PERFMON case, which the installer fixes with setcap. */
+static int open_perf(void) {
+    long type = 0;
+    if (read_number(I915_PMU_DIR "/type", &type) != 0) {
+        return -1;
+    }
+    struct perf_event_attr attr;
+    memset(&attr, 0, sizeof(attr));
+    attr.type = (unsigned int)type;
+    attr.size = sizeof(attr);
+    attr.config = I915_BUSY_EVENT;
+    attr.disabled = 1;
+    long fd = syscall(__NR_perf_event_open, &attr, -1, 0, -1, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    ioctl((int)fd, PERF_EVENT_IOC_RESET, 0);
+    ioctl((int)fd, PERF_EVENT_IOC_ENABLE, 0);
+    perf_fd = (int)fd;
+    return 0;
+}
+
+/* The perf reading: the busy nanoseconds the render engine gained over the
+   wall-clock nanoseconds that passed. The first call has nothing to subtract
+   from and so leaves `has_reading` unset, exactly like the CPU's first sample. */
+static int sample_perf(TopGpu *gpu) {
+    if (perf_fd < 0 && open_perf() != 0) {
+        return -1;
+    }
+
+    long long busy = 0;
+    if (read(perf_fd, &busy, sizeof(busy)) != (ssize_t)sizeof(busy)) {
+        return -1;
+    }
+    long long wall = now_nanos();
+
+    if (perf_seen && wall > perf_last_wall_ns && busy >= perf_last_busy_ns) {
+        long long busy_delta = busy - perf_last_busy_ns;
+        long long wall_delta = wall - perf_last_wall_ns;
+        double percent = (double)busy_delta * 100.0 / (double)wall_delta;
+        if (percent < 0.0)   percent = 0.0;
+        if (percent > 100.0) percent = 100.0;
+        gpu->usage = percent;
+        gpu->has_reading = 1;
+    }
+    perf_last_busy_ns = busy;
+    perf_last_wall_ns = wall;
+    perf_seen = 1;
+    return 0;
+}
+
 /* --- the entry point ------------------------------------------------------- */
 
 int top_gpu_sample(TopGpu *gpu) {
-    /* A first call determines whether a reading is possible at all, so the
-       present flag and the name are set once. */
+    /* A first call picks which reading this machine offers, and sets the name
+       with it; the steady-state block below then uses that same path. */
     if (!gpu->present && gpu->name[0] == '\0') {
         long percent = 0;
         if (read_number(GPU_CARD_DIR "/device/gpu_busy_percent", &percent) == 0) {
             read_driver_name(gpu->name, sizeof(gpu->name));
             gpu->present = 1;
-        } else if (sample_i915(gpu) == 0) {
+        } else if (sample_i915(gpu) == 0 && engine_count > 0) {
+            snprintf(gpu->name, sizeof(gpu->name), "Intel GPU");
+            gpu->present = 1;
+        } else if (sample_perf(gpu) == 0) {
             snprintf(gpu->name, sizeof(gpu->name), "Intel GPU");
             gpu->present = 1;
         } else {
@@ -219,8 +303,11 @@ int top_gpu_sample(TopGpu *gpu) {
         return 0;
     }
 
-    /* Otherwise the i915 engine counters. */
-    if (sample_i915(gpu) == 0) {
+    /* The newer i915 engine counters, then the older i915 perf event. */
+    if (engine_count > 0 && sample_i915(gpu) == 0) {
+        return 0;
+    }
+    if (sample_perf(gpu) == 0) {
         return 0;
     }
     gpu->has_reading = 0;

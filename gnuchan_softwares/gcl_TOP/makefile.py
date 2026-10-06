@@ -215,7 +215,73 @@ def install(binary: Path) -> None:
     os.replace(str(staged), str(target))
     detail(f"installed {target}")
 
+    grant_perfmon(target)
+    allow_perf_events()
     install_config()
+
+# The sysctl the perf counters need. The i915 GPU-busy counter is a system-wide
+# perf event, and the kernel refuses those to an unprivileged process while
+# perf_event_paranoid is 3 or higher — even one holding CAP_PERFMON, as measured
+# on the target machine. 2 is the value at which CAP_PERFMON is enough: it still
+# keeps kernel profiling out of unprivileged hands, and it is the setting most
+# distributions ship (Debian is the outlier at 3). The narrower alternative is
+# CAP_SYS_ADMIN on the binary, which is root-equivalent and not something a
+# monitor should be given; a sysctl that keeps the capability check in place is
+# the smaller grant.
+PERF_SYSCTL_PATH = Path("/etc/sysctl.d/99-gnuchantop.conf")
+PERF_SYSCTL_VALUE = "kernel.perf_event_paranoid = 2\n"
+
+
+def allow_perf_events() -> None:
+    """Lower perf_event_paranoid to the value CAP_PERFMON needs, persistently."""
+    try:
+        PERF_SYSCTL_PATH.write_text(PERF_SYSCTL_VALUE)
+    except OSError as problem:
+        detail(f"could not write {PERF_SYSCTL_PATH}: {problem}")
+        return
+    detail(f"wrote {PERF_SYSCTL_PATH}")
+
+    sysctl = shutil.which("sysctl")
+    if sysctl is None:
+        return
+    if run([sysctl, "-w", "kernel.perf_event_paranoid=2"],
+           capture=True).returncode == 0:
+        detail("perf_event_paranoid is now 2")
+    else:
+        detail("the sysctl takes effect after a reboot")
+
+
+def grant_perfmon(target: Path) -> None:
+    """Give the binary CAP_PERFMON so the CPU and GPU perf counters can be read.
+
+    The kernel hands /proc-adjacent perf events to root by default
+    (perf_event_paranoid is 3 on Debian), and the i915 GPU-busy counter is one of
+    those. A monitor that only read its numbers as root would ask for a password
+    to see the GPU, which is not a monitor a person runs. The capability is the
+    narrow grant the kernel provides for exactly this: it covers the performance
+    counters and nothing else, so the binary does not run as root.
+
+    setcap comes from libcap2-bin, which is pulled in when it is missing. A
+    machine without it still gets a working program; only the GPU reading falls
+    back to `n/a`.
+    """
+    setcap = shutil.which("setcap")
+    if setcap is None:
+        step("Installing libcap2-bin for setcap")
+        run(["apt-get", "install", "-y", "--no-install-recommends",
+             "libcap2-bin"], environment=apt_environment())
+        setcap = shutil.which("setcap")
+    if setcap is None:
+        detail("setcap is unavailable; the GPU reading will show n/a")
+        return
+
+    result = run([setcap, "cap_perfmon+ep", str(target)], capture=True)
+    if result.returncode == 0:
+        detail(f"granted CAP_PERFMON to {target}")
+    else:
+        detail("could not grant CAP_PERFMON; the GPU reading will show n/a")
+        if result.stderr:
+            detail(result.stderr.strip())
 
 
 def install_config() -> None:
