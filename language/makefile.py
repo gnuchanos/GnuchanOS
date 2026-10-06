@@ -90,7 +90,16 @@ RAYLIB_SRC = RAYLIB_DIR / "src"
 RAYGUI_DIR = _plat_temp() / "Raygui"
 RAYGUI_SRC = RAYGUI_DIR / "src"
 
-FREEFONT_URL = "https://ftp.gnu.org/gnu/freefont/freefont-ttf-20120503.zip"
+# GNU FreeFont, tried in order. ftp.gnu.org is the canonical home but is not
+# reachable from every network (it timed out on the build laptop while
+# mirrors.kernel.org and the Debian pool answered), so the same file is listed
+# from more than one mirror and download_freefont() walks the list. Every entry
+# is the same 20120503 release.
+FREEFONT_URLS = (
+    "https://ftp.gnu.org/gnu/freefont/freefont-ttf-20120503.zip",
+    "https://mirrors.kernel.org/gnu/freefont/freefont-ttf-20120503.zip",
+    "https://mirror.csclub.uwaterloo.ca/gnu/freefont/freefont-ttf-20120503.zip",
+)
 FREEFONT_DIR = _plat_temp() / "FreeFont"
 # REAL source directory is language/_SRC (not src/). Linux is case-sensitive: src/IDE vs _SRC/ide
 # and that difference breaks the build, so all paths use _SRC/ with the correct case.
@@ -711,8 +720,26 @@ def download_freefont() -> None:
     FREEFONT_DIR.mkdir(parents=True, exist_ok=True)
     tmp_zip = _plat_temp() / "freefont.zip"
     tmp_dir = _plat_temp() / "freefont_tmp"
-    print(f"[gcl] Downloading GNU FreeFont", flush=True)
-    urllib.request.urlretrieve(FREEFONT_URL, tmp_zip)
+    # Try each mirror in turn. ftp.gnu.org is the canonical home but is not
+    # reachable from every network, so a single URL is a build that stops on a
+    # network that cannot see that one host. The first mirror that answers
+    # wins; only when every one of them fails does the download give up.
+    last_error: Exception | None = None
+    for url in FREEFONT_URLS:
+        print(f"[gcl] Downloading GNU FreeFont: {url}", flush=True)
+        try:
+            urllib.request.urlretrieve(url, tmp_zip)
+            last_error = None
+            break
+        except Exception as error:  # noqa: BLE001 - try the next mirror
+            last_error = error
+            print(f"[gcl] mirror failed ({error}); trying the next", flush=True)
+    if last_error is not None:
+        raise SystemExit(
+            "error: GNU FreeFont could not be downloaded from any mirror:\n  "
+            + "\n  ".join(FREEFONT_URLS)
+            + f"\nlast error: {last_error}"
+        )
     if tmp_dir.exists():
         shutil.rmtree(tmp_dir)
     tmp_dir.mkdir(parents=True, exist_ok=True)

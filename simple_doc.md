@@ -147,50 +147,6 @@ EXAMPLE: scanf(name); #// backend is not scanf more safe alternatif
         #include <inc_plain.gcsf>
         printf("pastes={}\n", pastes);    # -> pastes=2
 
-    Opt in to include-once by putting `#pragma once` in the INCLUDED file.
-    Leading whitespace (spaces/tabs) before the `#` is allowed, and the
-    directive may sit anywhere in the file — not only on the first line.
-
-        #pragma once                       # inc_once.gcsf
-        pastes = pastes + 1;
-
-        int pastes = 0;
-        #include <inc_once.gcsf>
-        #include <inc_once.gcsf>         # skipped — already included once
-        printf("pastes={}\n", pastes);    # -> pastes=1
-
-    Limits and guarantees (all measured, all pinned by tests):
-      - The "already included" registry is keyed on the RESOLVED path and is
-        reset for every program run.
-      - The registry GROWS with the program: there is no fixed limit on how
-        many distinct `#pragma once` files a run may remember. (It used to be a
-        fixed 64-entry table that stopped registering silently, so the 65th
-        guarded file silently lost its guard. That table is gone; memory is now
-        proportional to the number of distinct guarded files.)
-      - An `#include` inside an INACTIVE branch is never looked up and never
-        pasted: `#if 0 ... #include <x> ... #endif` is dead code, exactly as
-        in C. Only an ACTIVE include is resolved and text-pasted.
-      - `#include` nesting is limited to 32 levels; exceeding it STOPS the
-        build (a diagnostic, then `Error: #include failed, compilation
-        stopped`, empty stdout, exit 1) instead of overflowing the native
-        stack.
-      - A missing `#include` STOPS the build the same way — exit 1, no
-        statement runs — and the diagnostic names the file and the
-        directories that were searched.
-      - `#native <X>` that cannot be loaded is reported at STARTUP (not only
-        at the first call) and makes the exit code non-zero — even if no
-        member is ever called. To load a module only on some platforms, guard
-        the directive with `#if`, do not rely on the diagnostic staying quiet.
-
-    Golden tests: language/tests/gcsf/preproc/double_include.gcsf (pastes=2),
-    language/tests/gcsf/preproc/pragma_once.gcsf (pastes=1),
-    language/tests/gcsf/preproc/pragma_once_many.gcsf (three distinct guarded
-    fragments, each included twice in a non-sequential order -> hits=111),
-    language/tests/gcsf/modules/missing_module.gcsf (unknown module -> exit 1),
-    language/tests/gcsf/preproc/include_inactive.gcsf (a dead include is not
-    pasted), include_inactive_missing.gcsf (a dead include is not even looked
-    up), include_missing_active.gcsf (a live missing include aborts),
-    include_cycle.gcsf (self-include aborts at the depth limit).
     ``` Test.gclib
     type function(....) {
         

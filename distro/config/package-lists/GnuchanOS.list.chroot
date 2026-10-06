@@ -40,18 +40,6 @@ initramfs-tools
 #     menu. This is not GRUB as a boot loader (the ISO's is its own); it is the
 #     theme files and the tools the installer looks for. ---
 grub-common
-</content>
-<task_progress>
-- [x] 0080 binary hook: GRUB teması ISO menüsüne kurulur
-- [x] package-list: grub-common eklendi (tema chroot'ta üretilebilsin)
-- [ ] 0200 hook: /boot/grub dizinini garanti et
-- [ ] README güncelle
-- [ ] Doğrula
-</task_progress>
-</replace_in_file>
-</｜｜DSML｜｜ parameter>
-</task_progress>
-</replace_in_file>
 
 # --- the X server's own parts (XLibre provides the server; these are what it
 #     is built against and what its drivers need) ---
@@ -151,6 +139,17 @@ firmware-realtek
 firmware-brcm80211
 firmware-ralink
 firmware-misc-nonfree
+
+# --- the torrent client and its bindings, from dotfile/Install_Software.py.
+#     deluge is the client, and its daemon (deluged) and web UI ship inside it;
+#     deluge-gtk is the windowed front end; python3-libtorrent is the library
+#     the client runs on. They are named here so the live image carries what a
+#     machine that ran Install_Software.py carries, and the services that the
+#     script turns on (ssh, irqbalance, ntpsec) are enabled by the
+#     0250-install-software hook. ---
+deluge
+deluge-gtk
+python3-libtorrent
 
 # --- the session's helpers: sound, a browser backend, the pointer theme ---
 alsa-utils

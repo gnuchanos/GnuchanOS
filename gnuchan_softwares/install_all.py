@@ -80,6 +80,7 @@ PROGRAMS: tuple[tuple[str, str], ...] = (
     ("gcl_SCREENSAVER", "GnuChanSS"),
     ("gcl_LOCKSCREEN", "GnuChanSL"),
     ("gcl_NOTIFICATION", "GnuChanNotification"),
+    ("gcl_TOP", "GnuChanTop"),
     ("gcl_WM", "GnuChanWM"),
     ("gcl_DM", "GnuChanDM"),
 )

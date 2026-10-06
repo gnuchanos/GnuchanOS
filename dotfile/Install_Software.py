@@ -16,16 +16,7 @@ important_things = [
 ]
 
 commands = [
-    "sudo apt purge xfce4 xfce4-* firefox firefox-esr -y",
-    "sudo apt autoremove --purge -y",
-    "sudo apt clean",
     "sudo systemctl enable --now ssh",
-    "sudo apt purge xfce4 xfce4-* xfconf libxfce4* thunar -y",
-    "sudo apt autoremove --purge -y",
-    "sudo apt purge lightdm -y",
-    "sudo apt autoremove --purge -y",
-    "sudo apt purge lightdm-gtk-greeter -y",
-    "sudo apt purgefirefox-esr -y",
     "sudo apt clean",
     "sudo systemctl enable --now irqbalance"
 ]

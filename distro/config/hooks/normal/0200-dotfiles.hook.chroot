@@ -48,18 +48,6 @@ install -d /boot/grub
 
 run_as_root "$SRC/GRUB_THEME/settings_grub.py"
 run_as_root "$SRC/PLYMOUTH_THEME/settings_plymouth.py"
-</content>
-<task_progress>
-- [x] 0080 binary hook: GRUB teması ISO menüsüne kurulur
-- [x] package-list: grub-common eklendi
-- [x] 0200 hook: /boot/grub dizinini garanti et
-- [ ] README güncelle
-- [ ] Sözdizimi/CRLF doğrula
-</task_progress>
-</replace_in_file>
-</｜｜DSML｜｜ parameter>
-</task_progress>
-</replace_in_file>
 
 # --- themes and settings a session reads (the live user's) -------------------
 
