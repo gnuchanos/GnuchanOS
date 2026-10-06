@@ -1,15 +1,21 @@
 /*
- * top_graph.h — the little history graphs, drawn with braille.
+ * top_graph.h — the little history graphs.
  *
  * A graph is a rolling window of the last TOP_HISTORY samples of a 0..100
- * value. Drawing it in the terminal is the braille trick: the Unicode braille
- * block is a 2x4 grid of dots in one cell, so one text cell holds eight
- * samples — two columns of four. A row of cells is therefore 2*cols samples
- * wide and 4*samples_per_row tall, which is more resolution than a monitor
- * needs and comes out of characters every UTF-8 terminal already has.
+ * value. It is drawn with the Unicode block characters — the eighth-height
+ * ramp `▁▂▃▄▅▆▇█` and the space between them — one text cell per sample, so a
+ * `width`-wide block shows the last `width` samples with the newest at the
+ * right.
+ *
+ * Blocks rather than braille on purpose. Braille is denser (a cell holds a 2x4
+ * grid) but it is a font that has to have the U+28xx characters, and a terminal
+ * without them shows a row of empty boxes — a graph that looks like a
+ * placeholder. The block ramp is in every console font, so the graph reads the
+ * same everywhere, and one cell per sample is resolution enough for a spark of
+ * the last few seconds.
  *
  * The history itself lives with whoever owns the value — the CPU's own history
- * is kept by the CPU, the GPU's by the GPU, and the drawing takes a pointer to
+ * is kept by the CPU, the GPU's by the GPU — and the drawing takes a pointer to
  * it. This module only turns numbers into a coloured block of cells.
  */
 #ifndef GNUCHANTOP_GRAPH_H
@@ -33,11 +39,13 @@ void top_history_push(TopHistory *history, double value);
 /* The value `index` samples back from the newest, 0..count-1. */
 double top_history_at(const TopHistory *history, int index);
 
-/* Draw `rows` text rows of the history into `out`, as braille, `width` cells
-   wide. `red`,`green`,`blue` is the colour the dots are written in. The caller
-   has already positioned the cursor; this writes the escapes, the cells and a
-   reset. A row is drawn top to bottom, so the newest sample is at the right. */
-void top_graph_draw(const TopHistory *history, int width, int rows,
+/* Draw one text row of a `height`-tall graph, `width` cells wide, newest on the
+   right. `row` is 0 at the top and `height - 1` at the bottom. One sample per
+   cell; a sample's value picks how many of the cell's eight eighths are filled,
+   so a value of 50 in a 5-row graph fills two and a half rows. The caller has
+   already positioned the cursor; this writes the colour, the cells and a
+   reset. */
+void top_graph_draw(const TopHistory *history, int width, int height, int row,
                     int red, int green, int blue);
 
 #endif /* GNUCHANTOP_GRAPH_H */

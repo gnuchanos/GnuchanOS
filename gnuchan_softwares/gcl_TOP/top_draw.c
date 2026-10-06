@@ -2,28 +2,26 @@
  * top_draw.c — drawing one frame: the panels, the memory line, the process list.
  *
  * The layout is btop's, cut down: a header line, then a band across the top with
- * the CPU on the left half and the GPU on the right, a line of memory and swap,
- * a column header for the process list, and the list filling everything below.
+ * the CPU on the left and the GPU on the right, a line of memory and swap, a
+ * column header for the process list, and the list filling everything below.
+ *
+ * The two panels are always both drawn, even when this machine has no GPU
+ * reading. The right panel is part of the shape of the program — a person who
+ * has seen btop expects a second panel there — and taking it away on the
+ * machines that cannot fill it would make the program look broken rather than
+ * different. When there is no reading the value shows `n/a` and the graph is
+ * flat, which is the truth, where a hidden panel is not.
  *
  * Everything is drawn with the cursor moved to an absolute position and the line
- * cleared first (`\033[K`), so a value that shrank — 9% to 10% is fine, but a
- * long command replaced by a short one is not — leaves no tail of the old text
- * behind. The colours are 24-bit escapes and the palette is the desktop's own
- * violet, the same one the panel and the icon theme use, so the monitor looks
- * like part of the system rather than a program with a palette of its own.
- *
- * The process list is the only part with a cursor of its own. The selected row
- * is drawn inverted — the accent as a background — so the eye finds it at once
- * and the `k` that kills goes on the row that is lit.
+ * cleared first (`\033[K`), so a value that shrank — a long command replaced by
+ * a short one — leaves no tail of the old text behind.
  */
 #include "top_draw.h"
 
 #include <stdio.h>
 #include <string.h>
 
-/* The palette, the desktop's violet. Kept here rather than read from a file:
-   these are the colours the rest of the system is drawn in and a monitor that
-   read them would have one more thing to fail at. */
+/* The palette, the desktop's violet. */
 #define ACCENT_R 0xa8
 #define ACCENT_G 0x55
 #define ACCENT_B 0xf7
@@ -40,7 +38,7 @@
 #define ERR_G    0x5c
 #define ERR_B    0x5c
 
-/* The height of the top band: the graph, its two label lines, and a border. */
+/* The height of the top band in rows: a title row and the graph under it. */
 #define PANEL_ROWS 6
 #define RESET "\033[0m"
 
@@ -70,29 +68,22 @@ static void human_kb(unsigned long long kb, char *out, size_t size) {
     }
 }
 
-/* --- the top band ---------------------------------------------------------- */
+/* --- a panel --------------------------------------------------------------- */
 
-/* Draw one panel: a title, the current value, and its graph. `left` is the
-   first column, `width` its width in cells. */
+/* Draw one panel: a title on the left and the current value on the right on the
+   first row, and the history graph filling the rows below. `left` is the first
+   column, `width` its width in cells. */
 static void draw_panel(int top_row, int left, int width, const char *title,
-                       double value, int core_count, const TopHistory *history,
+                       const char *value_text, const TopHistory *history,
                        int red, int green, int blue) {
     if (width < 8) {
         return;
     }
-    /* Title on the left, value on the right, both on the first row. */
     to(top_row, left);
     fg(red, green, blue);
     printf("%s", title);
     fputs(RESET, stdout);
 
-    char value_text[32];
-    if (core_count > 0) {
-        snprintf(value_text, sizeof(value_text), "%.1f%%  %d cores", value,
-                 core_count);
-    } else {
-        snprintf(value_text, sizeof(value_text), "%.1f%%", value);
-    }
     int value_length = (int)strlen(value_text);
     if (value_length < width) {
         to(top_row, left + width - value_length);
@@ -101,11 +92,11 @@ static void draw_panel(int top_row, int left, int width, const char *title,
         fputs(RESET, stdout);
     }
 
-    /* The graph under the title, filling the rest of the panel height. */
-    int graph_rows = PANEL_ROWS - 2;
+    /* The graph, one text row at a time, under the title. */
+    int graph_rows = PANEL_ROWS - 1;
     for (int row = 0; row < graph_rows; row++) {
         to(top_row + 1 + row, left);
-        top_graph_draw(history, width, 1, red, green, blue);
+        top_graph_draw(history, width, graph_rows, row, red, green, blue);
     }
 }
 
@@ -136,11 +127,9 @@ static void draw_memory(int row, const TopMem *mem, int width) {
 
 /* --- the process list ------------------------------------------------------ */
 
-/* The column header of the process list. */
 static void draw_columns(int row, int width) {
     to(row, 1);
     fg(DIM_R, DIM_G, DIM_B);
-    /* The name column takes whatever is left after the fixed ones. */
     printf("  %-7s %-10s %6s %6s %-8s %s", "PID", "USER", "CPU%", "MEM%",
            "STATE", "COMMAND");
     (void)width;
@@ -182,29 +171,30 @@ void top_draw_frame(const TopFrame *frame) {
     printf("   up %lluh%llum   sort:%s   [arrows] move  [k] kill  [s] sort  [q] quit",
            hours, minutes, top_sort_name(frame->config->sort));
 
-    /* The top band. When there is a GPU to report it takes the right half and
-       the CPU the left, which is the shape btop has. When there is not — an
-       Intel part old enough to have no busy counter anywhere in sysfs, a
-       virtual machine, a driver that reports nothing — the CPU takes the whole
-       width. A reserved half with nothing to put in it would be a hole in the
-       frame, and this is the layout that says "one processor to watch" instead
-       of "the second one is broken". */
+    /* The top band: CPU left, GPU right, the two halves of the width. */
     int band_top = 2;
-    int has_gpu = frame->config->show_gpu && frame->gpu->present;
-    if (has_gpu) {
-        int half = width / 2;
-        draw_panel(band_top, 1, half - 1, "CPU", frame->cpu->overall,
-                   frame->cpu->core_count, frame->cpu_history,
-                   CPU_R, CPU_G, CPU_B);
-        const char *gpu_title = frame->gpu->name[0] ? frame->gpu->name : "GPU";
-        double gpu_value = frame->gpu->has_reading ? frame->gpu->usage : 0.0;
-        draw_panel(band_top, half + 1, width - half - 1, gpu_title, gpu_value,
-                   0, frame->gpu_history, GPU_R, GPU_G, GPU_B);
-    } else {
-        draw_panel(band_top, 1, width, "CPU", frame->cpu->overall,
-                   frame->cpu->core_count, frame->cpu_history,
-                   CPU_R, CPU_G, CPU_B);
+    int half = width / 2;
+
+    char cpu_value[48];
+    snprintf(cpu_value, sizeof(cpu_value), "%.1f%%  %d cores",
+             frame->cpu->overall, frame->cpu->core_count);
+    draw_panel(band_top, 1, half - 1, "CPU", cpu_value, frame->cpu_history,
+               CPU_R, CPU_G, CPU_B);
+
+    char gpu_value[48];
+    const char *gpu_title = "GPU";
+    if (frame->gpu->present && frame->gpu->name[0]) {
+        gpu_title = frame->gpu->name;
     }
+    if (frame->config->show_gpu && frame->gpu->present && frame->gpu->has_reading) {
+        snprintf(gpu_value, sizeof(gpu_value), "%.1f%%", frame->gpu->usage);
+    } else {
+        /* No reading on this machine: say so in the value, rather than hiding
+           the panel or lying with a zero. */
+        snprintf(gpu_value, sizeof(gpu_value), "n/a");
+    }
+    draw_panel(band_top, half + 1, width - half - 1, gpu_title, gpu_value,
+               frame->gpu_history, GPU_R, GPU_G, GPU_B);
 
     /* Memory, then the column header, then the list. */
     int memory_row = band_top + PANEL_ROWS;
@@ -214,7 +204,7 @@ void top_draw_frame(const TopFrame *frame) {
     draw_columns(header_row, width);
 
     int list_top = header_row + 1;
-    int list_rows = rows - list_top;          /* one row left for the status line */
+    int list_rows = rows - list_top;
     if (list_rows < 1) {
         list_rows = 0;
     }
@@ -228,14 +218,13 @@ void top_draw_frame(const TopFrame *frame) {
         int index = procs->scroll + i;
         int row = list_top + i;
         if (index >= procs->count) {
-            to(row, 1);   /* blank the rest of the list */
+            to(row, 1);
             continue;
         }
         draw_process(row, &procs->items[index], index == procs->cursor,
                      name_width);
     }
 
-    /* Park the cursor at the foot so the terminal does not scroll. */
     to(rows, 1);
     fflush(stdout);
 }
@@ -249,7 +238,6 @@ void top_draw_status(const char *message, int is_error, int width, int rows) {
     }
     printf("%s", message);
     fputs(RESET, stdout);
-    /* Pad to the width so nothing of the previous line shows through. */
     int length = (int)strlen(message);
     for (int i = length; i < width; i++) {
         putchar(' ');
