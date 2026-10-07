@@ -183,9 +183,13 @@ static void draw_with_graphics(const FetchConfig *config,
         cols = 1;
     }
 
-    /* The cursor goes home first, so the picture anchors at the top-left of the
-       grid whatever was on the line before. */
-    fputs("\033[H", stdout);
+    /* The picture is placed where the CURSOR is, and the cursor is deliberately
+       NOT sent home first. Sending ESC[H first — which this used to do — put the
+       picture at row 0 of the screen on every run, and the terminal REPLACES a
+       picture already placed at the same column and line: a second GnuChanFetch
+       overlapped the first exactly, so only the last one was ever seen. Left at
+       the cursor, each run lays its picture below the one before it — what a
+       command's output is supposed to do, and what every other fetch does. */
     printf("\033]1338;0;0;%d;%d;%s\a", cols, image_rows, config->image);
 
     /* The text starts to the RIGHT of the picture, with the gap the settings
@@ -229,9 +233,24 @@ static void draw_with_graphics(const FetchConfig *config,
         line_count++;
     }
 
+    /* The text is walked down the picture's right-hand side with RELATIVE moves
+       and not absolute cursor addressing. Absolute addressing writes the text at
+       a fixed row of the screen, which is only correct while the picture happens
+       to be at the top; once the picture is below the prompt — where it now is —
+       the text lands on the wrong rows and prints over itself, which is the
+       garbled overlap seen when fetch was run more than once. Relative moves are
+       correct wherever the block started. Each row: right to the text column,
+       print the line, carriage-return to the block's left edge, down one row. */
+    int right = text_column - 1;
+    if (right < 0) {
+        right = 0;
+    }
+
     int rows = line_count > image_rows ? line_count : image_rows;
     for (int row = 0; row < rows; row++) {
-        printf("\033[%d;%dH", row + 1, text_column);
+        if (right > 0) {
+            printf("\033[%dC", right);
+        }
         if (row < line_count) {
             if (is_swatch[row]) {
                 draw_swatch(config);
@@ -239,11 +258,13 @@ static void draw_with_graphics(const FetchConfig *config,
                 draw_text_line(lines[row]);
             }
         }
+        /* Back to the block's left edge, then down one row, so the next line
+           starts at the same column however long this one was. */
+        fputs("\r", stdout);
+        fputs("\033[1B", stdout);
     }
-    /* The cursor is put below both, so a shell prompt after the fetch does not
-       land over the picture. */
-    int bottom = rows + 1;
-    printf("\033[%d;1H", bottom);
+    /* The cursor ends below the whole block, so a shell prompt after the fetch
+       does not land over the picture. */
     fputs(RESET, stdout);
 }
 

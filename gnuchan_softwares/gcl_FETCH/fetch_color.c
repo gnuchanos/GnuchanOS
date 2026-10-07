@@ -91,8 +91,8 @@ FetchColor fetch_color_default(void) {
        names for a picture's background. It is written out here as numbers so
        that a caller with no colour at all still has one. */
     FetchColor colour;
-    colour.red = 0x1c;
-    colour.green = 0x05;
-    colour.blue = 0x32;
+    colour.red = 0x0b;
+    colour.green = 0x03;
+    colour.blue = 0x10;
     return colour;
 }

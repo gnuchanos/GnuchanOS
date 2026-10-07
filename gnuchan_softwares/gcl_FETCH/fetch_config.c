@@ -11,9 +11,9 @@
  *         Image="~/.config/GnuChanFetch/logo.png",   the picture, or ""
  *         ImageRows=16,                              how tall, in text rows
  *         Gap=3,                                     blank columns after it
- *         ImageBackground="#1c0532",                 behind a see-through logo
+ *         ImageBackground="#0b0310",                 behind a see-through logo
  *         Fields=["os", "kernel", "cpu"],            which lines, in order
- *         Colours=["#1c0532", "#32143f"],            the swatch under the title
+ *         Colours=["#0b0310", "#32143f"],            the swatch under the title
  *     )
  *
  * The defaults are laid down first and the walk only ever changes what the file
@@ -47,7 +47,7 @@ static const char *const DEFAULT_FIELDS[] = {
 /* The swatch a machine that never wrote a script gets: the desktop's purple
    ramp, the same colours the shipped script names. */
 static const char *const DEFAULT_COLOURS[] = {
-    "#1c0532", "#32143f", "#542080", "#6d28d9",
+    "#0b0310", "#32143f", "#542080", "#6d28d9",
     "#9333ea", "#a855f7", "#c77dff", "#d8a4ff",
 };
 #define DEFAULT_COLOUR_COUNT \
@@ -63,7 +63,7 @@ void fetch_config_defaults(FetchConfig *config) {
     config->image_rows = 16;
     config->gap = 3;
     snprintf(config->image_background, sizeof(config->image_background),
-             "#1c0532");
+             "#0b0310");
 
     for (int i = 0; i < DEFAULT_FIELD_COUNT && i < FETCH_MAX_FIELDS; i++) {
         snprintf(config->fields[config->field_count],

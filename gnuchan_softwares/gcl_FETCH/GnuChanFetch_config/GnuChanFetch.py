@@ -31,7 +31,7 @@ gcl_Fetch.Main(
     # Resmin saydam (seffaf) yerlerinin uzerine cizilecegi renk. Logonun
     # arkaplani saydamsa, terminalin kendi rengi yerine bu renk gorunur.
     # Masaustunun en koyu moru.
-    ImageBackground="#1c0532",
+    ImageBackground="#0b0310",
 
     # Gosterilecek bilgi satirlari, tam bu sirayla. Kullanilabilecek isimler:
     #   "model"    -> bilgisayarin marka ve modeli (orn. Dell Inc. Vostro A860)
@@ -81,7 +81,7 @@ gcl_Fetch.Main(
     # Basligin altindaki renk seridi. Her renk iki bosluk genisliginde bir blok
     # olarak cizilir. Masaustunun mor paleti.
     Colours=[
-        "#1c0532",
+        "#0b0310",
         "#32143f",
         "#542080",
         "#6d28d9",
