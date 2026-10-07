@@ -28,6 +28,14 @@ typedef struct RunnerProgram {
        called the program. */
     char name[RUNNER_TEXT_LENGTH];
 
+    /* Other words the program can be found by, beyond its displayed name: the
+       .desktop GenericName and Keywords, joined. It is searched as well as the
+       name because a program's displayed name is not always what a person
+       types — the command's own program name is searched too, see
+       runner_match.c — and a name this does not hold is still found by the
+       command. Empty when the file had neither key. */
+    char keywords[RUNNER_TEXT_LENGTH];
+
     /* The line under the name in the list, when the entry had one: the
        .desktop Comment, which is what the program says about itself. Empty
        for a program a script added. */

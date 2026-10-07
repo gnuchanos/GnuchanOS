@@ -132,6 +132,8 @@ int runner_desktop_read(const char *path, RunnerProgram *program,
     }
 
     char name[RUNNER_TEXT_LENGTH];
+    char generic[RUNNER_TEXT_LENGTH];
+    char keywords[RUNNER_TEXT_LENGTH];
     char comment[RUNNER_TEXT_LENGTH];
     char exec[RUNNER_TEXT_LENGTH];
     char type[RUNNER_TEXT_LENGTH];
@@ -140,6 +142,8 @@ int runner_desktop_read(const char *path, RunnerProgram *program,
     int in_terminal = 0;
 
     name[0] = '\0';
+    generic[0] = '\0';
+    keywords[0] = '\0';
     comment[0] = '\0';
     exec[0] = '\0';
     type[0] = '\0';
@@ -179,6 +183,21 @@ int runner_desktop_read(const char *path, RunnerProgram *program,
            file that means to override its own name relies on. */
         if (strcmp(key, "Name") == 0) {
             snprintf(name, sizeof(name), "%s", value);
+        } else if (strcmp(key, "GenericName") == 0) {
+            /* A program's generic name is another word for it — nemo says
+               "File Manager" — and a person typing one of those words means
+               the program. It is kept so the search can find it. */
+            snprintf(generic, sizeof(generic), "%s", value);
+        } else if (strcmp(key, "Keywords") == 0) {
+            /* The keyword list is the entry's own set of search words, written
+               semicolon-separated. The semicolons become spaces so the whole
+               list matches letter by letter, the way the name does. */
+            snprintf(keywords, sizeof(keywords), "%s", value);
+            for (char *k = keywords; *k; k++) {
+                if (*k == ';') {
+                    *k = ' ';
+                }
+            }
         } else if (strcmp(key, "Comment") == 0) {
             snprintf(comment, sizeof(comment), "%s", value);
         } else if (strcmp(key, "Exec") == 0) {
@@ -216,6 +235,19 @@ int runner_desktop_read(const char *path, RunnerProgram *program,
     memset(program, 0, sizeof(*program));
     snprintf(program->name, sizeof(program->name), "%s", name);
     snprintf(program->comment, sizeof(program->comment), "%s", comment);
+
+    /* The other words the program may be found by, in one field: the generic
+       name first, then the keyword list. A search looks at the name, this, and
+       the command's own program name (see runner_match.c), so "nemo" finds the
+       entry whose displayed name is "Files". */
+    if (generic[0] && keywords[0]) {
+        snprintf(program->keywords, sizeof(program->keywords), "%s %s",
+                 generic, keywords);
+    } else if (generic[0]) {
+        snprintf(program->keywords, sizeof(program->keywords), "%s", generic);
+    } else if (keywords[0]) {
+        snprintf(program->keywords, sizeof(program->keywords), "%s", keywords);
+    }
 
     char cleaned[RUNNER_TEXT_LENGTH];
     strip_field_codes(exec, cleaned, sizeof(cleaned));

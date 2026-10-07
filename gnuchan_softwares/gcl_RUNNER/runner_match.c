@@ -24,6 +24,7 @@
  * wrong place can look here and see exactly why.
  */
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -38,6 +39,13 @@
 #define SCORE_SEQUENCE     300
 #define SCORE_SEQUENCE_SPREAD_PENALTY 40
 #define SCORE_LENGTH_PENALTY            2
+
+/* A match found on a word OTHER than the displayed name — the entry's
+   GenericName/Keywords, or the program name in the command — is worth this
+   much less than the same match on the name, so a program whose own name
+   answers the query still lists above one that merely mentions it. It is small
+   enough that a keyword match still beats a weaker name match. */
+#define SCORE_ALTERNATE_PENALTY 50
 
 void runner_match_init(RunnerMatches *matches) {
     matches->items = NULL;
@@ -207,6 +215,27 @@ static void insert_sorted(RunnerMatches *matches, int program_index,
     matches->count++;
 }
 
+/* The program's own name, taken from the command it runs: the last component
+   of command[0], so "/usr/bin/nemo" and "nemo" both give "nemo".
+ *
+ * It is searched because a program's DISPLAYED name is not always what a
+ * person types. The clearest case is nemo, whose entry says Name=Files: a
+ * person who knows the program as "nemo" types that, and a launcher that only
+ * looked at "Files" found nothing and fell through to running the line as a
+ * command — which worked, but showed nothing in the list, which is the fault
+ * this fixes. The command's name is what the program calls itself in a shell. */
+static void command_program_name(const RunnerProgram *program, char *out,
+                                 unsigned int size) {
+    out[0] = '\0';
+    if (program->count <= 0 || program->command[0][0] == '\0') {
+        return;
+    }
+    const char *full = program->command[0];
+    const char *slash = strrchr(full, '/');
+    const char *base = slash ? slash + 1 : full;
+    snprintf(out, size, "%s", base);
+}
+
 void runner_match_query(RunnerMatches *matches, const RunnerProgramList *list,
                         const RunnerConfig *config, const char *query) {
     matches->count = 0;
@@ -218,8 +247,41 @@ void runner_match_query(RunnerMatches *matches, const RunnerProgramList *list,
     }
 
     for (int i = 0; i < list->count; i++) {
-        int score = score_name(list->items[i].name, query,
+        const RunnerProgram *program = &list->items[i];
+
+        int score = score_name(program->name, query,
                                config->case_sensitive, config->fuzzy);
+
+        /* The other words the program can be found by, when the displayed
+           name matched weakly or not at all: the keyword/generic field the
+           entry carried, and the program name inside the command. A match on
+           one of those is ranked a little below a match on the name, so a
+           program whose NAME answers the query still comes first. */
+        if (program->keywords[0]) {
+            int extra = score_name(program->keywords, query,
+                                   config->case_sensitive, config->fuzzy);
+            if (extra > 0) {
+                extra -= SCORE_ALTERNATE_PENALTY;
+                if (extra > score) {
+                    score = extra;
+                }
+            }
+        }
+        {
+            char command_name[RUNNER_TEXT_LENGTH];
+            command_program_name(program, command_name, sizeof(command_name));
+            if (command_name[0]) {
+                int extra = score_name(command_name, query,
+                                       config->case_sensitive, config->fuzzy);
+                if (extra > 0) {
+                    extra -= SCORE_ALTERNATE_PENALTY;
+                    if (extra > score) {
+                        score = extra;
+                    }
+                }
+            }
+        }
+
         if (score < 0) {
             continue;
         }
