@@ -292,16 +292,19 @@ static void seq_erase_display(TermGrid *grid, const TermVtSequence *seq) {
     switch (seq_param(seq, 0, 0)) {
     case 0: term_grid_erase_to_end(grid, grid->cursor_x, grid->cursor_y);   break;
     case 1: term_grid_erase_to_start(grid, grid->cursor_x, grid->cursor_y); break;
-    /* 2 is the whole screen and 3 is "the screen and the scrollback".
+    /* 2 is the whole screen and 3 is "the screen and the scrollback", and on
+     * THIS terminal both do the SAME thing: each empties the screen and each
+     * takes the scrollback with it.
      *
-     * They were the same thing while there was no scrollback, and they are not
-     * now: `clear` in a shell sends 2 and leaves the history alone — which is
-     * what makes it possible to read what was on the screen before clearing
-     * it — while a program that wants the history gone sends 3 and gets it
-     * gone. Folding 3 onto 2 as this used to do would leave any program that
-     * asked for a clean slate with a scrollback full of the thing it was
-     * clearing away. */
-    case 2: term_grid_erase_screen(grid); break;
+     * That is deliberate and it is what `clear` means here. A shell's `clear`
+     * sends 2, and the whole point of typing it is to start from nothing:
+     * leaving the history above — where the wheel could still bring the old
+     * output, and the fetch logo with it, back — is a screen that is not
+     * actually clear. 3 asks for the same thing and is already satisfied by it.
+     *
+     * The pictures are dropped by do_ed(), which is where a full erase also
+     * takes the pictures the program placed. */
+    case 2:
     case 3:
         term_grid_erase_screen(grid);
         term_grid_clear_history(grid);
