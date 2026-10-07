@@ -12,6 +12,7 @@
 #include <QTabWidget>
 #include <QToolBar>
 #include <QUrl>
+#include <QWebEngineFullScreenRequest>
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
 #include <QWebEngineSettings>
@@ -150,9 +151,25 @@ BrowserWindow::BrowserWindow(QWidget *parent)
 QWebEngineView *BrowserWindow::openTab(const QUrl &url, bool switch_to_it)
 {
     QWebEngineView *view = new QWebEngineView(this);
-    view->setPage(new ReportingPage(QWebEngineProfile::defaultProfile(), view));
+    ReportingPage *page =
+        new ReportingPage(QWebEngineProfile::defaultProfile(), view);
+    view->setPage(page);
+
+    /* HTML5 fullscreen, ALLOWED.
+     *
+     * Qt WebEngine refuses a page's fullscreen request unless the program both
+     * enables it and accepts it, and it is refused by DEFAULT — so a video told
+     * to go fullscreen did nothing at all and the window stayed exactly as it
+     * was. That matters beyond the picture: the session's screen saver decides
+     * the screen is in use when a fullscreen window is present (see GnuChanSS),
+     * so a fullscreen request that never lands is also a video the saver can be
+     * dropped over. Accepting it makes the request real, which is what a person
+     * pressing the video's fullscreen button expects anyway. */
+    connect(page, &QWebEnginePage::fullScreenRequested, this,
+            [](QWebEngineFullScreenRequest request) { request.accept(); });
 
     QWebEngineSettings *settings = view->settings();
+    settings->setAttribute(QWebEngineSettings::FullScreenSupportEnabled, true);
     settings->setAttribute(QWebEngineSettings::WebGLEnabled, false);
     settings->setAttribute(QWebEngineSettings::PluginsEnabled, false);
     settings->setAttribute(QWebEngineSettings::HyperlinkAuditingEnabled, false);

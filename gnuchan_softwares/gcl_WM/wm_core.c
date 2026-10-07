@@ -59,14 +59,62 @@ static void core_ensure_session_bus(void) {
     }
 
     struct stat info;
-    if (stat(path, &info) != 0 || !S_ISSOCK(info.st_mode)) {
+    if (stat(path, &info) == 0 && S_ISSOCK(info.st_mode)) {
+        char address[600];
+        snprintf(address, sizeof(address), "unix:path=%s", path);
+        setenv("DBUS_SESSION_BUS_ADDRESS", address, 1);
+        fprintf(stderr, "gnuchanwm: session bus at %s\n", address);
         return;
     }
 
-    char address[600];
-    snprintf(address, sizeof(address), "unix:path=%s", path);
-    setenv("DBUS_SESSION_BUS_ADDRESS", address, 1);
-    fprintf(stderr, "gnuchanwm: session bus at %s\n", address);
+    /* No systemd bus socket is present — which is what a session started by
+       the greeter, rather than by a login that would have made one, looks
+       like. Starting a bus here with dbus-launch, and adopting its address, is
+       what still gives the whole session ONE bus: the screen saver and the
+       browser are BOTH children of this process, so both get the address, and
+       the browser's Inhibit then reaches the saver.
+     *
+     * This is the fix for the fault the socket-only branch above let through.
+     * With no address in the environment the two ends went to different buses:
+     * the saver autolaunched a private one of its own (libdbus falls back to
+     * autolaunch), and the browser — Chromium, inside Qt WebEngine — opened
+     * none at all. The saver then held the ScreenSaver name on a bus nothing
+     * else was on, the browser's Inhibit went nowhere, and the saver dropped
+     * over a playing video while both programs believed they had done the
+     * right thing. */
+    FILE *launch = popen("dbus-launch --sh-syntax 2>/dev/null", "r");
+    if (launch == NULL) {
+        return;
+    }
+    char line[1024];
+    while (fgets(line, sizeof(line), launch) != NULL) {
+        const char *key = "DBUS_SESSION_BUS_ADDRESS=";
+        char *at = strstr(line, key);
+        if (at == NULL) {
+            continue;
+        }
+        char *value = at + strlen(key);
+        char *quote = strchr(value, '\'');
+        if (quote != NULL) {
+            value = quote + 1;
+            char *stop = strchr(value, '\'');
+            if (stop != NULL) {
+                *stop = '\0';
+            }
+        } else {
+            char *stop = value;
+            while (*stop != '\0' && *stop != '\n') {
+                stop++;
+            }
+            *stop = '\0';
+        }
+        if (value[0] != '\0') {
+            setenv("DBUS_SESSION_BUS_ADDRESS", value, 1);
+            fprintf(stderr, "gnuchanwm: session bus at %s\n", value);
+        }
+        break;
+    }
+    pclose(launch);
 }
 
 Atom wm_atom(WmCore *core, const char *name) {

@@ -59,6 +59,7 @@
 #include <unistd.h>
 
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/scrnsaver.h>
 
@@ -107,23 +108,95 @@ static double idle_seconds(Display *display) {
     return (double)info->idle / 1000.0;
 }
 
-/* Block until the desk has been quiet for `seconds` AND nothing is holding the
-   screen-saver inhibit. A signal that asks the process to stop is respected
-   here too, so a session can end a still-waiting saver without waiting out the
-   timer.
+/* Whether a FULLSCREEN window is on the screen right now.
  *
- * The inhibit is the whole reason this is not a plain "sleep until idle": a
- * film plays with nobody touching the keyboard, so the idle clock reaches the
- * limit while the person is watching. Without the second condition the saver
- * would open over the middle of the film — the idle time says "away" and only
- * the inhibit knows why. While an inhibit is held the wait simply keeps
- * looping, so the moment the video stops the ordinary idle test can fire. The
- * bus is pumped here for the same reason it is pumped in the show: it is how
- * the inhibit count ever changes. */
+ * A film watched in a browser is fullscreen, and the browser here does NOT
+ * inhibit this saver: Qt WebEngine's Chromium opens no session bus at all, so
+ * its Inhibit call — if it makes one — reaches nobody. Relying on the
+ * freedesktop name alone therefore left the saver dropping over a film, which
+ * is exactly the complaint.
+ *
+ * So the window manager's own bookkeeping is read instead. GnuChanWM publishes
+ * _NET_CLIENT_LIST on the root and sets _NET_WM_STATE_FULLSCREEN on a window
+ * that asked for the whole screen, so a fullscreen window means the screen is
+ * being USED — a film, a game, a presentation — and a saver over it is wrong
+ * whether or not anything inhibited us. When there is one, the saver waits
+ * exactly as it waits for an inhibit, and the moment the window leaves
+ * fullscreen the ordinary idle test can fire again.
+ *
+ * Every atom is resolved with only_if_exists, so a server or a WM that does not
+ * speak EWMH is simply "no fullscreen window" rather than an error. */
+static int fullscreen_window_present(Display *display) {
+    Window root = DefaultRootWindow(display);
+
+    Atom client_list = XInternAtom(display, "_NET_CLIENT_LIST", True);
+    Atom wm_state = XInternAtom(display, "_NET_WM_STATE", True);
+    Atom fullscreen = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", True);
+    if (client_list == None || wm_state == None || fullscreen == None) {
+        return 0;
+    }
+
+    Atom actual_type = None;
+    int actual_format = 0;
+    unsigned long count = 0;
+    unsigned long after = 0;
+    unsigned char *data = NULL;
+    if (XGetWindowProperty(display, root, client_list, 0, 4096, False,
+                           XA_WINDOW, &actual_type, &actual_format,
+                           &count, &after, &data) != Success || data == NULL) {
+        return 0;
+    }
+
+    int found = 0;
+    Window *clients = (Window *)data;
+    for (unsigned long i = 0; i < count && !found; i++) {
+        Atom state_type = None;
+        int state_format = 0;
+        unsigned long state_count = 0;
+        unsigned long state_after = 0;
+        unsigned char *state = NULL;
+        if (XGetWindowProperty(display, clients[i], wm_state, 0, 4096, False,
+                               XA_ATOM, &state_type, &state_format,
+                               &state_count, &state_after, &state) == Success &&
+            state != NULL) {
+            Atom *flags = (Atom *)state;
+            for (unsigned long j = 0; j < state_count; j++) {
+                if (flags[j] == fullscreen) {
+                    found = 1;
+                    break;
+                }
+            }
+            XFree(state);
+        }
+    }
+    XFree(data);
+    return found;
+}
+
+/* Block until the desk has been quiet for `seconds` AND the screen is not in
+   use. A signal that asks the process to stop is respected here too, so a
+   session can end a still-waiting saver without waiting out the timer.
+ *
+ * The two extra conditions are the whole reason this is not a plain "sleep
+ * until idle", and both come from the same fact: a film plays with nobody
+ * touching the keyboard, so the idle clock reaches the limit while the person
+ * is watching.
+ *
+ *   - the INHIBIT is how a player that follows the freedesktop protocol —
+ *     mpv, VLC, Firefox — says "not now"; it is read here so the wait does not
+ *     fire while one is held, and the bus is pumped for the same reason it is
+ *     pumped in the show, because that is how the count ever changes.
+ *   - a FULLSCREEN window is how a program that does NOT take the name — the
+ *     Qt WebEngine browser here, which opens no session bus at all — says the
+ *     same thing without knowing it is saying anything.
+ *
+ * When neither holds, the ordinary idle test can fire; while the film plays it
+ * simply keeps looping. */
 static void wait_for_idle(Display *display, int seconds) {
     while (!s_should_stop) {
         ss_dbus_pump();
         if (ss_dbus_inhibit_count() == 0 &&
+            !fullscreen_window_present(display) &&
             idle_seconds(display) >= (double)seconds) {
             return;
         }
@@ -307,8 +380,15 @@ static int run_show(Display *display, int screen, const SsConfig *config,
         }
 
         /* A video playing holds an inhibit: do not draw, but keep answering the
-           bus so this state can change. See ss_dbus.c. */
+           bus so this state can change. See ss_dbus.c. A fullscreen window is
+           the same message from a program that never took the name at all — a
+           browser — and it ENDS the show rather than pausing it, because the
+           screen is wanted back for what is on it. */
         ss_dbus_pump();
+        if (fullscreen_window_present(display)) {
+            running = 0;
+            break;
+        }
         if (ss_dbus_inhibit_count() > 0) {
             struct timespec pause = {0, 250 * 1000 * 1000};
             nanosleep(&pause, NULL);
