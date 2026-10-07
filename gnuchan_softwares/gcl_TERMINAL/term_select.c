@@ -159,6 +159,19 @@ void term_select_begin(TermCore *core, int x, int y) {
     select->cursor_col = col;
     select->active = 1;
     select->dragging = 1;
+
+    /* Take the pointer for the duration of the drag. WITHOUT THIS the drag
+       stops at the window's edge: motion events are delivered only while the
+       pointer is over the window, so dragging above the top — which is where
+       the history is — produced no further events and the selection could
+       never reach text that had scrolled off the screen. The grab is released
+       in term_select_end(). */
+    if (core->display != NULL && core->window != None) {
+        XGrabPointer(core->display, core->window, False,
+                     PointerMotionMask | ButtonReleaseMask,
+                     GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+    }
+
     term_core_damage(core);
 }
 
@@ -169,6 +182,28 @@ void term_select_extend(TermCore *core, int x, int y) {
     TermSelect *select = (TermSelect *)core->select;
     if (!select->dragging) {
         return;
+    }
+
+    /* A drag held past the top or the bottom edge of the grid scrolls the view
+       a line, one line per motion event, and then extends the selection to the
+       line that has just come into view. That is the only way the MOUSE can
+       reach the scrollback: the text above the screen is not on the window, so
+       the drag has to drag the screen itself. The pointer is grabbed for the
+       drag (see term_select_begin), so these events keep arriving even when the
+       pointer is above the window and its y is negative — which is exactly the
+       case this scrolls on. */
+    int origin_y = 0;
+    term_core_grid_origin(core, NULL, &origin_y);
+    int cell_width = 0;
+    int cell_height = 0;
+    term_core_cell_size(core, &cell_width, &cell_height);
+    (void)cell_width;   /* needed as an out-parameter, not for its value */
+
+    const TermGrid *grid = &core->vt.grid;
+    if (y < origin_y) {
+        term_core_scroll_by(core, 1);    /* one line back into the history */
+    } else if (y >= origin_y + grid->rows * cell_height) {
+        term_core_scroll_by(core, -1);   /* one line toward the live screen */
     }
 
     int line = 0;
@@ -189,6 +224,13 @@ void term_select_end(TermCore *core) {
     TermSelect *select = (TermSelect *)core->select;
     select->dragging = 0;
 
+    /* Give the pointer back; it was taken in term_select_begin() so the drag
+       could leave the window. Done before the one-cell drop below because the
+       grab belongs to the drag and not to the selection that may survive it. */
+    if (core->display != NULL) {
+        XUngrabPointer(core->display, CurrentTime);
+    }
+
     /* A click with no drag selects one cell, which is a selection of nothing.
        Dropping it is what makes a plain click behave like a click — putting
        the cursor where it was pointed at — instead of leaving a one-character
@@ -207,6 +249,12 @@ void term_select_clear(TermCore *core) {
     TermSelect *select = (TermSelect *)core->select;
     if (!select->active) {
         return;
+    }
+    /* A drag that is still held when the selection is cleared — a key pressed
+       mid-drag — must give the pointer back, or the grab would outlive the
+       drag and swallow every later motion event. */
+    if (select->dragging && core->display != NULL) {
+        XUngrabPointer(core->display, CurrentTime);
     }
     select->active = 0;
     select->dragging = 0;

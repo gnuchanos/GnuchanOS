@@ -20,9 +20,54 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "wm_core.h"
 #include "wm_spawn.h"
+
+/* Point this session at ONE session bus, before anything is started.
+ *
+ * A session that begins without DBUS_SESSION_BUS_ADDRESS makes every program
+ * that needs the bus autolaunch a PRIVATE one with dbus-launch — and then two
+ * programs that must talk to each other do not, because they are on different
+ * buses. The screen saver is the case that matters here: it takes the
+ * org.freedesktop.ScreenSaver name on ITS bus, and a browser's Inhibit goes out
+ * on the browser's, so a film plays with the saver dropped over it while both
+ * programs think they did the right thing.
+ *
+ * systemd already runs the session's bus at $XDG_RUNTIME_DIR/bus. Pointing the
+ * environment at it, once, before any module starts a program, is what makes the
+ * whole session one session. An environment that already names a bus is left
+ * exactly as it is.
+ *
+ * The check is for a SOCKET and not for any file, because the path is a
+ * directory in some setups and a stale address would be worse than none: a
+ * program told to use a socket that is not there blocks instead of falling back
+ * to its own bus. */
+static void core_ensure_session_bus(void) {
+    if (getenv("DBUS_SESSION_BUS_ADDRESS") != NULL) {
+        return;
+    }
+
+    char path[512];
+    const char *runtime = getenv("XDG_RUNTIME_DIR");
+    if (runtime != NULL && runtime[0] != '\0') {
+        snprintf(path, sizeof(path), "%s/bus", runtime);
+    } else {
+        snprintf(path, sizeof(path), "/run/user/%u/bus", (unsigned)getuid());
+    }
+
+    struct stat info;
+    if (stat(path, &info) != 0 || !S_ISSOCK(info.st_mode)) {
+        return;
+    }
+
+    char address[600];
+    snprintf(address, sizeof(address), "unix:path=%s", path);
+    setenv("DBUS_SESSION_BUS_ADDRESS", address, 1);
+    fprintf(stderr, "gnuchanwm: session bus at %s\n", address);
+}
 
 Atom wm_atom(WmCore *core, const char *name) {
     return XInternAtom(core->display, name, False);
@@ -187,6 +232,9 @@ static void core_close_display_on_exec(WmCore *core) {
 
 int wm_core_init(WmCore *core) {
     memset(core, 0, sizeof(*core));
+
+    /* Before anything this session will start: give it one bus to share. */
+    core_ensure_session_bus();
 
     core->display = XOpenDisplay(NULL);
     if (!core->display) {

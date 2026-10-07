@@ -568,6 +568,34 @@ static int handle_button(TermCore *core, XButtonEvent *button, int pressed) {
     return 0;
 }
 
+/* Whether a key IS a modifier — Ctrl, Shift, Alt, Super, CapsLock and the rest
+   — rather than a key that produces a character or a sequence.
+ *
+ * Pressing one of these is not the user typing. The selection must not be
+ * cleared for it, and that is the whole of why this exists: the keyboard's
+ * Ctrl+Shift+C arrives as three presses in order — Ctrl, then Shift, then C —
+ * and clearing the selection on the first two dropped the very highlight the
+ * copy was about to take. When C finally arrived there was nothing selected to
+ * copy, and Ctrl+Shift appeared to throw the selection away. */
+static int keysym_is_modifier(KeySym keysym) {
+    switch (keysym) {
+    case XK_Shift_L: case XK_Shift_R:
+    case XK_Control_L: case XK_Control_R:
+    case XK_Alt_L: case XK_Alt_R:
+    case XK_Meta_L: case XK_Meta_R:
+    case XK_Super_L: case XK_Super_R:
+    case XK_Hyper_L: case XK_Hyper_R:
+    case XK_Caps_Lock:
+    case XK_Shift_Lock:
+    case XK_Num_Lock:
+    case XK_ISO_Level3_Shift:
+    case XK_Mode_switch:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* --- the module ----------------------------------------------------------- */
 
 static void input_module_event(TermCore *core, XEvent *event) {
@@ -586,10 +614,22 @@ static void input_module_event(TermCore *core, XEvent *event) {
             return;
         }
 
+        /* A MODIFIER PRESS IS NOT TYPING. Ctrl, Shift, Alt and the rest reach
+           here with no sequence and no character, and clearing the selection
+           for them would break the keyboard's own copy and paste: Ctrl+Shift+C
+           is Ctrl, then Shift, then C, and the first two would have dropped the
+           highlight before the C could take it. A modifier is claimed and
+           dropped so nothing below sends it, but the selection is left alone. */
+        if (keysym_is_modifier(keysym)) {
+            term_core_claim_event(core);
+            return;
+        }
+
         /* CLEARING THE SELECTION, and it is here rather than in the select
            module because it is a keystroke's meaning: typing while text is
            highlighted is the user done with it. A selection that stayed would
-           keep a highlight through a whole session's typing. */
+           keep a highlight through a whole session's typing. It is reached
+           only for a key that is NOT a modifier — see above. */
         term_select_clear(core);
 
         /* A key with a sequence is looked up first, because some of them are
