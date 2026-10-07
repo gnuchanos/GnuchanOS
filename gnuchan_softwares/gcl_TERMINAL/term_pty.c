@@ -226,10 +226,37 @@ void term_pty_set_size(TermPty *pty, int cols, int rows) {
     size.ws_row = (unsigned short)rows;
 
     /* TIOCSWINSZ on the master sets it on the slave, which is the terminal the
-       child sees. The kernel raises SIGWINCH to the child's process group as
-       part of this — it does not have to be sent by hand, and sending it as
-       well would deliver it twice. */
+       child sees. */
     ioctl(pty->master, TIOCSWINSZ, &size);
+
+    /* THE SIGNAL IS SENT BY HAND, and that is the whole of what makes a
+       full-screen program grow with the window.
+     *
+     * The kernel does raise SIGWINCH on its own when the size changes — but
+     * only then, and only to the terminal's FOREGROUND process group. Both
+     * halves of that leave a program behind:
+     *
+     *   * a size the tty already holds is no change, so nothing is raised.
+     *     Two resizes that land on the same cell count (a window dragged out
+     *     and back, or a resize applied in the same instant as another) leave
+     *     nano drawing at the old size with no signal to redraw on.
+     *   * the foreground group is the PROGRAM's (nano's), not the shell's,
+     *     and only the kernel knows which one is in front. A resize that
+     *     arrives while the group is being changed is signalled to the wrong
+     *     one.
+     *
+     * tcgetpgrp() names the group that is actually in front — nano while it
+     * runs, the shell otherwise — so the signal reaches whoever is drawing.
+     * A duplicate costs nothing: a program re-reads its size, finds it
+     * unchanged, and draws nothing. A missing one is nano stuck small in a
+     * grown window, which is the fault this is here to not have. */
+    pid_t foreground = tcgetpgrp(pty->master);
+    if (foreground <= 0) {
+        foreground = pty->child;
+    }
+    if (foreground > 0) {
+        kill(-foreground, SIGWINCH);
+    }
 }
 
 int term_pty_is_alive(const TermPty *pty) {
