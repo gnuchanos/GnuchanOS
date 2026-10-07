@@ -360,12 +360,10 @@ void top_draw_frame(const TopFrame *frame) {
         printf("   SWAP %s / %s", swap_used, swap_total);
     }
     fputs(RESET, stdout);
-    if (frame->cpu->has_temp && frame->cpu->temp_package > 0.0) {
-        move_to(mem_row, width - 12);
-        temp_color(frame->cpu->temp_package);
-        printf("%3.0f\xc2\xb0" "C CPU", frame->cpu->temp_package);
-        fputs(RESET, stdout);
-    }
+    /* No temperature on this line. The package temperature is already drawn in
+       the CPU box above (its "Tot" meter), and repeating it here was a second
+       copy of the same number taking the right end of the memory line for no
+       reason. */
 
     /* The process box: top border, a column header, the list, bottom border. */
     int proc_top = mem_bottom + 1;
