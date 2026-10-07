@@ -7,12 +7,16 @@
 #     python3 makefile.py run        compile and start on the current display
 #     python3 makefile.py uninstall  remove the binary and the desktop entry
 #
-# GnuChanSS is a C program, built against X11 and the X ScreenSaver extension.
-# D-Bus (for the inhibit name a video player uses) is optional: the build finds
-# out whether its header is here and defines HAVE_DBUS when it is, and without
-# it the program still shows its animation, it just cannot be paused by a video.
-# That check is done in this file, where the compiler is run, and the C code is
-# already written to do without it.
+# GnuChanSS is a C program, built against X11 and the X ScreenSaver extension,
+# and against D-Bus, which is what carries the inhibit name a video player uses
+# to hold the saver off. D-Bus is a dependency of the build and not an optional
+# extra, because a saver built without it drops over a film once the idle clock
+# passes — the exact fault the name exists to prevent. The C code is still
+# written to compile WITHOUT it (see ss_dbus.c, whose functions become stubs),
+# so a machine that truly cannot have the header still gets a working saver;
+# but this file asks for the package, so the shipped build can be inhibited
+# rather than only being buildable. The header is found where it lives — under
+# dbus-1.0/ — for the reasons dbus_includes() gives.
 #
 # Debian only, on purpose.
 #
@@ -178,9 +182,11 @@ def missing_build_dependencies() -> list[str]:
     """Which packages this machine is missing to build the program.
 
     Each entry is chosen by asking the compiler about the HEADER the package
-    provides. libxss-dev is the idle clock (X ScreenSaver extension); libdbus-1-dev
-    is the optional inhibit name. The two are listed separately and the second
-    is the one that can be absent without stopping the build — see build().
+    provides. libxss-dev is the idle clock (X ScreenSaver extension) and
+    libdbus-1-dev the inhibit name a video player uses; both are asked for, so
+    the build this produces can be paused by a film rather than only being
+    buildable. They are listed separately so a machine missing one is told
+    which; see build() for what each is used for.
     """
     needed: list[str] = []
     if shutil.which("gcc") is None:
@@ -191,6 +197,15 @@ def missing_build_dependencies() -> list[str]:
         needed.append("libx11-dev")
     if not xss_headers_present():
         needed.append("libxss-dev")
+    # D-Bus is what lets a video player pause the show: the saver takes the
+    # org.freedesktop.ScreenSaver name through it, and a video calls Inhibit on
+    # that name. The C code is written to do WITHOUT it — see ss_dbus.c — but a
+    # saver built without it drops over a film once the idle clock passes, which
+    # is the fault the user sees. So the header is a dependency here: asking for
+    # it is what keeps the shipped build able to be inhibited rather than only
+    # able to be built. It is installed only when missing, like the rest.
+    if not dbus_headers_present():
+        needed.append("libdbus-1-dev")
     return needed
 
 
@@ -249,16 +264,18 @@ def build() -> Path:
     BUILD.mkdir(parents=True, exist_ok=True)
     output = BUILD / PROGRAM
 
-    # The D-Bus inhibit name is optional: when its header is here the build gets
-    # it, and when it is not the program still compiles and runs. Asking here,
-    # once, is what lets the C code be written without a #if around its calls —
-    # ss_dbus.c already has them. See the file comment for why this is the
-    # honest split.
+    # D-Bus is what gives the saver the org.freedesktop.ScreenSaver name a
+    # video inhibits. ensure_build_dependencies() above has already asked for
+    # its header, so on a normal machine it is here; the question is asked
+    # again because a machine that refused the package still compiles — the C
+    # code is written to do without it (ss_dbus.c) — and this build then says
+    # so rather than pretending the inhibit works.
     with_dbus = dbus_headers_present()
     if with_dbus:
         detail("building with D-Bus (a video can pause the show)")
     else:
-        detail("building without D-Bus (a video cannot pause the show)")
+        detail("WARNING: building without D-Bus (a video cannot pause the "
+               "show); install libdbus-1-dev")
 
     cflags, libs = x11_flags(with_dbus)
     command = [

@@ -92,6 +92,12 @@ libxmu-dev
 libxpm-dev
 libpng-dev
 libjpeg-dev
+# GnuChanSS's optional D-Bus client. Without this header the screen saver
+# builds WITHOUT the inhibit name, so a video (Firefox, Chromium, mpv, VLC)
+# cannot tell it to hold off and the saver drops over a film once the idle
+# clock passes — the exact fault the name exists to prevent. It is a build
+# dependency of the live image and not only of a development machine.
+libdbus-1-dev
 # GnuChanDM (the display manager) authenticates through PAM, so it is built
 # against libpam's header. It is listed here rather than left to the DM's own
 # makefile, which would apt-install it mid-build: the image should carry what
