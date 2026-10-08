@@ -75,6 +75,16 @@ typedef struct DockCore {
     int hover_index;
     int running;
 
+    /* Auto-hide. The dock is put away below the screen and brought up when the
+       pointer reaches the bottom edge, where a thin trigger strip waits for it.
+       `revealed` is whether the dock is up; `hide_pending`/`hide_at_ms` are the
+       delay that lets a hand cross the gap between the trigger and the dock
+       without the dock dropping again on the way. */
+    Window trigger;
+    int revealed;
+    int hide_pending;
+    unsigned long hide_at_ms;
+
     /* Set when something the dock DRAWS has changed — a window opened or
        closed, a title changed — and cleared once the row has been rebuilt and
        painted. It is what turns the dock from a program that rebuilt and

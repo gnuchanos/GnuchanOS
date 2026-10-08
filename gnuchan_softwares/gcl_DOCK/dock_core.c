@@ -4,7 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 
 #include <X11/Xatom.h>
@@ -25,6 +27,25 @@ static int dock_window_width;
 static int dock_window_height;
 static int dock_window_x;
 static int dock_window_y;
+
+/* The height of the strip along the very bottom of the screen that brings the
+   dock back when the pointer reaches it, and how long the dock waits before it
+   drops again once the pointer has left it. The delay is what lets a hand cross
+   the small gap between the strip and the dock, and pass over the dock's own
+   icons, without the dock falling away underneath it. */
+#define DOCK_TRIGGER_HEIGHT 3
+#define DOCK_HIDE_DELAY_MS 400
+
+/* A monotonic clock in milliseconds. The hide delay measures how long
+   something took, so a wall clock that jumps when the time is set would make
+   the dock hide at once or never. */
+static unsigned long core_now_ms(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        return 0;
+    }
+    return (unsigned long)(ts.tv_sec * 1000UL + ts.tv_nsec / 1000000UL);
+}
 
 static int core_error(Display *display, XErrorEvent *error) {
     if (error->error_code == BadWindow || error->error_code == BadMatch ||  error->error_code == BadDrawable || error->error_code == BadGC) {
@@ -128,8 +149,12 @@ static void core_set_window_properties(DockCore *core) {
 
 static void core_set_strut(DockCore *core) {
     Atom strut = XInternAtom(core->display, "_NET_WM_STRUT", False);
+    /* Nothing is reserved. The dock is not a bar the desktop owes space to: it
+       rests behind the windows and comes forward only when the pointer reaches
+       the bottom, so a window may use the whole screen and cover it. A strut
+       here would keep maximised windows short of a dock the user did not ask to
+       see. */
     long values[4] = { 0, 0, 0, 0 };
-    values[3] = core->height;
     XChangeProperty(core->display, core->window, strut, XA_CARDINAL, 32,
                     PropModeReplace, (unsigned char *)values, 4);
 }
@@ -140,8 +165,8 @@ static Window core_create_window(DockCore *core) {
     attributes.override_redirect = True;
     attributes.background_pixel = core->background;
     attributes.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask |
-                            PointerMotionMask | LeaveWindowMask |
-                            StructureNotifyMask;
+                            PointerMotionMask | EnterWindowMask |
+                            LeaveWindowMask | StructureNotifyMask;
 
     return XCreateWindow(core->display, core->root, core->x, core->y,
                          (unsigned int)core->width, (unsigned int)core->height,
@@ -174,6 +199,10 @@ void dock_core_relayout(DockCore *core) {
     core->width = width;
     core->height = height;
     core->x = (screen_width - width) / 2;
+    /* The dock always sits the margin above the bottom edge: it is not moved to
+       show or hide. It is STACKED instead (see core_reveal and core_hide), left
+       behind the windows so a covered dock is not seen, and raised above them
+       when the pointer reaches the bottom of the screen. */
     core->y = screen_height - height - core->config.margin;
 
     /* Only reconfigured when the size or place actually changed. A window
@@ -205,6 +234,92 @@ void dock_core_relayout(DockCore *core) {
     dock_window_y = core->y;
 }
 
+/* Bring the dock to the FRONT, over the windows. Called when the pointer
+   reaches the dock itself or the strip along the bottom of the screen. The dock
+   does not move: it is raised in the stacking order, so it comes forward where
+   it already sits, and it is redrawn because a window that covered it left
+   nothing of it on the screen to uncover. */
+static void core_reveal(DockCore *core) {
+    core->hide_pending = 0;
+    if (core->revealed || core->window == None) {
+        return;
+    }
+    core->revealed = 1;
+    XRaiseWindow(core->display, core->window);
+    dock_draw(core);
+}
+
+/* Begin putting the dock back, after the delay. The pointer leaving the dock —
+   for a window, or for the strip on its way out — starts this, and reaching the
+   dock or the strip again calls it off. */
+static void core_schedule_hide(DockCore *core) {
+    if (!core->revealed) {
+        return;
+    }
+    core->hide_pending = 1;
+    core->hide_at_ms = core_now_ms() + DOCK_HIDE_DELAY_MS;
+}
+
+/* Put the dock back BEHIND the windows: lower it so a window over its place
+   covers it, and put the strip along the very bottom back on top so it is what
+   the pointer meets when it comes down again. The dock does not move; only the
+   stacking order changes. */
+static void core_hide(DockCore *core) {
+    core->hide_pending = 0;
+    if (!core->revealed) {
+        return;
+    }
+    core->revealed = 0;
+    core->hover_index = -1;
+    if (core->window != None) {
+        XLowerWindow(core->display, core->window);
+    }
+    if (core->trigger != None) {
+        XRaiseWindow(core->display, core->trigger);
+    }
+}
+
+/* Decide which way the stack should be, from where the pointer actually is and
+   not from the crossing that woke us. The dock window and the strip can hand
+   the pointer back and forth, and the Leave of one arrives around the Enter of
+   the other in an order that is not guaranteed; reading the pointer once, here,
+   makes the answer the same whatever that order was. A crossing is rare, so the
+   single XQueryPointer it costs is no redraw-storm. */
+static void core_update_hover(DockCore *core) {
+    Window root_return;
+    Window child_return;
+    int root_x = 0;
+    int root_y = 0;
+    int win_x = 0;
+    int win_y = 0;
+    unsigned int mask = 0;
+    int screen_height = DisplayHeight(core->display, core->screen);
+    int over_trigger;
+    int over_dock = 0;
+
+    if (!XQueryPointer(core->display, core->root, &root_return, &child_return,
+                       &root_x, &root_y, &win_x, &win_y, &mask)) {
+        return;
+    }
+
+    /* The strip along the very bottom, and the dock's own rectangle: either one
+       under the pointer is the pointer wanting the dock. The strip is checked
+       by the bottom edge alone because it spans the whole screen width. */
+    over_trigger = root_y >= screen_height - DOCK_TRIGGER_HEIGHT;
+    if (core->window != None) {
+        over_dock = root_x >= core->x && root_x < core->x + core->width &&
+                    root_y >= core->y && root_y < core->y + core->height;
+    }
+
+    if (over_trigger || over_dock) {
+        core_reveal(core);
+        return;
+    }
+    if (core->revealed) {
+        core_schedule_hide(core);
+    }
+}
+
 void dock_core_refresh(DockCore *core) {
     /* What to show is read first: the gathering below decides which windows are
        on the current desktop and which one is focused from these two values. */
@@ -212,6 +327,16 @@ void dock_core_refresh(DockCore *core) {
     dock_items_build(core);
     dock_core_relayout(core);
     dock_draw(core);
+    /* A rebuild may have moved or resized the dock, and a window that opened
+       over it may not have touched it at all: either way, if the pointer is not
+       on the dock it belongs BEHIND the windows again. The strip is put back on
+       top so the pointer still meets it at the bottom of the screen. */
+    if (!core->revealed && core->window != None) {
+        XLowerWindow(core->display, core->window);
+        if (core->trigger != None) {
+            XRaiseWindow(core->display, core->trigger);
+        }
+    }
     core->dirty = 0;
 }
 
@@ -376,8 +501,22 @@ void dock_core_run(DockCore *core) {
             case MotionNotify:
                 core_handle_motion(core, &event.xmotion);
                 break;
+            case EnterNotify:
             case LeaveNotify:
-                core_handle_leave(core);
+                /* The pointer crossed into or out of one of the dock's own
+                   windows — the dock itself, or the strip along the bottom of
+                   the screen. Which way the stack goes is decided from where
+                   the pointer is NOW (see core_update_hover) and not from which
+                   window fired the event: the dock window and the strip overlap,
+                   so their Enter and Leave arrive in pairs and in an order that
+                   is not guaranteed. The icons are repainted only when the
+                   pointer left the dock itself, and the dock is not dropped here
+                   — core_update_hover() schedules that, with the delay. */
+                if (event.type == LeaveNotify &&
+                    event.xcrossing.window == core->window) {
+                    core_handle_leave(core);
+                }
+                core_update_hover(core);
                 break;
             case PropertyNotify:
                 /* The client list, or which window is active, changed: the
@@ -441,7 +580,31 @@ void dock_core_run(DockCore *core) {
         FD_ZERO(&read_set);
         FD_SET(dock_fd, &read_set);
 
-        int ready = select(dock_fd + 1, &read_set, NULL, NULL, NULL);
+        /* The wait is forever unless a hide is pending, in which case it is
+           only until the delay runs out. That is the one timer the dock has,
+           and it exists only while the dock is about to be put away — an idle
+           desktop still wakes this program not at all. */
+        struct timeval timeout;
+        struct timeval *wait = NULL;
+        if (core->hide_pending) {
+            unsigned long now = core_now_ms();
+            long remaining = (long)core->hide_at_ms - (long)now;
+            if (remaining < 0) {
+                remaining = 0;
+            }
+            timeout.tv_sec = remaining / 1000;
+            timeout.tv_usec = (remaining % 1000) * 1000;
+            wait = &timeout;
+        }
+
+        int ready = select(dock_fd + 1, &read_set, NULL, NULL, wait);
+        if (ready == 0) {
+            /* The hide delay ran out with nothing else to do: put it away. */
+            if (core->hide_pending && core_now_ms() >= core->hide_at_ms) {
+                core_hide(core);
+            }
+            continue;
+        }
         if (ready < 0) {
             /* A signal, or a connection that has gone: either way the next
              * pass of the loop re-reads whatever it can and waits again. */
@@ -499,11 +662,39 @@ int dock_core_init(DockCore *core) {
     }
     core_set_window_properties(core);
 
+    /* The strip along the very bottom of the screen that brings the dock back.
+       It is an InputOnly window — it is never drawn, only felt — and it is the
+       pointer's target for the whole time the dock is away. */
+    {
+        int screen_width = DisplayWidth(core->display, core->screen);
+        int screen_height = DisplayHeight(core->display, core->screen);
+        XSetWindowAttributes trigger_attributes;
+        memset(&trigger_attributes, 0, sizeof(trigger_attributes));
+        trigger_attributes.override_redirect = True;
+        trigger_attributes.event_mask = EnterWindowMask | LeaveWindowMask;
+        core->trigger = XCreateWindow(
+            core->display, core->root,
+            0, screen_height - DOCK_TRIGGER_HEIGHT,
+            (unsigned int)screen_width, (unsigned int)DOCK_TRIGGER_HEIGHT,
+            0, 0, InputOnly, CopyFromParent,
+            CWOverrideRedirect | CWEventMask, &trigger_attributes);
+        if (core->trigger != None) {
+            XMapRaised(core->display, core->trigger);
+        }
+    }
+
     core_load_fixed_icons(core);
     dock_items_build(core);
     dock_core_relayout(core);
 
     XMapWindow(core->display, core->window);
+    /* The dock starts BEHIND the windows, and the strip starts on top: a dock
+       that came up in front would be over the desktop the moment the session
+       began, which is the thing the auto-hide exists to avoid. */
+    XLowerWindow(core->display, core->window);
+    if (core->trigger != None) {
+        XRaiseWindow(core->display, core->trigger);
+    }
     XFlush(core->display);
     return 0;
 }
@@ -520,6 +711,10 @@ void dock_core_shutdown(DockCore *core) {
     if (core->gc && core->display) {
         XFreeGC(core->display, core->gc);
         core->gc = NULL;
+    }
+    if (core->trigger != None && core->display) {
+        XDestroyWindow(core->display, core->trigger);
+        core->trigger = None;
     }
     if (core->window != None && core->display) {
         XDestroyWindow(core->display, core->window);
