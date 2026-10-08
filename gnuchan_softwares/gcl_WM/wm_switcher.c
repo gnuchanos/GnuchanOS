@@ -195,15 +195,31 @@ static void list_build(WmCore *core) {
  * of the pass after that depends on. */
 static int release_is_repeat(WmCore *core, XKeyEvent *release) {
     XEvent next;
-    if (!XCheckTypedEvent(core->display, KeyPress, &next)) {
+    /* PEEKED, never checked-out-and-put-back.
+     *
+     * XCheckTypedEvent is the obvious call here and it is the wrong one: it
+     * walks the queue looking for a KeyPress and DISCARDS every event it
+     * passes on the way. The events it passed were the arrows — a hand holding
+     * ` and reaching for a direction sends nothing but arrows — so every arrow
+     * the user pressed while the switcher was up was eaten here, and the
+     * choice it was meant to move did not move. Preferring XPutBackEvent for
+     * the non-matching case does not help: the damage is done before it is
+     * called, to the events that came BEFORE the one it found.
+     *
+     * XPeekEvent copies the head of the queue and removes nothing, so a
+     * non-repeat is left exactly where it was for the next pass of the loop to
+     * dispatch. Only the head is examined and that is enough: a repeat's press
+     * is the next event, by definition, because the server queued the two
+     * together. */
+    if (XPending(core->display) == 0) {
         return 0;
     }
-    if (next.xkey.keycode != release->keycode ||
-        next.xkey.time != release->time) {
-        XPutBackEvent(core->display, &next);
+    XPeekEvent(core->display, &next);
+    if (next.type != KeyPress) {
         return 0;
     }
-    return 1;
+    return next.xkey.keycode == release->keycode &&
+           next.xkey.time == release->time;
 }
 
 /* Take the keyboard and the pointer for the length of the gesture.

@@ -23,6 +23,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <X11/XKBlib.h>
+
 #include "wm_core.h"
 #include "wm_spawn.h"
 
@@ -289,6 +291,26 @@ int wm_core_init(WmCore *core) {
         fprintf(stderr, "gnuchanwm: cannot open the X display. Is DISPLAY set?\n");
         return -1;
     }
+
+    /* DETECTABLE AUTO-REPEAT, asked for once and for the whole session.
+     *
+     * By default the server reports a key that is held down as a stream of
+     * RELEASE and PRESS pairs — the release half is the repeat. Every handler
+     * that watches a key's release then has to guess which releases are real,
+     * and the switcher gets that guess wrong: it reads a repeat as the hand
+     * letting go and commits, so a key held for a moment opens and closes the
+     * switcher over and over.
+     *
+     * With this on, a held key reports ONLY presses and the release that
+     * arrives is the one the hand made. The guess disappears rather than being
+     * made more carefully, which is the whole point — and the arrow keys stop
+     * being reordered, because nothing is peeking at the queue to tell a repeat
+     * apart any more.
+     *
+     * A server without XKB answers no and leaves the old behaviour in place;
+     * the handlers keep their own fallback for that case. */
+    Bool detectable = False;
+    XkbSetDetectableAutoRepeat(core->display, True, &detectable);
 
     core->screen = DefaultScreen(core->display);
     core->root = RootWindow(core->display, core->screen);

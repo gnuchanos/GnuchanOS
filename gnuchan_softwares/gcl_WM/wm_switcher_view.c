@@ -34,15 +34,25 @@
  *   rectangle and renders it into the cell at the size the cell is, which is
  *   the one part of this that is easier to read than the alternative.
  *
- *   The root is still where the pixels come from, but the window being
- *   pictured is RAISED above the others for the instant its rectangle is
- *   read, and the whole stacking order is put back afterwards. This is not a
- *   refinement, it is what makes the picture a picture of that window: a read
- *   of the root returns what is on TOP at that rectangle, so two windows in
- *   the same place — which is most of them, most of the time — gave two
- *   IDENTICAL cells holding the same fragment of the topmost one. A grid of
- *   the same picture repeated, with nothing in it to tell one terminal from
- *   another. Raising is what makes each cell that window and no other.
+ *   The screen is read ONCE, into a single image, before the overlay is
+ *   mapped, and every cell is a CROP of that one image scaled to the cell.
+ *
+ *   It used to be read once PER window, with each window raised above the
+ *   others for the instant its rectangle was read. That gave two windows in
+ *   the same place two different cells instead of two copies of the topmost
+ *   one, but it cost a fault the single read does not have: raising a window
+ *   EXPOSES the part of it that another window had been covering, and that
+ *   part is not repainted until the program inside answers the Expose — so it
+ *   was read as the window's own bare background, a BLACK RECTANGLE exactly
+ *   the shape of the overlap, in every cell the overlap touched. One read
+ *   cannot race with a repaint that has not happened yet, because nothing is
+ *   raised and nothing is exposed: each cell holds the desktop as it stands,
+ *   the same pixels whatever order the cells are built in.
+ *
+ *   The cost of the single read is that a window another one covers shows the
+ *   covering one where they overlap. That is what was on the screen, and the
+ *   caption under every cell still says which window the cell is, so the two
+ *   are told apart by name rather than by a hole in the picture.
  *
  * A window that is minimised is not on the screen at all, so there is nothing
  * to read: it is drawn as its own icon instead, which is what wm_icon.c read
@@ -210,7 +220,8 @@ static void cell_origin(int index, int *x, int *y) {
  * Returns 0 when there was nothing to read — the window is not on the screen,
  * or Imlib2 could not take the rectangle — in which case the caller falls back
  * to the window's icon. */
-static int picture_read(WmCore *core, const WmSwitcherCell *cell,
+static int picture_read(WmCore *core, Imlib_Image screen_image,
+                        const WmSwitcherCell *cell,
                         int width, int height, Pixmap target) {
     XWindowAttributes attributes;
     int screen_width;
@@ -264,21 +275,13 @@ static int picture_read(WmCore *core, const WmSwitcherCell *cell,
     XFillRectangle(core->display, target, core->gc, 0, 0,
                    (unsigned int)width, (unsigned int)height);
 
-    imlib_context_set_display(core->display);
-    imlib_context_set_visual(DefaultVisual(core->display, core->screen));
-    imlib_context_set_colormap(DefaultColormap(core->display, core->screen));
-    imlib_context_set_drawable(core->root);
-
-    /* The grab is the root's own pixels at this rectangle, which is what the
-       user saw there a moment ago. It is taken before the overlay is mapped —
-       see wm_switcher_view_open — so what it holds is the desktop and not the
-       picture being built. */
-    /* A zero mask, not a NULL one: the first argument is a Pixmap, which is an
-       integer resource id, and NULL is a pointer. None is the mask that means
-       "no mask", which is what is wanted — the picture is the rectangle as it
-       stands. */
-    grabbed = imlib_create_image_from_drawable(0, left, top,
-                                               source_width, source_height, 1);
+    /* The window's rectangle CROPPED out of the one screen image taken before
+       the overlay was mapped — see pictures_build. Nothing is raised and
+       nothing is grabbed here: the screen was read once, and this is a piece
+       of it, so the crop cannot race with an expose the raise would have
+       caused. */
+    grabbed = imlib_create_cropped_image(screen_image, left, top,
+                                         source_width, source_height);
     if (!grabbed) {
         return 0;
     }
@@ -302,49 +305,32 @@ static int picture_read(WmCore *core, const WmSwitcherCell *cell,
     return 1;
 }
 
-/* Put every child of the root back into the stacking order it had.
+/* Build every cell's picture from ONE read of the whole screen.
  *
- * XRestackWindows takes the list TOP to bottom and XQueryTree hands it back
- * BOTTOM to top, so the array is reversed before it is given back. Without
- * that the desktop would be turned upside down — the bar would end up over
- * every window it is meant to sit under — which is a worse fault than the one
- * being fixed.
+ * Called once, before the overlay is mapped: the screen still shows the
+ * desktop, and a read taken after the map would find the overlay over the very
+ * windows it is picturing.
  *
- * A window destroyed between the query and this call is reported by the error
- * handler and skipped by the server; the list is taken microseconds earlier,
- * so that is a window closing at the exact moment the switcher opens, and the
- * rest of the order is still restored. */
-static void stacking_restore(WmCore *core, Window *order,
-                             unsigned int count) {
-    if (!order || count == 0) {
-        return;
-    }
-    for (unsigned int i = 0; i < count / 2; i++) {
-        Window swap = order[i];
-        order[i] = order[count - 1 - i];
-        order[count - 1 - i] = swap;
-    }
-    XRestackWindows(core->display, order, (int)count);
-    XSync(core->display, False);
-}
-
-/* Build every cell's picture. Called once, before the overlay is mapped: the
-   screen still shows the desktop, and every read would otherwise find the
-   overlay over the very windows it is picturing.
- *
- * Each window is raised before its rectangle is read — see the note at the top
- * of this file for why that is not optional — and the order everything was in
- * is put back when the last one has been read. The raises are never seen: the
- * overlay is mapped after this returns and covers the screen for the whole of
- * the gesture, so the only thing the user can see is the pictures. */
+ * The screen is read once and each cell is a crop of it. Reading per window
+ * with the window raised was the old way, and it was wrong: raising a window
+ * exposes whatever another window had been covering, the program inside has
+ * not answered the Expose yet, and the exposed part reads as the window's bare
+ * background — a black rectangle the shape of the overlap. One read has no
+ * expose to race with, so no cell can hold one. */
 static void pictures_build(WmCore *core, WmSwitcher *switcher) {
-    Window root_return;
-    Window parent_return;
-    Window *order = NULL;
-    unsigned int order_count = 0;
+    Imlib_Image screen_image;
 
-    XQueryTree(core->display, core->root, &root_return, &parent_return,
-               &order, &order_count);
+    imlib_context_set_display(core->display);
+    imlib_context_set_visual(DefaultVisual(core->display, core->screen));
+    imlib_context_set_colormap(DefaultColormap(core->display, core->screen));
+    imlib_context_set_drawable(core->root);
+
+    /* The one read. Taken with the X server held for its duration, so nothing
+       draws between the first pixel and the last and the image is one instant
+       of the screen rather than a smear of a few. */
+    screen_image = imlib_create_image_from_drawable(0, 0, 0,
+                                                    core->width, core->height,
+                                                    1);
 
     for (int i = 0; i < switcher->count && i < WM_SWITCHER_MAX_CELLS; i++) {
         Pixmap pixmap;
@@ -353,7 +339,7 @@ static void pictures_build(WmCore *core, WmSwitcher *switcher) {
         if (switcher->cells[i].minimized) {
             continue;   /* nothing on the screen to read; the icon stands in */
         }
-        if (switcher->cells[i].frame == None) {
+        if (switcher->cells[i].frame == None || !screen_image) {
             continue;
         }
 
@@ -366,25 +352,17 @@ static void pictures_build(WmCore *core, WmSwitcher *switcher) {
             continue;
         }
 
-        /* Above everything, and waited for, so the read below finds this
-           window and not whichever of its neighbours happened to be there.
-           The wait is a round trip per window and is not optional: without it
-           the read is queued behind the raise and pictures the order from
-           before it. */
-        XRaiseWindow(core->display, switcher->cells[i].frame);
-        XSync(core->display, False);
-
-        if (picture_read(core, &switcher->cells[i], view.cell_width,
-                         view.picture_height, pixmap)) {
+        if (picture_read(core, screen_image, &switcher->cells[i],
+                         view.cell_width, view.picture_height, pixmap)) {
             view.pictures[i] = pixmap;
         } else {
             XFreePixmap(core->display, pixmap);
         }
     }
 
-    stacking_restore(core, order, order_count);
-    if (order) {
-        XFree(order);
+    if (screen_image) {
+        imlib_context_set_image(screen_image);
+        imlib_free_image_and_decache();
     }
 }
 
