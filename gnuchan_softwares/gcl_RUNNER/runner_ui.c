@@ -467,6 +467,17 @@ int runner_ui_open(RunnerUi *ui, const char *config_path) {
         return -1;
     }
 
+    /* The launcher watches the root for new windows, so it can stay in front of
+       them. It is override-redirect, so the manager frames nothing of it and
+       never restacks it on its behalf — but the manager DOES map and raise the
+       windows it manages, and a program that opens while the launcher is up is
+       put above it and hides it. Selecting SubstructureNotifyMask here is what
+       makes each such map or raise arrive as an event (see the root cases in
+       runner_ui_run), and the answer to each is one XRaiseWindow putting the
+       launcher back on top. */
+    XSelectInput(ui->display, ui->root, SubstructureNotifyMask);
+    XFlush(ui->display);
+
     /* The query is run once before the window is placed, so the window opens
        at the size of what it is going to show rather than at the size of
        nothing and then growing. */
@@ -532,6 +543,21 @@ int runner_ui_run(RunnerUi *ui) {
         case Expose:
             if (event.xexpose.window == ui->window) {
                 runner_draw(ui);
+            }
+            break;
+
+        case ConfigureNotify:
+        case MapNotify:
+            /* A window was moved, resized or shown — a program that just
+               started, most of the time — and if it was raised over the
+               launcher, the launcher is now behind it. The launcher is put
+               back on top, and only for a window that is NOT its own: its own
+               raise arrives right back here, and the test keeps it plain (an
+               already-top window is a no-op on the server, so the chain would
+               stop anyway). The launcher does not care what the window is; it
+               only has to stay in front of it for as long as it is up. */
+            if (event.xany.window != ui->window) {
+                XRaiseWindow(ui->display, ui->window);
             }
             break;
 

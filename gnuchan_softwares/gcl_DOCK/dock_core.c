@@ -81,6 +81,69 @@ static void core_open_font(DockCore *core) {
     }
 }
 
+/* Whether a window is fullscreen, read from the EWMH state list it carries.
+   _NET_WM_STATE is a list of atoms and _NET_WM_STATE_FULLSCREEN is the member
+   that means "this window owns the whole screen". A client that never set the
+   property is not fullscreen, which is every ordinary window. */
+static int core_window_is_fullscreen(DockCore *core, Window window) {
+    if (window == None) {
+        return 0;
+    }
+
+    Atom actual_type = None;
+    int actual_format = 0;
+    unsigned long items = 0;
+    unsigned long after = 0;
+    unsigned char *data = NULL;
+    int fullscreen = 0;
+
+    if (XGetWindowProperty(core->display, window, core->net_wm_state,
+                           0, 32, False, XA_ATOM, &actual_type, &actual_format,
+                           &items, &after, &data) == Success) {
+        if (data && actual_type == XA_ATOM && actual_format == 32) {
+            Atom *atoms = (Atom *)data;
+            for (unsigned long i = 0; i < items; i++) {
+                if (atoms[i] == core->net_wm_state_fullscreen) {
+                    fullscreen = 1;
+                    break;
+                }
+            }
+        }
+        if (data) {
+            XFree(data);
+        }
+    }
+    return fullscreen;
+}
+
+/* Whether a fullscreen window is on the screen NOW, asked at the moment the
+   answer is used. The build-time value (core->fullscreen_active) is only as
+   fresh as the last rebuild, and a window can go fullscreen without any of the
+   root properties the dock watches changing at all — so the one decision that
+   must not be wrong, "may the dock come forward", is taken from a fresh read
+   of the active window here rather than from the cached one. It is a round trip
+   or two, paid only when the pointer reaches the bottom of the screen. */
+static int core_fullscreen_now(DockCore *core) {
+    Window active = None;
+    Atom actual_type = None;
+    int actual_format = 0;
+    unsigned long items = 0;
+    unsigned long after = 0;
+    unsigned char *data = NULL;
+
+    if (XGetWindowProperty(core->display, core->root, core->net_active_window,
+                           0, 1, False, XA_WINDOW, &actual_type, &actual_format,
+                           &items, &after, &data) == Success) {
+        if (data && actual_format == 32 && items > 0) {
+            active = (Window)(*(unsigned long *)data);
+        }
+        if (data) {
+            XFree(data);
+        }
+    }
+    return core_window_is_fullscreen(core, active);
+}
+
 /* Read the two root properties that say WHAT to show: which desktop is current
    and which window has the focus. Called at the start of every build, before
    the slots are gathered, so the gathering can use them.
@@ -125,6 +188,13 @@ static void core_read_desktop_state(DockCore *core) {
             XFree(data);
         }
     }
+
+    /* Whether the active window is fullscreen, read here beside the two above
+       so every build knows it before the stack is decided. A fullscreen window
+       owns the whole screen and the dock must not come forward over it; a
+       maximised one is not this, so the dock still may. */
+    core->fullscreen_active =
+        core_window_is_fullscreen(core, core->active_window);
 }
 
 static void core_load_fixed_icons(DockCore *core) {
@@ -244,6 +314,17 @@ static void core_reveal(DockCore *core) {
     if (core->revealed || core->window == None) {
         return;
     }
+    /* A FULLSCREEN window owns the whole screen and the dock stays behind it.
+       This is the line asked for: the dock comes forward over a MAXIMISED
+       window — an ordinary window taking the workarea, no different from any
+       other — but never over a fullscreen one, where a strip along the bottom
+       is in a game's or a film's way. The answer is read fresh
+       (core_fullscreen_now) rather than taken from the last build, because a
+       window can go fullscreen without any of the root properties the dock
+       watches changing. */
+    if (core_fullscreen_now(core)) {
+        return;
+    }
     core->revealed = 1;
     XRaiseWindow(core->display, core->window);
     dock_draw(core);
@@ -293,6 +374,12 @@ static void core_hide(DockCore *core) {
    can find it. */
 static void core_keep_trigger_on_top(DockCore *core) {
     if (core->revealed || core->trigger == None) {
+        return;
+    }
+    /* Not over a fullscreen window either: the strip is three pixels along the
+       very bottom and a fullscreen game or film should not have it lying over
+       its last rows. The same line core_reveal draws, drawn the other way. */
+    if (core_fullscreen_now(core)) {
         return;
     }
     XRaiseWindow(core->display, core->trigger);
@@ -346,11 +433,27 @@ void dock_core_refresh(DockCore *core) {
     dock_items_build(core);
     dock_core_relayout(core);
     dock_draw(core);
-    /* A rebuild may have moved or resized the dock, and a window that opened
-       over it may not have touched it at all: either way, if the pointer is not
-       on the dock it belongs BEHIND the windows again. The strip is put back on
-       top so the pointer still meets it at the bottom of the screen. */
-    if (!core->revealed && core->window != None) {
+    /* Which way the stack goes, decided from the fullscreen state and whether
+       the pointer is on the dock.
+     *
+     * A FULLSCREEN window owns the screen: the dock goes behind it and the
+     * strip stays behind it too, so neither shows over a game or a film. That
+     * is the line between the two kinds of window this is about — a MAXIMISED
+     * window is an ordinary window taking the workarea, and the dock comes
+     * forward over it; a FULLSCREEN one is not.
+     *
+     * Otherwise, a dock nobody is pointing at belongs behind the windows, and
+     * the strip belongs on top so the pointer still finds it at the bottom. */
+    if (core->fullscreen_active) {
+        if (core->window != None) {
+            XLowerWindow(core->display, core->window);
+        }
+        if (core->trigger != None) {
+            XLowerWindow(core->display, core->trigger);
+        }
+        core->revealed = 0;
+        core->hover_index = -1;
+    } else if (!core->revealed && core->window != None) {
         XLowerWindow(core->display, core->window);
         if (core->trigger != None) {
             XRaiseWindow(core->display, core->trigger);
@@ -680,6 +783,9 @@ int dock_core_init(DockCore *core) {
     core->net_current_desktop =
         XInternAtom(core->display, "_NET_CURRENT_DESKTOP", False);
     core->net_wm_desktop = XInternAtom(core->display, "_NET_WM_DESKTOP", False);
+    core->net_wm_state = XInternAtom(core->display, "_NET_WM_STATE", False);
+    core->net_wm_state_fullscreen =
+        XInternAtom(core->display, "_NET_WM_STATE_FULLSCREEN", False);
 
     dock_config_load_default(&core->config);
     core_resolve_palette(core);

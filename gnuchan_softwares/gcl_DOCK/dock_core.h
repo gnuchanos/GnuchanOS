@@ -43,6 +43,13 @@ typedef struct DockCore {
        row would fill with windows the user cannot see. */
     Atom net_current_desktop;
     Atom net_wm_desktop;
+    /* The fullscreen state of the active window. _NET_WM_STATE is the list a
+       client's states live in and _NET_WM_STATE_FULLSCREEN is the member that
+       means "this window owns the whole screen". The dock reads both to tell a
+       MAXIMISED window — which it may come forward over — from a FULLSCREEN
+       one, which it must not. */
+    Atom net_wm_state;
+    Atom net_wm_state_fullscreen;
     /* The workspace currently on screen, and the window with the focus, read
        from the root at the start of a build. Zero when the manager publishes
        neither, in which case every window is shown — the safe answer for a
@@ -52,6 +59,13 @@ typedef struct DockCore {
     /* 1 when the manager published a current desktop for this build, so a
        window whose own desktop cannot be read is shown rather than hidden. */
     int have_desktop;
+    /* 1 when the active window is fullscreen, read at the start of every build
+       beside the two above. A fullscreen window owns the whole screen, so the
+       dock stays behind it and is not brought forward — a dock over a game or
+       a film is in the way. A MAXIMISED window is not fullscreen and is not
+       this, which is exactly the line: the dock may come forward over one and
+       must not over the other. */
+    int fullscreen_active;
 
     DockConfig config;
     unsigned long background;
