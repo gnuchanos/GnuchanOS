@@ -16,42 +16,34 @@
  *
  * --- where the pictures come from -----------------------------------------
  *
- * The pictures are read off the ROOT before the overlay is mapped, one per
- * window, and each is scaled into its cell and kept as a pixmap. That is a
- * decision and not an accident:
+ * Each cell is a picture of its window, taken before the overlay is mapped so
+ * the read finds the desktop and not the overlay itself.
  *
- *   Asking a window for its own pixels — XGetImage on the client — returns
- *   undefined content for every part of it that something else is covering,
- *   and in a switcher almost every window is covered by something. What is on
- *   the screen is what the user was looking at a moment ago, and it is the
- *   only source that is right for a picture of it.
+ * The pixels come from COMPOSITE, not from the screen. The window is
+ * redirected for the instant it is read — the server starts keeping a pixmap of
+ * what the program has drawn — that pixmap is named, read, and given back.
+ * What is read is the whole of the window's content whatever is on top of it,
+ * so each cell is its own window and NOTHING is moved: the stacking order is
+ * never touched, no window is raised, and the desktop does not so much as
+ * flicker while the grid is built.
  *
- *   Reading the root once per window rather than capturing the screen once and
- *   cropping is the same number of server reads either way — Imlib2 grabs the
- *   rectangle it is asked for — and a crop that keeps the window's own aspect
- *   ratio cannot be expressed as an offset into a single full-screen image
- *   without doing the scaling by hand. So Imlib2 is asked for each window's
- *   rectangle and renders it into the cell at the size the cell is, which is
- *   the one part of this that is easier to read than the alternative.
+ * That is the whole point, and it is worth saying what the two earlier ways
+ * did wrong, because both looked reasonable and both were reported:
  *
- *   The screen is read once PER window, with each window raised above the
- *   others for the instant its rectangle is read, and the whole stacking order
- *   is put back afterwards. Raising is what makes each cell its OWN window: a
- *   read of the root returns what is on TOP at that rectangle, so without it
- *   two windows in the same place — which is most of them, most of the time —
- *   give two IDENTICAL cells holding the same fragment of the topmost one, a
- *   grid of the same picture repeated with nothing in it to tell one terminal
- *   from another.
+ *   Reading the ROOT once per window meant a window had to be RAISED for its
+ *   rectangle to hold that window and not whichever of its neighbours was on
+ *   top — which the user saw as every window dancing across the screen before
+ *   the grid appeared, and every overlap the topmost window.
  *
- *   Raising a window exposes the part of it another window had been covering,
- *   and that is where the black rectangles came from: the exposed part was
- *   read before the program inside had repainted it, so the cell held the
- *   window's bare background. The fix is not to stop raising — that would put
- *   the topmost window in every cell, which is a grid of one picture — but to
- *   make the raise safe, and that is what the BACKING STORE on every window
- *   does: the server keeps the obscured pixels, so raising restores the
- *   window's own content instead of showing a hole. See wm_frame_create and
- *   term_core_init, which ask for it.
+ *   Reading the root ONCE and cropping gave every overlapped cell the topmost
+ *   window's pixels rather than its own — a grid of one picture where the
+ *   windows were stacked.
+ *
+ * A composite read is neither: the window is asked for the content it has
+ * drawn, which does not depend on the stacking order, so nothing is moved to
+ * see it and nothing is repeated. On a server without Composite the window is
+ * read off the screen where it lies, not raised, which keeps the desktop still
+ * at the cost of two stacked windows showing the same pixels.
  *
  * A window that is minimised is not on the screen at all, so there is nothing
  * to read: it is drawn as its own icon instead, which is what wm_icon.c read
@@ -60,21 +52,16 @@
  * labelled rather than a cell that is missing.
  *
  * The pictures are read once, at the start of the gesture, and are not read
- * again while the modifier is held. A switcher whose pictures followed the
- * screen would be a switcher with no stable thing to point at, and the desktop
- * it is showing is the one the user pressed the key on.
+ * again while the key is held. A switcher whose pictures followed the screen
+ * would be a switcher with no stable thing to point at, and the desktop it is
+ * showing is the one the user pressed the key on.
  */
-/* nanosleep() and the rest of the POSIX set: named explicitly rather than left
-   to the compiler's default mode, so the settle below is declared whatever the
-   build passes. */
-#define _POSIX_C_SOURCE 200809L
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include <X11/Xlib.h>
+#include <X11/extensions/Xcomposite.h>
 #include <Imlib2.h>
 
 #include "wm_core.h"
@@ -131,6 +118,12 @@ typedef struct SwitcherView {
 } SwitcherView;
 
 static SwitcherView view;
+
+/* Whether the server can give a window's own pixels through Composite, worked
+   out once and then remembered. See picture_read(): with it each window is read
+   from its own pixmap and nothing has to be moved to see it. */
+static int composite_ok = 0;
+static int composite_probed = 0;
 
 /* --- small helpers -------------------------------------------------------- */
 
@@ -212,36 +205,33 @@ static void cell_origin(int index, int *x, int *y) {
 
 /* --- the pictures --------------------------------------------------------- */
 
-/* Read one window's picture off the screen and scale it into a pixmap of the
-   picture area's size.
+/* Read one window's picture and scale it into a pixmap of the picture area's
+   size.
  *
- * The rectangle is the window's own place and size on the screen, clipped to
- * it — a window half off the edge is pictured as the part of it that was
- * visible, which is the honest answer and the one that cannot be drawn outside
- * the pixmap. The scale keeps the window's own proportions and centres what is
- * left over, so a wide window in a square cell is letterboxed rather than
+ * The picture is the window's OWN content, taken through Composite — see the
+ * note at the top of the file — and scaled to keep the window's proportions,
+ * centred, so a wide window in a square cell is letterboxed rather than
  * stretched into a shape it was never in.
  *
  * Returns 0 when there was nothing to read — the window is not on the screen,
- * or Imlib2 could not take the rectangle — in which case the caller falls back
- * to the window's icon. */
+ * or the pixels could not be taken — in which case the caller falls back to the
+ * window's icon. */
 static int picture_read(WmCore *core, const WmSwitcherCell *cell,
                         int width, int height, Pixmap target) {
     XWindowAttributes attributes;
-    int screen_width;
-    int screen_height;
-    int left;
-    int top;
-    int right;
-    int bottom;
     int source_width;
     int source_height;
+    int read_x = 0;
+    int read_y = 0;
     int draw_width;
     int draw_height;
     int draw_x;
     int draw_y;
     double scale;
     Imlib_Image grabbed;
+    Pixmap window_pixmap = None;
+    int composite_read = 0;
+    int redirected = 0;
 
     if (cell->frame == None || width <= 0 || height <= 0) {
         return 0;
@@ -252,23 +242,62 @@ static int picture_read(WmCore *core, const WmSwitcherCell *cell,
     if (attributes.map_state != IsViewable) {
         return 0;   /* put away, or on another workspace: no pixels anywhere */
     }
-    /* The frame's parent is the root, so its own x and y ARE its place on the
-       screen. */
-    screen_width = core->width;
-    screen_height = core->height;
-    left = attributes.x < 0 ? 0 : attributes.x;
-    top = attributes.y < 0 ? 0 : attributes.y;
-    right = attributes.x + attributes.width;
-    bottom = attributes.y + attributes.height;
-    if (right > screen_width) {
-        right = screen_width;
+
+    /* THE WINDOW'S OWN PIXELS, through Composite, and this is what makes the
+       cell that window without moving anything.
+     *
+     * The window is redirected — the server starts keeping a pixmap of what
+     * the program has drawn — that pixmap is named, read, and given back. What
+     * is read is the whole of the window's content whatever is on top of it,
+     * so two windows in the same place give two different cells, and NOTHING is
+     * raised: the stacking order is not touched, so no window moves and nothing
+     * is exposed. Automatic rather than Manual because the window must go on
+     * looking exactly as it did; the redirect is undone before this returns. */
+    if (composite_ok) {
+        XCompositeRedirectWindow(core->display, cell->frame,
+                                 CompositeRedirectAutomatic);
+        XSync(core->display, False);
+        redirected = 1;
+
+        window_pixmap = XCompositeNameWindowPixmap(core->display, cell->frame);
+        if (window_pixmap != None) {
+            composite_read = 1;
+            read_x = 0;
+            read_y = 0;
+            source_width = attributes.width;
+            source_height = attributes.height;
+        }
     }
-    if (bottom > screen_height) {
-        bottom = screen_height;
+
+    /* No Composite — or the window could not be named: read the screen at the
+       window's place, clipped to it. The window is NOT raised for it, so
+       nothing moves; the cost is that two windows in the same place give the
+       same cell, which is what a server without Composite can offer without
+       the dance the raise would be. */
+    if (!composite_read) {
+        int right = attributes.x + attributes.width;
+        int bottom = attributes.y + attributes.height;
+        read_x = attributes.x < 0 ? 0 : attributes.x;
+        read_y = attributes.y < 0 ? 0 : attributes.y;
+        if (right > core->width) {
+            right = core->width;
+        }
+        if (bottom > core->height) {
+            bottom = core->height;
+        }
+        source_width = right - read_x;
+        source_height = bottom - read_y;
     }
-    source_width = right - left;
-    source_height = bottom - top;
+
     if (source_width <= 0 || source_height <= 0) {
+        if (redirected) {
+            if (window_pixmap != None) {
+                XFreePixmap(core->display, window_pixmap);
+            }
+            XCompositeUnredirectWindow(core->display, cell->frame,
+                                       CompositeRedirectAutomatic);
+            XSync(core->display, False);
+        }
         return 0;
     }
 
@@ -279,18 +308,23 @@ static int picture_read(WmCore *core, const WmSwitcherCell *cell,
     XFillRectangle(core->display, target, core->gc, 0, 0,
                    (unsigned int)width, (unsigned int)height);
 
-    /* The window was RAISED above the others before this call — see
-       pictures_build — so the root's pixels at this rectangle are THIS window
-       and not whichever of its neighbours happened to be on top of it. The
-       read is of the root and not of the window, because a window's own pixels
-       are undefined wherever something covers it and in a switcher almost
-       every window is covered. */
     imlib_context_set_display(core->display);
     imlib_context_set_visual(DefaultVisual(core->display, core->screen));
     imlib_context_set_colormap(DefaultColormap(core->display, core->screen));
-    imlib_context_set_drawable(core->root);
-    grabbed = imlib_create_image_from_drawable(0, left, top,
+    imlib_context_set_drawable(composite_read ? window_pixmap : core->root);
+    grabbed = imlib_create_image_from_drawable(0, read_x, read_y,
                                                source_width, source_height, 1);
+
+    /* The window is the server's again the instant its pixels are in the imlib
+       image, before anything is scaled or drawn. */
+    if (redirected) {
+        if (window_pixmap != None) {
+            XFreePixmap(core->display, window_pixmap);
+        }
+        XCompositeUnredirectWindow(core->display, cell->frame,
+                                   CompositeRedirectAutomatic);
+        XSync(core->display, False);
+    }
     if (!grabbed) {
         return 0;
     }
@@ -314,77 +348,21 @@ static int picture_read(WmCore *core, const WmSwitcherCell *cell,
     return 1;
 }
 
-/* Put every child of the root back into the stacking order it had.
- *
- * XRestackWindows takes the list TOP to bottom and XQueryTree hands it back
- * BOTTOM to top, so the array is reversed before it is given back. Without
- * that the desktop would be turned upside down — the bar would end up over
- * every window it is meant to sit under — which is a worse fault than the one
- * being fixed.
- *
- * A window destroyed between the query and this call is reported by the error
- * handler and skipped by the server; the list is taken microseconds earlier,
- * so that is a window closing at the exact moment the switcher opens, and the
- * rest of the order is still restored. */
-static void stacking_restore(WmCore *core, Window *order,
-                             unsigned int count) {
-    if (!order || count == 0) {
-        return;
-    }
-    for (unsigned int i = 0; i < count / 2; i++) {
-        Window swap = order[i];
-        order[i] = order[count - 1 - i];
-        order[count - 1 - i] = swap;
-    }
-    XRestackWindows(core->display, order, (int)count);
-    XSync(core->display, False);
-}
-
-/* Let a window that has just been raised draw before it is read.
- *
- * Raising a window uncovers the part of it another window had been covering,
- * and the server asks the program inside to draw that part again — but the
- * program is a different client and draws when its own event loop next turns,
- * which is not the instant the raise is acknowledged. Reading immediately
- * therefore caught the uncovered strip as the window's own bare background:
- * a black rectangle the shape of the overlap, which is exactly the fault
- * being fixed.
- *
- * A backing store on the window (see wm_frame_create and term_core_init)
- * removes it wherever the server honours one, but a server may refuse it, so
- * this is the half that does not depend on the server: a short pause for the
- * program to answer the Expose and repaint. It is a few milliseconds per
- * window once, while the switcher is opening, and nothing at all is on screen
- * during it — the overlay is not mapped until every cell is built. */
-static void settle_after_raise(void) {
-    struct timespec pause;
-    pause.tv_sec = 0;
-    pause.tv_nsec = 20L * 1000L * 1000L;   /* 20 ms */
-    nanosleep(&pause, NULL);
-}
-
-/* Build every cell's picture: one read per window, with that window raised so
- * the read is of IT and not of whatever was covering it.
+/* Build every cell's picture: one read per window, of that window's OWN
+ * content, with NOTHING moved.
  *
  * Called once, before the overlay is mapped: the screen still shows the
  * desktop, and a read taken after the map would find the overlay over the very
  * windows it is picturing.
  *
- * Each window is raised for the instant its rectangle is read, and the order
- * everything was in is put back when the last one has been read. The raises
- * are never seen — the overlay is mapped after this returns and covers the
- * screen for the whole of the gesture — and with a backing store on every
- * window they cost a restore rather than an expose, which is what stops the
- * uncovered part reading as a black rectangle. */
+ * No window is raised here and the stacking order is not touched, and that is
+ * the whole difference from the way this used to work. Raising each window in
+ * turn to read it was what the user saw as "every window dancing across the
+ * screen before the grid appears", and it is also what made the overlapped
+ * parts come out black. The pixels are taken from each window's own content
+ * instead — see picture_read — so a window is read where it lies, whether
+ * another window is on top of it or not, and the desktop does not move. */
 static void pictures_build(WmCore *core, WmSwitcher *switcher) {
-    Window root_return;
-    Window parent_return;
-    Window *order = NULL;
-    unsigned int order_count = 0;
-
-    XQueryTree(core->display, core->root, &root_return, &parent_return,
-               &order, &order_count);
-
     for (int i = 0; i < switcher->count && i < WM_SWITCHER_MAX_CELLS; i++) {
         Pixmap pixmap;
 
@@ -405,30 +383,12 @@ static void pictures_build(WmCore *core, WmSwitcher *switcher) {
             continue;
         }
 
-        /* Above everything, and waited for, so the read below finds this
-           window and not whichever of its neighbours happened to be there.
-           The wait is a round trip per window and is not optional: without it
-           the read is queued behind the raise and pictures the order from
-           before it. */
-        XRaiseWindow(core->display, switcher->cells[i].frame);
-        XSync(core->display, False);
-
-        /* The raise exposed part of this window; give the program inside it
-           the moment it needs to draw that part again before the pixels are
-           read. See settle_after_raise(). */
-        settle_after_raise();
-
         if (picture_read(core, &switcher->cells[i], view.cell_width,
                          view.picture_height, pixmap)) {
             view.pictures[i] = pixmap;
         } else {
             XFreePixmap(core->display, pixmap);
         }
-    }
-
-    stacking_restore(core, order, order_count);
-    if (order) {
-        XFree(order);
     }
 }
 
@@ -732,6 +692,14 @@ int wm_switcher_view_open(WmCore *core, WmSwitcher *switcher) {
     view.display = core->display;
     view.hover = -1;
 
+    if (!composite_probed) {
+        int event_base = 0;
+        int error_base = 0;
+        composite_ok = XCompositeQueryExtension(core->display, &event_base,
+                                                &error_base);
+        composite_probed = 1;
+    }
+
     layout_compute(core, switcher);
 
     memset(&attributes, 0, sizeof(attributes));
@@ -762,16 +730,11 @@ int wm_switcher_view_open(WmCore *core, WmSwitcher *switcher) {
     /* The scaled windows are put back under the server for the length of the
        read, and this is the second thing the order above is about.
      *
-     * A picture is read off the ROOT — that is what makes it a picture of what
-       the user was looking at rather than of whatever the program chose to
-       keep — and a redirected window is not in the root's pixels at all. Read
-       as things stand, every scaled window would be a hole in the grid with
-       the desktop showing through it.
-     *
-     * Between the two calls those windows are the server's again and are drawn
-     * at their own size rather than fitted to their frames, so what is read is
-     * the window's own content at the size it draws itself — which is the right
-     * picture, and only its proportions in the cell are the cell's business.
+     * A picture taken through Composite reads a window's OWN pixmap, and a
+     * window this manager is already drawing scaled is redirected by the
+     * compositor rather than by the server — so it is given back for the read
+     * and taken again afterwards, and what is read is the window's own content
+     * rather than a hole where a redirected window is.
      *
      * Both calls are safe when nothing is scaled and when the server cannot do
      * this at all: they return having done nothing, which is what lets this be
