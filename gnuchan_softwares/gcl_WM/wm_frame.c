@@ -1113,8 +1113,16 @@ WmFrame *wm_frame_create(WmCore *core, Window client) {
        wm_frame_draw, into the copy, before the copy is put up. Letting the
        server clear it first would defeat that and bring the flicker back. */
     override_attributes.bit_gravity = NorthWestGravity;
+    /* THE FRAME KEEPS ITS OWN PIXELS. A frame that another window covers and
+       then uncovers — the switcher's overlay rising and falling over it is the
+       usual way — would otherwise have the uncovered part filled with the
+       frame's background colour until wm_frame_draw runs again, and against a
+       terminal that is a visible flash of the panel colour. BackingStore
+       Always makes the server keep the frame's pixels, so uncovering restores
+       what was drawn rather than painting a hole. */
+    override_attributes.backing_store = Always;
     XChangeWindowAttributes(core->display, frame->frame,
-                            CWOverrideRedirect | CWBitGravity,
+                            CWOverrideRedirect | CWBitGravity | CWBackingStore,
                             &override_attributes);
 
     /* The bar is drawn on the frame, so the frame is what is clicked, dragged

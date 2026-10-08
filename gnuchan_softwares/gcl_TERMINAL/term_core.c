@@ -727,11 +727,39 @@ int term_core_init(TermCore *core, const char *title, const char *font_name) {
     core->width = core->cols * cell_w + 2 * TERM_PAD_CELLS * cell_w;
     core->height = core->rows * cell_h + TERM_BAR_ROWS * cell_h;
 
-    core->window = XCreateSimpleWindow(
+    /* THE WINDOW KEEPS ITS OWN PIXELS, and this is what stops the black
+       rectangles.
+     *
+     * A plain window that gets covered keeps nothing: when the covering window
+       goes away — the switcher's overlay rising and falling, another terminal
+       opened on top of this one, any window dragged off it — the server has no
+       memory of what was under there and fills the newly exposed part with the
+       window's BACKGROUND pixel until the program draws it again. This window
+       was created with a BLACK background, so every such expose was a black
+       rectangle the size of whatever had been covering it, for as long as it
+       took this loop to notice the Expose and repaint.
+     *
+     * Two things remove that entirely. BackingStore Always makes the server
+       KEEP the window's pixels off-screen, so uncovering restores what was
+       there instead of painting anything; and the background is the theme's own
+       colour rather than black, so even the one instant before the first frame
+       is the terminal's colour and not a hole.
+     *
+     * The window cannot be made with XCreateSimpleWindow: its background is the
+     * only attribute that call takes, and BackingStore is not one of them. So it
+     * is made by hand with the two attributes that matter. */
+    XSetWindowAttributes window_attributes;
+    memset(&window_attributes, 0, sizeof(window_attributes));
+    window_attributes.background_pixel =
+        (unsigned long)term_style_default_bg(core->style);
+    window_attributes.backing_store = Always;
+    window_attributes.border_pixel = BlackPixel(core->display, core->screen);
+
+    core->window = XCreateWindow(
         core->display, RootWindow(core->display, core->screen),
         0, 0, (unsigned)core->width, (unsigned)core->height, 0,
-        BlackPixel(core->display, core->screen),
-        BlackPixel(core->display, core->screen));
+        CopyFromParent, InputOutput, CopyFromParent,
+        CWBackPixel | CWBackingStore | CWBorderPixel, &window_attributes);
     if (core->window == None) {
         term_style_free(core->style);
         free(core->style);
