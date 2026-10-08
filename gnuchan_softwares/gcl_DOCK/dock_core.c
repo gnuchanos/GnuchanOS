@@ -279,6 +279,25 @@ static void core_hide(DockCore *core) {
     }
 }
 
+/* Put the strip along the bottom of the screen back on top of the windows, so
+   the pointer meets it when it comes down. Called when a window was moved or
+   raised over it. Nothing happens while the dock is OUT: the dock is what the
+   pointer meets then, and the strip is not in the way.
+
+   This is the piece that was missing. The strip is raised at start-up, but the
+   manager raises the windows it manages, and a raise puts a window above the
+   strip — and with the strip covered the pointer reaching the bottom of the
+   screen is a move into that window and NOT into the strip, so the dock is
+   never told and never comes forward. Raising the strip here, on the very
+   ConfigureNotify the raise produces, is what puts it back where the pointer
+   can find it. */
+static void core_keep_trigger_on_top(DockCore *core) {
+    if (core->revealed || core->trigger == None) {
+        return;
+    }
+    XRaiseWindow(core->display, core->trigger);
+}
+
 /* Decide which way the stack should be, from where the pointer actually is and
    not from the crossing that woke us. The dock window and the strip can hand
    the pointer back and forth, and the Leave of one arrives around the Enter of
@@ -534,9 +553,26 @@ void dock_core_run(DockCore *core) {
                 /* A window appeared or left. Its own Map/Unmap arrives on the
                    dock's window too — that one is ignored, or the dock would
                    mark itself dirty every time it mapped — and anything else
-                   may have changed the row. */
+                   may have changed the row. A new window is also above the
+                   strip, so the strip is put back on top. */
                 if (event.xany.window != core->window) {
                     core->dirty = 1;
+                    core_keep_trigger_on_top(core);
+                }
+                break;
+            case ConfigureNotify:
+                /* A window was moved, resized or RAISED, and a raise is what
+                   puts one above the strip along the bottom of the screen — see
+                   core_keep_trigger_on_top. A move during a drag is the same
+                   ConfigureNotify, and the raise it causes is one request the
+                   server batches with the rest, so a drag costs no round trip.
+                   The dock's OWN windows are skipped: raising our strip arrives
+                   right back here, and raising on it would be a loop that never
+                   ends. The row is not marked dirty — nothing the dock DRAWS has
+                   changed, only the stack. */
+                if (event.xconfigure.window != core->window &&
+                    event.xconfigure.window != core->trigger) {
+                    core_keep_trigger_on_top(core);
                 }
                 break;
             case DestroyNotify:

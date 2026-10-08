@@ -18,6 +18,11 @@
 /* The room inside the list, left and right of a row's text, and above the first
    and below the last. */
 #define DOCK_MENU_PADDING 10
+/* A menu row is the window's title with a marker appended — "title (not
+   focus)" — so it is the title's own length plus room for the marker. Sizing a
+   row buffer to DOCK_TEXT_LENGTH alone would let a full-length title be cut,
+   which is the truncation the compiler warns about. */
+#define DOCK_MENU_ROW_LENGTH (DOCK_TEXT_LENGTH + 16)
 
 static int row_height(const DockCore *core) {
     if (core->font) {
@@ -60,8 +65,9 @@ static void fit_title(const DockCore *core, const char *title, int max_width,
                       char *out, unsigned int size) {
     /* The caller may hand the same buffer in and out (it passes a row's own
        title back into itself), so the working copy is local and nothing is
-       written to `out` until it is final. */
-    char working[DOCK_TEXT_LENGTH];
+       written to `out` until it is final. Both copies are the full row's size,
+       because the string handed in is a whole row and not just a title. */
+    char working[DOCK_MENU_ROW_LENGTH];
     snprintf(working, sizeof(working), "%s", title);
     if (!core->font || max_width <= 0) {
         snprintf(out, size, "%s", working);
@@ -74,7 +80,7 @@ static void fit_title(const DockCore *core, const char *title, int max_width,
         snprintf(out, size, "%s", working);
         return;
     }
-    char trial[DOCK_TEXT_LENGTH];
+    char trial[DOCK_MENU_ROW_LENGTH];
     int length = (int)strlen(working);
     for (int cut = length; cut > 0; cut--) {
         if (((unsigned char)working[cut] & 0xc0) == 0x80) {
@@ -135,8 +141,13 @@ static void menu_paint(DockMenu *menu) {
            trim and one to draw — and the two rows a person compares are then
            "path (focus)" against "path (not focus)", which says the answer in
            words. */
+        /* The row is the title with a marker appended, so it needs the title's
+           full length PLUS the marker. Sizing it to DOCK_TEXT_LENGTH alone made
+           the compiler warn that a full-length title could be cut: the row is
+           trimmed to the width below anyway, but the buffer still has to hold
+           the untrimmed string first. */
         int focused = (menu->items[i] == core->active_window);
-        char row[DOCK_TEXT_LENGTH];
+        char row[DOCK_MENU_ROW_LENGTH];
         snprintf(row, sizeof(row), "%s (%s)", title,
                  focused ? "focus" : "not focus");
 
