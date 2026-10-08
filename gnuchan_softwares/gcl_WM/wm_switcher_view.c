@@ -279,8 +279,15 @@ static int picture_read(WmCore *core, Imlib_Image screen_image,
        the overlay was mapped — see pictures_build. Nothing is raised and
        nothing is grabbed here: the screen was read once, and this is a piece
        of it, so the crop cannot race with an expose the raise would have
-       caused. */
-    grabbed = imlib_create_cropped_image(screen_image, left, top,
+       caused.
+     *
+     * imlib_create_cropped_image() takes no source argument: it crops the
+       image currently set as the context's, so the screen image is made the
+       context first. It returns a NEW image, so the screen image is untouched
+       and is freed once by pictures_build() after every cell has been cut
+       from it. */
+    imlib_context_set_image(screen_image);
+    grabbed = imlib_create_cropped_image(left, top,
                                          source_width, source_height);
     if (!grabbed) {
         return 0;
