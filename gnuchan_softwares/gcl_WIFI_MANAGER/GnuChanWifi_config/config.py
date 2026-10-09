@@ -15,6 +15,12 @@
 # Which nmcli to run. Empty means "nmcli" on PATH.
 NmcliPath = "nmcli"
 
+# The wireless driver's module, for the "Restart" button. Empty means "ask the
+# kernel" — the manager reads the driver's name off the interface itself, which
+# is right on every machine. Only name one here if that read somehow fails; a
+# Vostro's Atheros card is "ath5k".
+RestartModule = ""
+
 # The title drawn at the top of the window.
 Title = "Wi-Fi"
 

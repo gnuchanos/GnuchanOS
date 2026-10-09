@@ -24,7 +24,9 @@
 
 #include "wifi_config.h"
 #include "wifi_nm.h"
+#include "wifi_privilege.h"
 #include "wifi_radio.h"
+#include "wifi_rfkill.h"
 #include "wifi_saved.h"
 #include "wifi_ui.h"
 
@@ -47,6 +49,20 @@ static int list_networks(const char *config_path) {
     int radio = wifi_radio_on();
     printf("radio: %s\n",
            radio == 1 ? "on" : (radio == 0 ? "off" : "unknown"));
+
+    /* The kernel's own blocks, which are the reason an "on" radio can still
+       find nothing: the report says so in words rather than leaving a person to
+       wonder. */
+    WifiBlock block;
+    if (wifi_rfkill_state(&block) == 0) {
+        if (block.hard) {
+            printf("blocked: hardware switch (flip it, then restart)\n");
+        } else if (block.soft) {
+            printf("blocked: soft (the Restart action clears it)\n");
+        } else {
+            printf("blocked: no\n");
+        }
+    }
 
     char device[WIFI_TEXT];
     wifi_nm_device(device, sizeof(device));
@@ -149,6 +165,18 @@ int main(int argc, char **argv) {
 
     if (list_only) {
         return list_networks(config_path);
+    }
+
+    /* Opening the window is what needs root: the radio, the driver reload and
+       the kill switches are all root's to change, and a window that half-works
+       because each action is refused is worse than asking for the password
+       once. wifi_privilege_ensure() re-runs this program through sudo and does
+       not return when it does; a machine with no sudo carries on here and the
+       privileged actions simply report that they failed. */
+    if (wifi_privilege_ensure(argc, argv) != 0) {
+        fprintf(stderr,
+                "gnuchanwifi: carrying on without root; the radio and the "
+                "driver cannot be changed\n");
     }
 
     WifiUi ui;

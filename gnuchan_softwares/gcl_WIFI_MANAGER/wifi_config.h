@@ -39,6 +39,13 @@ typedef struct WifiConfig {
     /* Which nmcli to run. Empty means "nmcli" on PATH. */
     char nmcli[WIFI_TEXT];
 
+    /* The wireless driver's module name, for the "restart wifi" action. Empty
+       means "ask the kernel" — wifi_rfkill_driver() reads it off the interface
+       — and a name here is only a fallback for a machine where that read gives
+       nothing. The Vostro's card is "ath5k"; naming it is harmless anywhere
+       else, because the read is tried first. */
+    char restart_module[WIFI_TEXT];
+
     /* The title drawn at the top of the window. */
     char title[WIFI_TEXT];
 

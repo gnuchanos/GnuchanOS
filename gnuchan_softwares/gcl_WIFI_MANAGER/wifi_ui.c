@@ -1,36 +1,29 @@
 /*
- * wifi_ui.c — the window, the list, the keys, and what the keys do.
+ * wifi_ui.c — the window, the list, the buttons, the keys, and what each does.
  *
  * This is where the manager meets the display. Everything it is made of has
- * already been read and resolved by the time this runs: the config, the palette,
- * the interface's name. What is left is a window, a loop, and the actions the
- * keys stand for.
+ * already been read by the time this runs: the config, the palette, the
+ * interface's name. What is left is a window, a loop, and the actions.
  *
  * --- this is an ORDINARY window ---
  *
  * GnuChanWM owns it: it frames it, moves it, focuses it and closes it. The
- * program names the window (WM_NAME and WM_CLASS), asks for WM_DELETE_WINDOW so
- * the close button sends a message rather than killing the connection, maps it,
- * and answers the events that reach it. It is NOT override-redirect and it does
- * NOT grab the keyboard: a wifi window is an application a person leaves open,
- * not a launcher that appears and goes away. This is the same shape the terminal
- * has.
+ * program names the window, asks for WM_DELETE_WINDOW so the close button sends
+ * a message rather than killing the connection, maps it, and answers the events
+ * that reach it. It is NOT override-redirect and it does NOT grab the keyboard.
  *
- * --- the keys ---
+ * --- two ways to act, one function each ---
  *
- *   Up/Down, PgUp/PgDn, Home/End   move the selection
- *   Enter                          join the chosen network
- *   r                              scan again
- *   w                              turn the wifi radio on or off
- *   d                              disconnect
- *   f                              forget the chosen saved network (asks first)
- *   a                              toggle the chosen saved network's autoconnect
- *   q / Escape                     quit (Escape steps back in a sub-screen)
+ * The buttons at the foot and the letters do the same things through the same
+ * functions: a button resolves to a WifiAction and dispatch_action() runs it, a
+ * letter resolves to the same action and calls the same dispatch. So there is
+ * one place where "rescan" is defined and the mouse and the keyboard cannot
+ * drift apart.
  *
- * Every letter is one nmcli call, run through the module for the question it
- * belongs to: wifi_nm.c for networks, wifi_radio.c for the switch, wifi_saved.c
- * for the profiles. This file only decides WHEN each is asked and what the
- * answer means on the screen.
+ * One action is deliberate and so is asked twice: RESTART reloads the wireless
+ * driver, which drops the network for a moment. That is the same thing the
+ * dotfiles' Reboot_Wifi.py does by hand — rfkill unblock all, modprobe -r, then
+ * modprobe — and it is the fix for a card that has latched itself "radio off".
  */
 #include <locale.h>
 #include <stdio.h>
@@ -48,25 +41,25 @@
                          PointerMotionMask | StructureNotifyMask | \
                          ExposureMask)
 
-/* The size the window needs for the screen it is showing. The list screen is
-   the status bar, the rows, a status line and the help line; the password and
-   confirm screens are a fixed few lines. Worked out before the window is made so
-   it opens at the right size rather than opening small and jumping. */
+/* The height the window needs for the screen it is showing. The list is the
+   status bar, an optional warning band, the rows, and the three foot bands —
+   message, buttons, help. The sub-screens are a fixed few rows plus the same
+   foot. Worked out before anything is drawn so the window opens at its size. */
 static void work_out_size(WifiUi *ui) {
     ui->width = ui->config.width;
     if (ui->width > ui->screen_width) {
         ui->width = ui->screen_width;
     }
 
-    int bar = ui->style.row_height;              /* the status bar at the top */
-    int foot = 2 * ui->style.row_height;         /* status line + help line   */
+    int row = ui->style.row_height;
+    int banner = (ui->block.hard || ui->block.soft) ? row : 0;
+    int foot = 3 * row;   /* message, buttons, help */
 
     if (ui->mode == WIFI_MODE_LIST) {
-        ui->height = bar + ui->style.padding +
-                     ui->config.rows * ui->style.row_height + foot;
+        ui->height = row + ui->style.padding + banner +
+                     ui->config.rows * row + foot;
     } else {
-        ui->height = bar + ui->style.padding +
-                     3 * ui->style.row_height + foot;
+        ui->height = row + ui->style.padding + banner + 3 * row + foot;
     }
 
     if (ui->height > ui->screen_height) {
@@ -74,19 +67,40 @@ static void work_out_size(WifiUi *ui) {
     }
 }
 
-/* Read everything the status bar and the list need: the radio, what is joined
-   (and its address), the saved profiles, and the networks in range. The order
-   matters only in that the saved list is read BEFORE the scan, because the scan
-   marks each network as saved by looking the SSID up in it. */
+/* Resize the window to what the current mode wants, after the mode changed or
+   the warning band appeared. */
+static void resize_for_mode(WifiUi *ui) {
+    work_out_size(ui);
+    XResizeWindow(ui->display, ui->window,
+                  (unsigned int)ui->width, (unsigned int)ui->height);
+}
+
+/* Read everything the window shows: the radio, the kernel's blocks, the
+   interface (again, because a restart can change it), the saved profiles, what
+   is joined, and the networks. The saved list is read BEFORE the scan, because
+   the scan marks each network as saved by looking its SSID up in it. */
 static void refresh_all(WifiUi *ui) {
     snprintf(ui->status, sizeof(ui->status), "Scanning…");
     wifi_draw(ui);
 
     ui->radio_on = wifi_radio_on();
+    wifi_rfkill_state(&ui->block);
     wifi_saved_load(&ui->saved);
 
     char names[WIFI_MAX_SAVED][WIFI_TEXT];
     int name_count = wifi_saved_names(&ui->saved, names, WIFI_MAX_SAVED);
+
+    /* The interface, and its driver's name for the restart action. A config
+       that named a module wins only when the kernel gave none. */
+    wifi_nm_device(ui->device, sizeof(ui->device));
+    if (ui->device[0]) {
+        wifi_rfkill_driver(ui->device, ui->driver_module,
+                           sizeof(ui->driver_module));
+    }
+    if (!ui->driver_module[0] && ui->config.restart_module[0]) {
+        snprintf(ui->driver_module, sizeof(ui->driver_module), "%s",
+                 ui->config.restart_module);
+    }
 
     if (ui->radio_on == 0) {
         /* With the radio off nothing is in range and everything would be stale;
@@ -97,13 +111,12 @@ static void refresh_all(WifiUi *ui) {
         ui->selected = -1;
         ui->scroll = 0;
         ui->status[0] = '\0';
+        resize_for_mode(ui);
         wifi_draw(ui);
         return;
     }
 
     wifi_nm_scan(&ui->networks, names, name_count);
-
-    /* What is joined and its address, for the bar at the top. */
     wifi_nm_active(ui->device, ui->active_ssid, sizeof(ui->active_ssid),
                    ui->active_address, sizeof(ui->active_address));
 
@@ -116,8 +129,6 @@ static void refresh_all(WifiUi *ui) {
         if (ui->selected >= ui->networks.count) {
             ui->selected = ui->networks.count - 1;
         }
-        /* Put the chosen row on the joined network, so Enter with nothing
-           touched means "reconnect to where I am". */
         for (int i = 0; i < ui->networks.count; i++) {
             if (ui->networks.items[i].in_use) {
                 ui->selected = i;
@@ -127,6 +138,7 @@ static void refresh_all(WifiUi *ui) {
     }
     ui->scroll = 0;
     ui->status[0] = '\0';
+    resize_for_mode(ui);
     wifi_draw(ui);
 }
 
@@ -159,9 +171,7 @@ static void move_selection(WifiUi *ui, int step) {
 
 /* --- the actions ---------------------------------------------------------- */
 
-/* Join the chosen network, with `password` when one was given. On success the
-   whole state is read again so the joined network shows as connected; on failure
-   the message nmcli gave back is put on the status line. */
+/* Join the chosen network, with `password` when one was given. */
 static void connect_current(WifiUi *ui, const char *password) {
     if (ui->selected < 0 || ui->selected >= ui->networks.count) {
         return;
@@ -175,9 +185,8 @@ static void connect_current(WifiUi *ui, const char *password) {
     char error[WIFI_TEXT];
     if (wifi_nm_connect(ui->device, ssid, password, error, sizeof(error)) == 0) {
         ui->mode = WIFI_MODE_LIST;
-        work_out_size(ui);
-        XResizeWindow(ui->display, ui->window,
-                      (unsigned int)ui->width, (unsigned int)ui->height);
+        ui->password_length = 0;
+        ui->password[0] = '\0';
         refresh_all(ui);
         snprintf(ui->status, sizeof(ui->status), "Connected to \"%s\"", ssid);
         wifi_draw(ui);
@@ -189,9 +198,8 @@ static void connect_current(WifiUi *ui, const char *password) {
 }
 
 /* Enter on the chosen row. A locked network that is not saved is one whose
-   password is not known, so it asks for it; anything else connects directly —
-   the key is in the keyring and asking for it again would be asking for
-   something the machine already has. */
+   password is not known, so it asks for it; anything else connects with what
+   the keyring already has. */
 static void choose_selected(WifiUi *ui) {
     if (ui->selected < 0 || ui->selected >= ui->networks.count) {
         return;
@@ -205,9 +213,7 @@ static void choose_selected(WifiUi *ui) {
         ui->password[0] = '\0';
         ui->status[0] = '\0';
         ui->mode = WIFI_MODE_PASSWORD;
-        work_out_size(ui);
-        XResizeWindow(ui->display, ui->window,
-                      (unsigned int)ui->width, (unsigned int)ui->height);
+        resize_for_mode(ui);
         wifi_draw(ui);
         return;
     }
@@ -215,21 +221,18 @@ static void choose_selected(WifiUi *ui) {
     connect_current(ui, NULL);
 }
 
-/* Go back to the list from a sub-screen, and size the window to it. */
+/* Go back to the list from a sub-screen. */
 static void leave_sub_screen(WifiUi *ui) {
     ui->mode = WIFI_MODE_LIST;
     ui->password_length = 0;
     ui->password[0] = '\0';
     ui->status[0] = '\0';
-    work_out_size(ui);
-    XResizeWindow(ui->display, ui->window,
-                  (unsigned int)ui->width, (unsigned int)ui->height);
+    resize_for_mode(ui);
     wifi_draw(ui);
 }
 
 /* The profile name for the chosen network, if it is saved, or an empty string.
-   The profile name and the SSID are the same for a simple network, which is why
-   the SSID can be looked up in the saved list by name. */
+   For a simple network the profile name and the SSID are the same. */
 static const char *chosen_saved_name(WifiUi *ui) {
     if (ui->selected < 0 || ui->selected >= ui->networks.count) {
         return "";
@@ -243,8 +246,6 @@ static const char *chosen_saved_name(WifiUi *ui) {
     return "";
 }
 
-/* f: ask to forget the chosen saved network. A confirmation is shown first,
-   because forgetting throws the password away. */
 static void ask_forget(WifiUi *ui) {
     const char *name = chosen_saved_name(ui);
     if (!name[0]) {
@@ -256,21 +257,14 @@ static void ask_forget(WifiUi *ui) {
     snprintf(ui->pending_saved, sizeof(ui->pending_saved), "%s", name);
     ui->mode = WIFI_MODE_CONFIRM;
     ui->status[0] = '\0';
-    work_out_size(ui);
-    XResizeWindow(ui->display, ui->window,
-                  (unsigned int)ui->width, (unsigned int)ui->height);
+    resize_for_mode(ui);
     wifi_draw(ui);
 }
 
-/* y in the confirmation: forget the profile, then read everything again so the
-   row loses its saved mark. */
 static void confirm_forget(WifiUi *ui) {
     char error[WIFI_TEXT];
     if (wifi_saved_forget(ui->pending_saved, error, sizeof(error)) == 0) {
         ui->mode = WIFI_MODE_LIST;
-        work_out_size(ui);
-        XResizeWindow(ui->display, ui->window,
-                      (unsigned int)ui->width, (unsigned int)ui->height);
         refresh_all(ui);
         snprintf(ui->status, sizeof(ui->status), "Forgot \"%s\"",
                  ui->pending_saved);
@@ -279,13 +273,10 @@ static void confirm_forget(WifiUi *ui) {
     }
     snprintf(ui->status, sizeof(ui->status), "%s", error);
     ui->mode = WIFI_MODE_LIST;
-    work_out_size(ui);
-    XResizeWindow(ui->display, ui->window,
-                  (unsigned int)ui->width, (unsigned int)ui->height);
+    resize_for_mode(ui);
     wifi_draw(ui);
 }
 
-/* a: toggle the chosen saved network's "join by itself". */
 static void toggle_autoconnect(WifiUi *ui) {
     const char *name = chosen_saved_name(ui);
     if (!name[0]) {
@@ -317,7 +308,6 @@ static void toggle_autoconnect(WifiUi *ui) {
     wifi_draw(ui);
 }
 
-/* w: turn the radio on or off, then read everything again. */
 static void toggle_radio(WifiUi *ui) {
     if (ui->radio_on < 0) {
         snprintf(ui->status, sizeof(ui->status),
@@ -340,7 +330,6 @@ static void toggle_radio(WifiUi *ui) {
     wifi_draw(ui);
 }
 
-/* d: disconnect. */
 static void do_disconnect(WifiUi *ui) {
     char error[WIFI_TEXT];
     snprintf(ui->status, sizeof(ui->status), "Disconnecting…");
@@ -350,6 +339,68 @@ static void do_disconnect(WifiUi *ui) {
     } else {
         snprintf(ui->status, sizeof(ui->status), "%s", error);
         wifi_draw(ui);
+    }
+}
+
+/* Ask before the restart: it drops the network for a moment. */
+static void ask_restart(WifiUi *ui) {
+    ui->mode = WIFI_MODE_RESTART;
+    ui->status[0] = '\0';
+    resize_for_mode(ui);
+    wifi_draw(ui);
+}
+
+/* y in the restart screen: clear the blocks and reload the driver. This is the
+   whole of Reboot_Wifi.py. The network drops while it happens and comes back
+   with the rescan that follows. */
+static void do_restart(WifiUi *ui) {
+    ui->mode = WIFI_MODE_LIST;
+    snprintf(ui->status, sizeof(ui->status),
+             "Restarting the wifi driver…");
+    resize_for_mode(ui);
+    wifi_draw(ui);
+
+    char error[WIFI_TEXT];
+    if (wifi_rfkill_restart(ui->driver_module, error, sizeof(error)) == 0) {
+        /* Give the kernel a moment to bring the interface back before reading
+           it, so the scan is not run against a device that is still coming
+           up. */
+        refresh_all(ui);
+        snprintf(ui->status, sizeof(ui->status),
+                 "The wifi driver was restarted");
+        wifi_draw(ui);
+        return;
+    }
+    snprintf(ui->status, sizeof(ui->status), "%s", error);
+    resize_for_mode(ui);
+    wifi_draw(ui);
+}
+
+/* Run the action a button — or a letter, resolved to the same value — stands
+   for. The one place the actions are named, so the mouse and the keyboard do
+   not drift apart. */
+static void dispatch_action(WifiUi *ui, WifiAction action) {
+    switch (action) {
+    case WIFI_ACTION_RESCAN:
+        refresh_all(ui);
+        break;
+    case WIFI_ACTION_DISCONNECT:
+        do_disconnect(ui);
+        break;
+    case WIFI_ACTION_FORGET:
+        ask_forget(ui);
+        break;
+    case WIFI_ACTION_AUTOCONNECT:
+        toggle_autoconnect(ui);
+        break;
+    case WIFI_ACTION_RESTART:
+        ask_restart(ui);
+        break;
+    case WIFI_ACTION_QUIT:
+        ui->running = 0;
+        break;
+    default:
+        break;
     }
 }
 
@@ -416,52 +467,31 @@ static void handle_password_key(WifiUi *ui, KeySym symbol, XKeyEvent *key) {
     }
 }
 
-static void handle_confirm_key(WifiUi *ui, KeySym symbol, XKeyEvent *key) {
+static void handle_confirm_key(WifiUi *ui, KeySym symbol) {
     if (symbol == XK_Escape || symbol == XK_n || symbol == XK_N) {
         leave_sub_screen(ui);
         return;
     }
     if (symbol == XK_y || symbol == XK_Y) {
         confirm_forget(ui);
+    }
+}
+
+static void handle_restart_key(WifiUi *ui, KeySym symbol) {
+    if (symbol == XK_Escape || symbol == XK_n || symbol == XK_N) {
+        leave_sub_screen(ui);
         return;
     }
-    /* Anything else in a yes/no is read as "no", so a stray key does not throw a
-       password away. */
-    (void)key;
-}
-
-/* The letter commands, shared by the list. Returns 1 when the letter was one
-   of them and has been acted on. */
-static int handle_command_letter(WifiUi *ui, KeySym symbol, XKeyEvent *key) {
-    switch (symbol) {
-    case XK_r:
-        refresh_all(ui);
-        return 1;
-    case XK_w:
-        toggle_radio(ui);
-        return 1;
-    case XK_d:
-        do_disconnect(ui);
-        return 1;
-    case XK_f:
-        ask_forget(ui);
-        return 1;
-    case XK_a:
-        toggle_autoconnect(ui);
-        return 1;
-    case XK_q:
-        ui->running = 0;
-        return 1;
-    default:
-        break;
+    if (symbol == XK_y || symbol == XK_Y) {
+        do_restart(ui);
     }
-    (void)key;
-    return 0;
 }
 
-static void handle_list_key(WifiUi *ui, KeySym symbol, XKeyEvent *key) {
+static void handle_list_key(WifiUi *ui, KeySym symbol) {
     switch (symbol) {
     case XK_Escape:
+    case XK_q:
+    case XK_Q:
         ui->running = 0;
         return;
     case XK_Return:
@@ -496,19 +526,27 @@ static void handle_list_key(WifiUi *ui, KeySym symbol, XKeyEvent *key) {
         move_selection(ui, 0);
         wifi_draw(ui);
         return;
+    case XK_r:
+        dispatch_action(ui, WIFI_ACTION_RESCAN);
+        return;
+    case XK_w:
+        toggle_radio(ui);
+        return;
+    case XK_d:
+        dispatch_action(ui, WIFI_ACTION_DISCONNECT);
+        return;
+    case XK_f:
+        dispatch_action(ui, WIFI_ACTION_FORGET);
+        return;
+    case XK_a:
+        dispatch_action(ui, WIFI_ACTION_AUTOCONNECT);
+        return;
+    case XK_R:
+        dispatch_action(ui, WIFI_ACTION_RESTART);
+        return;
     default:
         break;
     }
-
-    /* A letter. The keysym is enough for the plain letters the commands are
-       made of; a capital is accepted too, so Shift+r works. */
-    if (symbol == XK_R) symbol = XK_r;
-    if (symbol == XK_W) symbol = XK_w;
-    if (symbol == XK_D) symbol = XK_d;
-    if (symbol == XK_F) symbol = XK_f;
-    if (symbol == XK_A) symbol = XK_a;
-    if (symbol == XK_Q) symbol = XK_q;
-    handle_command_letter(ui, symbol, key);
 }
 
 static void handle_key(WifiUi *ui, XKeyEvent *key) {
@@ -520,19 +558,35 @@ static void handle_key(WifiUi *ui, XKeyEvent *key) {
     if (ui->mode == WIFI_MODE_PASSWORD) {
         handle_password_key(ui, symbol, key);
     } else if (ui->mode == WIFI_MODE_CONFIRM) {
-        handle_confirm_key(ui, symbol, key);
+        handle_confirm_key(ui, symbol);
+    } else if (ui->mode == WIFI_MODE_RESTART) {
+        handle_restart_key(ui, symbol);
     } else {
-        handle_list_key(ui, symbol, key);
+        handle_list_key(ui, symbol);
     }
 }
 
-/* Choose the row a click landed on, for the list screen. */
+/* A click: first the buttons, then a row of the list. The buttons come first
+   because they sit below the list and a click on one must not also move the
+   selection. */
 static void handle_click(WifiUi *ui, XButtonEvent *button) {
     if (button->button != Button1 || ui->mode != WIFI_MODE_LIST) {
         return;
     }
 
-    int top = ui->style.row_height + ui->style.padding;
+    for (int i = 0; i < ui->button_count; i++) {
+        WifiButton *candidate = &ui->buttons[i];
+        if (button->x >= candidate->x &&
+            button->x < candidate->x + candidate->width &&
+            button->y >= candidate->y &&
+            button->y < candidate->y + candidate->height) {
+            dispatch_action(ui, candidate->action);
+            return;
+        }
+    }
+
+    int top = ui->style.row_height + ui->style.padding +
+              ((ui->block.hard || ui->block.soft) ? ui->style.row_height : 0);
     if (button->y < top) {
         return;
     }
@@ -578,6 +632,7 @@ int wifi_ui_open(WifiUi *ui, const char *config_path) {
     wifi_shell_set_program(ui->config.nmcli);
     wifi_style_load(&ui->style, ui->display, ui->screen, &ui->config);
     wifi_nm_device(ui->device, sizeof(ui->device));
+    wifi_rfkill_state(&ui->block);
 
     ui->gc = XCreateGC(ui->display, ui->root, 0, NULL);
     if (!ui->gc) {
@@ -618,23 +673,7 @@ int wifi_ui_open(WifiUi *ui, const char *config_path) {
     XMapWindow(ui->display, ui->window);
     XFlush(ui->display);
 
-    /* A sensible starting height, then the first full read, which also brings
-       the window to the height its row count wants. */
     refresh_all(ui);
-
-    /* Grow to the size the rows want now that the config's row count is known,
-       so a first scan with many networks is not cut off. */
-    int wanted_height = ui->style.row_height + ui->style.padding +
-                        ui->config.rows * ui->style.row_height +
-                        2 * ui->style.row_height;
-    if (wanted_height > ui->screen_height) {
-        wanted_height = ui->screen_height;
-    }
-    if (wanted_height != ui->height) {
-        ui->height = wanted_height;
-        XResizeWindow(ui->display, ui->window,
-                      (unsigned int)ui->width, (unsigned int)ui->height);
-    }
 
     ui->running = 1;
     wifi_draw(ui);

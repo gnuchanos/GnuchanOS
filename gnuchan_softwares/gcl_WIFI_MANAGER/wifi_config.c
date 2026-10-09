@@ -38,6 +38,12 @@ void wifi_config_defaults(WifiConfig *config) {
     memset(config, 0, sizeof(*config));
 
     snprintf(config->nmcli, sizeof(config->nmcli), "nmcli");
+
+    /* Empty by default, so the driver name is read from the kernel and a
+       config that names nothing is right on every machine. A person running
+       an Atheros card can put "ath5k" here as a fallback. */
+    config->restart_module[0] = '\0';
+
     snprintf(config->title, sizeof(config->title), "Wi-Fi");
 
     snprintf(config->font_family, sizeof(config->font_family), "monospace");
@@ -107,6 +113,9 @@ static void apply_setting(WifiConfig *config, const char *name,
 
     if (strcmp(name, "NmcliPath") == 0 || strcmp(name, "Nmcli") == 0) {
         SET_TEXT(nmcli);
+    } else if (strcmp(name, "RestartModule") == 0 ||
+               strcmp(name, "WifiModule") == 0) {
+        SET_TEXT(restart_module);
     } else if (strcmp(name, "Title") == 0) {
         SET_TEXT(title);
     } else if (strcmp(name, "FontFamily") == 0) {
