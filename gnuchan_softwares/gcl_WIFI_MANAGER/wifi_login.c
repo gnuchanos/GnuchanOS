@@ -36,6 +36,13 @@ typedef struct LoginDialog {
     GC gc;
     WifiStyle style;
 
+    /* The off-screen buffer every frame is drawn into before it is put up in
+       one copy. Drawing straight to the window shows the background being
+       cleared and the dots being redrawn one at a time, which reads as a
+       flicker on every keystroke; the whole dialog is built off-screen and
+       copied up once instead. */
+    Pixmap buffer;
+
     int width;
     int height;
 
@@ -47,16 +54,22 @@ typedef struct LoginDialog {
 
 /* --- drawing -------------------------------------------------------------- */
 
+/* What a frame is drawn into: the off-screen buffer when there is one, the
+   window otherwise. */
+static Drawable target(const LoginDialog *dialog) {
+    return dialog->buffer ? dialog->buffer : dialog->window;
+}
+
 static void fill(LoginDialog *dialog, unsigned long colour,
                  int x, int y, int width, int height) {
     XSetForeground(dialog->display, dialog->gc, colour);
-    XFillRectangle(dialog->display, dialog->window, dialog->gc,
+    XFillRectangle(dialog->display, target(dialog), dialog->gc,
                    x, y, (unsigned int)width, (unsigned int)height);
 }
 
 static void text(LoginDialog *dialog, int x, int baseline,
                  const char *string, unsigned long colour) {
-    wifi_style_text(dialog->display, dialog->screen, dialog->window,
+    wifi_style_text(dialog->display, dialog->screen, target(dialog),
                     dialog->style.font, x, baseline, string, colour);
 }
 
@@ -83,7 +96,7 @@ static void draw(LoginDialog *dialog) {
     fill(dialog, dialog->style.field, pad, y, dialog->width - 2 * pad,
          field_h);
     XSetForeground(dialog->display, dialog->gc, dialog->style.panel_edge);
-    XDrawRectangle(dialog->display, dialog->window, dialog->gc,
+    XDrawRectangle(dialog->display, target(dialog), dialog->gc,
                    pad, y, (unsigned)(dialog->width - 2 * pad - 1),
                    (unsigned)(field_h - 1));
 
@@ -93,7 +106,7 @@ static void draw(LoginDialog *dialog) {
     int cy = y + field_h / 2;
     XSetForeground(dialog->display, dialog->gc, dialog->style.text);
     for (int i = 0; i < dialog->length; i++) {
-        XFillArc(dialog->display, dialog->window, dialog->gc,
+        XFillArc(dialog->display, target(dialog), dialog->gc,
                  cx + i * dot_gap - dot_r, cy - dot_r,
                  (unsigned)(2 * dot_r), (unsigned)(2 * dot_r), 0, 360 * 64);
     }
@@ -104,6 +117,14 @@ static void draw(LoginDialog *dialog) {
     text(dialog, pad, y + ascent, "Enter accepts, Escape cancels",
          dialog->style.text_muted);
 
+    /* The finished frame, put up in one copy. This is the whole point of the
+       buffer: the dialog never shows itself half-drawn, so typing does not
+       flicker. */
+    if (dialog->buffer) {
+        XCopyArea(dialog->display, dialog->buffer, dialog->window, dialog->gc,
+                  0, 0, (unsigned)dialog->width, (unsigned)dialog->height,
+                  0, 0);
+    }
     XFlush(dialog->display);
 }
 
@@ -224,6 +245,14 @@ int wifi_login_prompt(const WifiConfig *config, char *password,
 
     dialog.gc = XCreateGC(dialog.display, dialog.window, 0, NULL);
 
+    /* The off-screen buffer, the same depth as the window so the copy is a
+       straight one. Made once here; every draw goes into it. */
+    dialog.buffer = XCreatePixmap(dialog.display, dialog.window,
+                                  (unsigned)dialog.width,
+                                  (unsigned)dialog.height,
+                                  (unsigned)DefaultDepth(dialog.display,
+                                                         dialog.screen));
+
     XStoreName(dialog.display, dialog.window, "GnuChanWifi — authentication");
 
     XMapRaised(dialog.display, dialog.window);
@@ -247,6 +276,10 @@ int wifi_login_prompt(const WifiConfig *config, char *password,
     }
 
     XUngrabKeyboard(dialog.display, CurrentTime);
+    if (dialog.buffer) {
+        XFreePixmap(dialog.display, dialog.buffer);
+        dialog.buffer = None;
+    }
     if (dialog.gc) {
         XFreeGC(dialog.display, dialog.gc);
     }
