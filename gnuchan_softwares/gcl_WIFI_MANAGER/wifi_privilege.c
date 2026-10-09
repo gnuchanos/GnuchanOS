@@ -1,59 +1,58 @@
 /*
- * wifi_privilege.c — re-running through sudo, once.
+ * wifi_privilege.c — asking in a window, running through sudo, not coming back.
  *
- * See wifi_privilege.h for why. What is here is the one check — "am I root?" —
- * and the one action — "if not, run sudo and do not come back" — plus the guard
- * that stops the second copy from doing it again.
+ * See wifi_privilege.h for why. What is here is the order of the three steps:
  *
- * --- why execvp and not system() ---
+ *   1. If already root, do nothing.
+ *   2. If not, show the password window (wifi_login.c) and get the key.
+ *   3. Run sudo with the key on its standard input — sudo -S reads it from
+ *      there — and wait for that copy to finish. This process was only ever a
+ *      launcher for the root one, so when the copy exits, this exits with it.
  *
- * The first cut of this built one long string — "sudo -E env NAME=value ..." —
- * and handed it to system(), which runs it through /bin/sh. That is wrong on
- * three counts, and the third is what a person running it saw:
+ * --- why sudo -S and a pipe ---
  *
- *   1. A shell re-splits the string, so a value with a space or a quote in it
- *      (a HOME under a directory with a space, a display name) becomes several
- *      arguments and the command means something else.
- *   2. The program's own path was whatever argv[0] held, which for a program
- *      started from the window manager is a bare name; `env` then had to find
- *      it on PATH, and the PATH under sudo is not the one it was launched with.
- *   3. There was no check that the assembled string fit its buffer, so on the
- *      edge it could be cut and the tail — variable names and all — read as
- *      arguments to `env`, which then reported the fragment as a missing file.
+ * sudo normally reads the password from a terminal (/dev/tty). A manager started
+ * from the launcher has no terminal: there is no /dev/tty to read from, sudo
+ * cannot prompt, and the manager appears to open nothing at all. That is the
+ * exact fault. sudo -S reads the password from standard input instead, so the
+ * window that asked for it is the only prompt, and this hands the answer over a
+ * pipe: no terminal, no silent hang.
  *
- * So the command is now built as an ARRAY of arguments and passed to execvp,
- * with no shell in the way: nothing is re-split, every value is one argument
- * exactly as getenv() gave it, and there is no string to overrun. The program's
- * own path is read from /proc/self/exe, so `env` is handed an absolute path and
- * never has to search for it.
- *
- * The guard is still the environment variable GNUCHANWIFI_ELEVATED: the copy
- * sudo starts carries it, sees it, and does not try to elevate again, so a
- * machine where sudo somehow returns a non-root process does not loop.
+ * The password is written to the pipe and the write end is closed at once, so
+ * sudo sees the answer and then EOF. It is never written to a file, never put on
+ * the command line (where /proc would show it), and it is overwritten before
+ * this process leaves. It is a program, not a shadow file, but a password typed
+ * by a person is worth the two lines.
  */
 #define _POSIX_C_SOURCE 200809L
-
-#include "wifi_privilege.h"
 
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
+
+#include "wifi_login.h"
+#include "wifi_privilege.h"
 
 #ifndef GNUCHANWIFI_ELEVATED_VARIABLE
 #define GNUCHANWIFI_ELEVATED_VARIABLE "GNUCHANWIFI_ELEVATED"
 #endif
 
-/* The variables carried into the root copy, in order. DISPLAY and XAUTHORITY so
-   the copy can still reach the user's X server; HOME so it reads the settings
-   out of the user's own home and not root's, which is empty. The list ends with
-   NULL and its length is what the arrays below are sized from. */
+/* The variables carried into the root copy. DISPLAY and XAUTHORITY so it can
+   reach the user's X server; HOME so it reads the settings out of the user's own
+   home and not root's, which is empty. */
 static const char *const kKeep[] = { "DISPLAY", "XAUTHORITY", "HOME", NULL };
 #define KEEP_COUNT ((int)(sizeof(kKeep) / sizeof(kKeep[0])) - 1)
 
-/* Where this program really is. /proc/self/exe is the one answer that does not
-   depend on how it was started, which is exactly the problem with argv[0] under
-   a window manager. Falls back to argv[0] on a system without procfs. */
+static int is_root(void) {
+    return geteuid() == 0;
+}
+
+/* Where this program really is: /proc/self/exe, so the copy is run by absolute
+   path and never searched for on a PATH that sudo has changed. argv[0] is the
+   fallback for a system without procfs. */
 static void self_path(int argc, char **argv, char *out, unsigned int size) {
     ssize_t got = readlink("/proc/self/exe", out, size - 1);
     if (got > 0) {
@@ -64,27 +63,23 @@ static void self_path(int argc, char **argv, char *out, unsigned int size) {
              (argc > 0 && argv[0]) ? argv[0] : "GnuChanWifi");
 }
 
-static int is_root(void) {
-    /* geteuid is the id that decides what the kernel will let this process do,
-       which is the question being asked — not getuid, which is who logged in. */
-    return geteuid() == 0;
+/* Overwrite a password buffer once it is no longer needed. Not protection
+   against a determined reader — this process is small and short-lived — but the
+   cost is a few stores and the alternative is leaving a person's key in freed
+   memory. */
+static void wipe(char *password) {
+    if (password) {
+        memset(password, 0, strlen(password));
+    }
 }
 
-int wifi_privilege_ensure(int argc, char **argv) {
-    if (is_root()) {
-        return 0;
-    }
-
-    /* The second copy sudo started carries this and must not try again. */
-    if (getenv(GNUCHANWIFI_ELEVATED_VARIABLE) != NULL) {
-        return 0;
-    }
-
+/* Build the sudo argument vector and run it with the password on standard input.
+   Does not return on success: it waits for the copy and exits with its status.
+   Returns -1 only when sudo could not be started at all. */
+static int run_sudo(int argc, char **argv, const char *password) {
     char self[PATH_MAX];
     self_path(argc, argv, self, sizeof(self));
 
-    /* The NAME=value strings for the kept variables, each in its own buffer so
-       the pointers stay valid for the whole execvp. */
     char kept[KEEP_COUNT][PATH_MAX + 64];
     const char *kept_pointers[KEEP_COUNT + 1];
     int kept_count = 0;
@@ -103,11 +98,11 @@ int wifi_privilege_ensure(int argc, char **argv) {
     snprintf(elevated, sizeof(elevated), "%s=1",
              GNUCHANWIFI_ELEVATED_VARIABLE);
 
-    /* sudo -E env ELEVATED=1 <kept...> /abs/self <args...>
+    /* sudo -S -E env ELEVATED=1 <kept...> /abs/self <args...>
      *
-     * The count: sudo, -E, env, the elevated pair, the kept pairs, the program
-     * path, the program's own arguments, and the terminating NULL. */
-    int slots = 4 + kept_count + 1 + (argc > 1 ? argc - 1 : 0) + 1;
+     * -S is the one that matters: it is what makes sudo read the password from
+     * standard input rather than a terminal. */
+    int slots = 5 + kept_count + 1 + (argc > 1 ? argc - 1 : 0) + 1;
     char **command = calloc((size_t)slots, sizeof(char *));
     if (!command) {
         return -1;
@@ -115,6 +110,7 @@ int wifi_privilege_ensure(int argc, char **argv) {
 
     int at = 0;
     command[at++] = (char *)"sudo";
+    command[at++] = (char *)"-S";
     command[at++] = (char *)"-E";
     command[at++] = (char *)"env";
     command[at++] = elevated;
@@ -127,19 +123,87 @@ int wifi_privilege_ensure(int argc, char **argv) {
     }
     command[at] = NULL;
 
-    fprintf(stderr,
-            "gnuchanwifi: this manages the radio and the driver, so it needs "
-            "root; asking for the password\n");
-    fflush(stderr);
+    int pipe_to_stdin[2];
+    if (pipe(pipe_to_stdin) != 0) {
+        free(command);
+        return -1;
+    }
 
-    /* execvp searches PATH for "sudo" and replaces this process with it: when
-       it succeeds nothing below runs, and the elevated copy is the one that
-       opens the window. When it returns, sudo was not found. */
-    execvp("sudo", command);
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipe_to_stdin[0]);
+        close(pipe_to_stdin[1]);
+        free(command);
+        return -1;
+    }
 
-    fprintf(stderr,
-            "gnuchanwifi: sudo could not be run; the window will open, but "
-            "the radio and the driver cannot be changed\n");
+    if (pid == 0) {
+        /* The child: its standard input IS the read end of the pipe, so what
+           the parent writes below arrives as sudo's password. */
+        close(pipe_to_stdin[1]);
+        dup2(pipe_to_stdin[0], STDIN_FILENO);
+        if (pipe_to_stdin[0] != STDIN_FILENO) {
+            close(pipe_to_stdin[0]);
+        }
+        execvp("sudo", command);
+        _exit(127);        /* execvp only returns on failure */
+    }
+
+    /* The parent: hand over the password and close the write end, so sudo reads
+       the answer and then an end of input. */
+    close(pipe_to_stdin[0]);
+    if (password && password[0]) {
+        size_t length = strlen(password);
+        ssize_t ignored = write(pipe_to_stdin[1], password, length);
+        (void)ignored;
+    }
+    ssize_t newline = write(pipe_to_stdin[1], "\n", 1);
+    (void)newline;
+    close(pipe_to_stdin[1]);
+
+    int status = 0;
+    waitpid(pid, &status, 0);
     free(command);
+
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
     return -1;
+}
+
+int wifi_privilege_ensure(int argc, char **argv, const WifiConfig *config) {
+    if (is_root()) {
+        return 0;
+    }
+
+    /* A copy that is somehow still not root must not try again: this is set on
+       the sudo command line, so the copy carries it. */
+    if (getenv(GNUCHANWIFI_ELEVATED_VARIABLE) != NULL) {
+        return 0;
+    }
+
+    /* The one thing the person sees before the manager opens. */
+    char password[WIFI_LOGIN_MAX];
+    if (wifi_login_prompt(config, password, sizeof(password)) != 0) {
+        fprintf(stderr,
+                "gnuchanwifi: no password was given, so it will open without "
+                "root; the radio and the driver cannot be changed\n");
+        return -1;
+    }
+
+    int result = run_sudo(argc, argv, password);
+    wipe(password);
+
+    if (result < 0) {
+        fprintf(stderr,
+                "gnuchanwifi: sudo could not be run; the window will open, "
+                "but the radio and the driver cannot be changed\n");
+        /* Carry on and let the window open without root rather than failing to
+           open at all: seeing the networks is still worth something. */
+        return -1;
+    }
+
+    /* The root copy has finished (its window was closed) or sudo refused the
+       password. Either way this launcher is done. */
+    exit(result);
 }

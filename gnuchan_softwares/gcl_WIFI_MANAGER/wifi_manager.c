@@ -167,13 +167,27 @@ int main(int argc, char **argv) {
         return list_networks(config_path);
     }
 
+    /* The settings are read here — before the password window — because that
+       window is drawn in them, so the one thing a person sees before the
+       manager opens looks like the manager. */
+    WifiConfig config;
+    char found[WIFI_TEXT * 2];
+    const char *path = config_path;
+    if (!path || !path[0]) {
+        path = wifi_config_path(found, sizeof(found));
+    }
+    if (wifi_config_load(&config, path) != 0) {
+        fprintf(stderr, "gnuchanwifi: %s; using the defaults\n", config.error);
+    }
+
     /* Opening the window is what needs root: the radio, the driver reload and
        the kill switches are all root's to change, and a window that half-works
        because each action is refused is worse than asking for the password
-       once. wifi_privilege_ensure() re-runs this program through sudo and does
-       not return when it does; a machine with no sudo carries on here and the
-       privileged actions simply report that they failed. */
-    if (wifi_privilege_ensure(argc, argv) != 0) {
+       once. wifi_privilege_ensure() shows the password window, re-runs this
+       program through sudo, and exits with the copy; a machine with no display
+       or no sudo carries on here and the privileged actions simply report that
+       they failed. */
+    if (wifi_privilege_ensure(argc, argv, &config) != 0) {
         fprintf(stderr,
                 "gnuchanwifi: carrying on without root; the radio and the "
                 "driver cannot be changed\n");

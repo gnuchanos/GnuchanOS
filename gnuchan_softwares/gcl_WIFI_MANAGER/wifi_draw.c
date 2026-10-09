@@ -101,18 +101,20 @@ static int band_baseline(const WifiUi *ui, int band_y) {
 
 /* --- the buttons ---------------------------------------------------------- */
 
-/* The six buttons, in the order they are drawn. One table so a button's label
-   and its action are written together and cannot drift apart. */
+/* The buttons, in the order they are drawn. One table so a button's label and
+   its action are written together and cannot drift apart. Connect is first
+   because it is what a person does most and it acts on the chosen row. */
 static const struct {
     const char *label;
     WifiAction action;
 } kButtons[] = {
-    { "Rescan",      WIFI_ACTION_RESCAN },
-    { "Disconnect",  WIFI_ACTION_DISCONNECT },
-    { "Forget",      WIFI_ACTION_FORGET },
-    { "Autoconnect", WIFI_ACTION_AUTOCONNECT },
-    { "Restart",     WIFI_ACTION_RESTART },
-    { "Quit",        WIFI_ACTION_QUIT },
+    { "Connect", WIFI_ACTION_CONNECT },
+    { "Rescan",  WIFI_ACTION_RESCAN },
+    { "Disconnect", WIFI_ACTION_DISCONNECT },
+    { "Forget",  WIFI_ACTION_FORGET },
+    { "Autojoin", WIFI_ACTION_AUTOCONNECT },
+    { "Restart", WIFI_ACTION_RESTART },
+    { "Quit",    WIFI_ACTION_QUIT },
 };
 #define BUTTON_COUNT ((int)(sizeof(kButtons) / sizeof(kButtons[0])))
 

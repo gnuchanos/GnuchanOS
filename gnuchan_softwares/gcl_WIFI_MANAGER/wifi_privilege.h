@@ -7,28 +7,33 @@
  * polkit conversation that a bare "not authorized" is the fruit of on a machine
  * with no polkit agent running — which is this desktop.
  *
- * So the program re-runs itself through sudo at start-up, once, and the copy
- * that opens the window is root. This is the same choice the installers make,
- * and it is deliberate: a wifi window that half-works because every second
- * action is refused is worse than a window that asks for the password once.
+ * The password is asked for in a WINDOW (wifi_login.c), not on a terminal. That
+ * is the whole point: a manager started from the launcher has no terminal, and
+ * one that stopped at a prompt nobody could see would look like a program that
+ * opened nothing. The password is handed to sudo on its standard input — sudo
+ * -S reads it from there — so no terminal is needed and no second window is.
  */
 #ifndef GNUCHANWIFI_PRIVILEGE_H
 #define GNUCHANWIFI_PRIVILEGE_H
 
+#include "wifi_config.h"
+
 /* Make sure the program is running as root, re-running it through sudo if it is
-   not.
+ * not.
  *
- * This either raises the privileges and never returns — the process image is
- * replaced by the sudo'd copy — or it returns. It returns 0 when nothing needs
- * doing (already root, or a re-run was already tried and this is that re-run),
- * and -1 when the program could not be re-run at all (no sudo). A -1 is not
- * fatal on its own: the caller carries on and the actions that need root simply
- * fail with a message, which is better than a window that will not open.
+ * When the caller is already root this returns 0 and the caller carries on. When
+ * it is not, this shows the password window, re-runs the program through sudo
+ * with the password on its standard input, waits for that copy to finish, and
+ * then EXITS — it does not return to a caller, because the copy that opened the
+ * window is the one that mattered and this process was only ever its launcher.
  *
- * The DISPLAY and XAUTHORITY of the invoking session are passed through the
- * sudo so the copy that opens the window can still reach the X server, and HOME
- * is passed through so it reads the config out of the user's own home and not
- * root's. */
-int wifi_privilege_ensure(int argc, char **argv);
+ * `config` is the settings the password window is drawn in, so it looks like the
+ * manager it is opening. It may be NULL, in which case the dialog uses the
+ * manager's defaults.
+ *
+ * Returns -1 — and the caller should carry on WITHOUT root — only when there is
+ * no display to ask on or no sudo to ask with; the privileged actions then
+ * report their own failures, which is better than a window that will not open. */
+int wifi_privilege_ensure(int argc, char **argv, const WifiConfig *config);
 
 #endif /* GNUCHANWIFI_PRIVILEGE_H */

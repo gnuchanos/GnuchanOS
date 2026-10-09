@@ -75,6 +75,7 @@ PROGRAMS: tuple[tuple[str, str], ...] = (
     ("gcl_TERMINAL", "GnuChanTerm"),
     ("gcl_FETCH", "GnuChanFetch"),
     ("gcl_RUNNER", "GnuChanRunner"),
+    ("gcl_WIFI_MANAGER", "GnuChanWifi"),
     ("gcl_DOCK", "GnuChanDock"),
     ("gcl_BROWSER_WEB", "GnuChanBrowser"),
     ("gcl_SCREENSAVER", "GnuChanSS"),

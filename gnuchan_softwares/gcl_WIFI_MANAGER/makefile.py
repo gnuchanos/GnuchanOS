@@ -54,6 +54,15 @@ BUILD = ROOT.parent.parent / "_temp" / "gnuchanwifi-build"
 PROGRAM = "GnuChanWifi"
 BIN_DIR = Path("/usr/local/bin")
 
+# The desktop entry, which is what makes the manager FINDABLE. GnuChanRunner and
+# any applications menu do not look for binaries: they read the .desktop files
+# under /usr/share/applications, and a program with none is a program the
+# launcher does not show, whatever is in /usr/local/bin. Installing this is what
+# puts GnuChanWifi in the launcher, and it is the step that was missing — the
+# binary was installed and the launcher still could not see it.
+APPS_DIR = Path("/usr/share/applications")
+DESKTOP_FILE = APPS_DIR / "gnuchanwifi.desktop"
+
 # The settings file, installed into the user's own config directory. The manager
 # reads it from there, so a machine that never had one gets the shipped defaults
 # written where it looks for them.
@@ -68,6 +77,7 @@ SOURCES = (
     "wifi_saved.c",
     "wifi_rfkill.c",
     "wifi_privilege.c",
+    "wifi_login.c",
     "wifi_config.c",
     "wifi_style.c",
     "wifi_draw.c",
@@ -81,6 +91,7 @@ HEADERS = (
     "wifi_saved.h",
     "wifi_rfkill.h",
     "wifi_privilege.h",
+    "wifi_login.h",
     "wifi_config.h",
     "wifi_style.h",
     "wifi_draw.h",
@@ -256,9 +267,33 @@ def build() -> Path:
     return output
 
 
+def desktop_entry() -> str:
+    """The .desktop file, written the freedesktop way.
+
+    Exec is the absolute path to the installed binary, so the launcher runs the
+    program this installer put there. Terminal=false because the manager is a
+    window and asks for its own password; Categories puts it under System in a
+    menu. NoDisplay is NOT set: this is exactly the entry that is meant to be
+    seen.
+    """
+    return "\n".join([
+        "[Desktop Entry]",
+        "Type=Application",
+        "Name=GnuChanWifi",
+        "Comment=GnuchanOS wifi manager",
+        f"Exec={BIN_DIR / PROGRAM}",
+        f"TryExec={BIN_DIR / PROGRAM}",
+        "Terminal=false",
+        "Categories=System;Network;",
+        "Icon=network-wireless",
+        "",
+    ])
+
+
 def install(binary: Path) -> None:
     step("Installing")
     BIN_DIR.mkdir(parents=True, exist_ok=True)
+    APPS_DIR.mkdir(parents=True, exist_ok=True)
 
     # The manager this install is replacing may be running — it is a program,
     # and the one open in another terminal is the one being replaced. Writing to
@@ -270,6 +305,16 @@ def install(binary: Path) -> None:
     staged.chmod(0o755)
     os.replace(str(staged), str(BIN_DIR / PROGRAM))
     detail(f"installed {BIN_DIR / PROGRAM}")
+
+    # The desktop entry is written to the build directory first and renamed into
+    # place, the same way the binary is: an in-place write is a partially
+    # written file if the install stops in the middle of it, and a launcher
+    # reading half an entry reads nothing.
+    temporary = BUILD / "gnuchanwifi.desktop.new"
+    temporary.write_text(desktop_entry(), encoding="utf-8")
+    os.replace(str(temporary), str(DESKTOP_FILE))
+    DESKTOP_FILE.chmod(0o644)
+    detail(f"installed {DESKTOP_FILE}")
 
 
 def invoking_user() -> tuple[Path, int, int] | None:
@@ -340,10 +385,10 @@ def install_config() -> None:
 
 def uninstall() -> None:
     step("Uninstalling")
-    target = BIN_DIR / PROGRAM
-    if target.exists():
-        target.unlink()
-        detail(f"removed {target}")
+    for target in (BIN_DIR / PROGRAM, DESKTOP_FILE):
+        if target.exists():
+            target.unlink()
+            detail(f"removed {target}")
     note("The settings file under ~/.config/GnuChanWifi/ was left alone.")
 
 

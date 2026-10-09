@@ -381,6 +381,9 @@ static void do_restart(WifiUi *ui) {
    not drift apart. */
 static void dispatch_action(WifiUi *ui, WifiAction action) {
     switch (action) {
+    case WIFI_ACTION_CONNECT:
+        choose_selected(ui);
+        break;
     case WIFI_ACTION_RESCAN:
         refresh_all(ui);
         break;
@@ -595,8 +598,13 @@ static void handle_click(WifiUi *ui, XButtonEvent *button) {
     if (index < 0 || index >= ui->networks.count) {
         return;
     }
+    /* A click only CHOOSES the row — it moves the highlight and nothing else.
+       Joining is a second, deliberate act: the Connect button or Enter. A click
+       that connected as well would make browsing the list a series of
+       disconnects and reconnects, which is how this first behaved and what
+       "why can I not just pick one" means. */
     ui->selected = index;
-    choose_selected(ui);
+    wifi_draw(ui);
 }
 
 /* --- the window ----------------------------------------------------------- */

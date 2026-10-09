@@ -67,6 +67,7 @@ typedef enum WifiMode {
    the drawing and the clicking name the same thing and a button cannot be wired
    to the wrong action by a mistyped character. */
 typedef enum WifiAction {
+    WIFI_ACTION_CONNECT,     /* join the chosen network                 */
     WIFI_ACTION_RESCAN,
     WIFI_ACTION_DISCONNECT,
     WIFI_ACTION_FORGET,
