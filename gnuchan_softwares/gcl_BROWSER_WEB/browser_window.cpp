@@ -258,7 +258,7 @@ BrowserWindow::BrowserWindow(QWidget *parent)
     shortcut(QKeySequence(QStringLiteral("Ctrl+T")), &BrowserWindow::openNewTab);
     shortcut(QKeySequence::Close, &BrowserWindow::closeCurrentTab);
     shortcut(QKeySequence(QStringLiteral("Ctrl+L")), &BrowserWindow::focusAddress);
-    shortcut(QKeySequence::Reload, &BrowserWindow::reloadCurrent);
+    shortcut(QKeySequence::Refresh, &BrowserWindow::reloadCurrent);
     shortcut(QKeySequence::ZoomIn, &BrowserWindow::zoomIn);
     shortcut(QKeySequence::ZoomOut, &BrowserWindow::zoomOut);
     shortcut(QKeySequence(QStringLiteral("Ctrl+0")), &BrowserWindow::zoomReset);
