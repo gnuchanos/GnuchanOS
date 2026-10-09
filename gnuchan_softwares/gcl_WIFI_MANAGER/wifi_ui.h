@@ -14,11 +14,15 @@
  * is needed), Enter in the password line connects with what was typed, Escape
  * goes back a mode or closes.
  *
- * The window is override-redirect, so the window manager — GnuChanWM, on this
- * desktop — never frames it, and it holds the keyboard and the pointer while it
- * is up, so the first keystroke is the manager's and a click outside dismisses
- * it. That is the same grab the launcher uses, for the same reason: this is a
- * thing that appears, is answered, and goes away.
+ * This is an ORDINARY window: GnuChanWM, the window manager on this desktop,
+ * frames it, moves it, focuses it and closes it — the program hands the window
+ * a name and a class, maps it, and then answers the events that reach it, the
+ * same as the terminal does. It is NOT an override-redirect window and it does
+ * NOT grab the keyboard: a wifi window is an application a person leaves open
+ * while they do something else, not a launcher that appears, is answered, and
+ * goes away. The window manager is what puts it in the taskbar, gives it its
+ * title bar, and lets the title bar's close button end it — through the
+ * WM_DELETE_WINDOW the window asks for.
  */
 #ifndef GNUCHANWIFI_UI_H
 #define GNUCHANWIFI_UI_H
@@ -92,8 +96,8 @@ int wifi_ui_open(WifiUi *ui, const char *config_path);
    that is this program. */
 int wifi_ui_run(WifiUi *ui);
 
-/* Close the window, release the grabs, and free everything the open made. Safe
-   to call whether or not the open succeeded. */
+/* Close the window and free everything the open made. Safe to call whether or
+   not the open succeeded. */
 void wifi_ui_close(WifiUi *ui);
 
 #endif /* GNUCHANWIFI_UI_H */

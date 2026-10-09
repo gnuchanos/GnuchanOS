@@ -1,51 +1,73 @@
 /*
- * wifi_ui.c — the window, the grab, the keys, and the connecting.
+ * wifi_ui.c — the window, the list, the keys, and the connecting.
  *
  * This is where the manager meets the display. Everything it is made of has
  * already been read and resolved by the time this runs: the config, the palette,
- * the font, the interface's name. What is left is a window, a grab, and a loop
- * that turns a key into a choice, and a choice into a connection.
+ * the font, the interface's name. What is left is a window, a loop, and the
+ * connecting.
  *
- * The grab is the same one the launcher takes, and for the same reason. The
- * keyboard is held so the first letter typed reaches this window and not
- * whatever had the focus before it; the pointer is held so a click anywhere is
- * either on a row or means "go away". The window is override-redirect, so
- * GnuChanWM never frames it, and the input focus is set by hand because there is
- * no window manager going to set it.
+ * --- this is an ORDINARY window, and that is the point ---
  *
- * Connecting happens here rather than in a caller, because this program is the
- * caller: there is no second consumer of "which network was chosen". The shape
- * of it is the only interesting decision — a locked network that is not already
- * saved opens the password screen instead of connecting at once; everything else
- * connects directly. Which is which is read from the network's own flags, and
- * the password screen names the network so there is no doubt what is being
- * joined.
+ * GnuChanWM, the window manager on this desktop, OWNS this window: it frames it,
+ * moves it, focuses it, puts it in the taskbar and lets its title bar's close
+ * button end it. The program does the three things a normal X client does and no
+ * more — it names the window (WM_NAME and WM_CLASS, so the manager has a title
+ * to draw and a class to match rules against), it asks for WM_DELETE_WINDOW (so
+ * the close button sends a polite message instead of killing the connection),
+ * and it maps the window and answers the events that reach it.
+ *
+ * It is NOT an override-redirect window and it does NOT grab the keyboard. A
+ * launcher grabs the keyboard and covers the screen because it appears, is
+ * answered, and goes away; a wifi window is an application a person leaves open
+ * while they read a manual or copy a password from somewhere else. Grabbing the
+ * keyboard would take every key from the whole session for as long as it was up,
+ * which is exactly wrong for an application.
+ *
+ * --- the connecting lives here ---
+ *
+ * There is no second consumer of "which network was chosen", so the joining
+ * happens in this file rather than being handed to a caller. A locked network
+ * that is not already saved opens the password screen instead of connecting at
+ * once; everything else connects directly. Which is which is read from the
+ * network's own flags, and the password screen names the network so there is no
+ * doubt what is being joined.
  */
 #include <ctype.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include <X11/Xatom.h>
+#include <X11/Xutil.h>
 #include <X11/keysym.h>
 
 #include "wifi_draw.h"
 #include "wifi_ui.h"
 
-/* Where the window sits, and how tall it is. Centred, the same as the
-   launcher: a thing that appears in the middle of a desk is a thing to answer,
-   and one that appears in a corner is easy to miss. */
-static void work_out_geometry(WifiUi *ui) {
+/* The event mask the window subscribes to. StructureNotify is what a resize and
+   the manager's close arrive through; ExposureMask is what asks for a repaint;
+   the key, button and motion masks are the input the list is answered with.
+   FocusChange is not asked for: this window does not change how it draws when
+   it loses the focus — it is always drawn the same — so the notice would be
+   read and thrown away. */
+#define WIFI_EVENT_MASK (KeyPressMask | ButtonPressMask | ButtonReleaseMask | \
+                         PointerMotionMask | StructureNotifyMask | \
+                         ExposureMask)
+
+/* The size the window needs for the screen it is showing: the title bar, the
+   rows (or the password prompt), and the status line. Kept apart from any move
+   so it can be worked out before the window exists — the window is created at
+   the right size rather than resized after, which shows as an app that opens
+   small and jumps. */
+static void work_out_size(WifiUi *ui) {
     ui->width = ui->config.width;
     if (ui->width > ui->screen_width) {
         ui->width = ui->screen_width;
     }
 
     int title = ui->style.row_height + 2 * ui->style.padding;
-    int rows = ui->config.rows;
-    int status = ui->style.row_height;   /* room for a message at the foot */
+    int status = ui->style.row_height;
 
     if (ui->mode == WIFI_MODE_PASSWORD) {
         /* The password screen is three lines tall and does not grow with the
@@ -53,26 +75,11 @@ static void work_out_geometry(WifiUi *ui) {
            space. */
         ui->height = title + 3 * ui->style.row_height + 2 * ui->style.padding;
     } else {
-        ui->height = title + rows * ui->style.row_height + status +
-                     ui->style.padding;
+        ui->height = title + ui->config.rows * ui->style.row_height + status;
     }
 
     if (ui->height > ui->screen_height) {
         ui->height = ui->screen_height;
-    }
-
-    int x = (ui->screen_width - ui->width) / 2;
-    int y = (ui->screen_height - ui->height) / 3;
-    if (x < 0) x = 0;
-    if (y < 0) y = 0;
-
-    /* The size is worked out once BEFORE the window is made — the window is
-       created at the right size rather than resized after — so this is called
-       while ui->window is still None. XMoveResizeWindow on None is a protocol
-       error, so the move is only made once there is a window to move. */
-    if (ui->window != None) {
-        XMoveResizeWindow(ui->display, ui->window, x, y,
-                          (unsigned int)ui->width, (unsigned int)ui->height);
     }
 }
 
@@ -195,12 +202,26 @@ static void choose_selected(WifiUi *ui) {
         ui->password[0] = '\0';
         ui->status[0] = '\0';
         ui->mode = WIFI_MODE_PASSWORD;
-        work_out_geometry(ui);
+        work_out_size(ui);
+        XResizeWindow(ui->display, ui->window,
+                      (unsigned int)ui->width, (unsigned int)ui->height);
         wifi_draw(ui);
         return;
     }
 
     connect_current(ui, NULL);
+}
+
+/* Go back to the list from the password screen, and shrink the window to it. */
+static void leave_password_screen(WifiUi *ui) {
+    ui->mode = WIFI_MODE_LIST;
+    ui->password_length = 0;
+    ui->password[0] = '\0';
+    ui->status[0] = '\0';
+    work_out_size(ui);
+    XResizeWindow(ui->display, ui->window,
+                  (unsigned int)ui->width, (unsigned int)ui->height);
+    wifi_draw(ui);
 }
 
 /* --- the password line ---------------------------------------------------- */
@@ -241,12 +262,7 @@ static void handle_key(WifiUi *ui, XKeyEvent *key) {
         case XK_Escape:
             /* Back to the list with nothing joined — the choice is abandoned,
                not the program. */
-            ui->mode = WIFI_MODE_LIST;
-            ui->password_length = 0;
-            ui->password[0] = '\0';
-            ui->status[0] = '\0';
-            work_out_geometry(ui);
-            wifi_draw(ui);
+            leave_password_screen(ui);
             return;
         case XK_Return:
         case XK_KP_Enter:
@@ -323,9 +339,9 @@ static void handle_key(WifiUi *ui, XKeyEvent *key) {
         break;
     }
 
-    /* A letter: `r` scans again, `d` disconnects, `q` quits. The letters are
-       the whole of the manager's commands, and they are letters rather than
-       more key bindings because a window this small is answered with letters. */
+    /* A letter: `r` scans again, `d` disconnects. The letters are the whole of
+       the manager's commands, and they are letters rather than more key
+       bindings because a window this small is answered with letters. */
     char text[8];
     int length = XLookupString(key, text, sizeof(text) - 1, NULL, NULL);
     if (length <= 0) {
@@ -344,54 +360,13 @@ static void handle_key(WifiUi *ui, XKeyEvent *key) {
             snprintf(ui->status, sizeof(ui->status), "%s", error);
             wifi_draw(ui);
         }
-    } else if (c == 'q' || c == 'Q') {
-        ui->running = 0;
     }
 }
 
-/* --- the window ----------------------------------------------------------- */
-
-/* Take the keyboard and the pointer for as long as the window is up. The input
-   focus is set first, because the window is override-redirect and no window
-   manager will focus it; the grabs are retried, because a grab is refused with
-   GrabNotViewable while the server is still finishing the map and with
-   AlreadyGrabbed while another client holds one for a moment. */
-static int grab_input(WifiUi *ui) {
-    XSetInputFocus(ui->display, ui->window, RevertToPointerRoot, CurrentTime);
-    XSync(ui->display, False);
-
-    int keyboard = GrabNotViewable;
-    for (int attempt = 0; attempt < 20; attempt++) {
-        XGrabPointer(ui->display, ui->window, False,
-                     ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-                     GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
-        keyboard = XGrabKeyboard(ui->display, ui->window, False,
-                                 GrabModeAsync, GrabModeAsync, CurrentTime);
-        if (keyboard == GrabSuccess) {
-            return 1;
-        }
-        usleep(10000);
-    }
-    fprintf(stderr,
-            "gnuchanwifi: the keyboard could not be grabbed (%d); "
-            "typing will go to whatever had the focus\n", keyboard);
-    return 0;
-}
-
-static void ungrab_input(WifiUi *ui) {
-    XUngrabKeyboard(ui->display, CurrentTime);
-    XUngrabPointer(ui->display, CurrentTime);
-}
-
-/* Choose the row a click landed on. A click on the title bar, the status line
-   or the padding chooses nothing; a click outside the window dismisses it. */
+/* Choose the row a click landed on. A click on the title bar or the status line
+   chooses nothing; everything else is a row. */
 static void handle_click(WifiUi *ui, XButtonEvent *button) {
     if (button->button != Button1) {
-        return;
-    }
-    if (button->x < 0 || button->x >= ui->width ||
-        button->y < 0 || button->y >= ui->height) {
-        ui->running = 0;
         return;
     }
     if (ui->mode != WIFI_MODE_LIST) {
@@ -415,9 +390,12 @@ static void handle_click(WifiUi *ui, XButtonEvent *button) {
     choose_selected(ui);
 }
 
+/* --- the window ----------------------------------------------------------- */
+
 int wifi_ui_open(WifiUi *ui, const char *config_path) {
     memset(ui, 0, sizeof(*ui));
     ui->selected = -1;
+    ui->mode = WIFI_MODE_LIST;
 
     /* The locale first, so XLookupString returns the characters the keyboard
        actually types rather than assuming Latin-1. */
@@ -459,45 +437,58 @@ int wifi_ui_open(WifiUi *ui, const char *config_path) {
         return -1;
     }
 
+    /* The size is worked out before the window is made, so the window opens at
+       the size it will be rather than opening small and resizing. */
+    work_out_size(ui);
+
+    /* THE WINDOW KEEPS ITS OWN PIXELS.
+     *
+     * A plain window that gets covered keeps nothing: when the covering window
+     * goes away, the server has no memory of what was under it and fills the
+     * newly exposed part with the window's background until the program draws
+     * it again. BackingStore Always makes the server keep the window's pixels
+     * off-screen, so an uncover restores what was there; and the background is
+     * the theme's own colour rather than black, so even the instant before the
+     * first frame is the window's colour and not a hole. This is the same pair
+     * of choices the terminal makes, for the same reason. */
     XSetWindowAttributes attributes;
     memset(&attributes, 0, sizeof(attributes));
-    attributes.override_redirect = True;
     attributes.background_pixel = ui->style.background;
-    attributes.border_pixel = 0;
-    attributes.event_mask = ExposureMask | KeyPressMask | ButtonPressMask |
-                            ButtonReleaseMask | PointerMotionMask;
-
-    ui->mode = WIFI_MODE_LIST;
-    work_out_geometry(ui);
+    attributes.backing_store = Always;
+    attributes.border_pixel = BlackPixel(ui->display, ui->screen);
+    attributes.event_mask = WIFI_EVENT_MASK;
 
     ui->window = XCreateWindow(ui->display, ui->root, 0, 0,
                                (unsigned int)ui->width,
                                (unsigned int)ui->height, 0,
                                CopyFromParent, InputOutput, CopyFromParent,
-                               CWOverrideRedirect | CWBackPixel |
-                               CWBorderPixel | CWEventMask, &attributes);
+                               CWBackPixel | CWBackingStore | CWBorderPixel |
+                               CWEventMask, &attributes);
     if (ui->window == None) {
         fprintf(stderr, "gnuchanwifi: cannot make the window\n");
         return -1;
     }
 
-    /* Centre the window now that there is one to move, and watch the root for
-       other windows coming and going. This is the same two steps GnuChanRunner
-       takes, and for the same reason: the window is override-redirect, so no
-       window manager owns it, nothing frames it, and — the part that matters —
-       nothing keeps it in front. A window mapped over it, which is the terminal
-       it was started from most of the time, would hide it completely; watching
-       the root is what lets it put itself back on top (see wifi_ui_run). */
-    work_out_geometry(ui);
-    XSelectInput(ui->display, ui->root, SubstructureNotifyMask);
+    /* The window's X name, which becomes WM_NAME — the title bar text and what
+       a task list or dock shows. */
+    XStoreName(ui->display, ui->window, ui->config.title);
 
-    XMapRaised(ui->display, ui->window);
-    /* The window has to be on screen before the keyboard is grabbed: XFlush
-       only sends the map request, and a grab on an unmapped window is refused
-       with GrabNotViewable. XSync waits for the map to have happened. */
-    XSync(ui->display, False);
+    /* The class, so the window manager can match its rules against this program
+       rather than guessing from the size: res_name is the program, res_class
+       the application. This is the same pair the terminal sets. */
+    XClassHint class_hint;
+    class_hint.res_name = (char *)"gnuchanwifi";
+    class_hint.res_class = (char *)"GnuChanWifi";
+    XSetClassHint(ui->display, ui->window, &class_hint);
 
-    grab_input(ui);
+    /* Ask for WM_DELETE_WINDOW: the title bar's close button then sends this
+       window a message asking it to quit, which the loop answers, rather than
+       killing the X connection out from under the program. */
+    Atom wm_delete = XInternAtom(ui->display, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(ui->display, ui->window, &wm_delete, 1);
+
+    XMapWindow(ui->display, ui->window);
+    XFlush(ui->display);
 
     /* The first scan is taken after the window is up, so "Scanning…" is what
        the window shows while nmcli answers, rather than a blank window that
@@ -515,6 +506,8 @@ int wifi_ui_run(WifiUi *ui) {
         return -1;
     }
 
+    Atom wm_delete = XInternAtom(ui->display, "WM_DELETE_WINDOW", False);
+
     while (ui->running) {
         XEvent event;
         XNextEvent(ui->display, &event);
@@ -523,49 +516,60 @@ int wifi_ui_run(WifiUi *ui) {
         case KeyPress:
             handle_key(ui, &event.xkey);
             break;
+
         case ButtonPress:
             handle_click(ui, &event.xbutton);
             break;
+
         case Expose:
-            if (event.xexpose.window == ui->window) {
+            if (event.xexpose.window == ui->window &&
+                event.xexpose.count == 0) {
                 wifi_draw(ui);
             }
             break;
+
         case ConfigureNotify:
-            /* A window was moved, resized or restacked — most often a program
-               that just started, which the manager has raised over this one.
-               This window is override-redirect, so nothing else brings it back
-               to the front: it puts itself back on top. Its OWN resize is the
-               other case, and that is taken as the new size to draw into. */
+            /* The window manager resized or moved the window — a maximise, a
+               drag, the manager placing it. The new size is taken and drawn
+               into; the size the grid is built for follows it. */
             if (event.xconfigure.window == ui->window) {
-                ui->width = event.xconfigure.width;
-                ui->height = event.xconfigure.height;
-                wifi_draw(ui);
-            } else {
-                XRaiseWindow(ui->display, ui->window);
+                if (event.xconfigure.width != ui->width ||
+                    event.xconfigure.height != ui->height) {
+                    ui->width = event.xconfigure.width;
+                    ui->height = event.xconfigure.height;
+                    wifi_draw(ui);
+                }
             }
             break;
-        case MapNotify:
-            /* Another window was shown. Same answer: this one goes back to the
-               front. Its own map arrives here too, and the test keeps it from
-               raising itself for nothing. */
-            if (event.xmap.window != ui->window) {
-                XRaiseWindow(ui->display, ui->window);
+
+        case ClientMessage:
+            /* The title bar's close button, or the session asking this program
+               to quit. Both arrive as the WM_DELETE_WINDOW message this window
+               asked for; the loop ends and the program closes cleanly. */
+            if ((Atom)event.xclient.data.l[0] == wm_delete) {
+                ui->running = 0;
             }
             break;
+
+        case DestroyNotify:
+            /* The window was destroyed by something else — the manager going
+               away — and there is nothing left to draw into. */
+            if (event.xdestroywindow.window == ui->window) {
+                ui->running = 0;
+            }
+            break;
+
         default:
             break;
         }
     }
 
-    ungrab_input(ui);
     XFlush(ui->display);
     return 0;
 }
 
 void wifi_ui_close(WifiUi *ui) {
     if (ui->display) {
-        ungrab_input(ui);
         if (ui->gc) {
             XFreeGC(ui->display, ui->gc);
             ui->gc = NULL;
