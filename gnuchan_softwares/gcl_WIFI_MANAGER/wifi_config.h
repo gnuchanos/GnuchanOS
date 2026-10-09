@@ -33,7 +33,7 @@
 #ifndef GNUCHANWIFI_CONFIG_H
 #define GNUCHANWIFI_CONFIG_H
 
-#include "wifi_nm.h"
+#include "wifi_shell.h"   /* WIFI_TEXT — the ceiling every field here uses */
 
 typedef struct WifiConfig {
     /* Which nmcli to run. Empty means "nmcli" on PATH. */

@@ -1,32 +1,20 @@
 /*
- * wifi_nm.h — the NetworkManager side, through nmcli.
+ * wifi_nm.h — the networks: scanning, joining, and what is joined now.
  *
- * This is the only file that knows how a wireless network is found and joined,
- * and it knows it as one thing: run nmcli and read what it says. There is no
- * libnm here and no D-Bus here, because nmcli is already installed on every
- * machine that has NetworkManager — which is every machine this desktop runs
- * on — and a wifi manager that needed a second library to be built would be
- * one that does not build on the laptop it is for.
- *
- * Everything is a plain function over plain data. No X, no window, nothing to
- * draw: wifi_ui.c calls these and shows the answer.
- *
- *     wifi_nm_set_program("nmcli")   which nmcli to run (from the config)
- *     wifi_nm_device(name)           the wifi interface, e.g. "wlan0"
- *     wifi_nm_scan(&list)            every network in range, right now
- *     wifi_nm_connect(dev, ssid, ...) join one, with a password if given
- *     wifi_nm_disconnect(dev)        leave the one that is joined
- *     wifi_nm_rescan(dev)            ask for a fresh scan (best effort)
+ * This is the NetworkManager side of the list — the networks in range, joining
+ * one, leaving one, and the answer to "what am I on and what is my address".
+ * nmcli does the work; see wifi_shell.c for the running and the parsing. The
+ * radio (the wifi switch itself) is wifi_radio.c and the saved connections are
+ * wifi_saved.c: three questions, three files.
  */
 #ifndef GNUCHANWIFI_NM_H
 #define GNUCHANWIFI_NM_H
 
-/* The most networks one scan keeps, and the longest text any one field may
-   hold. Both are ceilings on what a malformed or hostile answer can make this
-   allocate; a screen does not show sixty-four networks and no SSID is 256
-   characters long. */
+#include "wifi_shell.h"
+
+/* The most networks one scan keeps. Far more than a screen shows, so the ceiling
+   is a bound on memory and not on the list a person sees. */
 #define WIFI_MAX_NETWORKS 64
-#define WIFI_TEXT 256
 
 /* One network as nmcli reported it. Plain data, filled by wifi_nm_scan(). */
 typedef struct WifiNetwork {
@@ -34,6 +22,7 @@ typedef struct WifiNetwork {
     int signal;             /* 0..100, the strength nmcli gave         */
     int secured;            /* 1 when joining needs a password         */
     int in_use;             /* 1 when this is the joined network       */
+    int saved;              /* 1 when a saved connection is for it     */
 } WifiNetwork;
 
 typedef struct WifiList {
@@ -41,23 +30,23 @@ typedef struct WifiList {
     int count;
 } WifiList;
 
-/* Which nmcli to run. The config sets this; the default is "nmcli", found on
-   PATH. Kept here so a machine whose nmcli is somewhere unusual can say so. */
-void wifi_nm_set_program(const char *program);
-
 /* The wireless interface's name, written into `out` — "wlan0" and the like —
-   or an empty string when the machine has no wireless interface at all. This
-   is asked once when the window opens and kept: every connect, disconnect and
-   rescan names it. */
+   or an empty string when the machine has no wireless interface at all. Asked
+   once when the window opens and kept: every connect, disconnect and rescan
+   names it. */
 void wifi_nm_device(char *out, unsigned int size);
 
 /* Fill `list` from a scan. Returns 0 on success, -1 when nmcli could not be
-   run; a scan that ran but found nothing is a success with count 0. */
-int wifi_nm_scan(WifiList *list);
+   run; a scan that ran but found nothing is a success with count 0. `saved`
+   is the list of saved profiles — wifi_saved.c fills it — and a network whose
+   SSID is in it is marked as saved, so the window can tell "I know this one"
+   from "I would have to ask for a password". */
+int wifi_nm_scan(WifiList *list, const char (*saved_ssids)[WIFI_TEXT],
+                 int saved_count);
 
-/* Join `ssid` on `device`. A NULL or empty `password` connects without one,
-   which is what a saved network needs. Returns 0 on success; on failure -1 and
-   a short message — nmcli's own words where it gave any — in `error`. */
+/* Join `ssid`. A NULL or empty `password` connects without one, which is what a
+   saved network needs. Returns 0 on success; on failure -1 and a short message
+   — nmcli's own words where it gave any — in `error`. */
 int wifi_nm_connect(const char *device, const char *ssid,
                     const char *password, char *error, unsigned int size);
 
@@ -65,8 +54,14 @@ int wifi_nm_connect(const char *device, const char *ssid,
 int wifi_nm_disconnect(const char *device, char *error, unsigned int size);
 
 /* Ask NetworkManager for a fresh scan. Best effort: a rescan that is refused
-   because one is already running is not an error worth reporting, so this
-   returns nothing. */
+   because one is already running is not an error worth reporting. */
 void wifi_nm_rescan(const char *device);
+
+/* What is joined right now: the SSID written into `ssid` (empty when nothing is
+   connected) and the interface's IPv4 address into `address` (empty when there
+   is none). Both are what the top of the window shows so a person can see the
+   state without opening another tool. Returns 0 when something is connected. */
+int wifi_nm_active(const char *device, char *ssid, unsigned int ssid_size,
+                   char *address, unsigned int address_size);
 
 #endif /* GNUCHANWIFI_NM_H */

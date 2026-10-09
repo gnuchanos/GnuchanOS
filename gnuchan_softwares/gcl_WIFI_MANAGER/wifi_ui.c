@@ -1,38 +1,37 @@
 /*
- * wifi_ui.c — the window, the list, the keys, and the connecting.
+ * wifi_ui.c — the window, the list, the keys, and what the keys do.
  *
  * This is where the manager meets the display. Everything it is made of has
  * already been read and resolved by the time this runs: the config, the palette,
- * the font, the interface's name. What is left is a window, a loop, and the
- * connecting.
+ * the interface's name. What is left is a window, a loop, and the actions the
+ * keys stand for.
  *
- * --- this is an ORDINARY window, and that is the point ---
+ * --- this is an ORDINARY window ---
  *
- * GnuChanWM, the window manager on this desktop, OWNS this window: it frames it,
- * moves it, focuses it, puts it in the taskbar and lets its title bar's close
- * button end it. The program does the three things a normal X client does and no
- * more — it names the window (WM_NAME and WM_CLASS, so the manager has a title
- * to draw and a class to match rules against), it asks for WM_DELETE_WINDOW (so
- * the close button sends a polite message instead of killing the connection),
- * and it maps the window and answers the events that reach it.
+ * GnuChanWM owns it: it frames it, moves it, focuses it and closes it. The
+ * program names the window (WM_NAME and WM_CLASS), asks for WM_DELETE_WINDOW so
+ * the close button sends a message rather than killing the connection, maps it,
+ * and answers the events that reach it. It is NOT override-redirect and it does
+ * NOT grab the keyboard: a wifi window is an application a person leaves open,
+ * not a launcher that appears and goes away. This is the same shape the terminal
+ * has.
  *
- * It is NOT an override-redirect window and it does NOT grab the keyboard. A
- * launcher grabs the keyboard and covers the screen because it appears, is
- * answered, and goes away; a wifi window is an application a person leaves open
- * while they read a manual or copy a password from somewhere else. Grabbing the
- * keyboard would take every key from the whole session for as long as it was up,
- * which is exactly wrong for an application.
+ * --- the keys ---
  *
- * --- the connecting lives here ---
+ *   Up/Down, PgUp/PgDn, Home/End   move the selection
+ *   Enter                          join the chosen network
+ *   r                              scan again
+ *   w                              turn the wifi radio on or off
+ *   d                              disconnect
+ *   f                              forget the chosen saved network (asks first)
+ *   a                              toggle the chosen saved network's autoconnect
+ *   q / Escape                     quit (Escape steps back in a sub-screen)
  *
- * There is no second consumer of "which network was chosen", so the joining
- * happens in this file rather than being handed to a caller. A locked network
- * that is not already saved opens the password screen instead of connecting at
- * once; everything else connects directly. Which is which is read from the
- * network's own flags, and the password screen names the network so there is no
- * doubt what is being joined.
+ * Every letter is one nmcli call, run through the module for the question it
+ * belongs to: wifi_nm.c for networks, wifi_radio.c for the switch, wifi_saved.c
+ * for the profiles. This file only decides WHEN each is asked and what the
+ * answer means on the screen.
  */
-#include <ctype.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,37 +44,29 @@
 #include "wifi_draw.h"
 #include "wifi_ui.h"
 
-/* The event mask the window subscribes to. StructureNotify is what a resize and
-   the manager's close arrive through; ExposureMask is what asks for a repaint;
-   the key, button and motion masks are the input the list is answered with.
-   FocusChange is not asked for: this window does not change how it draws when
-   it loses the focus — it is always drawn the same — so the notice would be
-   read and thrown away. */
 #define WIFI_EVENT_MASK (KeyPressMask | ButtonPressMask | ButtonReleaseMask | \
                          PointerMotionMask | StructureNotifyMask | \
                          ExposureMask)
 
-/* The size the window needs for the screen it is showing: the title bar, the
-   rows (or the password prompt), and the status line. Kept apart from any move
-   so it can be worked out before the window exists — the window is created at
-   the right size rather than resized after, which shows as an app that opens
-   small and jumps. */
+/* The size the window needs for the screen it is showing. The list screen is
+   the status bar, the rows, a status line and the help line; the password and
+   confirm screens are a fixed few lines. Worked out before the window is made so
+   it opens at the right size rather than opening small and jumping. */
 static void work_out_size(WifiUi *ui) {
     ui->width = ui->config.width;
     if (ui->width > ui->screen_width) {
         ui->width = ui->screen_width;
     }
 
-    int title = ui->style.row_height + 2 * ui->style.padding;
-    int status = ui->style.row_height;
+    int bar = ui->style.row_height;              /* the status bar at the top */
+    int foot = 2 * ui->style.row_height;         /* status line + help line   */
 
-    if (ui->mode == WIFI_MODE_PASSWORD) {
-        /* The password screen is three lines tall and does not grow with the
-           list; the window shrinks to it so the field is not lost in empty
-           space. */
-        ui->height = title + 3 * ui->style.row_height + 2 * ui->style.padding;
+    if (ui->mode == WIFI_MODE_LIST) {
+        ui->height = bar + ui->style.padding +
+                     ui->config.rows * ui->style.row_height + foot;
     } else {
-        ui->height = title + ui->config.rows * ui->style.row_height + status;
+        ui->height = bar + ui->style.padding +
+                     3 * ui->style.row_height + foot;
     }
 
     if (ui->height > ui->screen_height) {
@@ -83,14 +74,38 @@ static void work_out_size(WifiUi *ui) {
     }
 }
 
-/* Take a fresh scan and put the list back at a sane place. The chosen row is
-   kept only when it still points at something; a scan that shrank the list
-   must not leave the selection past its end. */
-static void refresh_scan(WifiUi *ui) {
+/* Read everything the status bar and the list need: the radio, what is joined
+   (and its address), the saved profiles, and the networks in range. The order
+   matters only in that the saved list is read BEFORE the scan, because the scan
+   marks each network as saved by looking the SSID up in it. */
+static void refresh_all(WifiUi *ui) {
     snprintf(ui->status, sizeof(ui->status), "Scanning…");
     wifi_draw(ui);
 
-    wifi_nm_scan(&ui->networks);
+    ui->radio_on = wifi_radio_on();
+    wifi_saved_load(&ui->saved);
+
+    char names[WIFI_MAX_SAVED][WIFI_TEXT];
+    int name_count = wifi_saved_names(&ui->saved, names, WIFI_MAX_SAVED);
+
+    if (ui->radio_on == 0) {
+        /* With the radio off nothing is in range and everything would be stale;
+           the list is cleared and the window says why. */
+        ui->networks.count = 0;
+        ui->active_ssid[0] = '\0';
+        ui->active_address[0] = '\0';
+        ui->selected = -1;
+        ui->scroll = 0;
+        ui->status[0] = '\0';
+        wifi_draw(ui);
+        return;
+    }
+
+    wifi_nm_scan(&ui->networks, names, name_count);
+
+    /* What is joined and its address, for the bar at the top. */
+    wifi_nm_active(ui->device, ui->active_ssid, sizeof(ui->active_ssid),
+                   ui->active_address, sizeof(ui->active_address));
 
     if (ui->networks.count == 0) {
         ui->selected = -1;
@@ -101,10 +116,8 @@ static void refresh_scan(WifiUi *ui) {
         if (ui->selected >= ui->networks.count) {
             ui->selected = ui->networks.count - 1;
         }
-        /* Put the chosen row on the joined network the first time, so Enter
-           with nothing touched means "reconnect to where I am" rather than
-           "join the first access point" — which is what a person opening a
-           wifi window usually has in mind. */
+        /* Put the chosen row on the joined network, so Enter with nothing
+           touched means "reconnect to where I am". */
         for (int i = 0; i < ui->networks.count; i++) {
             if (ui->networks.items[i].in_use) {
                 ui->selected = i;
@@ -117,19 +130,7 @@ static void refresh_scan(WifiUi *ui) {
     wifi_draw(ui);
 }
 
-/* How many rows fit in the window, which is what the selection is kept inside. */
-static int visible_rows(const WifiUi *ui) {
-    int title = ui->style.row_height + 2 * ui->style.padding;
-    int status = ui->style.row_height;
-    int room = (ui->height - title - status) / ui->style.row_height;
-    if (room < 1) {
-        room = 1;
-    }
-    return room;
-}
-
-/* Move the chosen row by `step`, wrapping round the ends: the list is short and
-   the two ends are next to each other in a person's mind. */
+/* Move the chosen row by `step`, wrapping round the ends. */
 static void move_selection(WifiUi *ui, int step) {
     int rows = ui->networks.count;
     if (rows <= 0) {
@@ -147,7 +148,7 @@ static void move_selection(WifiUi *ui, int step) {
             ui->selected -= rows;
         }
     }
-    int room = visible_rows(ui);
+    int room = wifi_visible_rows(ui);
     if (ui->selected < ui->scroll) {
         ui->scroll = ui->selected;
     }
@@ -156,18 +157,17 @@ static void move_selection(WifiUi *ui, int step) {
     }
 }
 
-/* --- connecting ----------------------------------------------------------- */
+/* --- the actions ---------------------------------------------------------- */
 
 /* Join the chosen network, with `password` when one was given. On success the
-   list is taken again so the joined network shows as connected; on failure the
-   message nmcli gave back is put on the status line and the password screen —
-   when that is where we are — is left up so the password can be corrected
-   rather than retyped from the start. */
+   whole state is read again so the joined network shows as connected; on failure
+   the message nmcli gave back is put on the status line. */
 static void connect_current(WifiUi *ui, const char *password) {
     if (ui->selected < 0 || ui->selected >= ui->networks.count) {
         return;
     }
-    const char *ssid = ui->networks.items[ui->selected].ssid;
+    char ssid[WIFI_TEXT];
+    snprintf(ssid, sizeof(ssid), "%s", ui->networks.items[ui->selected].ssid);
 
     snprintf(ui->status, sizeof(ui->status), "Connecting to \"%s\"…", ssid);
     wifi_draw(ui);
@@ -175,7 +175,10 @@ static void connect_current(WifiUi *ui, const char *password) {
     char error[WIFI_TEXT];
     if (wifi_nm_connect(ui->device, ssid, password, error, sizeof(error)) == 0) {
         ui->mode = WIFI_MODE_LIST;
-        refresh_scan(ui);
+        work_out_size(ui);
+        XResizeWindow(ui->display, ui->window,
+                      (unsigned int)ui->width, (unsigned int)ui->height);
+        refresh_all(ui);
         snprintf(ui->status, sizeof(ui->status), "Connected to \"%s\"", ssid);
         wifi_draw(ui);
         return;
@@ -185,17 +188,17 @@ static void connect_current(WifiUi *ui, const char *password) {
     wifi_draw(ui);
 }
 
-/* Enter on the chosen row. A locked network that is not joined is one whose
-   password is not saved, so it asks for the password; an open one, or one
-   already joined, connects directly — the key is in the keyring and asking for
-   it again would be asking for something the machine already has. */
+/* Enter on the chosen row. A locked network that is not saved is one whose
+   password is not known, so it asks for it; anything else connects directly —
+   the key is in the keyring and asking for it again would be asking for
+   something the machine already has. */
 static void choose_selected(WifiUi *ui) {
     if (ui->selected < 0 || ui->selected >= ui->networks.count) {
         return;
     }
     WifiNetwork *network = &ui->networks.items[ui->selected];
 
-    if (network->secured && !network->in_use) {
+    if (network->secured && !network->saved && !network->in_use) {
         snprintf(ui->pending_ssid, sizeof(ui->pending_ssid), "%s",
                  network->ssid);
         ui->password_length = 0;
@@ -212,8 +215,8 @@ static void choose_selected(WifiUi *ui) {
     connect_current(ui, NULL);
 }
 
-/* Go back to the list from the password screen, and shrink the window to it. */
-static void leave_password_screen(WifiUi *ui) {
+/* Go back to the list from a sub-screen, and size the window to it. */
+static void leave_sub_screen(WifiUi *ui) {
     ui->mode = WIFI_MODE_LIST;
     ui->password_length = 0;
     ui->password[0] = '\0';
@@ -222,6 +225,132 @@ static void leave_password_screen(WifiUi *ui) {
     XResizeWindow(ui->display, ui->window,
                   (unsigned int)ui->width, (unsigned int)ui->height);
     wifi_draw(ui);
+}
+
+/* The profile name for the chosen network, if it is saved, or an empty string.
+   The profile name and the SSID are the same for a simple network, which is why
+   the SSID can be looked up in the saved list by name. */
+static const char *chosen_saved_name(WifiUi *ui) {
+    if (ui->selected < 0 || ui->selected >= ui->networks.count) {
+        return "";
+    }
+    const char *ssid = ui->networks.items[ui->selected].ssid;
+    for (int i = 0; i < ui->saved.count; i++) {
+        if (strcmp(ui->saved.names[i], ssid) == 0) {
+            return ui->saved.names[i];
+        }
+    }
+    return "";
+}
+
+/* f: ask to forget the chosen saved network. A confirmation is shown first,
+   because forgetting throws the password away. */
+static void ask_forget(WifiUi *ui) {
+    const char *name = chosen_saved_name(ui);
+    if (!name[0]) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "That network is not saved, so there is nothing to forget");
+        wifi_draw(ui);
+        return;
+    }
+    snprintf(ui->pending_saved, sizeof(ui->pending_saved), "%s", name);
+    ui->mode = WIFI_MODE_CONFIRM;
+    ui->status[0] = '\0';
+    work_out_size(ui);
+    XResizeWindow(ui->display, ui->window,
+                  (unsigned int)ui->width, (unsigned int)ui->height);
+    wifi_draw(ui);
+}
+
+/* y in the confirmation: forget the profile, then read everything again so the
+   row loses its saved mark. */
+static void confirm_forget(WifiUi *ui) {
+    char error[WIFI_TEXT];
+    if (wifi_saved_forget(ui->pending_saved, error, sizeof(error)) == 0) {
+        ui->mode = WIFI_MODE_LIST;
+        work_out_size(ui);
+        XResizeWindow(ui->display, ui->window,
+                      (unsigned int)ui->width, (unsigned int)ui->height);
+        refresh_all(ui);
+        snprintf(ui->status, sizeof(ui->status), "Forgot \"%s\"",
+                 ui->pending_saved);
+        wifi_draw(ui);
+        return;
+    }
+    snprintf(ui->status, sizeof(ui->status), "%s", error);
+    ui->mode = WIFI_MODE_LIST;
+    work_out_size(ui);
+    XResizeWindow(ui->display, ui->window,
+                  (unsigned int)ui->width, (unsigned int)ui->height);
+    wifi_draw(ui);
+}
+
+/* a: toggle the chosen saved network's "join by itself". */
+static void toggle_autoconnect(WifiUi *ui) {
+    const char *name = chosen_saved_name(ui);
+    if (!name[0]) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "That network is not saved, so it has no such setting");
+        wifi_draw(ui);
+        return;
+    }
+
+    int current = 0;
+    for (int i = 0; i < ui->saved.count; i++) {
+        if (strcmp(ui->saved.names[i], name) == 0) {
+            current = ui->saved.autoconnect[i];
+            break;
+        }
+    }
+    int wanted = !current;
+
+    char error[WIFI_TEXT];
+    if (wifi_saved_set_autoconnect(name, wanted, error, sizeof(error)) == 0) {
+        refresh_all(ui);
+        snprintf(ui->status, sizeof(ui->status),
+                 "\"%s\" will %s join by itself", name,
+                 wanted ? "now" : "no longer");
+        wifi_draw(ui);
+        return;
+    }
+    snprintf(ui->status, sizeof(ui->status), "%s", error);
+    wifi_draw(ui);
+}
+
+/* w: turn the radio on or off, then read everything again. */
+static void toggle_radio(WifiUi *ui) {
+    if (ui->radio_on < 0) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "The wifi state could not be read, so it cannot be changed");
+        wifi_draw(ui);
+        return;
+    }
+    int wanted = !ui->radio_on;
+
+    snprintf(ui->status, sizeof(ui->status), "Turning wifi %s…",
+             wanted ? "on" : "off");
+    wifi_draw(ui);
+
+    char error[WIFI_TEXT];
+    if (wifi_radio_set(wanted, error, sizeof(error)) == 0) {
+        refresh_all(ui);
+        return;
+    }
+    snprintf(ui->status, sizeof(ui->status), "%s", error);
+    wifi_draw(ui);
+}
+
+/* d: disconnect. */
+static void do_disconnect(WifiUi *ui) {
+    char error[WIFI_TEXT];
+    snprintf(ui->status, sizeof(ui->status), "Disconnecting…");
+    wifi_draw(ui);
+    if (wifi_nm_disconnect(ui->device, error, sizeof(error)) == 0) {
+        refresh_all(ui);
+    } else {
+        snprintf(ui->status, sizeof(ui->status), "%s", error);
+        wifi_draw(ui);
+    }
 }
 
 /* --- the password line ---------------------------------------------------- */
@@ -251,54 +380,86 @@ static int password_backspace(WifiUi *ui) {
 
 /* --- the keys ------------------------------------------------------------- */
 
-static void handle_key(WifiUi *ui, XKeyEvent *key) {
-    KeySym symbol = XLookupKeysym(key, 0);
-    if (symbol == NoSymbol) {
+static void handle_password_key(WifiUi *ui, KeySym symbol, XKeyEvent *key) {
+    switch (symbol) {
+    case XK_Escape:
+        leave_sub_screen(ui);
         return;
-    }
-
-    if (ui->mode == WIFI_MODE_PASSWORD) {
-        switch (symbol) {
-        case XK_Escape:
-            /* Back to the list with nothing joined — the choice is abandoned,
-               not the program. */
-            leave_password_screen(ui);
-            return;
-        case XK_Return:
-        case XK_KP_Enter:
-            connect_current(ui, ui->password);
-            return;
-        case XK_BackSpace:
-            if (password_backspace(ui)) {
-                wifi_draw(ui);
-            }
-            return;
-        default:
-            break;
-        }
-
-        char text[8];
-        int length = XLookupString(key, text, sizeof(text) - 1, NULL, NULL);
-        if (length <= 0) {
-            return;
-        }
-        text[length] = '\0';
-        /* Only printable characters: a control character has no place in a
-           password and would be an invisible byte to delete later. */
-        for (int i = 0; i < length; i++) {
-            unsigned char c = (unsigned char)text[i];
-            if (c < 0x20 || c == 0x7f) {
-                return;
-            }
-        }
-        if (password_append(ui, text)) {
-            ui->status[0] = '\0';
+    case XK_Return:
+    case XK_KP_Enter:
+        connect_current(ui, ui->password);
+        return;
+    case XK_BackSpace:
+        if (password_backspace(ui)) {
             wifi_draw(ui);
         }
         return;
+    default:
+        break;
     }
 
-    /* --- the list --- */
+    char text[8];
+    int length = XLookupString(key, text, sizeof(text) - 1, NULL, NULL);
+    if (length <= 0) {
+        return;
+    }
+    text[length] = '\0';
+    for (int i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)text[i];
+        if (c < 0x20 || c == 0x7f) {
+            return;
+        }
+    }
+    if (password_append(ui, text)) {
+        ui->status[0] = '\0';
+        wifi_draw(ui);
+    }
+}
+
+static void handle_confirm_key(WifiUi *ui, KeySym symbol, XKeyEvent *key) {
+    if (symbol == XK_Escape || symbol == XK_n || symbol == XK_N) {
+        leave_sub_screen(ui);
+        return;
+    }
+    if (symbol == XK_y || symbol == XK_Y) {
+        confirm_forget(ui);
+        return;
+    }
+    /* Anything else in a yes/no is read as "no", so a stray key does not throw a
+       password away. */
+    (void)key;
+}
+
+/* The letter commands, shared by the list. Returns 1 when the letter was one
+   of them and has been acted on. */
+static int handle_command_letter(WifiUi *ui, KeySym symbol, XKeyEvent *key) {
+    switch (symbol) {
+    case XK_r:
+        refresh_all(ui);
+        return 1;
+    case XK_w:
+        toggle_radio(ui);
+        return 1;
+    case XK_d:
+        do_disconnect(ui);
+        return 1;
+    case XK_f:
+        ask_forget(ui);
+        return 1;
+    case XK_a:
+        toggle_autoconnect(ui);
+        return 1;
+    case XK_q:
+        ui->running = 0;
+        return 1;
+    default:
+        break;
+    }
+    (void)key;
+    return 0;
+}
+
+static void handle_list_key(WifiUi *ui, KeySym symbol, XKeyEvent *key) {
     switch (symbol) {
     case XK_Escape:
         ui->running = 0;
@@ -318,11 +479,11 @@ static void handle_key(WifiUi *ui, XKeyEvent *key) {
         wifi_draw(ui);
         return;
     case XK_Page_Up:
-        move_selection(ui, -visible_rows(ui));
+        move_selection(ui, -wifi_visible_rows(ui));
         wifi_draw(ui);
         return;
     case XK_Page_Down:
-        move_selection(ui, visible_rows(ui));
+        move_selection(ui, wifi_visible_rows(ui));
         wifi_draw(ui);
         return;
     case XK_Home:
@@ -339,49 +500,43 @@ static void handle_key(WifiUi *ui, XKeyEvent *key) {
         break;
     }
 
-    /* A letter: `r` scans again, `d` disconnects. The letters are the whole of
-       the manager's commands, and they are letters rather than more key
-       bindings because a window this small is answered with letters. */
-    char text[8];
-    int length = XLookupString(key, text, sizeof(text) - 1, NULL, NULL);
-    if (length <= 0) {
+    /* A letter. The keysym is enough for the plain letters the commands are
+       made of; a capital is accepted too, so Shift+r works. */
+    if (symbol == XK_R) symbol = XK_r;
+    if (symbol == XK_W) symbol = XK_w;
+    if (symbol == XK_D) symbol = XK_d;
+    if (symbol == XK_F) symbol = XK_f;
+    if (symbol == XK_A) symbol = XK_a;
+    if (symbol == XK_Q) symbol = XK_q;
+    handle_command_letter(ui, symbol, key);
+}
+
+static void handle_key(WifiUi *ui, XKeyEvent *key) {
+    KeySym symbol = XLookupKeysym(key, 0);
+    if (symbol == NoSymbol) {
         return;
     }
-    unsigned char c = (unsigned char)text[0];
-    if (c == 'r' || c == 'R') {
-        refresh_scan(ui);
-    } else if (c == 'd' || c == 'D') {
-        char error[WIFI_TEXT];
-        snprintf(ui->status, sizeof(ui->status), "Disconnecting…");
-        wifi_draw(ui);
-        if (wifi_nm_disconnect(ui->device, error, sizeof(error)) == 0) {
-            refresh_scan(ui);
-        } else {
-            snprintf(ui->status, sizeof(ui->status), "%s", error);
-            wifi_draw(ui);
-        }
+
+    if (ui->mode == WIFI_MODE_PASSWORD) {
+        handle_password_key(ui, symbol, key);
+    } else if (ui->mode == WIFI_MODE_CONFIRM) {
+        handle_confirm_key(ui, symbol, key);
+    } else {
+        handle_list_key(ui, symbol, key);
     }
 }
 
-/* Choose the row a click landed on. A click on the title bar or the status line
-   chooses nothing; everything else is a row. */
+/* Choose the row a click landed on, for the list screen. */
 static void handle_click(WifiUi *ui, XButtonEvent *button) {
-    if (button->button != Button1) {
+    if (button->button != Button1 || ui->mode != WIFI_MODE_LIST) {
         return;
-    }
-    if (ui->mode != WIFI_MODE_LIST) {
-        return;   /* the password screen is typed into, not clicked */
     }
 
-    int title = ui->style.row_height + 2 * ui->style.padding;
-    if (button->y < title) {
+    int top = ui->style.row_height + ui->style.padding;
+    if (button->y < top) {
         return;
     }
-    int status = ui->style.row_height;
-    if (button->y >= ui->height - status) {
-        return;
-    }
-    int row = (button->y - title) / ui->style.row_height;
+    int row = (button->y - top) / ui->style.row_height;
     int index = ui->scroll + row;
     if (index < 0 || index >= ui->networks.count) {
         return;
@@ -396,9 +551,8 @@ int wifi_ui_open(WifiUi *ui, const char *config_path) {
     memset(ui, 0, sizeof(*ui));
     ui->selected = -1;
     ui->mode = WIFI_MODE_LIST;
+    ui->radio_on = -1;
 
-    /* The locale first, so XLookupString returns the characters the keyboard
-       actually types rather than assuming Latin-1. */
     setlocale(LC_ALL, "");
 
     ui->display = XOpenDisplay(NULL);
@@ -411,23 +565,17 @@ int wifi_ui_open(WifiUi *ui, const char *config_path) {
     ui->screen_width = DisplayWidth(ui->display, ui->screen);
     ui->screen_height = DisplayHeight(ui->display, ui->screen);
 
-    /* The settings, then the palette, then the interface. In that order: the
-       palette is built from the config's colour names, and the interface name
-       is asked for once and kept. */
     char found_path[WIFI_TEXT * 2];
     const char *path = config_path;
     if (!path || !path[0]) {
         path = wifi_config_path(found_path, sizeof(found_path));
     }
     if (wifi_config_load(&ui->config, path) != 0) {
-        /* A settings file that could not be read is not fatal: the defaults
-           are already in place — wifi_config_load lays them down first — and
-           the manager starts with them rather than not starting. */
         fprintf(stderr, "gnuchanwifi: %s; using the defaults\n",
                 ui->config.error);
     }
 
-    wifi_nm_set_program(ui->config.nmcli);
+    wifi_shell_set_program(ui->config.nmcli);
     wifi_style_load(&ui->style, ui->display, ui->screen, &ui->config);
     wifi_nm_device(ui->device, sizeof(ui->device));
 
@@ -437,20 +585,8 @@ int wifi_ui_open(WifiUi *ui, const char *config_path) {
         return -1;
     }
 
-    /* The size is worked out before the window is made, so the window opens at
-       the size it will be rather than opening small and resizing. */
     work_out_size(ui);
 
-    /* THE WINDOW KEEPS ITS OWN PIXELS.
-     *
-     * A plain window that gets covered keeps nothing: when the covering window
-     * goes away, the server has no memory of what was under it and fills the
-     * newly exposed part with the window's background until the program draws
-     * it again. BackingStore Always makes the server keep the window's pixels
-     * off-screen, so an uncover restores what was there; and the background is
-     * the theme's own colour rather than black, so even the instant before the
-     * first frame is the window's colour and not a hole. This is the same pair
-     * of choices the terminal makes, for the same reason. */
     XSetWindowAttributes attributes;
     memset(&attributes, 0, sizeof(attributes));
     attributes.background_pixel = ui->style.background;
@@ -469,32 +605,36 @@ int wifi_ui_open(WifiUi *ui, const char *config_path) {
         return -1;
     }
 
-    /* The window's X name, which becomes WM_NAME — the title bar text and what
-       a task list or dock shows. */
     XStoreName(ui->display, ui->window, ui->config.title);
 
-    /* The class, so the window manager can match its rules against this program
-       rather than guessing from the size: res_name is the program, res_class
-       the application. This is the same pair the terminal sets. */
     XClassHint class_hint;
     class_hint.res_name = (char *)"gnuchanwifi";
     class_hint.res_class = (char *)"GnuChanWifi";
     XSetClassHint(ui->display, ui->window, &class_hint);
 
-    /* Ask for WM_DELETE_WINDOW: the title bar's close button then sends this
-       window a message asking it to quit, which the loop answers, rather than
-       killing the X connection out from under the program. */
     Atom wm_delete = XInternAtom(ui->display, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(ui->display, ui->window, &wm_delete, 1);
 
     XMapWindow(ui->display, ui->window);
     XFlush(ui->display);
 
-    /* The first scan is taken after the window is up, so "Scanning…" is what
-       the window shows while nmcli answers, rather than a blank window that
-       looks broken for the second or two a scan takes. */
-    ui->selected = -1;
-    refresh_scan(ui);
+    /* A sensible starting height, then the first full read, which also brings
+       the window to the height its row count wants. */
+    refresh_all(ui);
+
+    /* Grow to the size the rows want now that the config's row count is known,
+       so a first scan with many networks is not cut off. */
+    int wanted_height = ui->style.row_height + ui->style.padding +
+                        ui->config.rows * ui->style.row_height +
+                        2 * ui->style.row_height;
+    if (wanted_height > ui->screen_height) {
+        wanted_height = ui->screen_height;
+    }
+    if (wanted_height != ui->height) {
+        ui->height = wanted_height;
+        XResizeWindow(ui->display, ui->window,
+                      (unsigned int)ui->width, (unsigned int)ui->height);
+    }
 
     ui->running = 1;
     wifi_draw(ui);
@@ -516,22 +656,16 @@ int wifi_ui_run(WifiUi *ui) {
         case KeyPress:
             handle_key(ui, &event.xkey);
             break;
-
         case ButtonPress:
             handle_click(ui, &event.xbutton);
             break;
-
         case Expose:
             if (event.xexpose.window == ui->window &&
                 event.xexpose.count == 0) {
                 wifi_draw(ui);
             }
             break;
-
         case ConfigureNotify:
-            /* The window manager resized or moved the window — a maximise, a
-               drag, the manager placing it. The new size is taken and drawn
-               into; the size the grid is built for follows it. */
             if (event.xconfigure.window == ui->window) {
                 if (event.xconfigure.width != ui->width ||
                     event.xconfigure.height != ui->height) {
@@ -541,24 +675,16 @@ int wifi_ui_run(WifiUi *ui) {
                 }
             }
             break;
-
         case ClientMessage:
-            /* The title bar's close button, or the session asking this program
-               to quit. Both arrive as the WM_DELETE_WINDOW message this window
-               asked for; the loop ends and the program closes cleanly. */
             if ((Atom)event.xclient.data.l[0] == wm_delete) {
                 ui->running = 0;
             }
             break;
-
         case DestroyNotify:
-            /* The window was destroyed by something else — the manager going
-               away — and there is nothing left to draw into. */
             if (event.xdestroywindow.window == ui->window) {
                 ui->running = 0;
             }
             break;
-
         default:
             break;
         }

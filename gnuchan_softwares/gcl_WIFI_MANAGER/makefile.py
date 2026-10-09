@@ -62,7 +62,10 @@ CONFIG_DIR_NAME = "GnuChanWifi"
 CONFIG_FILE_NAME = "config.py"
 
 SOURCES = (
+    "wifi_shell.c",
     "wifi_nm.c",
+    "wifi_radio.c",
+    "wifi_saved.c",
     "wifi_config.c",
     "wifi_style.c",
     "wifi_draw.c",
@@ -70,7 +73,10 @@ SOURCES = (
     "wifi_manager.c",
 )
 HEADERS = (
+    "wifi_shell.h",
     "wifi_nm.h",
+    "wifi_radio.h",
+    "wifi_saved.h",
     "wifi_config.h",
     "wifi_style.h",
     "wifi_draw.h",
