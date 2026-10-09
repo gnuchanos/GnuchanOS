@@ -13,26 +13,31 @@ desktop — is **not ready**.
   - EXTRA PYTHON EMBED SYSTEM -> PyRaylib and PyRaygui
   - EXTRA LUA EMBED SYSTEM -> LuaRaylib and LuaRaygui
 
-[GNUCHANOS Softwares] [Need More Test But Working on Very Old COMPUTER: Vostro A860]
+# [GNUCHANOS Softwares]
+
+Tested on a very old computer: a Dell Vostro A860.
+
+![Vostro A860](assets/Vostro_A860/Vostro_A860.jpg)
 
 - GnuChanDM --> GnuChan Display Manager is simple display manager
-  - IMAGE COMING SOON
+  ![GnuChanDM](assets/Vostro_A860/dm.jpg)
 - GnuChanWM --> GnuChan Window Manager is simple x11 Window Manager
-  - IMAGE COMING SOON
+  ![GnuChanWM](assets/Vostro_A860/wm.jpg)
+- GnuChanTop --> GnuChan Top is a simple system monitor
+  ![GnuChanTop](assets/Vostro_A860/top.jpg)
 - GnuChanSL --> GnuChan Screen Lock is simple x11 Screen Lock
-  - IMAGE COMING SOON
+  ![GnuChanSL](assets/Vostro_A860/lock_screen.jpg)
 - GnuChanSS --> GnuChan Screen Saver is simple x11 Screen Saver
-  - IMAGE COMING SOON
+  ![GnuChanSS](assets/Vostro_A860/screen_saver.jpg)
 - GnuChanRunner --> GnuChan Simple Program Runner like rofi
-  - IMAGE COMING SOON
+  ![GnuChanRunner](assets/Vostro_A860/runner.jpg)
 - GnuChanTerm --> GnuChan Terminal is simple xterm like terminal
-  - IMAGE COMING SOON
 - GnuChanFetch --> GnuChan Fetch is simple neofetch like program supports .png
-  - IMAGE COMING SOON
-- GnuChanDock --> GnuChan Simple Dockprobram
-  - IMAGE COMING SOON
+  ![GnuChanFetch](assets/Vostro_A860/fetch.jpg)
+- GnuChanDock --> GnuChan Simple Dock program
+  ![GnuChanDock](assets/Vostro_A860/dock.jpg)
 - GnuChanBrowser --> GnuChan Simple Qt Engine Browser
-  - IMAGE COMING SOON
+  ![GnuChanBrowser](assets/Vostro_A860/browser.jpg)
 
 [GNUCHANOS DOTFILE]
 
