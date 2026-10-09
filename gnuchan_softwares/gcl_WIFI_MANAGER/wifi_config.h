@@ -12,7 +12,7 @@
  * file can hold without a display. Only code with a connection to the server
  * turns a name into a pixel, and that is wifi_style.c.
  *
- *     ~/.config/GnuChanWiFi/config.conf
+ *     ~/.config/GnuChanWifi/config.py
  *
  *     NmcliPath   = "nmcli"
  *     FontFamily  = "monospace"
@@ -78,8 +78,8 @@ void wifi_config_defaults(WifiConfig *config);
    use. */
 int wifi_config_load(WifiConfig *config, const char *path);
 
-/* Where the file is looked for: $XDG_CONFIG_HOME/GnuChanWiFi/config.conf, or
-   ~/.config/GnuChanWiFi/config.conf. Written into buffer, which is returned. */
+/* Where the file is looked for: $XDG_CONFIG_HOME/GnuChanWifi/config.py, or
+   ~/.config/GnuChanWifi/config.py. Written into buffer, which is returned. */
 char *wifi_config_path(char *buffer, unsigned int size);
 
 #endif /* GNUCHANWIFI_CONFIG_H */

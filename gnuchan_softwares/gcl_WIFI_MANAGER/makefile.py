@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # =============================================================================
-# GnuChanWiFi - build and install the wifi manager (Debian)
+# GnuChanWifi - build and install the wifi manager (Debian)
 # -----------------------------------------------------------------------------
 #     python3 makefile.py
 #
 # Builds the manager and installs it to /usr/local/bin, with its settings file
-# put where it will be read from — ~/.config/GnuChanWiFi/config.conf. It needs
+# put where it will be read from — ~/.config/GnuChanWifi/config.py. It needs
 # root for the install and re-runs itself through sudo, exactly as GnuChanWM's
 # and GnuChanRunner's own makefiles do.
 #
@@ -20,7 +20,7 @@
 # window manager starts it like any other program —
 #
 #     gcl_key.MultiKey(keys=["Mod1", "w"],
-#                      action=gcl_spawn.RunProgram(command="GnuChanWiFi"))
+#                      action=gcl_spawn.RunProgram(command="GnuChanWifi"))
 #
 # — so the two are installed separately and neither needs the other to build.
 #
@@ -51,15 +51,15 @@ ROOT = Path(__file__).resolve().parent
 # the project, and the manager's directory holds only sources.
 BUILD = ROOT.parent.parent / "_temp" / "gnuchanwifi-build"
 
-PROGRAM = "GnuChanWiFi"
+PROGRAM = "GnuChanWifi"
 BIN_DIR = Path("/usr/local/bin")
 
 # The settings file, installed into the user's own config directory. The manager
 # reads it from there, so a machine that never had one gets the shipped defaults
 # written where it looks for them.
-CONFIG_SOURCE = ROOT / "GnuChanWiFi_config" / "config.conf"
-CONFIG_DIR_NAME = "GnuChanWiFi"
-CONFIG_FILE_NAME = "config.conf"
+CONFIG_SOURCE = ROOT / "GnuChanWifi_config" / "config.py"
+CONFIG_DIR_NAME = "GnuChanWifi"
+CONFIG_FILE_NAME = "config.py"
 
 SOURCES = (
     "wifi_nm.c",
@@ -334,7 +334,7 @@ def uninstall() -> None:
     if target.exists():
         target.unlink()
         detail(f"removed {target}")
-    note("The settings file under ~/.config/GnuChanWiFi/ was left alone.")
+    note("The settings file under ~/.config/GnuChanWifi/ was left alone.")
 
 
 def run_program(binary: Path, arguments: list[str]) -> int:
@@ -346,7 +346,7 @@ def run_program(binary: Path, arguments: list[str]) -> int:
 def main() -> int:
     if platform.system().lower() != "linux":
         raise SystemExit(
-            f"error: GnuChanWiFi is a Debian X11 manager; this is "
+            f"error: GnuChanWifi is a Debian X11 manager; this is "
             f"{platform.system()}"
         )
     if not is_debian():
@@ -389,8 +389,8 @@ def main() -> int:
     install(binary)
     install_config()
     note("")
-    note("GnuChanWiFi is installed. Start it with Super+W if the window")
-    note("manager's own settings script binds it, or run GnuChanWiFi.")
+    note("GnuChanWifi is installed. Start it with Super+W if the window")
+    note("manager's own settings script binds it, or run GnuChanWifi.")
     return 0
 
 

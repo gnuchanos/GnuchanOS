@@ -8,10 +8,10 @@
  * is left for this file is the order to call them in and what to do with the
  * answer.
  *
- *     GnuChanWiFi            open the manager
- *     GnuChanWiFi --config F read the settings at F
- *     GnuChanWiFi --list     print the networks in range and exit
- *     GnuChanWiFi --version  print the version and exit
+ *     GnuChanWifi            open the manager
+ *     GnuChanWifi --config F read the settings at F
+ *     GnuChanWifi --list     print the networks in range and exit
+ *     GnuChanWifi --version  print the version and exit
  *
  * It is started the way any program is: from a key binding in GnuChanWM's own
  * settings script, or from a terminal. It knows nothing about the window manager
@@ -74,7 +74,7 @@ static int list_networks(const char *config_path) {
 }
 
 static void print_help(void) {
-    printf("usage: GnuChanWiFi [--config FILE] [--list] [--version] [--help]\n"
+    printf("usage: GnuChanWifi [--config FILE] [--list] [--version] [--help]\n"
            "\n"
            "Opens the wifi manager: choose a network with the arrow keys,\n"
            "press Enter to join it, type the password when one is asked for.\n"
@@ -86,7 +86,7 @@ static void print_help(void) {
            "  q / Escape    close\n"
            "\n"
            "  --config FILE  read the settings at FILE instead of the one\n"
-           "                 under ~/.config/GnuChanWiFi/\n"
+           "                 under ~/.config/GnuChanWifi/\n"
            "  --list         print the networks in range and exit\n"
            "  --version      print the version and exit\n");
 }
@@ -97,7 +97,7 @@ int main(int argc, char **argv) {
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--version") == 0) {
-            printf("GnuChanWiFi %s\n", GNUCHANWIFI_VERSION);
+            printf("GnuChanWifi %s\n", GNUCHANWIFI_VERSION);
             return 0;
         }
         if (strcmp(argv[i], "--help") == 0) {
