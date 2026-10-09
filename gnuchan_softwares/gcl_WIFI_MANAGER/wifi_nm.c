@@ -71,7 +71,10 @@ static void shell_quote(const char *in, char *out, unsigned int size) {
    that nmcli narrated on stderr is read back the same way as its output; a
    caller wants the words, not the stream they came on. */
 static int run_capture(const char *command, char *out, unsigned int size) {
-    char line[WIFI_TEXT * 4];
+    /* Room for the longest command a caller can build, plus the " 2>&1" that
+       is appended here, so the command that reaches the shell is the whole
+       command and not a shortened one. */
+    char line[WIFI_TEXT * 12];
     snprintf(line, sizeof(line), "%s 2>&1", command);
 
     FILE *pipe = popen(line, "r");
@@ -150,7 +153,10 @@ void wifi_nm_device(char *out, unsigned int size) {
         out[0] = '\0';
     }
 
-    char command[WIFI_TEXT];
+    /* The buffer is the program's own maximum plus the fixed text, with room
+       to spare: a command that could be cut off is a command that runs wrong,
+       and -Wformat-truncation cannot be told the fixed part is small. */
+    char command[WIFI_TEXT * 8];
     snprintf(command, sizeof(command), "%s -t -f DEVICE,TYPE device",
              s_program);
 
@@ -197,7 +203,7 @@ int wifi_nm_scan(WifiList *list) {
        range now rather than what was cached at login. Fields, in order: the
        name a person reads, the strength, how it is secured, and whether it is
        the one joined. */
-    char command[WIFI_TEXT];
+    char command[WIFI_TEXT * 8];
     snprintf(command, sizeof(command),
              "%s -t -f SSID,SIGNAL,SECURITY,IN-USE device wifi list "
              "--rescan yes",
@@ -272,7 +278,7 @@ int wifi_nm_connect(const char *device, const char *ssid,
        password that was given is passed on the command line, which is how
        nmcli is told one at all; a saved network connects with the first form
        and needs no password. */
-    char command[WIFI_TEXT * 4];
+    char command[WIFI_TEXT * 8];
     if (password && password[0]) {
         char quoted_password[WIFI_TEXT * 2];
         shell_quote(password, quoted_password, sizeof(quoted_password));
@@ -317,7 +323,7 @@ int wifi_nm_disconnect(const char *device, char *error, unsigned int size) {
     char quoted_device[WIFI_TEXT * 2];
     shell_quote(device, quoted_device, sizeof(quoted_device));
 
-    char command[WIFI_TEXT * 2];
+    char command[WIFI_TEXT * 8];
     snprintf(command, sizeof(command), "%s device disconnect %s",
              s_program, quoted_device);
 
@@ -338,7 +344,7 @@ int wifi_nm_disconnect(const char *device, char *error, unsigned int size) {
 }
 
 void wifi_nm_rescan(const char *device) {
-    char command[WIFI_TEXT * 2];
+    char command[WIFI_TEXT * 8];
     if (device && device[0]) {
         char quoted_device[WIFI_TEXT * 2];
         shell_quote(device, quoted_device, sizeof(quoted_device));
