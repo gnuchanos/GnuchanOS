@@ -2,34 +2,67 @@
  * wifi_privilege.c — re-running through sudo, once.
  *
  * See wifi_privilege.h for why. What is here is the one check — "am I root?" —
- * and the one action — "if not, run sudo and never come back" — plus the guard
+ * and the one action — "if not, run sudo and do not come back" — plus the guard
  * that stops the second copy from doing it again.
  *
- * The guard is an environment variable, GNUCHANWIFI_ELEVATED, set to "1" before
- * the sudo. The copy sudo starts inherits it, sees it, and does not try to
- * elevate again; without it, a machine where sudo somehow gives back a non-root
- * process would loop forever. It is the same guard the installers use.
+ * --- why execvp and not system() ---
  *
- * The environment is passed through by NAME rather than by value, and that is
- * not a style choice: sudo resets most of the environment for safety, and only
- * a variable sudo is told to keep survives. DISPLAY, XAUTHORITY and HOME are the
- * three that matter — the first two so the root copy can still open a window on
- * the user's X server, the third so it reads the config out of the user's home
- * and not root's, which is empty.
+ * The first cut of this built one long string — "sudo -E env NAME=value ..." —
+ * and handed it to system(), which runs it through /bin/sh. That is wrong on
+ * three counts, and the third is what a person running it saw:
+ *
+ *   1. A shell re-splits the string, so a value with a space or a quote in it
+ *      (a HOME under a directory with a space, a display name) becomes several
+ *      arguments and the command means something else.
+ *   2. The program's own path was whatever argv[0] held, which for a program
+ *      started from the window manager is a bare name; `env` then had to find
+ *      it on PATH, and the PATH under sudo is not the one it was launched with.
+ *   3. There was no check that the assembled string fit its buffer, so on the
+ *      edge it could be cut and the tail — variable names and all — read as
+ *      arguments to `env`, which then reported the fragment as a missing file.
+ *
+ * So the command is now built as an ARRAY of arguments and passed to execvp,
+ * with no shell in the way: nothing is re-split, every value is one argument
+ * exactly as getenv() gave it, and there is no string to overrun. The program's
+ * own path is read from /proc/self/exe, so `env` is handed an absolute path and
+ * never has to search for it.
+ *
+ * The guard is still the environment variable GNUCHANWIFI_ELEVATED: the copy
+ * sudo starts carries it, sees it, and does not try to elevate again, so a
+ * machine where sudo somehow returns a non-root process does not loop.
  */
 #define _POSIX_C_SOURCE 200809L
 
 #include "wifi_privilege.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #ifndef GNUCHANWIFI_ELEVATED_VARIABLE
 #define GNUCHANWIFI_ELEVATED_VARIABLE "GNUCHANWIFI_ELEVATED"
 #endif
+
+/* The variables carried into the root copy, in order. DISPLAY and XAUTHORITY so
+   the copy can still reach the user's X server; HOME so it reads the settings
+   out of the user's own home and not root's, which is empty. The list ends with
+   NULL and its length is what the arrays below are sized from. */
+static const char *const kKeep[] = { "DISPLAY", "XAUTHORITY", "HOME", NULL };
+#define KEEP_COUNT ((int)(sizeof(kKeep) / sizeof(kKeep[0])) - 1)
+
+/* Where this program really is. /proc/self/exe is the one answer that does not
+   depend on how it was started, which is exactly the problem with argv[0] under
+   a window manager. Falls back to argv[0] on a system without procfs. */
+static void self_path(int argc, char **argv, char *out, unsigned int size) {
+    ssize_t got = readlink("/proc/self/exe", out, size - 1);
+    if (got > 0) {
+        out[got] = '\0';
+        return;
+    }
+    snprintf(out, size, "%s",
+             (argc > 0 && argv[0]) ? argv[0] : "GnuChanWifi");
+}
 
 static int is_root(void) {
     /* geteuid is the id that decides what the kernel will let this process do,
@@ -47,57 +80,66 @@ int wifi_privilege_ensure(int argc, char **argv) {
         return 0;
     }
 
-    /* The program's own path, so the sudo runs the same binary. argv[0] is
-       used rather than a read of /proc/self/exe because it is what the caller
-       already has and is right for every way this program is started. */
-    const char *self = (argc > 0 && argv[0]) ? argv[0] : "GnuChanWifi";
+    char self[PATH_MAX];
+    self_path(argc, argv, self, sizeof(self));
 
-    /* Build the sudo command line: sudo -E keeps the environment, and the
-       three named variables are passed explicitly on top of that, because -E
-       alone is not honoured on every sudo configuration. */
-    char command[4096];
-    int at = snprintf(command, sizeof(command), "sudo -E env %s=1",
-                      GNUCHANWIFI_ELEVATED_VARIABLE);
-
-    const char *keep[] = { "DISPLAY", "XAUTHORITY", "HOME", NULL };
-    for (int i = 0; keep[i]; i++) {
-        const char *value = getenv(keep[i]);
+    /* The NAME=value strings for the kept variables, each in its own buffer so
+       the pointers stay valid for the whole execvp. */
+    char kept[KEEP_COUNT][PATH_MAX + 64];
+    const char *kept_pointers[KEEP_COUNT + 1];
+    int kept_count = 0;
+    for (int i = 0; i < KEEP_COUNT; i++) {
+        const char *value = getenv(kKeep[i]);
         if (value && value[0]) {
-            at = snprintf(command + at, sizeof(command) - (size_t)at,
-                          " %s=%s", keep[i], value);
+            snprintf(kept[kept_count], sizeof(kept[0]), "%s=%s",
+                     kKeep[i], value);
+            kept_pointers[kept_count] = kept[kept_count];
+            kept_count++;
         }
     }
+    kept_pointers[kept_count] = NULL;
 
-    at += snprintf(command + at, sizeof(command) - (size_t)at,
-                   " %s", self);
+    char elevated[sizeof(GNUCHANWIFI_ELEVATED_VARIABLE) + 2];
+    snprintf(elevated, sizeof(elevated), "%s=1",
+             GNUCHANWIFI_ELEVATED_VARIABLE);
 
-    /* The program's own arguments follow, so a --config or a --list survives
-       the re-run just as the shell's quoting lets it. They are passed raw, as
-       they were given; the shell cases this program accepts are the ones with
-       no spaces, and a path with a space would need the caller to quote it,
-       which is how it reached argv in the first place. */
-    for (int i = 1; i < argc; i++) {
-        at += snprintf(command + at, sizeof(command) - (size_t)at,
-                       " %s", argv[i]);
+    /* sudo -E env ELEVATED=1 <kept...> /abs/self <args...>
+     *
+     * The count: sudo, -E, env, the elevated pair, the kept pairs, the program
+     * path, the program's own arguments, and the terminating NULL. */
+    int slots = 4 + kept_count + 1 + (argc > 1 ? argc - 1 : 0) + 1;
+    char **command = calloc((size_t)slots, sizeof(char *));
+    if (!command) {
+        return -1;
     }
+
+    int at = 0;
+    command[at++] = (char *)"sudo";
+    command[at++] = (char *)"-E";
+    command[at++] = (char *)"env";
+    command[at++] = elevated;
+    for (int i = 0; i < kept_count; i++) {
+        command[at++] = (char *)kept_pointers[i];
+    }
+    command[at++] = self;
+    for (int i = 1; i < argc; i++) {
+        command[at++] = argv[i];
+    }
+    command[at] = NULL;
 
     fprintf(stderr,
             "gnuchanwifi: this manages the radio and the driver, so it needs "
             "root; asking for the password\n");
+    fflush(stderr);
 
-    /* system() runs the shell, the shell runs sudo, sudo prompts on the
-       terminal it was started from and replaces the process with the root
-       copy. When it returns here the window is already gone, so this only ever
-       returns to exit. */
-    int status = system(command);
-    if (status == -1) {
-        fprintf(stderr,
-                "gnuchanwifi: sudo could not be run; the window will open, "
-                "but the radio and the driver cannot be changed\n");
-        return -1;
-    }
+    /* execvp searches PATH for "sudo" and replaces this process with it: when
+       it succeeds nothing below runs, and the elevated copy is the one that
+       opens the window. When it returns, sudo was not found. */
+    execvp("sudo", command);
 
-    /* The sudo'd copy has finished (its window closed) or was refused. Either
-       way this process is done: it was only ever a launcher for the root one. */
-    exit(WIFEXITED(status) ? WEXITSTATUS(status) : 0);
+    fprintf(stderr,
+            "gnuchanwifi: sudo could not be run; the window will open, but "
+            "the radio and the driver cannot be changed\n");
+    free(command);
+    return -1;
 }
