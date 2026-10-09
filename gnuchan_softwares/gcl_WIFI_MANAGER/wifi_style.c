@@ -92,6 +92,8 @@ int wifi_style_load(WifiStyle *style, Display *display, int screen,
     unsigned long secured = wifi_style_colour(display, screen, "#ff9e64", white);
     unsigned long connected = wifi_style_colour(display, screen, "#9ece6a",
                                                 white);
+    unsigned long selection = wifi_style_colour(display, screen, "#5a2a8f",
+                                                black);
 
     style->background = wifi_style_colour(display, screen,
                                           config->background, background);
@@ -107,6 +109,8 @@ int wifi_style_load(WifiStyle *style, Display *display, int screen,
                                        secured);
     style->connected = wifi_style_colour(display, screen, config->connected,
                                          connected);
+    style->selection = wifi_style_colour(display, screen, config->selection,
+                                         selection);
 
     style->font = open_font(display, screen, config);
 

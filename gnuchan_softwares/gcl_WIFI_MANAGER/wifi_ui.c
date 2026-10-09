@@ -461,6 +461,33 @@ static void handle_key(WifiUi *ui, XKeyEvent *key) {
     }
 }
 
+/* The row under the pointer, so the list answers the mouse. Only the list
+   screen tracks it; on a sub-screen the hover is cleared. */
+static void handle_motion(WifiUi *ui, XMotionEvent *motion) {
+    if (ui->mode != WIFI_MODE_LIST) {
+        if (ui->hover != -1) {
+            ui->hover = -1;
+            wifi_draw(ui);
+        }
+        return;
+    }
+
+    int top = ui->style.row_height + ui->style.padding +
+              ((ui->block.hard || ui->block.soft) ? ui->style.row_height : 0);
+    int row = -1;
+    if (motion->y >= top) {
+        int candidate = ui->scroll + (motion->y - top) / ui->style.row_height;
+        if (candidate >= 0 && candidate < ui->networks.count) {
+            row = candidate;
+        }
+    }
+
+    if (row != ui->hover) {
+        ui->hover = row;
+        wifi_draw(ui);
+    }
+}
+
 /* A click: first the buttons, then a row of the list. The buttons come first
    because they sit below the list. */
 static void handle_click(WifiUi *ui, XButtonEvent *button) {
@@ -500,6 +527,7 @@ static void handle_click(WifiUi *ui, XButtonEvent *button) {
 int wifi_ui_open(WifiUi *ui, const char *config_path) {
     memset(ui, 0, sizeof(*ui));
     ui->selected = -1;
+    ui->hover = -1;
     ui->mode = WIFI_MODE_LIST;
     ui->radio_on = -1;
 
@@ -593,6 +621,9 @@ int wifi_ui_run(WifiUi *ui) {
             break;
         case ButtonPress:
             handle_click(ui, &event.xbutton);
+            break;
+        case MotionNotify:
+            handle_motion(ui, &event.xmotion);
             break;
         case Expose:
             if (event.xexpose.window == ui->window &&

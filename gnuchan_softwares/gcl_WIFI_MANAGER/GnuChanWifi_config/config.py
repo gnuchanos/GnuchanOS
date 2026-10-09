@@ -50,3 +50,8 @@ Accent = "#c77dff"
 # is joined.
 Secured = "#ff9e64"
 Connected = "#9ece6a"
+
+# The fill of the row you have clicked. It is deliberately a clear step away
+# from Background and Panel: a selection drawn in a colour close to the
+# background is a selection nobody can see.
+Selection = "#5a2a8f"

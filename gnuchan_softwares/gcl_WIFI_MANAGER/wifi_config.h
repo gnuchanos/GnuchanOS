@@ -68,6 +68,7 @@ typedef struct WifiConfig {
     char accent[WIFI_TEXT];
     char secured[WIFI_TEXT];      /* the marker on a password-protected net */
     char connected[WIFI_TEXT];    /* the row of the network joined         */
+    char selection[WIFI_TEXT];    /* the fill of the row the cursor is on  */
 
     /* The reason the last read refused, in words to show a person. Empty when
        the file parsed. */

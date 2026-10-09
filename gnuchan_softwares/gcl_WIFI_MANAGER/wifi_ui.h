@@ -122,6 +122,11 @@ typedef struct WifiUi {
     int selected;
     int scroll;
 
+    /* The row the pointer is over, or -1. Drawn with a faint fill so the list
+       answers the mouse before it is clicked — the difference between a list
+       that looks alive and one that looks like a picture of a list. */
+    int hover;
+
     /* The SSID the password is being typed for, and the profile name a
        confirmation is about. Both are kept across a redraw so their screens can
        name what they are about. */

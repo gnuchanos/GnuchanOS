@@ -345,13 +345,22 @@ static void draw_list(WifiUi *ui) {
 
         int is_selected = (index == ui->selected);
         if (is_selected) {
-            /* The chosen row is marked twice, on purpose: a filled row and a
-               bar down its left edge. One fill alone was too faint against the
-               panel to tell chosen from not — which is the whole of "I click a
-               network and cannot tell if I picked it". */
-            fill(ui, ui->style.field, left, row_y, right - left,
+            /* The chosen row is filled in the SELECTION colour — a violet a
+               clear step away from the background and the panel — and carries
+               a bright bar down its left edge. The first cut filled it with
+               the panel colour, which is nearly the background, so a click
+               looked like nothing happened; the fill and the bar together are
+               what make the choice unmistakable. */
+            fill(ui, ui->style.selection, left, row_y, right - left,
                  row_height(ui));
             fill(ui, ui->style.accent, left, row_y, 4, row_height(ui));
+        } else if (index == ui->hover) {
+            /* The row under the pointer gets a faint fill, so the list answers
+               the mouse before it is clicked. Half the panel colour mixed by
+               drawing it under the row would be more code than a single darker
+               fill, so the hover is simply the field colour. */
+            fill(ui, ui->style.field, left, row_y, right - left,
+                 row_height(ui));
         }
 
         int x = left + ui->style.padding + 4;

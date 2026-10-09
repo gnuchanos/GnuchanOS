@@ -66,6 +66,12 @@ void wifi_config_defaults(WifiConfig *config) {
     snprintf(config->secured, sizeof(config->secured), "#ff9e64");
     snprintf(config->connected, sizeof(config->connected), "#9ece6a");
 
+    /* The chosen row's fill: a violet clearly a step away from both the
+       background and the panel, so the row a person clicked is never in doubt.
+       The first palette reused the panel colour here, which is why a click
+       looked like it did nothing. */
+    snprintf(config->selection, sizeof(config->selection), "#5a2a8f");
+
     config->error[0] = '\0';
 }
 
@@ -153,6 +159,8 @@ static void apply_setting(WifiConfig *config, const char *name,
         SET_TEXT(secured);
     } else if (strcmp(name, "Connected") == 0) {
         SET_TEXT(connected);
+    } else if (strcmp(name, "Selection") == 0) {
+        SET_TEXT(selection);
     }
     /* Anything else is a name this manager does not have; it is left alone. */
 

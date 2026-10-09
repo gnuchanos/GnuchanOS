@@ -44,6 +44,11 @@ typedef struct WifiStyle {
     unsigned long secured;
     unsigned long connected;
 
+    /* The fill of the row the cursor is on. Its own colour rather than the
+       panel's, because the panel is nearly the background and a selection drawn
+       in it is a selection nobody can see. */
+    unsigned long selection;
+
     /* The one font the whole window is drawn in. */
     XftFont *font;
 
