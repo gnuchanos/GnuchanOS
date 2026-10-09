@@ -119,7 +119,11 @@ static void draw_status_bar(WifiUi *ui) {
        tells a person, without opening another tool, whether they are on and at
        what address. */
     if (ui->active_ssid[0]) {
-        char line[WIFI_TEXT * 2];
+        /* The SSID and the address are each up to WIFI_TEXT long, so the line
+           has to hold both plus the "connected: " and the brackets: three texts
+           rather than two, or a long name and a long address would not both
+           fit. */
+        char line[WIFI_TEXT * 3];
         if (ui->active_address[0]) {
             snprintf(line, sizeof(line), "connected: %s  (%s)",
                      ui->active_ssid, ui->active_address);

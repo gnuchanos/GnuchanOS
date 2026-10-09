@@ -99,8 +99,13 @@ typedef struct WifiUi {
 
     /* The last thing that happened, shown at the bottom: "Connecting…", a
        failure nmcli gave back, or nothing. Cleared when the next action
-       starts. */
-    char status[WIFI_TEXT];
+       starts.
+     *
+     * Twice WIFI_TEXT, not once: the messages here name a network — "Connected
+       to \"…\"" — and an SSID is itself up to WIFI_TEXT long, so a one-text
+       buffer could not hold the prefix AND the name. The extra room is what
+       keeps the message whole instead of cut. */
+    char status[WIFI_TEXT * 2];
 
     int running;
 } WifiUi;
