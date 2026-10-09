@@ -220,6 +220,21 @@ typedef struct WmConfig {
        because a window border is drawn before anything else is on screen. */
     char active_border[WM_CONFIG_TEXT_LENGTH];
     char inactive_border[WM_CONFIG_TEXT_LENGTH];
+
+    /* gcl_Window.set_inactive_window_panel_color("#241033"): the title bar of
+       a window that does NOT have the keyboard. It is a setting of its own and
+       not a shade of the focused bar because the two say different things: a
+       focused title bar says "the keyboard is here", and an unfocused one has
+       only to be told apart — from the focused bar above all, and from the
+       title bar of the window it is stacked against, which is the fault this
+       exists to fix: two windows whose bars were the same colour read as one
+       block of chrome with no line between them.
+     *
+     * Empty keeps the palette's own value (wm_style.c), which is a step darker
+     * than the panel — so a machine that never wrote a script still gets bars
+     * that do not run together. */
+    char inactive_panel[WM_CONFIG_TEXT_LENGTH];
+
     int border_width;
 
     /* gcl_Window.set_moved_window_border_color("#ff8a3d"): the border a window

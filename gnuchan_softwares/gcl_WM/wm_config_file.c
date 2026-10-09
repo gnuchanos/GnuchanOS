@@ -519,6 +519,12 @@ static void set_border_colours(WmConfig *config, const WmStatement *statement) {
                       "gcl_Window.set_inactive_window_border_color") == 0) {
         copy_text(config->inactive_border, sizeof(config->inactive_border), text);
     } else if (strcmp(statement->target,
+                      "gcl_Window.set_inactive_window_panel_color") == 0) {
+        /* The title bar of an unfocused window. Read with the border colours
+           because it is set the same way — one positional colour argument.
+           See WmConfig.inactive_panel. */
+        copy_text(config->inactive_panel, sizeof(config->inactive_panel), text);
+    } else if (strcmp(statement->target,
                       "gcl_Window.set_moved_window_border_color") == 0) {
         /* The third border colour, for a window that has just been sent to
            another workspace. It is read here with the other two because it is
@@ -1019,6 +1025,12 @@ void wm_config_defaults(WmConfig *config) {
        desktop the code was written against. */
     copy_text(config->active_border, sizeof(config->active_border), "#c77dff");
     copy_text(config->inactive_border, sizeof(config->inactive_border), "#32143f");
+    /* The unfocused title bar, written here as well as in the palette so the
+       shipped script and this default cannot drift. It is a step darker than
+       the panel, which is the whole point: a machine with no script still gets
+       a title bar that tells a focused window from an unfocused one, and two
+       stacked windows still have a line between their bars. */
+    copy_text(config->inactive_panel, sizeof(config->inactive_panel), "#241033");
     /* The third border colour. It is written out here as well as in the
        palette so the shipped script and this default cannot drift: a person
        reading either should see the same orange, and a machine with no script

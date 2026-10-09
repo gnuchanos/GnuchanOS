@@ -168,6 +168,15 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
                 : (frame->moved ? style->border_moved
                                 : style->border_unfocused);
 
+    /* The title bar's own colour, and the reason it is not one value for
+       every window: a focused window's bar is the bright panel and an
+       unfocused one's is a step darker, so two windows stacked one above the
+       other do not read as a single block of chrome with no line where one
+       ends and the next begins. The stripe under the focused bar already says
+       which window has the keyboard; this is what says where one window stops
+       and the next starts. */
+    unsigned long bar_colour = focused ? style->panel : style->panel_unfocused;
+
     /* The chrome is drawn for EVERY window, a fullscreen-like one included —
        see frame_border_of() for why. There is no branch on the fullscreen flag
        here at all, and that is on purpose: a fullscreen window is an ordinary
@@ -213,7 +222,7 @@ void wm_frame_draw(WmCore *core, WmFrame *frame) {
     }
 
     /* The bar. */
-    XSetForeground(display, core->gc, style->panel);
+    XSetForeground(display, core->gc, bar_colour);
     XFillRectangle(display, target, core->gc, 0, 0,
                    (unsigned int)width, WM_TITLE_HEIGHT);
 

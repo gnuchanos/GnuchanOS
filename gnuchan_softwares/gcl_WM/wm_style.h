@@ -34,6 +34,14 @@ typedef struct WmStyle {
     /* Purple, dark to bright. */
     unsigned long background;    /* #1a0b2e - the desktop behind everything  */
     unsigned long panel;         /* #32143f - the bar and the menus          */
+    /* #241033 - the title bar of a window that does NOT have the keyboard.
+       It is a step darker than `panel` on purpose: a focused window's bar and
+       an unfocused one's used to be the same colour, so two windows stacked
+       one above the other read as a single block of chrome with no line where
+       one ends and the next begins. The darker bar is what draws that line,
+       and the focused window's bar — the brighter `panel` with the accent
+       stripe under it — is what says which one has the keyboard. */
+    unsigned long panel_unfocused;
     unsigned long panel_edge;    /* #7b2cbf - the line around them           */
     unsigned long field;         /* #241033 - a raised or hovered control    */
     unsigned long text;          /* #e0c3fc - normal text                    */

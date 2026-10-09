@@ -662,6 +662,10 @@ int wifi_ui_run(WifiUi *ui) {
 
 void wifi_ui_close(WifiUi *ui) {
     if (ui->display) {
+        if (ui->buffer) {
+            XFreePixmap(ui->display, ui->buffer);
+            ui->buffer = None;
+        }
         if (ui->gc) {
             XFreeGC(ui->display, ui->gc);
             ui->gc = NULL;

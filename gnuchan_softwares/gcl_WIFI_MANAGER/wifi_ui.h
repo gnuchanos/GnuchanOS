@@ -83,6 +83,15 @@ typedef struct WifiUi {
     Window window;
     GC gc;
 
+    /* The off-screen buffer every frame is drawn into before it is copied to
+       the window. Drawing straight to the window shows the background being
+       cleared and the rows being redrawn one at a time, which reads as a
+       flicker when the pointer moves over the list — the whole picture is
+       built off-screen and put up in one copy instead. */
+    Pixmap buffer;
+    int buffer_width;
+    int buffer_height;
+
     int screen_width;
     int screen_height;
     int width;              /* the window's own size, worked out at open */

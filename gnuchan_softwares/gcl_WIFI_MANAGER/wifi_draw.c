@@ -71,23 +71,32 @@ static int help_y(const WifiUi *ui) {
 
 /* --- the primitives ------------------------------------------------------- */
 
+/* What every frame is drawn into: the off-screen buffer when there is one,
+   the window otherwise. Drawing straight to the window paints the background
+   and then the rows one at a time, and the eye sees the gap between them as a
+   flicker; drawing into the buffer and copying once shows only finished
+   frames. */
+static Drawable target(const WifiUi *ui) {
+    return ui->buffer ? ui->buffer : ui->window;
+}
+
 static void fill(WifiUi *ui, unsigned long colour,
                  int x, int y, int width, int height) {
     XSetForeground(ui->display, ui->gc, colour);
-    XFillRectangle(ui->display, ui->window, ui->gc,
+    XFillRectangle(ui->display, target(ui), ui->gc,
                    x, y, (unsigned int)width, (unsigned int)height);
 }
 
 static void outline(WifiUi *ui, unsigned long colour,
                     int x, int y, int width, int height) {
     XSetForeground(ui->display, ui->gc, colour);
-    XDrawRectangle(ui->display, ui->window, ui->gc,
+    XDrawRectangle(ui->display, target(ui), ui->gc,
                    x, y, (unsigned int)(width - 1), (unsigned int)(height - 1));
 }
 
 static void text(WifiUi *ui, int x, int baseline, const char *string,
                  unsigned long colour) {
-    wifi_style_text(ui->display, ui->screen, ui->window, ui->style.font,
+    wifi_style_text(ui->display, ui->screen, target(ui), ui->style.font,
                     x, baseline, string, colour);
 }
 
@@ -426,7 +435,7 @@ static void draw_password(WifiUi *ui) {
     int cy = y + field_h / 2;
     XSetForeground(ui->display, ui->gc, ui->style.text);
     for (int i = 0; i < ui->password_length; i++) {
-        XFillArc(ui->display, ui->window, ui->gc,
+        XFillArc(ui->display, target(ui), ui->gc,
                  x + i * dot_gap - dot_r, cy - dot_r,
                  (unsigned int)(2 * dot_r), (unsigned int)(2 * dot_r),
                  0, 360 * 64);
@@ -491,6 +500,23 @@ void wifi_draw(WifiUi *ui) {
         return;
     }
 
+    /* The off-screen buffer, made when the window opens and remade whenever
+       the window is resized. Everything below is drawn into it, and the
+       finished frame is copied to the window in one go at the end. */
+    if (!ui->buffer || ui->buffer_width != ui->width ||
+        ui->buffer_height != ui->height) {
+        if (ui->buffer) {
+            XFreePixmap(ui->display, ui->buffer);
+        }
+        ui->buffer = XCreatePixmap(ui->display, ui->root,
+                                   (unsigned int)ui->width,
+                                   (unsigned int)ui->height,
+                                   (unsigned int)DefaultDepth(ui->display,
+                                                              ui->screen));
+        ui->buffer_width = ui->width;
+        ui->buffer_height = ui->height;
+    }
+
     fill(ui, ui->style.background, 0, 0, ui->width, ui->height);
 
     switch (ui->mode) {
@@ -511,5 +537,10 @@ void wifi_draw(WifiUi *ui) {
     }
 
     draw_help(ui);
+
+    /* Put the finished frame up in one copy. This is the whole point of the
+       buffer: the window never shows a half-drawn list. */
+    XCopyArea(ui->display, target(ui), ui->window, ui->gc, 0, 0,
+              (unsigned int)ui->width, (unsigned int)ui->height, 0, 0);
     XFlush(ui->display);
 }

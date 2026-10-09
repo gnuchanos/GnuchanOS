@@ -298,6 +298,17 @@ void wm_config_apply(WmCore *core) {
                             core->config.inactive_border,
                             core->style.border_unfocused);
     }
+    /* The unfocused title bar, resolved here with the two border colours and
+       for the same reason: the bar is drawn from the style at draw time, so a
+       script that changed only this colour has to reach the windows already on
+       screen. The fallback is the palette's own darker panel (wm_style.c),
+       which is what a script that never names this colour keeps. */
+    if (core->config.inactive_panel[0]) {
+        core->style.panel_unfocused =
+            wm_style_colour(core->display, core->screen,
+                            core->config.inactive_panel,
+                            core->style.panel_unfocused);
+    }
     /* The third colour, and the reason it is resolved here with the other two:
        a frame is drawn with all three of these at draw time, so a script that
        changed only this one has to reach the windows already on screen the

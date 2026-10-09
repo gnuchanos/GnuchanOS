@@ -27,6 +27,10 @@ int wm_style_load(WmStyle *style, Display *display, int screen) {
 
     style->background       = wm_style_colour(display, screen, "#1a0b2e", black);
     style->panel            = wm_style_colour(display, screen, "#32143f", black);
+    /* A step darker than the panel, so an unfocused window's title bar is told
+       apart from a focused one's at a glance — and from the unfocused window
+       underneath it, which is the fault this colour exists to fix. */
+    style->panel_unfocused  = wm_style_colour(display, screen, "#241033", black);
     style->panel_edge       = wm_style_colour(display, screen, "#7b2cbf", white);
     style->field            = wm_style_colour(display, screen, "#241033", black);
     style->text             = wm_style_colour(display, screen, "#e0c3fc", white);
