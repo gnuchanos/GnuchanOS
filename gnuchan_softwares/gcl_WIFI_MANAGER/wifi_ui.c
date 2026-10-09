@@ -123,7 +123,7 @@ static void refresh_all(WifiUi *ui) {
         return;
     }
 
-    wifi_nm_scan(&ui->networks, names, name_count);
+    wifi_nm_scan(&ui->networks, ui->device, names, name_count);
     wifi_nm_active(ui->device, ui->active_ssid, sizeof(ui->active_ssid),
                    ui->active_address, sizeof(ui->active_address));
 

@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 void wifi_nm_device(char *out, unsigned int size) {
     if (size) {
@@ -64,8 +65,16 @@ static int is_saved(const char (*saved)[WIFI_TEXT], int saved_count,
     return 0;
 }
 
-int wifi_nm_scan(WifiList *list, const char (*saved_ssids)[WIFI_TEXT],
-                 int saved_count) {
+/* Wait, so a scan that was just asked for has time to land. */
+static void scan_wait(void) {
+    struct timespec pause;
+    pause.tv_sec = 2;
+    pause.tv_nsec = 0;
+    nanosleep(&pause, NULL);
+}
+
+int wifi_nm_scan(WifiList *list, const char *device,
+                 const char (*saved_ssids)[WIFI_TEXT], int saved_count) {
     if (!list) {
         return -1;
     }
@@ -73,9 +82,34 @@ int wifi_nm_scan(WifiList *list, const char (*saved_ssids)[WIFI_TEXT],
 
     char command[WIFI_TEXT * 8];
     snprintf(command, sizeof(command),
-             "%s -t -f SSID,SIGNAL,SECURITY,IN-USE device wifi list "
-             "--rescan yes",
+             "%s -t -f SSID,SIGNAL,SECURITY,IN-USE device wifi list",
              wifi_shell_program());
+
+    /* Ask for a fresh scan and WAIT for it before reading the list.
+     *
+     * This used to be one command — "device wifi list --rescan yes" — and that
+     * is exactly what kept a network that had gone away on the list: that
+     * command STARTS a scan and then prints the list NetworkManager already
+     * had, because the scan it had just asked for has not finished. A phone's
+     * hotspot switched off therefore stayed on the screen however often Rescan
+     * was pressed, the list coming from the cache the new scan was about to
+     * replace.
+     *
+     * So the two are split here: the scan is requested, the program waits long
+     * enough for a real scan to sweep the air, and only then is the list read
+     * — so what is read is the list the scan just produced, not the one it was
+     * about to replace.
+     *
+     * The wait is a fixed one and not a poll of the list, and that is on
+     * purpose: a poll cannot tell a scan that has finished from one still
+     * running, because every read of the list carries a fresh signal-strength
+     * number, so the answer "changes" on the very first read and a poll would
+     * stop before the scan had swept anything at all. Two seconds is what an
+     * ordinary scan takes; a slower one shows a list a moment behind, which is
+     * not the fault this fixes — the fault was a list that never changed.
+     */
+    wifi_nm_rescan(device);
+    scan_wait();
 
     static char output[WIFI_TEXT * WIFI_MAX_NETWORKS * 2];
     if (wifi_shell_run(command, output, sizeof(output)) != 0) {

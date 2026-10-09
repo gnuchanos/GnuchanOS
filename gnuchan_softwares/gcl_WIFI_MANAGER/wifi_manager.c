@@ -93,7 +93,7 @@ static int list_networks(const char *config_path) {
     int name_count = wifi_saved_names(&saved, names, WIFI_MAX_SAVED);
 
     WifiList list;
-    if (wifi_nm_scan(&list, names, name_count) != 0) {
+    if (wifi_nm_scan(&list, device, names, name_count) != 0) {
         fprintf(stderr, "gnuchanwifi: nmcli could not be run\n");
         return 1;
     }

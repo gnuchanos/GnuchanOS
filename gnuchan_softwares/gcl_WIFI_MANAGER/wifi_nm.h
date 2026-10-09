@@ -40,9 +40,15 @@ void wifi_nm_device(char *out, unsigned int size);
    run; a scan that ran but found nothing is a success with count 0. `saved`
    is the list of saved profiles — wifi_saved.c fills it — and a network whose
    SSID is in it is marked as saved, so the window can tell "I know this one"
-   from "I would have to ask for a password". */
-int wifi_nm_scan(WifiList *list, const char (*saved_ssids)[WIFI_TEXT],
-                 int saved_count);
+   from "I would have to ask for a password".
+
+   `device` is the wireless interface the scan is asked of. The scan is
+   requested and WAITED FOR before the list is read — one command that both
+   asked and read would print NetworkManager's cached list, because the scan it
+   had just asked for would not have finished. That is what kept a switched-off
+   network on the list however often Rescan was pressed. */
+int wifi_nm_scan(WifiList *list, const char *device,
+                 const char (*saved_ssids)[WIFI_TEXT], int saved_count);
 
 /* Join `ssid`. A NULL or empty `password` connects without one, which is what a
    saved network needs. Returns 0 on success; on failure -1 and a short message
