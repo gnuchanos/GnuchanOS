@@ -10,25 +10,24 @@
  * --- the modes ---
  *
  *   LIST      the networks in range, one per row, with the joined one marked,
- *             the selected one highlighted, a saved one shown as such, a bar at
- *             the top giving the connection and its address, a warning when the
- *             kernel has the radio blocked, and a row of buttons at the foot.
+ *             the chosen one lit up so there is no doubt which it is, a saved
+ *             one shown as such, a bar at the top giving the connection and its
+ *             address, a warning when the kernel has the radio blocked, and a
+ *             row of buttons at the foot.
  *   PASSWORD  one line, the key for a locked network that is not already saved.
  *   CONFIRM   a yes/no, asked before forgetting a saved network — a thing that
  *             throws away a password is worth one keystroke of doubt.
- *   RESTART   a yes/no, asked before reloading the driver. The network drops
- *             while it happens, which is the second thing worth a confirmation.
  *
- * --- the two ways to act ---
+ * --- the buttons ---
  *
- * There are BUTTONS at the foot of the list, drawn as boxes a person clicks:
- * Rescan, Disconnect, Forget, Autoconnect, Restart, Quit. And there are the
- * same actions as LETTERS — r, d, f, a, R, q — for a person who would rather
- * not reach for the mouse. The two do the same things and go through the same
- * functions; a button is a rectangle that knows which action it is, and a
- * letter is a keysym that resolves to one.
+ * Four, and only the four the manager is for: Connect, Forget, Rescan, Restart.
+ * A button is a rectangle that knows which action it is, and the same actions
+ * are on the keyboard — Enter to connect, r to rescan. Connect and Forget act
+ * on the chosen row; Rescan and Restart act on the air, and Restart is the
+ * whole of the dotfiles' Reboot_Wifi.py behind one press, with nothing asked
+ * first because a person who pressed Restart has already decided.
  *
- * Escape steps back a mode, or closes the window from the list; Enter acts.
+ * Escape closes from the list and steps back from a sub-screen; Enter acts.
  *
  * This is an ORDINARY window: GnuChanWM, the window manager on this desktop,
  * frames it, moves it, focuses it and closes it. It is NOT an override-redirect
@@ -52,7 +51,7 @@
    what keeps a key held down from growing the buffer without end. */
 #define WIFI_MAX_PASSWORD 256
 
-/* The most buttons the foot has. Six are drawn; the ceiling is room to add one
+/* The most buttons the foot has. Four are drawn; the ceiling is room to add one
    without touching the array. */
 #define WIFI_MAX_BUTTONS 8
 
@@ -60,20 +59,16 @@ typedef enum WifiMode {
     WIFI_MODE_LIST,       /* choosing a network                        */
     WIFI_MODE_PASSWORD,   /* typing the key for the chosen one         */
     WIFI_MODE_CONFIRM,    /* yes/no before forgetting the chosen one   */
-    WIFI_MODE_RESTART,    /* yes/no before reloading the driver        */
 } WifiMode;
 
 /* What a button does. A value of its own rather than a key passed around, so
    the drawing and the clicking name the same thing and a button cannot be wired
    to the wrong action by a mistyped character. */
 typedef enum WifiAction {
-    WIFI_ACTION_CONNECT,     /* join the chosen network                 */
-    WIFI_ACTION_RESCAN,
-    WIFI_ACTION_DISCONNECT,
-    WIFI_ACTION_FORGET,
-    WIFI_ACTION_AUTOCONNECT,
-    WIFI_ACTION_RESTART,
-    WIFI_ACTION_QUIT,
+    WIFI_ACTION_CONNECT,   /* join the chosen network                   */
+    WIFI_ACTION_FORGET,    /* forget its saved profile (asks first)     */
+    WIFI_ACTION_RESCAN,    /* scan the air again                        */
+    WIFI_ACTION_RESTART,   /* unblock the radio and reload the driver   */
 } WifiAction;
 
 typedef struct WifiButton {

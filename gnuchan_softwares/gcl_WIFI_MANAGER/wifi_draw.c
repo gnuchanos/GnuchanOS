@@ -101,20 +101,17 @@ static int band_baseline(const WifiUi *ui, int band_y) {
 
 /* --- the buttons ---------------------------------------------------------- */
 
-/* The buttons, in the order they are drawn. One table so a button's label and
-   its action are written together and cannot drift apart. Connect is first
-   because it is what a person does most and it acts on the chosen row. */
+/* The buttons, in the order they are drawn — the four the manager is for. One
+   table so a button's label and its action are written together and cannot
+   drift apart. */
 static const struct {
     const char *label;
     WifiAction action;
 } kButtons[] = {
     { "Connect", WIFI_ACTION_CONNECT },
-    { "Rescan",  WIFI_ACTION_RESCAN },
-    { "Disconnect", WIFI_ACTION_DISCONNECT },
     { "Forget",  WIFI_ACTION_FORGET },
-    { "Autojoin", WIFI_ACTION_AUTOCONNECT },
+    { "Rescan",  WIFI_ACTION_RESCAN },
     { "Restart", WIFI_ACTION_RESTART },
-    { "Quit",    WIFI_ACTION_QUIT },
 };
 #define BUTTON_COUNT ((int)(sizeof(kButtons) / sizeof(kButtons[0])))
 
@@ -348,11 +345,16 @@ static void draw_list(WifiUi *ui) {
 
         int is_selected = (index == ui->selected);
         if (is_selected) {
+            /* The chosen row is marked twice, on purpose: a filled row and a
+               bar down its left edge. One fill alone was too faint against the
+               panel to tell chosen from not — which is the whole of "I click a
+               network and cannot tell if I picked it". */
             fill(ui, ui->style.field, left, row_y, right - left,
                  row_height(ui));
+            fill(ui, ui->style.accent, left, row_y, 4, row_height(ui));
         }
 
-        int x = left + ui->style.padding;
+        int x = left + ui->style.padding + 4;
         draw_signal(ui, x, row_y, network->signal);
         x += 5 * 6 + ui->style.padding;
 
@@ -451,36 +453,6 @@ static void draw_confirm(WifiUi *ui) {
          ui->style.text_muted);
 }
 
-static void draw_restart(WifiUi *ui) {
-    int top = list_top_y(ui);
-    draw_status_bar(ui);
-    draw_banner(ui);
-
-    int left = ui->style.padding;
-    int y = top + ui->style.padding;
-    int ascent = ui->style.font ? ui->style.font->ascent : 16;
-
-    text(ui, left + ui->style.padding, y + ascent,
-         "Restart the wifi driver?", ui->style.text);
-    y += row_height(ui);
-
-    char line[WIFI_TEXT * 2];
-    if (ui->driver_module[0]) {
-        snprintf(line, sizeof(line),
-                 "The driver (%s) is reloaded and the radio is unblocked. "
-                 "The network drops for a moment.",
-                 ui->driver_module);
-    } else {
-        snprintf(line, sizeof(line),
-                 "The radio is unblocked. No driver could be named, so the "
-                 "module is not reloaded.");
-    }
-    text(ui, left + ui->style.padding, y + ascent, line, ui->style.text_muted);
-    y += row_height(ui);
-    text(ui, left + ui->style.padding, y + ascent,
-         "y to restart, n or Escape to cancel", ui->style.text_muted);
-}
-
 /* --- the foot ------------------------------------------------------------- */
 
 /* The last message — a failure, "Connecting…" — above the buttons. */
@@ -496,8 +468,8 @@ static void draw_status_line(WifiUi *ui) {
    Shorter than the button bar on purpose: the buttons are the full list, this
    is the reminder for the ones with a letter. */
 static void draw_help(WifiUi *ui) {
-    const char *help = "Up/Down move   Enter join   r rescan   w wifi   "
-                       "R restart   q quit";
+    const char *help = "Up/Down move   Enter connect   r rescan   "
+                       "Escape close";
     int descent = ui->style.font ? ui->style.font->descent : 4;
     text(ui, ui->style.padding, help_y(ui) + row_height(ui) - descent - 2,
          help, ui->style.text_muted);
@@ -519,10 +491,6 @@ void wifi_draw(WifiUi *ui) {
         break;
     case WIFI_MODE_CONFIRM:
         draw_confirm(ui);
-        draw_status_line(ui);
-        break;
-    case WIFI_MODE_RESTART:
-        draw_restart(ui);
         draw_status_line(ui);
         break;
     case WIFI_MODE_LIST:

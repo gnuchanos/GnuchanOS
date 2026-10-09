@@ -3,7 +3,8 @@
  *
  * This is where the manager meets the display. Everything it is made of has
  * already been read by the time this runs: the config, the palette, the
- * interface's name. What is left is a window, a loop, and the actions.
+ * interface's name. What is left is a window, a loop, and the four actions the
+ * manager exists for.
  *
  * --- this is an ORDINARY window ---
  *
@@ -12,18 +13,24 @@
  * a message rather than killing the connection, maps it, and answers the events
  * that reach it. It is NOT override-redirect and it does NOT grab the keyboard.
  *
- * --- two ways to act, one function each ---
+ * --- the four actions ---
  *
- * The buttons at the foot and the letters do the same things through the same
- * functions: a button resolves to a WifiAction and dispatch_action() runs it, a
- * letter resolves to the same action and calls the same dispatch. So there is
- * one place where "rescan" is defined and the mouse and the keyboard cannot
- * drift apart.
+ * Connect, Forget, Rescan, Restart, and nothing else. A button and a key run the
+ * same function: dispatch_action() is the one place each is named, so the mouse
+ * and the keyboard cannot drift apart.
  *
- * One action is deliberate and so is asked twice: RESTART reloads the wireless
- * driver, which drops the network for a moment. That is the same thing the
- * dotfiles' Reboot_Wifi.py does by hand — rfkill unblock all, modprobe -r, then
- * modprobe — and it is the fix for a card that has latched itself "radio off".
+ *   Connect  joins the chosen network; a locked one that is not saved is asked
+ *            for its password first.
+ *   Forget   drops the chosen network's saved profile, after a yes/no, because
+ *            it throws away the password with it.
+ *   Rescan   scans the air again.
+ *   Restart  is the whole of the dotfiles' Reboot_Wifi.py: unblock the radio,
+ *            unload the wireless driver, load it again. It runs at once, with
+ *            nothing asked first, because pressing Restart is the decision.
+ *
+ * A click on a row only CHOOSES it; it never connects. Joining is Connect or
+ * Enter, a second and deliberate act, so browsing the list is not a series of
+ * connects.
  */
 #include <locale.h>
 #include <stdio.h>
@@ -43,8 +50,8 @@
 
 /* The height the window needs for the screen it is showing. The list is the
    status bar, an optional warning band, the rows, and the three foot bands —
-   message, buttons, help. The sub-screens are a fixed few rows plus the same
-   foot. Worked out before anything is drawn so the window opens at its size. */
+   message, buttons, help. The password and confirm screens are a fixed few rows
+   plus the same foot. */
 static void work_out_size(WifiUi *ui) {
     ui->width = ui->config.width;
     if (ui->width > ui->screen_width) {
@@ -197,7 +204,7 @@ static void connect_current(WifiUi *ui, const char *password) {
     wifi_draw(ui);
 }
 
-/* Enter on the chosen row. A locked network that is not saved is one whose
+/* Connect on the chosen row. A locked network that is not saved is one whose
    password is not known, so it asks for it; anything else connects with what
    the keyring already has. */
 static void choose_selected(WifiUi *ui) {
@@ -246,6 +253,8 @@ static const char *chosen_saved_name(WifiUi *ui) {
     return "";
 }
 
+/* Forget the chosen network's saved profile. A yes/no comes first, because
+   forgetting throws the password away with it. */
 static void ask_forget(WifiUi *ui) {
     const char *name = chosen_saved_name(ui);
     if (!name[0]) {
@@ -277,94 +286,17 @@ static void confirm_forget(WifiUi *ui) {
     wifi_draw(ui);
 }
 
-static void toggle_autoconnect(WifiUi *ui) {
-    const char *name = chosen_saved_name(ui);
-    if (!name[0]) {
-        snprintf(ui->status, sizeof(ui->status),
-                 "That network is not saved, so it has no such setting");
-        wifi_draw(ui);
-        return;
-    }
-
-    int current = 0;
-    for (int i = 0; i < ui->saved.count; i++) {
-        if (strcmp(ui->saved.names[i], name) == 0) {
-            current = ui->saved.autoconnect[i];
-            break;
-        }
-    }
-    int wanted = !current;
-
-    char error[WIFI_TEXT];
-    if (wifi_saved_set_autoconnect(name, wanted, error, sizeof(error)) == 0) {
-        refresh_all(ui);
-        snprintf(ui->status, sizeof(ui->status),
-                 "\"%s\" will %s join by itself", name,
-                 wanted ? "now" : "no longer");
-        wifi_draw(ui);
-        return;
-    }
-    snprintf(ui->status, sizeof(ui->status), "%s", error);
-    wifi_draw(ui);
-}
-
-static void toggle_radio(WifiUi *ui) {
-    if (ui->radio_on < 0) {
-        snprintf(ui->status, sizeof(ui->status),
-                 "The wifi state could not be read, so it cannot be changed");
-        wifi_draw(ui);
-        return;
-    }
-    int wanted = !ui->radio_on;
-
-    snprintf(ui->status, sizeof(ui->status), "Turning wifi %s…",
-             wanted ? "on" : "off");
-    wifi_draw(ui);
-
-    char error[WIFI_TEXT];
-    if (wifi_radio_set(wanted, error, sizeof(error)) == 0) {
-        refresh_all(ui);
-        return;
-    }
-    snprintf(ui->status, sizeof(ui->status), "%s", error);
-    wifi_draw(ui);
-}
-
-static void do_disconnect(WifiUi *ui) {
-    char error[WIFI_TEXT];
-    snprintf(ui->status, sizeof(ui->status), "Disconnecting…");
-    wifi_draw(ui);
-    if (wifi_nm_disconnect(ui->device, error, sizeof(error)) == 0) {
-        refresh_all(ui);
-    } else {
-        snprintf(ui->status, sizeof(ui->status), "%s", error);
-        wifi_draw(ui);
-    }
-}
-
-/* Ask before the restart: it drops the network for a moment. */
-static void ask_restart(WifiUi *ui) {
-    ui->mode = WIFI_MODE_RESTART;
-    ui->status[0] = '\0';
-    resize_for_mode(ui);
-    wifi_draw(ui);
-}
-
-/* y in the restart screen: clear the blocks and reload the driver. This is the
-   whole of Reboot_Wifi.py. The network drops while it happens and comes back
-   with the rescan that follows. */
+/* Restart: clear the kernel's blocks and reload the wireless driver. This is
+   the whole of Reboot_Wifi.py — rfkill unblock all, modprobe -r, modprobe — and
+   it runs at once, with nothing asked first, because pressing Restart is the
+   decision. The network drops while the driver is out and comes back with the
+   rescan that follows. */
 static void do_restart(WifiUi *ui) {
-    ui->mode = WIFI_MODE_LIST;
-    snprintf(ui->status, sizeof(ui->status),
-             "Restarting the wifi driver…");
-    resize_for_mode(ui);
+    snprintf(ui->status, sizeof(ui->status), "Restarting the wifi driver…");
     wifi_draw(ui);
 
     char error[WIFI_TEXT];
     if (wifi_rfkill_restart(ui->driver_module, error, sizeof(error)) == 0) {
-        /* Give the kernel a moment to bring the interface back before reading
-           it, so the scan is not run against a device that is still coming
-           up. */
         refresh_all(ui);
         snprintf(ui->status, sizeof(ui->status),
                  "The wifi driver was restarted");
@@ -372,35 +304,24 @@ static void do_restart(WifiUi *ui) {
         return;
     }
     snprintf(ui->status, sizeof(ui->status), "%s", error);
-    resize_for_mode(ui);
     wifi_draw(ui);
 }
 
-/* Run the action a button — or a letter, resolved to the same value — stands
-   for. The one place the actions are named, so the mouse and the keyboard do
-   not drift apart. */
+/* Run the action a button — or a letter — stands for. The one place the four
+   are named, so the mouse and the keyboard cannot drift apart. */
 static void dispatch_action(WifiUi *ui, WifiAction action) {
     switch (action) {
     case WIFI_ACTION_CONNECT:
         choose_selected(ui);
         break;
-    case WIFI_ACTION_RESCAN:
-        refresh_all(ui);
-        break;
-    case WIFI_ACTION_DISCONNECT:
-        do_disconnect(ui);
-        break;
     case WIFI_ACTION_FORGET:
         ask_forget(ui);
         break;
-    case WIFI_ACTION_AUTOCONNECT:
-        toggle_autoconnect(ui);
+    case WIFI_ACTION_RESCAN:
+        refresh_all(ui);
         break;
     case WIFI_ACTION_RESTART:
-        ask_restart(ui);
-        break;
-    case WIFI_ACTION_QUIT:
-        ui->running = 0;
+        do_restart(ui);
         break;
     default:
         break;
@@ -480,26 +401,17 @@ static void handle_confirm_key(WifiUi *ui, KeySym symbol) {
     }
 }
 
-static void handle_restart_key(WifiUi *ui, KeySym symbol) {
-    if (symbol == XK_Escape || symbol == XK_n || symbol == XK_N) {
-        leave_sub_screen(ui);
-        return;
-    }
-    if (symbol == XK_y || symbol == XK_Y) {
-        do_restart(ui);
-    }
-}
-
 static void handle_list_key(WifiUi *ui, KeySym symbol) {
     switch (symbol) {
     case XK_Escape:
-    case XK_q:
-    case XK_Q:
         ui->running = 0;
         return;
     case XK_Return:
     case XK_KP_Enter:
-        choose_selected(ui);
+        dispatch_action(ui, WIFI_ACTION_CONNECT);
+        return;
+    case XK_r:
+        dispatch_action(ui, WIFI_ACTION_RESCAN);
         return;
     case XK_Up:
     case XK_KP_Up:
@@ -529,24 +441,6 @@ static void handle_list_key(WifiUi *ui, KeySym symbol) {
         move_selection(ui, 0);
         wifi_draw(ui);
         return;
-    case XK_r:
-        dispatch_action(ui, WIFI_ACTION_RESCAN);
-        return;
-    case XK_w:
-        toggle_radio(ui);
-        return;
-    case XK_d:
-        dispatch_action(ui, WIFI_ACTION_DISCONNECT);
-        return;
-    case XK_f:
-        dispatch_action(ui, WIFI_ACTION_FORGET);
-        return;
-    case XK_a:
-        dispatch_action(ui, WIFI_ACTION_AUTOCONNECT);
-        return;
-    case XK_R:
-        dispatch_action(ui, WIFI_ACTION_RESTART);
-        return;
     default:
         break;
     }
@@ -562,16 +456,13 @@ static void handle_key(WifiUi *ui, XKeyEvent *key) {
         handle_password_key(ui, symbol, key);
     } else if (ui->mode == WIFI_MODE_CONFIRM) {
         handle_confirm_key(ui, symbol);
-    } else if (ui->mode == WIFI_MODE_RESTART) {
-        handle_restart_key(ui, symbol);
     } else {
         handle_list_key(ui, symbol);
     }
 }
 
 /* A click: first the buttons, then a row of the list. The buttons come first
-   because they sit below the list and a click on one must not also move the
-   selection. */
+   because they sit below the list. */
 static void handle_click(WifiUi *ui, XButtonEvent *button) {
     if (button->button != Button1 || ui->mode != WIFI_MODE_LIST) {
         return;
@@ -599,10 +490,7 @@ static void handle_click(WifiUi *ui, XButtonEvent *button) {
         return;
     }
     /* A click only CHOOSES the row — it moves the highlight and nothing else.
-       Joining is a second, deliberate act: the Connect button or Enter. A click
-       that connected as well would make browsing the list a series of
-       disconnects and reconnects, which is how this first behaved and what
-       "why can I not just pick one" means. */
+       Joining is a second, deliberate act: the Connect button or Enter. */
     ui->selected = index;
     wifi_draw(ui);
 }
