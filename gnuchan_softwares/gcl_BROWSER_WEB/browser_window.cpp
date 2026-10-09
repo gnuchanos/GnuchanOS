@@ -1,35 +1,70 @@
 /*
  * browser_window.cpp — the interface: tabs, toolbar, bookmark bar.
+ *
+ * Tuned for a 2007 laptop: a software-rendered engine on two cores, where the
+ * cost of doing more than is asked is a fan that never stops. Two things are
+ * therefore deliberate and worth naming.
+ *
+ *   The page's own console is NOT relayed to stderr unless it is asked for.
+ *   The engine drops a page's console by default; echoing it — which this
+ *   browser used to do on every message — is a write and a flush on the
+ *   browser's own thread for every line a modern page logs, and a chatty page
+ *   (a site that logs per animation frame, or a failure loop) turns that into
+ *   thousands of syscalls a second that buy the user nothing. It is kept
+ *   behind GNUCHANBROWSER_JS_LOG for the testing that needs it, and it is off
+ *   otherwise.
+ *
+ *   A page that asks for a new window gets a TAB. Qt WebEngine refuses a
+ *   window-opening request when the page does not override createWindow, so a
+ *   target="_blank" link or a window.open() did nothing at all before. The
+ *   override below hands the request back to the window, which opens a tab.
  */
 #include "browser_window.h"
 
 #include "url_utils.h"
 
 #include <QAction>
+#include <QKeySequence>
 #include <QLineEdit>
 #include <QMenu>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QToolBar>
 #include <QUrl>
+#include <QWebEngineDownloadRequest>
 #include <QWebEngineFullScreenRequest>
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
 #include <QWebEngineSettings>
 #include <QWebEngineView>
 
+#include <QtGlobal>
+
 #include <cstdio>
 
 namespace {
 
-/* A page that repeats what the page itself logged, on stderr. Qt WebEngine
-   drops a page's console by default, so printing it is how this browser is
-   tested from a script and how a page's own errors are seen. No Q_OBJECT: only
-   a virtual is overridden. */
+/* Whether the page's console is echoed to stderr. Read once: the answer cannot
+   change while the program runs, and asking the environment per message would
+   be a small cost paid on the one path this exists to make cheap. */
+bool js_log_enabled()
+{
+    static const bool enabled =
+        qEnvironmentVariableIsSet("GNUCHANBROWSER_JS_LOG");
+    return enabled;
+}
+
+}  // namespace
+
+/* A page that repeats what the page itself logged, on stderr — but only when
+   GNUCHANBROWSER_JS_LOG is set. See the note at the top of the file for why it
+   is not on by default. No Q_OBJECT: only virtuals are overridden. */
 class ReportingPage : public QWebEnginePage {
 public:
-    explicit ReportingPage(QWebEngineProfile *profile, QObject *parent)
-        : QWebEnginePage(profile, parent) {}
+    ReportingPage(QWebEngineProfile *profile, class BrowserWindow *browser,
+                  QObject *parent)
+        : QWebEnginePage(profile, parent), browser_(browser) {}
 
 protected:
     void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level,
@@ -37,12 +72,30 @@ protected:
                                   const QString &source) override
     {
         Q_UNUSED(level);
-        Q_UNUSED(line);
-        Q_UNUSED(source);
+        if (!js_log_enabled()) {
+            return;
+        }
         fprintf(stderr, "js: %s\n", qPrintable(message));
         fflush(stderr);
+        Q_UNUSED(line);
+        Q_UNUSED(source);
     }
+
+    /* A page that wants a new window — target="_blank", window.open() — is
+       given a tab of this window instead. The engine loads the requested
+       content into the page returned here, so the link opens where a person
+       expects rather than being dropped. */
+    QWebEnginePage *createWindow(WebWindowType type) override
+    {
+        Q_UNUSED(type);
+        return browser_ ? browser_->newTabPage() : nullptr;
+    }
+
+private:
+    class BrowserWindow *browser_;
 };
+
+namespace {
 
 /* A tab's label: the page title when it has one, the host otherwise, trimmed
    so a long title does not stretch the strip. */
@@ -56,6 +109,24 @@ QString tab_label(const QString &title, const QUrl &url)
         label = label.left(20) + QStringLiteral("…");
     }
     return label;
+}
+
+/* The zoom is kept inside this range. A page at 0.25 is a page of unreadable
+   specks and one at 5.0 is a handful of giant words; neither is something a
+   person reaches on purpose, and holding the ends is what stops a key held
+   down from walking off them. */
+constexpr double kMinZoom = 0.25;
+constexpr double kMaxZoom = 5.0;
+
+double clamp_zoom(double value)
+{
+    if (value < kMinZoom) {
+        return kMinZoom;
+    }
+    if (value > kMaxZoom) {
+        return kMaxZoom;
+    }
+    return value;
 }
 
 }  // namespace
@@ -80,9 +151,13 @@ BrowserWindow::BrowserWindow(QWidget *parent)
     bar->setMovable(false);
 
     QAction *back = bar->addAction(QStringLiteral("◀"));
+    back->setToolTip(QStringLiteral("Back"));
     QAction *forward = bar->addAction(QStringLiteral("▶"));
+    forward->setToolTip(QStringLiteral("Forward"));
     QAction *reload = bar->addAction(QStringLiteral("⟳"));
+    reload->setToolTip(QStringLiteral("Reload"));
     QAction *home = bar->addAction(QStringLiteral("⌂"));
+    home->setToolTip(QStringLiteral("Home"));
 
     address = new QLineEdit(this);
     address->setClearButtonEnabled(true);
@@ -93,7 +168,7 @@ BrowserWindow::BrowserWindow(QWidget *parent)
     QAction *star = bar->addAction(QStringLiteral("★"));
     star->setToolTip(QStringLiteral("Bookmark this page"));
     QAction *new_tab = bar->addAction(QStringLiteral("✚"));
-    new_tab->setToolTip(QStringLiteral("New tab"));
+    new_tab->setToolTip(QStringLiteral("New tab (Ctrl+T)"));
 
     /* The bookmark bar: one button per saved favourite, rebuilt whenever the
        list changes. */
@@ -104,6 +179,27 @@ BrowserWindow::BrowserWindow(QWidget *parent)
 
     bookmarks = load_bookmarks();
     rebuildBookmarkBar();
+
+    /* Downloads land in the user's Downloads directory without a dialog. A
+       browser that refuses a download — which is what the engine does when
+       nothing answers this — is a browser where a link that is a file does
+       nothing at all, which is worse than guessing at a directory the world
+       already agrees on. */
+    QWebEngineProfile *profile = QWebEngineProfile::defaultProfile();
+    const QString download_dir =
+        QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    connect(profile, &QWebEngineProfile::downloadRequested, this,
+            [download_dir](QWebEngineDownloadRequest *download) {
+                if (!download) {
+                    return;
+                }
+                download->setDownloadDirectory(download_dir);
+                download->accept();
+                fprintf(stderr, "download: %s -> %s\n",
+                        qPrintable(download->downloadFileName()),
+                        qPrintable(download_dir));
+                fflush(stderr);
+            });
 
     /* The page leading and the toolbar following. Every connection is a lambda
        on a signal Qt already has, so no meta-object is generated. */
@@ -130,8 +226,10 @@ BrowserWindow::BrowserWindow(QWidget *parent)
         }
     });
     connect(star, &QAction::triggered, this, [this]() { toggleBookmark(); });
-    connect(new_tab, &QAction::triggered, this,
-            [this]() { openTab(home_url()); });
+    connect(new_tab, &QAction::triggered, this, [this]() {
+        openTab(home_url());
+        focusAddress();
+    });
 
     connect(tabs, &QTabWidget::tabCloseRequested, this,
             [this](int index) { closeTab(index); });
@@ -144,15 +242,38 @@ BrowserWindow::BrowserWindow(QWidget *parent)
         }
     });
 
+    /* The keyboard the window already answers to. These used to be missing,
+       and on a browser that is a real absence: Ctrl+T, Ctrl+W and Ctrl+L are
+       how a person works and reaching for the toolbar instead is slower. The
+       window keeps its handful of keys and lets the PAGE have the rest — the
+       application context is not taken, so a page's own Ctrl+F still reaches
+       it. */
+    auto shortcut = [this](const QKeySequence &key, void (BrowserWindow::*method)()) {
+        QAction *action = new QAction(this);
+        action->setShortcut(key);
+        action->setShortcutContext(Qt::WindowShortcut);
+        addAction(action);
+        connect(action, &QAction::triggered, this, method);
+    };
+    shortcut(QKeySequence(QStringLiteral("Ctrl+T")), &BrowserWindow::openNewTab);
+    shortcut(QKeySequence::Close, &BrowserWindow::closeCurrentTab);
+    shortcut(QKeySequence(QStringLiteral("Ctrl+L")), &BrowserWindow::focusAddress);
+    shortcut(QKeySequence::Reload, &BrowserWindow::reloadCurrent);
+    shortcut(QKeySequence::ZoomIn, &BrowserWindow::zoomIn);
+    shortcut(QKeySequence::ZoomOut, &BrowserWindow::zoomOut);
+    shortcut(QKeySequence(QStringLiteral("Ctrl+0")), &BrowserWindow::zoomReset);
+    shortcut(QKeySequence::Back, &BrowserWindow::goBack);
+    shortcut(QKeySequence::Forward, &BrowserWindow::goForward);
+
     /* The first tab, and the home page: the browser opens on DuckDuckGo. */
     openTab(home_url());
 }
 
-QWebEngineView *BrowserWindow::openTab(const QUrl &url, bool switch_to_it)
+QWebEngineView *BrowserWindow::addTab(bool switch_to_it)
 {
     QWebEngineView *view = new QWebEngineView(this);
     ReportingPage *page =
-        new ReportingPage(QWebEngineProfile::defaultProfile(), view);
+        new ReportingPage(QWebEngineProfile::defaultProfile(), this, view);
     view->setPage(page);
 
     /* HTML5 fullscreen, ALLOWED.
@@ -176,6 +297,10 @@ QWebEngineView *BrowserWindow::openTab(const QUrl &url, bool switch_to_it)
     settings->setAttribute(QWebEngineSettings::ScrollAnimatorEnabled, false);
     settings->setAttribute(QWebEngineSettings::DnsPrefetchEnabled, false);
     settings->setAttribute(QWebEngineSettings::PdfViewerEnabled, false);
+    /* window.open() and target="_blank" reach createWindow only when this is
+       on; it is on by default, but saying so here keeps the behaviour from
+       being an accident of a default that another line might change. */
+    settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, true);
 
     const int index = tabs->addTab(view, QStringLiteral("New tab"));
     if (switch_to_it) {
@@ -221,6 +346,18 @@ QWebEngineView *BrowserWindow::openTab(const QUrl &url, bool switch_to_it)
                 fflush(stderr);
             });
 
+    return view;
+}
+
+QWebEnginePage *BrowserWindow::newTabPage()
+{
+    QWebEngineView *view = addTab(true);
+    return view->page();
+}
+
+QWebEngineView *BrowserWindow::openTab(const QUrl &url, bool switch_to_it)
+{
+    QWebEngineView *view = addTab(switch_to_it);
     view->setUrl(url.isValid() && !url.isEmpty() ? url : home_url());
     return view;
 }
@@ -234,8 +371,7 @@ void BrowserWindow::navigateFromAddress()
 {
     QWebEngineView *view = currentView();
     if (!view) {
-        view = openTab(url_from_input(address->text()));
-        return;
+        view = addTab(true);
     }
     const QUrl url = url_from_input(address->text());
     if (url.isValid() && !url.isEmpty()) {
@@ -256,12 +392,82 @@ void BrowserWindow::closeTab(int index)
     QWidget *page = tabs->widget(index);
     tabs->removeTab(index);
     if (page) {
+        /* deleteLater, not delete: the view may still be inside the signal
+           that led here (its own tab-close signal), and freeing it now would
+           free an object the stack still points at. */
         page->deleteLater();
     }
     /* Never leave the window empty: closing the last tab opens the home page,
        which is what a browser is expected to do rather than quitting. */
     if (tabs->count() == 0) {
         openTab(home_url());
+    }
+}
+
+void BrowserWindow::closeCurrentTab()
+{
+    const int index = tabs->currentIndex();
+    if (index >= 0) {
+        closeTab(index);
+    }
+}
+
+void BrowserWindow::focusAddress()
+{
+    address->setFocus();
+    address->selectAll();
+}
+
+void BrowserWindow::adjustZoom(double factor)
+{
+    QWebEngineView *view = currentView();
+    if (!view) {
+        return;
+    }
+    view->setZoomFactor(clamp_zoom(view->zoomFactor() * factor));
+}
+
+void BrowserWindow::goBack()
+{
+    if (QWebEngineView *view = currentView()) {
+        view->back();
+    }
+}
+
+void BrowserWindow::goForward()
+{
+    if (QWebEngineView *view = currentView()) {
+        view->forward();
+    }
+}
+
+void BrowserWindow::reloadCurrent()
+{
+    if (QWebEngineView *view = currentView()) {
+        view->reload();
+    }
+}
+
+void BrowserWindow::openNewTab()
+{
+    openTab(home_url());
+    focusAddress();
+}
+
+void BrowserWindow::zoomIn()
+{
+    adjustZoom(1.1);
+}
+
+void BrowserWindow::zoomOut()
+{
+    adjustZoom(1.0 / 1.1);
+}
+
+void BrowserWindow::zoomReset()
+{
+    if (QWebEngineView *view = currentView()) {
+        view->setZoomFactor(1.0);
     }
 }
 

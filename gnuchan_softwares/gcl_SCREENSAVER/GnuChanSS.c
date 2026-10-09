@@ -193,12 +193,27 @@ static int fullscreen_window_present(Display *display) {
  * When neither holds, the ordinary idle test can fire; while the film plays it
  * simply keeps looping. */
 static void wait_for_idle(Display *display, int seconds) {
+    /* How many reads in a row have said "the desk is quiet". TWO are needed
+       before the wait is over, and that is deliberate: a single read can be the
+       last instant before a hand comes back — the desk was quiet a microsecond
+       ago and the person is already reaching for the keyboard — and firing on
+       it is half of how the saver came up over someone who had only just
+       started typing again. Requiring the quiet to hold across two reads half a
+       second apart costs half a second on a count of minutes, and the re-check
+       inside run_show() closes the gap the rest of the way. */
+    int quiet_readings = 0;
     while (!s_should_stop) {
         ss_dbus_pump();
-        if (ss_dbus_inhibit_count() == 0 &&
-            !fullscreen_window_present(display) &&
-            idle_seconds(display) >= (double)seconds) {
-            return;
+        int quiet = (ss_dbus_inhibit_count() == 0 &&
+                     !fullscreen_window_present(display) &&
+                     idle_seconds(display) >= (double)seconds);
+        if (quiet) {
+            quiet_readings++;
+            if (quiet_readings >= 2) {
+                return;
+            }
+        } else {
+            quiet_readings = 0;
         }
         usleep(500 * 1000);   /* half a second between looks */
     }
@@ -227,7 +242,8 @@ static unsigned long pixel_of(Display *display, int screen, const char *name,
 /* Run the show once: open the window, draw frames until someone comes back.
    Returns 0 on a normal end. */
 static int run_show(Display *display, int screen, const SsConfig *config,
-                    unsigned long primary, unsigned long background) {
+                    unsigned long primary, unsigned long background,
+                    int require_idle) {
     int width = DisplayWidth(display, screen);
     int height = DisplayHeight(display, screen);
     Window root = RootWindow(display, screen);
@@ -281,6 +297,28 @@ static int run_show(Display *display, int screen, const SsConfig *config,
                 "gnuchanss: could not take the keyboard and pointer "
                 "(keyboard %d, pointer %d); another screen saver is probably "
                 "up\n", (int)keyboard_grab, (int)pointer_grab);
+        return 0;
+    }
+
+    /* THE GRAB TAKES TIME, AND THE DESK MUST STILL BE QUIET WHEN IT IS DONE.
+     *
+     * The retries above can run for a second and a half, and the reading that
+     * let wait_for_idle() return is up to half a second old before that even
+     * begins. A person who sat down and started typing in that gap is typing
+     * into a keyboard this program has just taken: the show opens over their
+     * hands, which is exactly "it sometimes appears while I am typing". So the
+     * clock is read again here, with the grab in hand and before a single pixel
+     * is drawn, and if the desk is no longer past the threshold the grab is
+     * given straight back and nothing is shown — the keys reach the window they
+     * were meant for, because no window was ever put over it.
+     *
+     * Only the daemon asks for this (require_idle); the --once path is the
+     * caller's explicit decision and is not second-guessed. */
+    if (require_idle &&
+        idle_seconds(display) < (double)config->idle_seconds) {
+        XUngrabKeyboard(display, CurrentTime);
+        XUngrabPointer(display, CurrentTime);
+        XFlush(display);
         return 0;
     }
 
@@ -491,7 +529,9 @@ int main(int argc, char **argv) {
     if (run_once) {
         /* Show now, once, and exit. The explicit path — see the file comment. */
         if (!s_should_stop) {
-            run_show(display, screen, &config, primary, background);
+            /* 0: the caller has already decided, so the idle clock is not
+               second-guessed — see run_show's require_idle. */
+            run_show(display, screen, &config, primary, background, 0);
         }
     } else {
         /* THE SESSION DAEMON. It loops rather than showing once and exiting,
@@ -515,7 +555,7 @@ int main(int argc, char **argv) {
             if (s_should_stop) {
                 break;
             }
-            run_show(display, screen, &config, primary, background);
+            run_show(display, screen, &config, primary, background, 1);
             /* A short pause before looking again. A show that ended because the
                user came back leaves the idle clock at zero, so the next
                wait_for_idle() blocks and this costs nothing. The pause is for

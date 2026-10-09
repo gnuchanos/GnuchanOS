@@ -129,6 +129,18 @@ int main(int argc, char **argv) {
         "--metrics-recording-only "
         "--disable-breakpad";
 
+    /* The engine's own logging, quieted. Chromium logs to stderr on ordinary
+       events — a failed subresource, a GPU fallback it repeats, a network
+       line — and every one of those is a write and a flush the browser pays
+       for and the user never asked for. --log-level=3 keeps FATAL only, and
+       --disable-logging stops the rest; the browser's OWN two lines per page
+       (loaded / download) still reach stderr, because those are written by
+       this program and not by the engine. The page's own console is quieted
+       separately, in browser_window.cpp. */
+    flags +=
+        " --log-level=3 "
+        "--disable-logging";
+
     qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
 
     QApplication application(argc, argv);
