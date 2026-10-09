@@ -481,6 +481,16 @@ int wifi_ui_open(WifiUi *ui, const char *config_path) {
         return -1;
     }
 
+    /* Centre the window now that there is one to move, and watch the root for
+       other windows coming and going. This is the same two steps GnuChanRunner
+       takes, and for the same reason: the window is override-redirect, so no
+       window manager owns it, nothing frames it, and — the part that matters —
+       nothing keeps it in front. A window mapped over it, which is the terminal
+       it was started from most of the time, would hide it completely; watching
+       the root is what lets it put itself back on top (see wifi_ui_run). */
+    work_out_geometry(ui);
+    XSelectInput(ui->display, ui->root, SubstructureNotifyMask);
+
     XMapRaised(ui->display, ui->window);
     /* The window has to be on screen before the keyboard is grabbed: XFlush
        only sends the map request, and a grab on an unmapped window is refused
@@ -522,12 +532,25 @@ int wifi_ui_run(WifiUi *ui) {
             }
             break;
         case ConfigureNotify:
-            /* The window was resized by something outside — rare, and the
-               answer is to take the new size and draw into it. */
+            /* A window was moved, resized or restacked — most often a program
+               that just started, which the manager has raised over this one.
+               This window is override-redirect, so nothing else brings it back
+               to the front: it puts itself back on top. Its OWN resize is the
+               other case, and that is taken as the new size to draw into. */
             if (event.xconfigure.window == ui->window) {
                 ui->width = event.xconfigure.width;
                 ui->height = event.xconfigure.height;
                 wifi_draw(ui);
+            } else {
+                XRaiseWindow(ui->display, ui->window);
+            }
+            break;
+        case MapNotify:
+            /* Another window was shown. Same answer: this one goes back to the
+               front. Its own map arrives here too, and the test keeps it from
+               raising itself for nothing. */
+            if (event.xmap.window != ui->window) {
+                XRaiseWindow(ui->display, ui->window);
             }
             break;
         default:
