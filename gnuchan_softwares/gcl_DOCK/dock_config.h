@@ -75,13 +75,18 @@ typedef struct DockConfig {
 
     /* --- the two fixed icons ----------------------------------------------
      *
-     * The settings icon is the first, always, and it does nothing yet: the
-     * settings window is the next thing to be written, and until then the
-     * icon is there so the dock's shape is right. The terminal icon is the
-     * second and it runs the terminal when it is clicked. */
+     * The settings icon is the first, always, and it opens GnuChanSettings
+     * when it is clicked. The terminal icon is the second and it runs the
+     * terminal. Both carry their own command, so either can be pointed at a
+     * binary by full path on a session whose PATH does not reach them. */
     int settings_enabled;
     char settings_icon[DOCK_TEXT_LENGTH];
     char settings_label[DOCK_TEXT_LENGTH];
+    /* The program the settings icon runs. It is named the same way the
+       terminal is — a command on PATH, or a full path to one — so a session
+       whose PATH does not carry the install directory can still point the
+       icon at the binary rather than watching the click do nothing. */
+    char settings_command[DOCK_TEXT_LENGTH];
 
     int terminal_enabled;
     char terminal_icon[DOCK_TEXT_LENGTH];

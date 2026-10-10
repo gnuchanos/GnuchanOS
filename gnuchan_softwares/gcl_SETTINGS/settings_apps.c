@@ -80,6 +80,7 @@ static const SettingDef dock_settings[] = {
     TEXT("SettingsIcon",    "Settings icon",      "Icons",
          "~/.config/GnuChanDock/settings.png"),
     TEXT("SettingsLabel",   "Settings label",     "Icons", "settings"),
+    TEXT("SettingsCommand", "Settings command",   "Icons", "GnuChanSettings"),
 
     BOOL("TerminalEnabled", "Show terminal icon", "Icons", "True"),
     TEXT("TerminalIcon",    "Terminal icon",      "Icons",

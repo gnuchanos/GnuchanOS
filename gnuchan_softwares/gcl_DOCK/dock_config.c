@@ -37,6 +37,8 @@ void dock_config_defaults(DockConfig *config) {
              "~/.config/GnuChanDock/settings.png");
     snprintf(config->settings_label, sizeof(config->settings_label),
              "settings");
+    snprintf(config->settings_command, sizeof(config->settings_command),
+             "GnuChanSettings");
 
     config->terminal_enabled = 1;
     snprintf(config->terminal_icon, sizeof(config->terminal_icon),
@@ -121,6 +123,10 @@ static void read_main(DockConfig *config, const DockStatement *statement) {
     if (argument_text(statement, "SettingsLabel", text, sizeof(text))) {
         snprintf(config->settings_label, sizeof(config->settings_label), "%s",
                  text);
+    }
+    if (argument_text(statement, "SettingsCommand", text, sizeof(text))) {
+        snprintf(config->settings_command, sizeof(config->settings_command),
+                 "%s", text);
     }
 
     config->terminal_enabled = dock_value_bool(

@@ -35,7 +35,13 @@
 #define UI_ROW_HEIGHT     58
 #define UI_FOOTER_HEIGHT  64
 #define UI_MARGIN         18
-#define UI_CATEGORY_HEIGHT 44
+/* A category's row in the sidebar. It is sized so that every category the
+   table can hold fits above the bottom of the window: the sidebar has
+   UI_WINDOW_HEIGHT - UI_HEADER_HEIGHT pixels for categories, and the table
+   grows — the themes category was the twelfth — so the height is chosen
+   against the count rather than left at whatever looked right for the first
+   few. At 40 the twelve of today's table come to 566, inside the 580. */
+#define UI_CATEGORY_HEIGHT 40
 
 /* The width of the field column on the right of a row's label: where the text
    box, the switch or the swatch is drawn. */

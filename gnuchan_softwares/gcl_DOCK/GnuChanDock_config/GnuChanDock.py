@@ -30,6 +30,7 @@ gcl_Dock.Main(
     SettingsEnabled=True,
     SettingsIcon="~/.config/GnuChanDock/settings.png",
     SettingsLabel="settings",
+    SettingsCommand="GnuChanSettings",
 
     TerminalEnabled=True,
     TerminalIcon="~/.config/GnuChanDock/logo.png",

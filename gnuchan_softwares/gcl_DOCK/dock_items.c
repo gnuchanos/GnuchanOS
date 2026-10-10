@@ -385,7 +385,12 @@ void dock_items_build(DockCore *core) {
     dock_items_clear(core);
 
     if (core->config.settings_enabled) {
-        item_add(core, DOCK_ITEM_SETTINGS, core->config.settings_label, NULL);
+        /* The settings slot carries its own command, exactly as the terminal
+           slot does: the dock runs what the settings file names rather than a
+           command hard-coded here, so a session whose PATH does not reach the
+           install directory can point it at the binary by full path. */
+        item_add(core, DOCK_ITEM_SETTINGS, core->config.settings_label,
+                 core->config.settings_command);
     }
 
     DockItem *terminal = NULL;

@@ -49,11 +49,21 @@ gcl_Terminal.call(Font="monospace-11")
 # later and replaces this one — and with it their own prompt, which is theirs
 # to choose. Nothing of the user's is read or written either way.
 #
-# The colours are the theme's: the frame in the lighter purple, the parts that
-# change (user, host, directory) in the paler one.
-gcl_Terminal.call(Prompt="\[\e[38;5;141m\]┌─[\[\e[38;5;183m\]\u\[\e[38;5;141m\]@\[\e[38;5;183m\]\h\[\e[38;5;141m\]]─[\[\e[38;5;183m\]\w\[\e[38;5;141m\]]\n\[\e[38;5;141m\]└──\[\e[38;5;183m\]❯ \[\e[0m\]")
+# KEEP IT SIMPLE. The examples below are the whole language: plain text, the
+# four escapes \u \h \w \n, and — if you want colour — a colour wrapped in
+# \[\e[38;5;Nm\] ... \[\e[0m\], where N is a number from 0 to 255. The \[ and
+# \] around a colour are bash's "this takes no room on the screen"; without
+# them a long line wraps in the wrong place. Nothing else is needed, and a
+# prompt full of box-drawing characters is hard to read and hard to retype.
+#
+# This default is deliberately plain: one line, one colour pair, no symbols to
+# memorise. Change the text between the escapes and you have your own prompt.
+gcl_Terminal.call(Prompt="\[\e[38;5;135m\]\u@\h\[\e[0m\]:\[\e[38;5;183m\]\w\[\e[0m\]\$ ")
 
-# A plainer one, one line and no colour, which is what to write while checking
+# A two-line one, still plain — this is what a second line looks like:
+# gcl_Terminal.call(Prompt="\[\e[38;5;135m\]\u@\h\[\e[0m\]:\[\e[38;5;183m\]\w\[\e[0m\]\n\$ ")
+#
+# No colour at all, the plainest there is, and the one to use while checking
 # that the prompt mechanism itself works:
 # gcl_Terminal.call(Prompt="\u@\h:\w\$ ")
 
@@ -148,4 +158,3 @@ gcl_Terminal.call(Cursor="#ddb3ff")
 #
 # The cursor's COLOUR is read, and is the line above. The prompt is read too,
 # and is the line further up.
-

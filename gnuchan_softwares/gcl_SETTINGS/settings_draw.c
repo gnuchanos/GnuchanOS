@@ -156,9 +156,33 @@ static void draw_text_field(SettingsUi *ui, int row, int x, int y, int width,
                                           : ui->style.panel_edge,
                  x, y, width, height);
 
+    int inner = width - 20;
     char shown[SETTINGS_TEXT_LENGTH];
-    fit_text(ui, ui->style.font, value->text, width - 20, shown,
-             sizeof(shown));
+
+    if (row == ui->focus_row) {
+        /* The field has the keyboard: it is being typed into, and the part of
+           the text that matters is the END — the characters just entered and
+           the caret sitting after them. Fitting the head and putting "..." on
+           the tail, which is what the resting view does, hid exactly what the
+           person was watching: a long colour or path showed its beginning and
+           swallowed every keystroke after it. So the head is dropped — a whole
+           UTF-8 character at a time, never mid-character — until the tail fits
+           the field, and the tail is what is drawn. */
+        const char *full = value->text;
+        int length = (int)strlen(full);
+        int start = 0;
+        while (start < length &&
+               text_width(ui, ui->style.font, full + start) > inner) {
+            start++;
+            while (start < length &&
+                   ((unsigned char)full[start] & 0xc0) == 0x80) {
+                start++;
+            }
+        }
+        snprintf(shown, sizeof(shown), "%s", full + start);
+    } else {
+        fit_text(ui, ui->style.font, value->text, inner, shown, sizeof(shown));
+    }
 
     XftColor text = xft_from_pixel(ui, ui->style.text);
     draw_text(ui, &text, ui->style.font, x + 10, y + height / 2 + 5, shown);
