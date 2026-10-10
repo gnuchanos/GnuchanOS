@@ -26,6 +26,26 @@ if [ -d "$STAGE/book" ]; then
     log "kept the GCL book at /usr/share/gnuchanos/book"
 fi
 
+# --- keep the NVIDIA driver installer ----------------------------------------
+
+# The NVIDIA proprietary driver cannot be installed at build time and must not
+# be: its version depends on the card (Pascal and newer take the current driver,
+# Kepler takes nvidia-legacy-470xx, Fermi and older take 390xx) and the versions
+# exclude one another, so the right one can only be chosen on the real machine.
+# The installer that makes that choice is kept here, next to the book, so it is
+# on the finished image for the user to run once - the same reason the book is
+# kept: it is something a live session may need and the source tree is the only
+# place it exists.
+#
+# The live image itself comes up on nouveau (open source) with the firmware in
+# the package list, so every NVIDIA card boots; this installer is the opt-in step
+# towards full performance.
+if [ -d "$STAGE/dotfile/NVIDIA" ]; then
+    install -d /usr/share/gnuchanos/NVIDIA
+    cp -a "$STAGE/dotfile/NVIDIA/." /usr/share/gnuchanos/NVIDIA/
+    log "kept the NVIDIA driver installer at /usr/share/gnuchanos/NVIDIA"
+fi
+
 # --- drop the sources --------------------------------------------------------
 
 if [ -d "$STAGE" ]; then

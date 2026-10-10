@@ -50,7 +50,36 @@ x11-xserver-utils
 xauth
 xinit
 keyboard-configuration
+# The touchpad: the library, the X driver that loads it, and the two tools the
+# touchpad configuration is applied with.
+#
+#   libinput10                 the libinput shared library. Everything below
+#                              links against it: the X driver, a Wayland
+#                              compositor, and the Gnuchan programs that read
+#                              input themselves.
+#   xserver-xorg-input-libinput the X server's INPUT DRIVER. This is the piece
+#                              that is easy to miss and fatal to miss: the
+#                              touchpad configuration at
+#                              /etc/X11/xorg.conf.d/90-gnuchan-touchpad.conf
+#                              names Driver "libinput", and with no driver by
+#                              that name on the image the X server ignores the
+#                              file and the pad falls back to its defaults -
+#                              no tap to click, no two-finger scroll, no middle
+#                              button. The libinput LIBRARY above is not the
+#                              driver and does not stand in for it.
+#   xinput                     the tool that pushes a touchpad setting into the
+#                              session that is running. The X server reads its
+#                              configuration once, at startup, so without this
+#                              a setting written now takes effect only at the
+#                              next login. Both the window manager (wm_input.c)
+#                              and dotfile/TOUCHPAD_SETTINGS apply settings
+#                              through it.
+#   libinput-tools             the `libinput` command, for reading a device's
+#                              capabilities when a pad does not behave.
 libinput10
+xserver-xorg-input-libinput
+xinput
+libinput-tools
 udev
 libgl1
 libgl1-mesa-dri
@@ -145,6 +174,33 @@ firmware-realtek
 firmware-brcm80211
 firmware-ralink
 firmware-misc-nonfree
+
+# The kernel firmware the GRAPHICS cards need. This block exists for the same
+# reason as the wireless one above and was the same omission: a GPU whose
+# firmware is not on the image does not come up, and the machine falls back to
+# software rendering (llvmpipe) or a black screen - which looks like "this
+# distribution does not support my card". Each of the three vendors is named
+# separately even though firmware-linux pulls most of them, so that a trimmed
+# metapackage still carries them.
+#
+#   firmware-amd-graphics    every modern AMD card and Ryzen APU needs this to
+#                            light up at all; without it amdgpu cannot bring
+#                            the card out of reset.
+#   firmware-nvidia-graphics  what nouveau loads on Pascal (GTX 10xx) and
+#                            newer; without it those cards stay on the VESA
+#                            framebuffer.
+#   firmware-intel-graphics  GuC/HuC blobs for Skylake and newer Intel
+#                            graphics; older Intel (965GM and the like) needs
+#                            none.
+firmware-amd-graphics
+firmware-nvidia-graphics
+firmware-intel-graphics
+# The GPU-side userspace. libgl1-mesa-dri (already listed) is the OpenGL
+# driver for every vendor; these three are the Vulkan loader and the per-vendor
+# Vulkan drivers, so an application that asks for Vulkan (a game, an emulator)
+# finds it instead of falling back to OpenGL or failing.
+libvulkan1
+mesa-vulkan-drivers
 
 # --- the torrent client and its bindings, from dotfile/Install_Software.py.
 #     deluge is the client, and its daemon (deluged) and web UI ship inside it;

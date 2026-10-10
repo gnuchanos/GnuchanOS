@@ -186,7 +186,17 @@ class Settings:
             ("libinput Natural Scrolling Enabled", bool_arg(self.natural_scroll)),
             ("libinput Scroll Method Enabled", bundle(self.scroll_method, SCROLL_METHODS)),
             ("libinput Scroll Pixel Distance", [str(self.scroll_pixel_distance)]),
-            ("libinput Send Events Mode Enabled", bundle(self.send_events_mode, SEND_EVENT_MODES)),
+            # The mode that SENDS events is the ABSENCE of both switch bits:
+            # the property is (disabled, disabled-on-external-mouse), so
+            # "enabled" is 0 0, not one of the two named modes. bundle() reads a
+            # value that is not in its list as the FIRST entry, and the first
+            # entry here is "disabled" - so passing the default "enabled"
+            # through it produced "1 0" and switched the pad OFF in the running
+            # session while the file on disk said it was on. It is built here
+            # directly, in the order SEND_EVENT_MODES declares.
+            ("libinput Send Events Mode Enabled",
+             ["1" if item == self.send_events_mode else "0"
+              for item in SEND_EVENT_MODES]),
             ("libinput Tapping Enabled", bool_arg(self.tap)),
             ("libinput Tapping Button Mapping Enabled", bundle(self.tap_button_map, TAP_BUTTON_MAPS)),
             ("libinput Tapping Drag Enabled", bool_arg(self.tap_drag)),
