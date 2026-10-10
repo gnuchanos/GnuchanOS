@@ -504,19 +504,9 @@ def choose_and_apply_bypass_method() -> None:
     write_nfqws_opt(method)
 
 
-def ensure_dpi_dependency() -> None:
-    """Install zapret — the DPI bypass the manager's DPI button switches.
-
-    zapret comes from its official release at the pinned version, is unpacked
-    to /opt/zapret — the path net_dpi.c expects — and is set up with its OWN
-    easy installer, fed non-interactively, so the desync is chosen for this
-    network rather than baked in here. A failure at any step is reported and the
-    rest of the install carries on: the manager still opens and shows every
-    interface, and the DPI button reports that no bypass is installed.
-    """
-    if dpi_installed():
-        return
-
+def install_zapret() -> bool:
+    """Fetch zapret and set it up with its own easy installer. Returns whether
+    the init script ended up in place."""
     step("Installing zapret (the DPI bypass the DPI button switches)")
     # What zapret's nfqws needs to sit in the packet path, plus the tools its
     # installer itself calls.
@@ -527,21 +517,20 @@ def ensure_dpi_dependency() -> None:
     tarball = work / f"zapret-v{ZAPRET_VERSION}.tar.gz"
     try:
         if not download_zapret(tarball):
-            detail("zapret was not installed; the DPI button will report that "
-                   "no bypass is installed until it is")
-            return
+            detail("zapret could not be downloaded")
+            return False
         with tarfile.open(tarball) as archive:
             archive.extractall(work)
         source = work / f"zapret-v{ZAPRET_VERSION}"
         if not source.is_dir():
             detail("the zapret archive did not contain what was expected")
-            return
+            return False
         if ZAPRET_DIR.exists():
             shutil.rmtree(ZAPRET_DIR)
         shutil.copytree(source, ZAPRET_DIR)
     except (OSError, tarfile.TarError) as exc:
         detail(f"could not unpack zapret: {exc}")
-        return
+        return False
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -554,18 +543,50 @@ def ensure_dpi_dependency() -> None:
                    text=True, check=False, cwd=ZAPRET_DIR)
     run(["sh", str(ZAPRET_DIR / "install_easy.sh")],
         input_text="\n\n\n4\n\n\nY\n\n\n\n\n\n", cwd=ZAPRET_DIR)
-
     install_zapret_units()
+    return dpi_installed()
 
-    # The easy installer leaves a generic desync in the config; ask zapret's own
-    # blockcheck which method actually works on this network and write it in.
-    choose_and_apply_bypass_method()
 
+def ensure_dpi_dependency() -> None:
+    """Make sure zapret is installed AND that its config holds a desync that
+    actually works on this network.
+
+    These are two separate jobs and both are done here, because the first is not
+    sufficient without the second. The INSTALL puts zapret under /opt/zapret —
+    the path net_dpi.c expects — and is skipped when it is already there. The
+    DESYNC is chosen every run: it, not the install, is what decides whether a
+    packet gets past the filter, and it has to be chosen against the network in
+    the state it is in right now. (A run made while a DNS hijack was still in
+    place saw no DPI block to fix and chose nothing — which is exactly the trap
+    this avoids.)
+    """
     if dpi_installed():
+        detail("zapret is already installed under /opt/zapret")
+    elif install_zapret():
         detail("installed zapret under /opt/zapret")
     else:
-        detail("zapret was downloaded but not set up; the DPI button will "
-               "report that no bypass is installed until it is")
+        detail("zapret was not installed; the DPI button will report that no "
+               "bypass is installed until it is")
+        return
+
+    configure_dpi_bypass()
+
+
+def configure_dpi_bypass() -> None:
+    """Choose this network's working desync, write it into the config, and
+    confirm the daemon came up. Separate from the install so it runs even when
+    zapret was already present."""
+    if not dpi_installed():
+        return
+    choose_and_apply_bypass_method()
+
+    if shutil.which("pgrep") is not None:
+        probe = run(["pgrep", "-x", "nfqws"], capture=True)
+        if probe.returncode == 0:
+            detail("the DPI bypass is running (nfqws)")
+        else:
+            detail("nfqws is not running yet — press the DPI button in the "
+                   "manager, or check: systemctl status zapret")
 
 
 # --- building and installing ----------------------------------------------
