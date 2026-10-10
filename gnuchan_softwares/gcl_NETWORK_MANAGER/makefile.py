@@ -26,11 +26,12 @@
 # `python3 makefile.py` leaves a machine able to reach a site its network
 # blocks:
 #
-#   * an ENCRYPTED resolver (dnscrypt-proxy), because the most common block is
-#     not DPI at all but plain DNS rewriting — a name is answered with the
-#     ISP's own address and every connection to it fails its certificate check.
-#     Nothing zapret does can fix that; the answer arrived over port 53 before
-#     any TLS. Encrypting the query is what fixes it.
+#   * an ENCRYPTED resolver (DNS-over-TLS, through the systemd-resolved this
+#     manager already drives), because the most common block is not DPI at all
+#     but plain DNS rewriting — a name is answered with the ISP's own address
+#     and every connection to it fails its certificate check. Nothing zapret
+#     does can fix that; the answer arrived over port 53 before any TLS.
+#     Encrypting the query is what fixes it.
 #
 #   * zapret (nfqws), the DPI desynchroniser, for the case where the block is
 #     the TLS name read inside a TCP packet rather than the DNS answer. Its
@@ -49,7 +50,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import time
 import urllib.request
 from pathlib import Path
 
@@ -115,11 +115,16 @@ ELEVATED_VARIABLE = "GNUCHANNET_ELEVATED"
 # the DNS answer over UDP 53 before any TLS began. A query that leaves over an
 # encrypted channel cannot be read, so it cannot be answered with a lie.
 #
-# dnscrypt-proxy is what the reference installer uses off systemd, and what
-# Debian ships; it is run here on the loopback and /etc/resolv.conf is pointed
-# at it, which is the same shape as that installer's ending state.
-DNSCRYPT_CONFIG = Path("/etc/dnscrypt-proxy/dnscrypt-proxy.toml")
-DNSCRYPT_CACHE = Path("/var/cache/dnscrypt-proxy")
+# systemd-resolved is already the resolver this manager drives (see net_dns.c)
+# and it speaks DNS-over-TLS itself, so the encrypted resolver is a drop-in
+# rather than a second daemon: one file, one restart, and the whole system —
+# the manager, ping, the browser — asks it. The address#name form is what
+# resolved checks the server's certificate against and what turns on SNI, so
+# the TLS is real and not merely opportunistic.
+RESOLVED_DROPIN = Path("/etc/systemd/resolved.conf.d/gnuchan-encrypted-dns.conf")
+ENCRYPTED_DNS_SERVERS = ("1.1.1.1#cloudflare-dns.com",
+                         "1.0.0.1#cloudflare-dns.com",
+                         "2606:4700:4700::1111#cloudflare-dns.com")
 
 # --- zapret, the DPI fix ---------------------------------------------------
 ZAPRET_VERSION = "72.13"
@@ -278,105 +283,91 @@ def ensure_runtime_dependency() -> None:
 
 # --- encrypted DNS ---------------------------------------------------------
 
-def dnscrypt_config_text() -> str:
-    """dnscrypt-proxy's config: listen on the loopback, and fetch the public
-    resolver list from the same sources the reference installer uses. The
-    minisign key is dnscrypt-proxy's own published one, which is what makes the
-    fetched list trustworthy."""
-    return (
-        'listen_addresses = ["127.0.0.1:53", "[::1]:53"]\n'
-        '\n'
-        '[sources.public-resolvers]\n'
-        'urls = [\n'
-        '  "https://raw.github.com/dnscrypt/dnscrypt-resolvers/refs/heads/'
-        'master/v3/public-resolvers.md",\n'
-        '  "https://raw.githack.com/dnscrypt/dnscrypt-resolvers/refs/heads/'
-        'master/v3/public-resolvers.md",\n'
-        '  "https://cdn.jsdelivr.net/gh/dnscrypt/dnscrypt-resolvers/v3/'
-        'public-resolvers.md",\n'
-        '  "https://download.dnscrypt.info/resolvers-list/v3/'
-        'public-resolvers.md"\n'
-        ']\n'
-        'minisign_key = '
-        '"RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3"\n'
-        'cache_file = "/var/cache/dnscrypt-proxy/public-resolvers.md"\n'
-    )
-
-
-def point_resolv_conf_at_local_resolver() -> None:
-    """Point the machine at the local encrypted resolver, as the reference
-    installer's ending state does. A symlink to systemd-resolved's stub is
-    unlinked first, so a plain file replaces it rather than being written
-    through."""
+def point_resolv_conf_at_stub() -> None:
+    """Point /etc/resolv.conf at systemd-resolved's stub, so every program —
+    ping, the browser, the manager's own reader — asks the resolver that now
+    holds the encrypted-DNS setting. A resolv.conf that is already the stub link
+    is left alone; anything else (a plain file shipped by the distribution, most
+    often) is replaced by the link. Without this the setting would apply to
+    resolved but nothing would be asking resolved."""
+    stub = "/run/systemd/resolve/stub-resolv.conf"
     conf = Path("/etc/resolv.conf")
+    if not Path(stub).exists():
+        detail(f"{stub} is missing, so {conf} is left as it is")
+        return
     try:
-        if conf.is_symlink():
+        if conf.is_symlink() and os.path.realpath(conf) == stub:
+            return
+        if conf.exists() and not conf.is_symlink():
+            shutil.copyfile(conf, str(conf) + ".gnuchan-backup")
+        if conf.is_symlink() or conf.exists():
             conf.unlink()
-    except OSError:
-        pass
-    try:
-        conf.write_text("nameserver 127.0.0.1\nnameserver ::1\n",
-                        encoding="utf-8")
+        os.symlink(stub, conf)
+        detail(f"pointed {conf} at {stub}")
     except OSError as exc:
-        detail(f"could not rewrite {conf}: {exc}")
-
-
-def dnscrypt_answers() -> bool:
-    """Whether dnscrypt-proxy answers a query right now, asked with dig against
-    the loopback — the same probe the reference installer loops on."""
-    dig = shutil.which("dig")
-    if dig is None:
-        # No dig to ask with; assume it came up rather than loop forever.
-        return True
-    for address in ("127.0.0.1", "::1"):
-        probe = run([dig, "+time=1", "+tries=1", f"@{address}",
-                     "example.com"], capture=True)
-        if probe.returncode == 0:
-            return True
-    return False
+        detail(f"could not point {conf} at the stub: {exc}")
 
 
 def ensure_encrypted_dns() -> None:
-    """Encrypt the machine's DNS with a local dnscrypt-proxy.
+    """Encrypt the machine's DNS with DNS-over-TLS.
 
-    This is the reference installer's FIRST step, and the fix for the failure
-    where a name resolves to the ISP's own address and every connection to it
-    fails its certificate check. A query that leaves encrypted cannot be read,
-    so it cannot be answered with a lie. A failure at any step is reported and
-    the install carries on — the manager still opens and the plain resolver
+    The reference installer's FIRST step, and the fix for the failure where a
+    name resolves to the ISP's own address and every connection to it fails its
+    certificate check. A query that leaves encrypted cannot be read, so it
+    cannot be answered with a lie; zapret does nothing for this case, because
+    the lie arrived over port 53 before any TLS.
+
+    It is done through systemd-resolved — already the resolver the manager
+    drives — rather than a second daemon, so it is one drop-in and one restart.
+    The servers carry the hostname their certificate is checked against, which
+    is what makes the TLS real rather than opportunistic. A failure is reported
+    and the install carries on: the manager still opens and the plain resolver
     still answers, just not privately.
     """
-    step("Encrypting DNS (dnscrypt-proxy on 127.0.0.1)")
-    apt_install(("dnscrypt-proxy", "dnsutils"))
-    if shutil.which("dnscrypt-proxy") is None:
-        detail("dnscrypt-proxy is not available; DNS is left as it is, so a "
-               "network that rewrites names will still misdirect them")
+    if not resolvectl_present():
+        detail("systemd-resolved is not present, so DNS cannot be encrypted "
+               "from here; a network that rewrites names will still misdirect "
+               "them")
         return
 
+    step("Encrypting DNS (DNS-over-TLS via systemd-resolved)")
+    servers = " ".join(ENCRYPTED_DNS_SERVERS)
     try:
-        DNSCRYPT_CONFIG.parent.mkdir(parents=True, exist_ok=True)
-        DNSCRYPT_CACHE.mkdir(parents=True, exist_ok=True)
-        DNSCRYPT_CONFIG.write_text(dnscrypt_config_text(), encoding="utf-8")
+        RESOLVED_DROPIN.parent.mkdir(parents=True, exist_ok=True)
+        RESOLVED_DROPIN.write_text(
+            "[Resolve]\n"
+            f"DNS={servers}\n"
+            "Domains=~.\n"
+            "DNSOverTLS=yes\n"
+            "DNSSEC=allow-downgrade\n",
+            encoding="utf-8",
+        )
     except OSError as exc:
-        detail(f"could not write {DNSCRYPT_CONFIG}: {exc}")
+        detail(f"could not write {RESOLVED_DROPIN}: {exc}")
         return
 
-    run(["systemctl", "enable", "dnscrypt-proxy"])
-    run(["systemctl", "restart", "dnscrypt-proxy"])
+    # Domains=~. makes resolved send EVERY name to these servers rather than
+    # preferring whatever DHCP handed the link, so the encrypted servers are the
+    # ones actually asked.
+    run(["systemctl", "enable", "--now", "systemd-resolved"])
+    run(["systemctl", "restart", "systemd-resolved"])
+    run(["resolvectl", "flush-caches"])
+    point_resolv_conf_at_stub()
 
-    # Point the machine at it only once it actually answers — a resolver that
-    # is not up yet would leave every name failing, which is worse than the
-    # plain resolver it replaces.
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
-        if dnscrypt_answers():
-            point_resolv_conf_at_local_resolver()
-            detail("DNS now leaves the machine encrypted")
-            return
-        run(["systemctl", "restart", "dnscrypt-proxy"])
-        time.sleep(5)
-
-    detail("dnscrypt-proxy did not answer in time; DNS is left as it is")
+    # Prove it: ask a name a hijacking resolver gets wrong and print what came
+    # back. Not fatal if the check cannot be made.
+    dig = shutil.which("dig")
+    if dig is not None:
+        probe = run([dig, "+short", "+time=2", "+tries=1", "discord.com"],
+                    capture=True)
+        answer = probe.stdout.strip().splitlines()
+        if answer:
+            detail(f"discord.com now resolves to {answer[0]}")
+        else:
+            detail("discord.com did not resolve; check /etc/resolv.conf and "
+                   "systemctl status systemd-resolved")
+    else:
+        detail("DNS-over-TLS is on; no dig to confirm the answer with")
 
 
 # --- zapret ----------------------------------------------------------------
