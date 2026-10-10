@@ -184,7 +184,13 @@ static int read_resolv_conf(NetDnsList *list) {
             address[at++] = *value++;
         }
         address[at] = '\0';
-        if (address[0]) {
+        /* The same filter the resolvectl reader uses: a link-local or loopback
+           server is what the network handed out on its own, not something a
+           person chose, and it does not belong in a box that asks which server
+           to use. This is the path that showed the stray fe80:: entries — the
+           file, not resolvectl, is where a router's own link-local resolver
+           lands, and this reader was copying it straight through. */
+        if (is_showable_server(address)) {
             snprintf(list->servers[list->count], NET_TEXT, "%s", address);
             list->count++;
         }

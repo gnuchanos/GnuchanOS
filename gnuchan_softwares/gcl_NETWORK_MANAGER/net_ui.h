@@ -14,9 +14,11 @@
  *            is the program that knows how to JOIN a network; DNS switches to
  *            the resolver panel.
  *
- *   DNS      the resolver the machine asks: the servers, where they came from
- *            (resolvectl or /etc/resolv.conf), and a line to edit them. Apply
- *            sets them; Revert goes back to automatic.
+ *   DNS      the resolver the machine asks: the servers as they are and where
+ *            they came from (resolvectl or /etc/resolv.conf), then four boxes
+ *            to edit them — IPv4 and IPv6, each with a Preferred and an
+ *            Alternate, the way Windows asks it. Apply sets them; Revert goes
+ *            back to automatic.
  *
  * The two are one window with two faces rather than two windows, because they
  * are two questions about the same machine and a person edits one after looking
@@ -110,15 +112,21 @@ typedef struct NetUi {
        answers the mouse before it is clicked. */
     int hover;
 
-    /* The two DNS fields, the shape a Windows adapter's own DNS boxes have: a
-       Preferred server and an Alternate one. They are seeded from the current
-       servers when the panel opens — the first server into Preferred, the
-       second into Alternate — so Apply sends back what is shown unless it is
-       changed. Both empty applied means "back to automatic", which is that
-       same Windows dialog's "Obtain automatically". */
-    char dns_primary[NET_TEXT];
-    char dns_alternate[NET_TEXT];
-    int dns_focus;   /* 0 = the Preferred field has the caret, 1 = Alternate */
+    /* The DNS boxes, the shape a Windows adapter's own DNS dialogs have:
+       separate IPv4 and IPv6 entries, each with a Preferred and an Alternate.
+       Four boxes, because that is the four values a person is handed when they
+       look up "Google DNS" — 8.8.8.8, 8.8.4.4, and the two IPv6 ones — and one
+       pair of boxes cannot hold both families at once.
+
+       They are seeded from the servers the system reports when the panel opens,
+       sorted by family, so Apply sends back what is shown unless it is changed.
+       All four empty applied means "back to automatic", which is the same
+       Windows dialog's "Obtain automatically". */
+    char dns_v4_pref[NET_TEXT];
+    char dns_v4_alt[NET_TEXT];
+    char dns_v6_pref[NET_TEXT];
+    char dns_v6_alt[NET_TEXT];
+    int dns_focus;   /* 0..3: v4 preferred, v4 alternate, v6 preferred, v6 alt */
 
     /* The buttons, filled in by the layout before they are drawn and read by
        the click handler. Kept in the state rather than recomputed on a click

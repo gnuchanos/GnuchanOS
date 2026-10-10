@@ -12,9 +12,11 @@
  * interface name, its state, and its address on the right. The chosen row is
  * filled with the selection colour and its name drawn in the accent.
  *
- * The DNS panel is: the servers as they are, where they came from, and an
- * editable line under them. The line is a plain field with a caret, the same
- * shape the wifi manager's password line has.
+ * The DNS panel is: the servers as they are and where they came from, then the
+ * four boxes Windows asks the same question with — IPv4 and IPv6, each with a
+ * Preferred and an Alternate, drawn side by side under its family's heading.
+ * Each box is a plain field with a caret when it has the focus, the same shape
+ * the wifi manager's password line has.
  *
  * The vertical geometry is fixed and shared: net_visible_rows() measures with
  * the same numbers the drawing uses, so the scroll the input computes and the
@@ -383,29 +385,26 @@ static void draw_devices(NetUi *ui) {
 
 /* --- the DNS panel -------------------------------------------------------- */
 
-/* One labelled field: the label above it, the box, the text, a caret when the
-   field has the focus, and the caret pixel. The shape a person filling in a
-   form expects — label, then a box under it — and the same shape the Windows
-   adapter's DNS boxes have. */
-static void draw_dns_field(NetUi *ui, int x, int right, int y,
-                           const char *label, const char *value, int focused) {
+/* One labelled box, at a given x span: the label above it, the box, the text,
+   and a caret when the box has the focus. `x` and `width` are its own, so two
+   boxes sit side by side under one label. */
+static void draw_dns_box(NetUi *ui, int x, int width, int y,
+                         const char *label, const char *value, int focused) {
     int ascent = ui->style.font ? ui->style.font->ascent : 16;
     int field_h = row_height(ui);
 
     text(ui, x, y + ascent, label, ui->style.text_muted);
     y += row_height(ui);
 
-    fill(ui, ui->style.field, x, y, right - x, field_h);
+    fill(ui, ui->style.field, x, y, width, field_h);
     outline(ui, focused ? ui->style.accent : ui->style.panel_edge,
-            x, y, right - x, field_h);
+            x, y, width, field_h);
 
     char shown[NET_TEXT];
     net_style_fit(ui->display, ui->style.font, value,
-                  right - x - 2 * ui->style.padding, shown, sizeof(shown));
+                  width - 2 * ui->style.padding, shown, sizeof(shown));
     text(ui, x + ui->style.padding, y + ascent, shown, ui->style.text);
 
-    /* The caret, blinking is not done — a still bar at the end of the text is
-       what says "you are typing here"; only the focused field has it. */
     if (focused) {
         fill(ui, ui->style.accent,
              x + ui->style.padding +
@@ -419,6 +418,8 @@ static void draw_dns(NetUi *ui) {
     int left = ui->style.padding;
     int right = ui->width - ui->style.padding;
     int ascent = ui->style.font ? ui->style.font->ascent : 16;
+    int column_gap = ui->style.padding * 2;
+    int half = (right - left - column_gap) / 2;
     int y = top;
 
     /* The servers as they are now, and where they came from, so the current
@@ -437,36 +438,45 @@ static void draw_dns(NetUi *ui) {
         text(ui, left + ui->style.padding, y + ascent,
              "(none set — the network's own are used)",
              ui->style.text_muted);
+        y += row_height(ui);
     } else {
+        char line[NET_TEXT * 4];
+        const char *join = "";
+        line[0] = '\0';
         for (int i = 0; i < ui->dns.count; i++) {
-            const char *role = (i == 0) ? "Preferred"
-                                        : (i == 1 ? "Alternate" : "");
-            char line[NET_TEXT * 2];
-            if (role[0]) {
-                snprintf(line, sizeof(line), "%s  —  %s", role,
-                         ui->dns.servers[i]);
-            } else {
-                snprintf(line, sizeof(line), "%s", ui->dns.servers[i]);
-            }
-            text(ui, left + ui->style.padding, y + ascent, line,
-                 ui->style.text);
-            y += row_height(ui);
+            size_t used = strlen(line);
+            snprintf(line + used, sizeof(line) - used, "%s%s", join,
+                     ui->dns.servers[i]);
+            join = "   ";
         }
+        text(ui, left + ui->style.padding, y + ascent, line, ui->style.text);
+        y += row_height(ui);
     }
 
     y += ui->style.padding;
 
-    /* The two boxes, the way Windows asks the same question. */
-    draw_dns_field(ui, left, right, y, "Preferred DNS server",
-                   ui->dns_primary, ui->dns_focus == 0);
+    /* IPv4: a heading, then its Preferred and Alternate boxes side by side.
+       IPv6: the same, under its own heading. Two families, because a person
+       filling in Google DNS has two IPv4 values and two IPv6 ones, and each
+       pair belongs together. */
+    text(ui, left, y + ascent, "IPv4", ui->style.accent);
+    y += row_height(ui);
+    draw_dns_box(ui, left, half, y, "Preferred", ui->dns_v4_pref,
+                 ui->dns_focus == 0);
+    draw_dns_box(ui, left + half + column_gap, half, y, "Alternate",
+                 ui->dns_v4_alt, ui->dns_focus == 1);
     y += 2 * row_height(ui) + ui->style.padding;
 
-    draw_dns_field(ui, left, right, y, "Alternate DNS server",
-                   ui->dns_alternate, ui->dns_focus == 1);
+    text(ui, left, y + ascent, "IPv6", ui->style.accent);
+    y += row_height(ui);
+    draw_dns_box(ui, left, half, y, "Preferred", ui->dns_v6_pref,
+                 ui->dns_focus == 2);
+    draw_dns_box(ui, left + half + column_gap, half, y, "Alternate",
+                 ui->dns_v6_alt, ui->dns_focus == 3);
     y += 2 * row_height(ui) + ui->style.padding;
 
     text(ui, left, y + ascent,
-         "Apply sets them. Both empty = automatic (the network's own).",
+         "Apply sets them. All empty = automatic (the network's own).",
          ui->style.text_muted);
 }
 

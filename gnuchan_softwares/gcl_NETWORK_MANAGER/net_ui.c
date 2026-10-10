@@ -106,10 +106,11 @@ static void work_out_size(NetUi *ui) {
     int body_rows;
 
     if (ui->mode == NET_MODE_DNS) {
-        /* The "Current DNS" header; one row per server (a single line when
-           there are none); then the two labelled fields — a label row and a box
-           row each; and the hint at the foot. */
-        body_rows = 1 + (ui->dns.count > 0 ? ui->dns.count : 1) + 4 + 1;
+        /* The "Current DNS" header and one line of servers; the IPv4 heading
+           and its two box rows; the IPv6 heading and its two box rows; and the
+           hint at the foot — nine rows, plus air for the small gaps drawn
+           between the groups. */
+        body_rows = 10;
     } else {
         body_rows = ui->config.running_rows;
     }
@@ -147,10 +148,18 @@ static void refresh_devices(NetUi *ui) {
     ui->hover = -1;
 }
 
-/* Fill the DNS panel: the servers as they are now, and the two fields seeded
-   from them so Apply sends back what is shown unless it is changed. The link
-   the servers are read for is the chosen interface's, so a per-link server set
-   shows for the link it belongs to. */
+/* Whether an address is IPv6, told by the colon every IPv6 address has and no
+   IPv4 one does. That is the whole test the four boxes need: the values on the
+   left belong in the IPv4 group and the ones on the right in the IPv6 group. */
+static int is_ipv6_address(const char *address) {
+    return address && strchr(address, ':') != NULL;
+}
+
+/* Fill the DNS panel from what the system reports, sorted into the four boxes:
+   the first IPv4 server into IPv4 Preferred, the second into IPv4 Alternate,
+   and the IPv6 ones the same way. The link the servers are read for is the
+   chosen interface's, so a per-link server set shows for the link it belongs
+   to. */
 static void load_dns(NetUi *ui) {
     const char *link = "";
     if (ui->selected >= 0 && ui->selected < ui->devices.count) {
@@ -158,29 +167,53 @@ static void load_dns(NetUi *ui) {
     }
     net_dns_load(&ui->dns, &ui->config, link);
 
-    ui->dns_primary[0] = '\0';
-    ui->dns_alternate[0] = '\0';
-    if (ui->dns.count > 0) {
-        snprintf(ui->dns_primary, sizeof(ui->dns_primary), "%s",
-                 ui->dns.servers[0]);
-    }
-    if (ui->dns.count > 1) {
-        snprintf(ui->dns_alternate, sizeof(ui->dns_alternate), "%s",
-                 ui->dns.servers[1]);
+    ui->dns_v4_pref[0] = '\0';
+    ui->dns_v4_alt[0] = '\0';
+    ui->dns_v6_pref[0] = '\0';
+    ui->dns_v6_alt[0] = '\0';
+
+    int v4_seen = 0;
+    int v6_seen = 0;
+    for (int i = 0; i < ui->dns.count; i++) {
+        const char *server = ui->dns.servers[i];
+        if (is_ipv6_address(server)) {
+            if (v6_seen == 0) {
+                snprintf(ui->dns_v6_pref, sizeof(ui->dns_v6_pref), "%s",
+                         server);
+                v6_seen = 1;
+            } else if (v6_seen == 1) {
+                snprintf(ui->dns_v6_alt, sizeof(ui->dns_v6_alt), "%s", server);
+                v6_seen = 2;
+            }
+        } else {
+            if (v4_seen == 0) {
+                snprintf(ui->dns_v4_pref, sizeof(ui->dns_v4_pref), "%s",
+                         server);
+                v4_seen = 1;
+            } else if (v4_seen == 1) {
+                snprintf(ui->dns_v4_alt, sizeof(ui->dns_v4_alt), "%s", server);
+                v4_seen = 2;
+            }
+        }
     }
     ui->dns_focus = 0;
 }
 
-/* --- the two DNS fields ---------------------------------------------------
+/* --- the four DNS boxes ---------------------------------------------------
  *
- * The shape a Windows adapter's own DNS boxes have: a Preferred server and an
- * Alternate one. Two fields and not one line of addresses, because that is the
- * question a person has — "what is my primary DNS, what is my secondary" — and
- * a row of addresses asks it less clearly. `dns_focus` says which one the
- * caret is in; Tab (or Up/Down) moves between them. */
+ * The shape a Windows adapter's own DNS dialog has: IPv4 and IPv6 entries,
+ * each with a Preferred and an Alternate. Four boxes, because that is the four
+ * values a person is handed when they look up "Google DNS" — 8.8.8.8, 8.8.4.4,
+ * and the two IPv6 ones — and one family's pair of boxes cannot hold the
+ * other's. `dns_focus` says which box the caret is in; Tab walks the four. */
 
 static char *dns_field(NetUi *ui) {
-    return ui->dns_focus == 0 ? ui->dns_primary : ui->dns_alternate;
+    switch (ui->dns_focus) {
+    case 0:  return ui->dns_v4_pref;
+    case 1:  return ui->dns_v4_alt;
+    case 2:  return ui->dns_v6_pref;
+    default: return ui->dns_v6_alt;
+    }
 }
 
 static int dns_field_append(NetUi *ui, const char *text) {
@@ -205,15 +238,22 @@ static int dns_field_backspace(NetUi *ui) {
     return 1;
 }
 
-/* The servers to apply, in order: the Preferred one first, the Alternate one
-   second, and neither when both are empty (which is "back to automatic"). */
+/* The servers to apply, in order: IPv4 Preferred, IPv4 Alternate, IPv6
+   Preferred, IPv6 Alternate, skipping the empty ones. Nothing at all empty
+   means "back to automatic". */
 static int dns_collect(NetUi *ui, const char *list[NET_MAX_DNS]) {
     int count = 0;
-    if (ui->dns_primary[0]) {
-        list[count++] = ui->dns_primary;
+    if (ui->dns_v4_pref[0]) {
+        list[count++] = ui->dns_v4_pref;
     }
-    if (ui->dns_alternate[0]) {
-        list[count++] = ui->dns_alternate;
+    if (ui->dns_v4_alt[0]) {
+        list[count++] = ui->dns_v4_alt;
+    }
+    if (count < NET_MAX_DNS && ui->dns_v6_pref[0]) {
+        list[count++] = ui->dns_v6_pref;
+    }
+    if (count < NET_MAX_DNS && ui->dns_v6_alt[0]) {
+        list[count++] = ui->dns_v6_alt;
     }
     return count;
 }
@@ -325,10 +365,12 @@ static void dispatch_action(NetUi *ui, NetAction action) {
         do_apply_dns(ui);
         break;
     case NET_ACTION_DNS_REVERT:
-        /* Empty both fields and apply: no servers is "back to automatic",
+        /* Empty all four boxes and apply: no servers is "back to automatic",
            which net_dns_set() turns into a revert. */
-        ui->dns_primary[0] = '\0';
-        ui->dns_alternate[0] = '\0';
+        ui->dns_v4_pref[0] = '\0';
+        ui->dns_v4_alt[0] = '\0';
+        ui->dns_v6_pref[0] = '\0';
+        ui->dns_v6_alt[0] = '\0';
         do_apply_dns(ui);
         break;
     default:
@@ -373,15 +415,21 @@ static void handle_dns_key(NetUi *ui, KeySym symbol, XKeyEvent *key) {
     case XK_KP_Enter:
         dispatch_action(ui, NET_ACTION_DNS_APPLY);
         return;
-    case XK_Tab:
-    case XK_Up:
     case XK_Down:
-    case XK_KP_Up:
     case XK_KP_Down:
-        /* Tab (or either arrow) moves the caret between the two fields, the
-           way it does in the dialog this copies. Taking a field with the mouse
-           is not needed: there are two, and one key swaps them. */
-        ui->dns_focus = ui->dns_focus ? 0 : 1;
+        /* Step to the next box, wrapping: IPv4 Preferred, IPv4 Alternate, IPv6
+           Preferred, IPv6 Alternate. Tab and the down arrow both do it, so a
+           person filling in the four boxes never reaches for the mouse. */
+        ui->dns_focus = (ui->dns_focus + 1) % 4;
+        net_draw(ui);
+        return;
+    case XK_Up:
+    case XK_KP_Up:
+        ui->dns_focus = (ui->dns_focus + 3) % 4;
+        net_draw(ui);
+        return;
+    case XK_Tab:
+        ui->dns_focus = (ui->dns_focus + 1) % 4;
         net_draw(ui);
         return;
     case XK_BackSpace:
