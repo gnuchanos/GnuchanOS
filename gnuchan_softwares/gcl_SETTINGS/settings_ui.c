@@ -1,4 +1,4 @@
-/*
+ /*
  * settings_ui.c — the window's behaviour: categories, fields, and Save.
  *
  * This is the half of GnuChanSettings that answers what a person does. It owns
@@ -83,6 +83,42 @@ void settings_ui_revert_rect(const SettingsUi *ui, int *x, int *y,
     *x -= (*width + 12);
 }
 
+/* The dropdown hangs directly under the field it belongs to, one name per
+   UI_CHOICE_HEIGHT. Both the drawing and the hit-testing come through here, so
+   the name a click lands on is the name that was drawn. */
+void settings_ui_choice_rect(const SettingsUi *ui, int row, int index,
+                             int *x, int *y, int *width, int *height) {
+    int fx, fy, fw, fh;
+    settings_ui_row_field_rect(ui, row, &fx, &fy, &fw, &fh);
+    *x = fx;
+    *y = fy + fh + index * UI_CHOICE_HEIGHT;
+    *width = fw;
+    *height = UI_CHOICE_HEIGHT;
+}
+
+int settings_ui_choice_at(const SettingsUi *ui, int x, int y) {
+    if (ui->dropdown_row < 0 || !ui->page.app ||
+        ui->dropdown_row >= ui->page.app->setting_count) {
+        return -1;
+    }
+    int count =
+        settings_choice_count(&ui->page.app->settings[ui->dropdown_row]);
+    if (count <= 0) {
+        return -1;
+    }
+    int fx, fy, fw, fh;
+    settings_ui_row_field_rect(ui, ui->dropdown_row, &fx, &fy, &fw, &fh);
+    int list_top = fy + fh;
+    if (x < fx || x >= fx + fw || y < list_top) {
+        return -1;
+    }
+    int index = (y - list_top) / UI_CHOICE_HEIGHT;
+    if (index < 0 || index >= count) {
+        return -1;
+    }
+    return index;
+}
+
 /* --- loading a category ---------------------------------------------------- */
 
 void settings_ui_load_page(SettingsUi *ui) {
@@ -90,6 +126,7 @@ void settings_ui_load_page(SettingsUi *ui) {
     ui->page.loaded = settings_load(ui->page.app, ui->page.values);
     ui->focus_row = UI_FOCUS_NONE;
     ui->hover_row = -1;
+    ui->dropdown_row = -1;
     ui->scroll = 0;
     ui->status[0] = '\0';
     ui->status_failed = 0;
@@ -148,8 +185,10 @@ static void field_insert(SettingsUi *ui, const char *text) {
         return;
     }
     const SettingDef *def = &ui->page.app->settings[ui->focus_row];
-    if (def->type == SETTING_BOOL) {
-        return;                            /* a switch is toggled, not typed */
+    /* A switch is toggled and a choice is chosen from its list; neither is
+       typed into, so a keystroke must not land in either. */
+    if (def->type == SETTING_BOOL || def->type == SETTING_CHOICE) {
+        return;
     }
     SettingValue *value = &ui->page.values[ui->focus_row];
 
@@ -200,6 +239,12 @@ static void handle_key(SettingsUi *ui, XKeyEvent *key) {
 
     switch (symbol) {
     case XK_Escape:
+        /* Escape puts an open list away first, and only closes the panel when
+           there is no list to close. */
+        if (ui->dropdown_row >= 0) {
+            ui->dropdown_row = -1;
+            return;
+        }
         ui->running = 0;
         return;
     case XK_BackSpace:
@@ -258,8 +303,27 @@ static void handle_click(SettingsUi *ui, XButtonEvent *press) {
         return;
     }
 
-    /* The body: a row. A click on a switch toggles it; a click on any other
-       field puts the keyboard in it. */
+    /* An open dropdown answers the click first: a name in it is chosen, and a
+       click anywhere else puts the list away before the click is read again. */
+    if (ui->dropdown_row >= 0) {
+        int choice = settings_ui_choice_at(ui, x, y);
+        if (choice >= 0) {
+            const SettingDef *def = &ui->page.app->settings[ui->dropdown_row];
+            const char *const *list = settings_choices(def);
+            if (list && list[choice]) {
+                snprintf(ui->page.values[ui->dropdown_row].text,
+                         sizeof(ui->page.values[ui->dropdown_row].text),
+                         "%s", list[choice]);
+            }
+            ui->dropdown_row = -1;
+            return;
+        }
+        ui->dropdown_row = -1;
+        /* Fall through: the click may still be on a field. */
+    }
+
+    /* The body: a row. A click on a switch toggles it, a click on a choice
+       opens its list, and a click on any other field puts the keyboard in it. */
     int row = settings_ui_row_at(ui, x, y);
     if (row < 0 || row >= ui->page.app->setting_count) {
         ui->focus_row = UI_FOCUS_NONE;
@@ -270,6 +334,8 @@ static void handle_click(SettingsUi *ui, XButtonEvent *press) {
     ui->caret = (int)strlen(ui->page.values[row].text);
     if (def->type == SETTING_BOOL) {
         toggle_bool(ui, row);
+    } else if (def->type == SETTING_CHOICE) {
+        ui->dropdown_row = row;
     }
 }
 
@@ -360,7 +426,25 @@ int settings_ui_open(SettingsUi *ui) {
     }
     XStoreName(ui->display, ui->window, "GnuChanSettings");
 
-    ui->draw = XftDrawCreate(ui->display, ui->window, ui->visual, ui->colormap);
+    /* The whole panel is painted into this pixmap and copied to the window in
+       ONE XCopyArea, rather than drawn straight onto the window a shape at a
+       time. That is what keeps the redraw from being seen: a window painted
+       piece by piece shows each piece as it lands — the flicker — while a
+       window shown a finished picture never does. */
+    ui->buffer = XCreatePixmap(ui->display, ui->window, UI_WINDOW_WIDTH,
+                               UI_WINDOW_HEIGHT, (unsigned int)ui->depth);
+    if (ui->buffer == None) {
+        fprintf(stderr, "gnuchansettings: cannot make the back buffer\n");
+        XDestroyWindow(ui->display, ui->window);
+        XFreeGC(ui->display, ui->gc);
+        settings_style_free(&ui->style, ui->display);
+        XCloseDisplay(ui->display);
+        ui->display = NULL;
+        return -1;
+    }
+    ui->target = ui->buffer;
+    ui->draw = XftDrawCreate(ui->display, ui->buffer, ui->visual,
+                             ui->colormap);
 
     settings_ui_load_page(ui);
 
@@ -419,6 +503,10 @@ void settings_ui_close(SettingsUi *ui) {
     if (ui->draw) {
         XftDrawDestroy(ui->draw);
         ui->draw = NULL;
+    }
+    if (ui->buffer != None) {
+        XFreePixmap(ui->display, ui->buffer);
+        ui->buffer = None;
     }
     if (ui->window != None) {
         XDestroyWindow(ui->display, ui->window);

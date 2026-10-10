@@ -63,7 +63,9 @@ typedef struct SettingsUi {
     Visual  *visual;
     Colormap colormap;
     int      depth;
-    XftDraw *draw;                 /* the window as an Xft surface */
+    XftDraw *draw;                 /* the BACK BUFFER as an Xft surface */
+    Pixmap   buffer;               /* the whole panel is painted here    */
+    Drawable target;               /* where a paint goes: the back buffer */
 
     SettingsStyle style;
 
@@ -78,6 +80,7 @@ typedef struct SettingsUi {
 
     int           hover_row;       /* the row under the pointer, -1 = none    */
     int           hover_category;  /* a category under the pointer, -1 = none */
+    int           dropdown_row;    /* the choice row whose list is open, -1   */
 
     /* What the last save said, shown in the footer. `status_failed` colours it
        — a save that failed must not read like one that worked. */
@@ -114,6 +117,12 @@ int settings_ui_category_at(int y);
 /* The rectangle of a setting row's field on screen, counting the scroll. */
 void settings_ui_row_field_rect(const SettingsUi *ui, int row,
                                 int *x, int *y, int *width, int *height);
+
+/* The rectangle of one name in an open dropdown — the list hangs under the
+   field of `row` — and which name a point falls in, or -1. */
+void settings_ui_choice_rect(const SettingsUi *ui, int row, int index,
+                             int *x, int *y, int *width, int *height);
+int settings_ui_choice_at(const SettingsUi *ui, int x, int y);
 
 /* The row a point falls in, counting the scroll; -1 when it is above the first
    shown row or in the footer. */

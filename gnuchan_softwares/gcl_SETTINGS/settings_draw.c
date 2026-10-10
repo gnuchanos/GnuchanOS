@@ -27,7 +27,7 @@ static void fill_rect(SettingsUi *ui, unsigned long colour,
         return;
     }
     XSetForeground(ui->display, ui->gc, colour);
-    XFillRectangle(ui->display, ui->window, ui->gc, x, y,
+    XFillRectangle(ui->display, ui->target, ui->gc, x, y,
                    (unsigned int)width, (unsigned int)height);
 }
 
@@ -37,7 +37,7 @@ static void outline_rect(SettingsUi *ui, unsigned long colour,
         return;
     }
     XSetForeground(ui->display, ui->gc, colour);
-    XDrawRectangle(ui->display, ui->window, ui->gc, x, y,
+    XDrawRectangle(ui->display, ui->target, ui->gc, x, y,
                    (unsigned int)(width - 1), (unsigned int)(height - 1));
 }
 
@@ -53,20 +53,20 @@ static void fill_rounded(SettingsUi *ui, unsigned long colour,
     int span = radius * 2;
     int angle = 90 * 64;
     XSetForeground(ui->display, ui->gc, colour);
-    XFillRectangle(ui->display, ui->window, ui->gc, x + radius, y,
+    XFillRectangle(ui->display, ui->target, ui->gc, x + radius, y,
                    (unsigned int)(width - span), (unsigned int)height);
-    XFillRectangle(ui->display, ui->window, ui->gc, x, y + radius,
+    XFillRectangle(ui->display, ui->target, ui->gc, x, y + radius,
                    (unsigned int)radius, (unsigned int)(height - span));
-    XFillRectangle(ui->display, ui->window, ui->gc, x + width - radius,
+    XFillRectangle(ui->display, ui->target, ui->gc, x + width - radius,
                    y + radius, (unsigned int)radius,
                    (unsigned int)(height - span));
-    XFillArc(ui->display, ui->window, ui->gc, x, y, (unsigned int)span,
+    XFillArc(ui->display, ui->target, ui->gc, x, y, (unsigned int)span,
              (unsigned int)span, angle, angle);
-    XFillArc(ui->display, ui->window, ui->gc, x + width - span, y,
+    XFillArc(ui->display, ui->target, ui->gc, x + width - span, y,
              (unsigned int)span, (unsigned int)span, 0, angle);
-    XFillArc(ui->display, ui->window, ui->gc, x, y + height - span,
+    XFillArc(ui->display, ui->target, ui->gc, x, y + height - span,
              (unsigned int)span, (unsigned int)span, 180 * 64, angle);
-    XFillArc(ui->display, ui->window, ui->gc, x + width - span,
+    XFillArc(ui->display, ui->target, ui->gc, x + width - span,
              y + height - span, (unsigned int)span, (unsigned int)span,
              270 * 64, angle);
 }
@@ -171,6 +171,62 @@ static void draw_text_field(SettingsUi *ui, int row, int x, int y, int width,
         }
         fill_rect(ui, ui->style.accent, caret_x, y + 6, 2, height - 12);
     }
+}
+
+/* A choice row: the current name, and a caret saying it opens a list. */
+static void draw_choice_field(SettingsUi *ui, int row, int x, int y,
+                              int width, int height,
+                              const SettingValue *value) {
+    fill_rounded(ui, ui->style.panel, x, y, width, height, 6);
+    outline_rect(ui, row == ui->dropdown_row ? ui->style.accent
+                                             : ui->style.panel_edge,
+                 x, y, width, height);
+
+    char shown[SETTINGS_TEXT_LENGTH];
+    fit_text(ui, ui->style.font, value->text, width - 34, shown,
+             sizeof(shown));
+
+    XftColor text = xft_from_pixel(ui, ui->style.text);
+    draw_text(ui, &text, ui->style.font, x + 10, y + height / 2 + 5, shown);
+    XftColorFree(ui->display, ui->visual, ui->colormap, &text);
+
+    XftColor accent = xft_from_pixel(ui, ui->style.accent);
+    draw_text(ui, &accent, ui->style.font, x + width - 22,
+              y + height / 2 + 5, ui->dropdown_row == row ? "^" : "v");
+    XftColorFree(ui->display, ui->visual, ui->colormap, &accent);
+}
+
+/* The open list: every name, under the field, the one the value holds lit. */
+static void draw_dropdown(SettingsUi *ui) {
+    int row = ui->dropdown_row;
+    if (row < 0 || !ui->page.app || row >= ui->page.app->setting_count) {
+        return;
+    }
+    const SettingDef *def = &ui->page.app->settings[row];
+    const char *const *list = settings_choices(def);
+    int count = settings_choice_count(def);
+    if (!list || count <= 0) {
+        return;
+    }
+
+    const char *current = ui->page.values[row].text;
+    XftColor text = xft_from_pixel(ui, ui->style.text);
+    XftColor accent = xft_from_pixel(ui, ui->style.accent);
+
+    for (int i = 0; i < count; i++) {
+        int cx, cy, cw, ch;
+        settings_ui_choice_rect(ui, row, i, &cx, &cy, &cw, &ch);
+        int chosen = list[i] && strcmp(list[i], current) == 0;
+
+        fill_rect(ui, chosen ? ui->style.sidebar_active : ui->style.panel,
+                  cx, cy, cw, ch);
+        outline_rect(ui, ui->style.panel_edge, cx, cy, cw, ch);
+        draw_text(ui, chosen ? &accent : &text, ui->style.font, cx + 12,
+                  cy + ch / 2 + 5, list[i]);
+    }
+
+    XftColorFree(ui->display, ui->visual, ui->colormap, &text);
+    XftColorFree(ui->display, ui->visual, ui->colormap, &accent);
 }
 
 static void draw_switch(SettingsUi *ui, int x, int y, int height,
@@ -286,6 +342,9 @@ static void draw_row(SettingsUi *ui, int row) {
     case SETTING_BOOL:
         draw_switch(ui, fx, fy, fh, value);
         break;
+    case SETTING_CHOICE:
+        draw_choice_field(ui, row, fx, fy, fw, fh, value);
+        break;
     default:
         draw_text_field(ui, row, fx, fy, fw, fh, value);
         break;
@@ -359,5 +418,14 @@ void settings_draw(SettingsUi *ui) {
     }
 
     draw_footer(ui);
+
+    /* The list is drawn last, so it sits over the rows it covers. */
+    draw_dropdown(ui);
+
+    /* The finished picture goes to the window in ONE copy: nothing is shown
+       half-drawn, which is what removes the flicker the panel had when every
+       shape went to the window on its own. */
+    XCopyArea(ui->display, ui->target, ui->window, ui->gc, 0, 0,
+              UI_WINDOW_WIDTH, UI_WINDOW_HEIGHT, 0, 0);
     XFlush(ui->display);
 }

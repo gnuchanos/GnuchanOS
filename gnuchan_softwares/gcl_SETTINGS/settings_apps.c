@@ -3,36 +3,35 @@
  *
  * This is the one place that knows WHICH programs GnuChanSettings edits, where
  * each one keeps its settings, how that file is written, and which of its
- * settings are worth putting in front of a person. Everything here is data:
- * the reader, the writer and the window take it as given and none of them
- * knows a program by name.
+ * settings are worth putting in front of a person. Every row here is a setting
+ * that PROGRAM ACTUALLY READS — taken from its own config header and the .py
+ * it ships — and nothing else. A row that named a token no program looks for
+ * would be a field a person could fill in and watch do nothing.
  *
- * The rows are not every line a program's file may contain — the calls that
- * carry whole lists (a bar's widgets, the key bindings, a window manager's
- * autostart list) are deliberately left out. A list is not a value a panel can
- * offer as a field, and a half-edited list would be worse than a setting no
- * panel touches: it is left to the file, which is where writing one belongs.
- * What is here is the values that ARE one value — a colour, a size, a switch,
- * a name.
+ * The rows are not every line a file may contain. The calls that carry whole
+ * LISTS — a bar's widgets, the terminal's palette, the key bindings, a fetch's
+ * field list — are left out: a list is not one value a panel can offer as a
+ * field. What is here is the values that ARE one value: a colour, a size, a
+ * switch, a name.
  *
- * A row's label and group are shown to a person; its key is what the file is
- * searched for. Where a program's file writes a value differently from the
- * rest of that file (the window manager does), the row carries its own style
- * and call prefix rather than following the program's.
+ * A few settings are one of a short fixed set of NAMES (the screen saver's
+ * effect, a window's corner, the sort column). Those are SETTING_CHOICE rows
+ * and the window draws them as a dropdown, so nobody has to remember that
+ * "3dwall" is spelled without a space.
  */
 #include <stddef.h>
+#include <string.h>
 
 #include "settings_types.h"
 
-/* Terse row builders. A row is one line a person reads and one token the file
-   is searched by; writing them through these keeps the tables below readable
-   as tables rather than as walls of braces. Every one produces the same
-   SettingDef, differing only in the type and whether the row overrides the
-   program's own style and call prefix. */
+/* Terse row builders. Each produces one SettingDef. */
 #define ROW(key, label, group, type, fallback) \
-    { key, label, group, type, SETTING_STYLE_INHERIT, NULL, fallback }
+    { key, label, group, type, SETTING_STYLE_INHERIT, NULL, fallback, NULL }
 #define ROW_IN(key, label, group, type, style, call, fallback) \
-    { key, label, group, type, style, call, fallback }
+    { key, label, group, type, style, call, fallback, NULL }
+#define CHOICE(key, label, group, fallback, list) \
+    { key, label, group, SETTING_CHOICE, SETTING_STYLE_INHERIT, NULL, \
+      fallback, list }
 
 #define COLOR(key, label, group, fallback) \
     ROW(key, label, group, SETTING_COLOR, fallback)
@@ -45,6 +44,17 @@
 #define BOOL(key, label, group, fallback) \
     ROW(key, label, group, SETTING_BOOL, fallback)
 
+/* --- the fixed lists a choice row offers ----------------------------------- */
+
+static const char *const effect_choices[] = { "pipe", "3dwall", NULL };
+static const char *const corner_choices[] = {
+    "top-right", "top-left", "bottom-right", "bottom-left",
+    "top-center", "bottom-center", NULL
+};
+static const char *const place_choices[] = { "center", "top", "bottom", NULL };
+static const char *const command_choices[] = { "off", "typed", "always", NULL };
+static const char *const sort_choices[] = { "cpu", "mem", "pid", "name", NULL };
+
 /* --- GnuChanDock ----------------------------------------------------------- */
 
 static const SettingDef dock_settings[] = {
@@ -53,6 +63,7 @@ static const SettingDef dock_settings[] = {
     COLOR("Field",          "Hover field", "Palette", "#241033"),
     COLOR("Text",           "Text",        "Palette", "#e0c3fc"),
     COLOR("Accent",         "Accent",      "Palette", "#c77dff"),
+    COLOR("Badge",          "Group badge", "Palette", "#1a0b2e"),
 
     INT("IconSize",     "Icon size",         "Shape", "48"),
     INT("Gap",          "Gap between icons", "Shape", "30"),
@@ -66,8 +77,13 @@ static const SettingDef dock_settings[] = {
     BOOL("LabelEnabled", "Show labels", "Label", "True"),
 
     BOOL("SettingsEnabled", "Show settings icon", "Icons", "True"),
+    TEXT("SettingsIcon",    "Settings icon",      "Icons",
+         "~/.config/GnuChanDock/settings.png"),
     TEXT("SettingsLabel",   "Settings label",     "Icons", "settings"),
+
     BOOL("TerminalEnabled", "Show terminal icon", "Icons", "True"),
+    TEXT("TerminalIcon",    "Terminal icon",      "Icons",
+         "~/.config/GnuChanDock/logo.png"),
     TEXT("TerminalLabel",   "Terminal label",     "Icons", "terminal"),
     TEXT("TerminalCommand", "Terminal command",   "Icons", "GnuChanTerm"),
 
@@ -98,7 +114,7 @@ static const SettingDef fetch_settings[] = {
 /* --- GnuChanSS ------------------------------------------------------------- */
 
 static const SettingDef ss_settings[] = {
-    TEXT("Name",             "Effect",            "Effect",    "pipe"),
+    CHOICE("Name", "Effect", "Effect", "pipe", effect_choices),
     COLOR("PrimaryColor",    "Primary colour",    "Effect",    "#d400ff"),
     COLOR("BackgroundColor", "Background colour", "Effect",    "#27022b"),
     INT("IdleSeconds",       "Idle seconds",      "Behaviour", "300"),
@@ -151,7 +167,7 @@ static const SettingDef notif_settings[] = {
     TEXT("Font",     "Font",       "Text", "monospace:pixelsize=13"),
     INT("BodyScale", "Body scale", "Text", "90"),
 
-    TEXT("Position",       "Position",        "Behaviour", "top-right"),
+    CHOICE("Position", "Position", "Behaviour", "top-right", corner_choices),
     INT("Timeout",         "Timeout (ms)",    "Behaviour", "5000"),
     INT("MaxVisible",      "Max visible",     "Behaviour", "5"),
     BOOL("ShowIcon",       "Show icon",       "Behaviour", "True"),
@@ -173,7 +189,7 @@ static const SettingDef runner_settings[] = {
     INT("FontSize",    "Font size",   "Window", "14"),
     INT("Width",       "Width",       "Window", "520"),
     INT("Rows",        "Rows",        "Window", "8"),
-    TEXT("Position",   "Position",    "Window", "center"),
+    CHOICE("Position", "Position",    "Window", "center", place_choices),
 
     COLOR("Background", "Background", "Palette", "#1a0b2e"),
     COLOR("Panel",      "Panel",      "Palette", "#32143f"),
@@ -185,17 +201,24 @@ static const SettingDef runner_settings[] = {
 
     BOOL("CaseSensitive", "Case sensitive", "Behaviour", "False"),
     BOOL("Fuzzy",         "Fuzzy match",    "Behaviour", "True"),
-    TEXT("CommandMode",   "Command mode",   "Behaviour", "typed"),
+    CHOICE("CommandMode", "Command line",   "Behaviour", "typed",
+           command_choices),
     BOOL("ShowNoDisplay", "Show NoDisplay", "Behaviour", "False"),
     BOOL("ShowHidden",    "Show hidden",    "Behaviour", "False"),
 };
 
-/* --- GnuChanWifi ----------------------------------------------------------- */
+/* --- GnuChanWifi -----------------------------------------------------------
+ *
+ * Only the settings a person would actually change. The program's file also
+ * has NmcliPath and RestartModule, and neither is a field a panel should put in
+ * front of anybody: NmcliPath is "nmcli" on every machine that has the program
+ * at all, and RestartModule is read off the interface by the manager itself and
+ * named only when that read fails. Offering them is offering a way to break a
+ * working manager.
+ */
 
 static const SettingDef wifi_settings[] = {
-    TEXT("NmcliPath",     "nmcli path",     "Program", "nmcli"),
-    TEXT("RestartModule", "Restart module", "Program", ""),
-    TEXT("Title",         "Title",          "Program", "Wi-Fi"),
+    TEXT("Title",         "Title",          "Window", "Wi-Fi"),
 
     TEXT("FontFamily", "Font family", "Window", "monospace"),
     INT("FontSize",    "Font size",   "Window", "14"),
@@ -220,7 +243,7 @@ static const SettingDef top_settings[] = {
     REAL("UpdateTime", "Update time (s)", "Sampling", "1.0"),
     INT("ProcLimit",   "Process limit",   "Sampling", "200"),
     BOOL("ShowGPU",    "Show GPU",        "Display",  "true"),
-    TEXT("Sort",       "Sort by",         "Display",  "cpu"),
+    CHOICE("Sort",     "Sort by",         "Display",  "cpu", sort_choices),
 };
 
 /* --- GnuChanDM ------------------------------------------------------------- */
@@ -253,10 +276,10 @@ static const SettingDef dm_settings[] = {
 
 /* --- GnuChanWM -------------------------------------------------------------
  *
- * This file is the odd one: it writes four colours as gcl_Window.set_*(...)
- * calls, the switcher's colours as gcl_Switcher.* assignments, and the flat
- * desktop colour and wallpaper as gcl_Window.* assignments. So every row here
- * names its own style and prefix rather than following the program's. */
+ * The odd one: it writes its borders as gcl_Window.set_*(...) calls, the
+ * switcher's colours as gcl_Switcher.* assignments, and its wallpaper as a
+ * gcl_Window.* assignment — all in the same file. So every row here names its
+ * own style and prefix rather than following the program's. */
 
 static const SettingDef wm_settings[] = {
     ROW_IN("set_active_window_border_color", "Active border", "Borders",
@@ -265,6 +288,8 @@ static const SettingDef wm_settings[] = {
            SETTING_COLOR, SETTING_FUNC, "gcl_Window", "#450552"),
     ROW_IN("set_moved_window_border_color", "Moved border", "Borders",
            SETTING_COLOR, SETTING_FUNC, "gcl_Window", "#52024d"),
+    ROW_IN("set_inactive_window_panel_color", "Inactive title bar", "Borders",
+           SETTING_COLOR, SETTING_FUNC, "gcl_Window", "#241033"),
     ROW_IN("set_window_border_width", "Border width", "Borders",
            SETTING_INT, SETTING_FUNC, "gcl_Window", "2"),
 
@@ -366,4 +391,37 @@ const AppDef *settings_apps(int *count) {
         *count = (int)(sizeof(app_table) / sizeof(app_table[0]));
     }
     return app_table;
+}
+
+/* --- choice rows ----------------------------------------------------------- */
+
+const char *const *settings_choices(const SettingDef *def) {
+    if (!def || def->type != SETTING_CHOICE) {
+        return NULL;
+    }
+    return def->choices;
+}
+
+int settings_choice_count(const SettingDef *def) {
+    const char *const *list = settings_choices(def);
+    int count = 0;
+    if (!list) {
+        return -1;
+    }
+    while (list[count]) {
+        count++;
+    }
+    return count;
+}
+
+int settings_choice_index(const char *const *choices, const char *text) {
+    if (!choices || !text) {
+        return -1;
+    }
+    for (int i = 0; choices[i]; i++) {
+        if (strcmp(choices[i], text) == 0) {
+            return i;
+        }
+    }
+    return -1;
 }
