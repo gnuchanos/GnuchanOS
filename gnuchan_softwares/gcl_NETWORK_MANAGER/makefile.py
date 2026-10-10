@@ -50,6 +50,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import urllib.request
 from pathlib import Path
 
@@ -143,6 +144,12 @@ BLOCKCHECK_DOMAINS = ("discord.com", "facebook.com", "instagram.com",
 # Used when blockcheck finds no nfqws method at all. The reference's own
 # --dev default, and a desync that works on many networks.
 FALLBACK_NFQWS_OPT = "--dpi-desync=fake --dpi-desync-ttl=3"
+
+# blockcheck works through dozens of desync methods against the network, so it
+# runs for minutes. This ceiling stops it ever sitting there forever, and its
+# output is streamed (see run_streaming) so a person watching can tell it is
+# working rather than frozen.
+BLOCKCHECK_TIMEOUT = 1200
 
 
 def step(message: str) -> None:
@@ -408,6 +415,46 @@ def install_zapret_units() -> None:
     run(["systemctl", "enable", "zapret"])
 
 
+def run_streaming(
+    command: list[str],
+    cwd: Path,
+    input_text: str,
+    timeout: int,
+) -> str:
+    """Run a chatty program with its output shown as it arrives, and return all
+    of it. blockcheck is the case this exists for: it prints a line per method
+    it tries and runs for minutes, so capturing it silently is indistinguishable
+    from a freeze. The output is therefore both echoed and kept, and a deadline
+    is enforced so it can never sit there forever."""
+    process = subprocess.Popen(
+        command, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, text=True, bufsize=1,
+    )
+    if process.stdin is not None:
+        process.stdin.write(input_text)
+        process.stdin.close()
+
+    collected: list[str] = []
+
+    def pump() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            collected.append(line)
+            sys.stdout.write("    " + line)
+            sys.stdout.flush()
+
+    reader = threading.Thread(target=pump, daemon=True)
+    reader.start()
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        detail(f"blockcheck did not finish within {timeout}s and was stopped")
+    reader.join(timeout=5)
+    return "".join(collected)
+
+
 def parse_blockcheck_nfqws(output: str, domain: str) -> str:
     """The nfqws options blockcheck found for `domain`, or empty. blockcheck
     prints a summary line per working method; this takes the first that names
@@ -463,7 +510,11 @@ def write_nfqws_opt(method: str) -> None:
         detail(f"could not write {config}: {exc}")
         return
     detail(f"bypass method set: {method}")
-    run(["systemctl", "restart", "zapret"])
+    # Restart so the new method is live. systemd when the unit is there (the
+    # easy installer normally registers it), and otherwise the init script the
+    # manager's own DPI button runs — the config is read at start either way.
+    if run(["systemctl", "restart", "zapret"], capture=True).returncode != 0:
+        run(["sh", str(ZAPRET_INIT), "start"], cwd=ZAPRET_DIR)
 
 
 def choose_and_apply_bypass_method() -> None:
@@ -492,12 +543,15 @@ def choose_and_apply_bypass_method() -> None:
         return
 
     step(f"Choosing a bypass for this network (blockcheck on {domain})")
+    detail("this is zapret's own test and takes a few minutes; it prints as "
+           "it goes")
     # blockcheck is prompt-driven; these are the answers the reference installer
-    # feeds it — the name, then N to the extras it offers.
+    # feeds it — the name, then N to the extras it offers. Its output is shown
+    # live (see run_streaming) so the wait is visibly doing something.
     answers = f"{domain}\n\nN\n\n\nN\n\n\n\n"
-    result = run(["sh", str(blockcheck)], input_text=answers, capture=True,
-                 cwd=ZAPRET_DIR)
-    method = parse_blockcheck_nfqws(result.stdout, domain)
+    output = run_streaming(["sh", str(blockcheck)], ZAPRET_DIR, answers,
+                           BLOCKCHECK_TIMEOUT)
+    method = parse_blockcheck_nfqws(output, domain)
     if not method:
         method = FALLBACK_NFQWS_OPT
         detail("blockcheck found no nfqws method; using the default")
