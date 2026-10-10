@@ -20,11 +20,19 @@
  * tessellates every thick line itself, and a thousand collinear points would
  * cost it a thousand pieces to say one straight line.
  *
- * The wall is a grid of bricks on a plane turned about the vertical axis.
+ * The 3dwall is a MAZE WALKED IN THE FIRST PERSON. It is not a flat pattern of
+ * squares: it is a grid of wall cells with corridors carved between them, and a
+ * camera low in those corridors, and every screen column casts one ray into the
+ * grid and draws the wall it hits at the height that wall's distance makes it.
+ * That is what makes corridors open away from the camera, a side wall sweep past
+ * it as the camera turns, and a far wall come nearer as the camera walks — a
+ * view of a place, and not a tiling of a picture. The walker chooses its way at
+ * each junction, preferring the way it is already going and never turning
+ * straight back, so the camera wanders the maze for as long as the show runs.
  *
- * Everything is drawn with Xlib's own primitives — thick lines and filled discs
- * — so nothing here needs a graphics stack, and the whole saver starts on any
- * server that can open a window at all.
+ * Everything is drawn with Xlib's own primitives — thick lines, filled discs
+ * and filled rectangles — so nothing here needs a graphics stack, and the whole
+ * saver starts on any server that can open a window at all.
  *
  * The randomness is seeded once, lazily, with the wall clock. A screen saver
  * that reset to the same picture on every run would be one you recognise from
@@ -36,6 +44,10 @@
 #include <time.h>
 
 #include "ss_effect.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 /* How far a worm creeps each frame, in pixels. Small, so the motion is a crawl
    and not a jerk. */
@@ -87,7 +99,7 @@ static double distance(double ax, double ay, double bx, double by) {
 
 /* --- colour --------------------------------------------------------------- */
 
-/* An HSV colour to RGB, each in 0..1. Hue is in turns (0..360). Used to build
+/* An HSV colour to RGB, each in 0..1. Hue is in degrees (0..360). Used to build
    the purples straight from the colour wheel, so the palette is a family of
    genuinely different purples and not one purple scaled up and down. */
 static void hsv_to_rgb(double hue, double sat, double val, double rgb[3]) {
@@ -123,11 +135,11 @@ static unsigned long alloc_rgb(Display *display, double r, double g, double b) {
     return 0;
 }
 
-/* Build the palette: a walk round the violet-to-magenta part of the colour
-   wheel, and for each step three colours — the worm's body, a much darker
-   version for its outline, and a much paler one for the shine down its back —
-   plus the white of the eyes. Made once, on the first frame, when there is a
-   display to allocate colours on. */
+/* Build the worms' palette: a walk round the violet-to-magenta part of the
+   colour wheel, and for each step three colours — the worm's body, a much
+   darker version for its outline, and a much paler one for the shine down its
+   back — plus the white of the eyes. Made once, on the first frame, when there
+   is a display to allocate colours on. */
 static void prepare_palette(SsEffect *effect, Display *display) {
     if (effect->colours_ready) {
         return;
@@ -402,71 +414,419 @@ static void pipe_reset(SsEffect *effect, int width, int height) {
     }
 }
 
-/* --- the 3D wall ---------------------------------------------------------- */
+/* --- the maze -------------------------------------------------------------
+ *
+ * A maze carved on the odd cells of an all-wall grid. Every odd cell is a room;
+ * two rooms are joined by knocking down the even cell between them, and the
+ * carve is a depth-first walk, so the result is a maze with exactly one path
+ * between any two rooms — the thing a person means by a maze. */
 
-static void wall_reset(SsEffect *effect, int width, int height) {
+/* Whether a cell is inside the grid. */
+static int maze_inside(int x, int y) {
+    return x > 0 && y > 0 && x < SS_MAZE_WIDTH - 1 && y < SS_MAZE_HEIGHT - 1;
+}
+
+/* Carve the maze: fill the grid with walls, then walk from cell (1,1) knocking
+   down the wall between the room it is in and a room two cells away it has not
+   visited. Recursion would be the tidy way to write it and is not used: a maze
+   is entered through a fixed grid and the depth here is bounded by the grid, so
+   an explicit stack keeps the frame size the compiler's business and not the
+   maze's. */
+static void maze_carve(SsEffect *effect) {
+    for (int y = 0; y < SS_MAZE_HEIGHT; y++) {
+        for (int x = 0; x < SS_MAZE_WIDTH; x++) {
+            effect->maze[y][x] = 1;
+        }
+    }
+
+    int stack_x[SS_MAZE_WIDTH * SS_MAZE_HEIGHT];
+    int stack_y[SS_MAZE_WIDTH * SS_MAZE_HEIGHT];
+    int top = 0;
+
+    effect->maze[1][1] = 0;
+    stack_x[top] = 1;
+    stack_y[top] = 1;
+    top++;
+
+    const int step[4][2] = { {2, 0}, {-2, 0}, {0, 2}, {0, -2} };
+
+    while (top > 0) {
+        int x = stack_x[top - 1];
+        int y = stack_y[top - 1];
+
+        /* The not-yet-visited neighbours two cells away, in a random order:
+           shuffling the four directions and taking the first one that leads to
+           an unvisited room is what makes the carve wander rather than march. */
+        int order[4] = {0, 1, 2, 3};
+        for (int i = 3; i > 0; i--) {
+            int j = rand() % (i + 1);
+            int t = order[i]; order[i] = order[j]; order[j] = t;
+        }
+
+        int carved = 0;
+        for (int i = 0; i < 4; i++) {
+            int nx = x + step[order[i]][0];
+            int ny = y + step[order[i]][1];
+            if (maze_inside(nx, ny) && effect->maze[ny][nx] == 1) {
+                effect->maze[ny][nx] = 0;
+                effect->maze[(y + ny) / 2][(x + nx) / 2] = 0;
+                stack_x[top] = nx;
+                stack_y[top] = ny;
+                top++;
+                carved = 1;
+                break;
+            }
+        }
+        if (!carved) {
+            top--;
+        }
+    }
+}
+
+/* Choose the next cell to walk to from the one the camera is in. Every open
+   neighbour is a candidate except the one just left — a walker that turned
+   straight back at every junction would rock in place — and among the rest the
+   way it is already going and then a random one are preferred, so the camera
+   tends to keep to a corridor and still turns at a corner into a dead end. */
+static void maze_choose_next(SsEffect *effect) {
+    int cx = effect->cell_x;
+    int cy = effect->cell_y;
+    const int step[4][2] = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
+
+    int open_x[4];
+    int open_y[4];
+    int count = 0;
+    for (int i = 0; i < 4; i++) {
+        int nx = cx + step[i][0];
+        int ny = cy + step[i][1];
+        if (!maze_inside(nx, ny) || effect->maze[ny][nx]) {
+            continue;
+        }
+        if (effect->has_prev && nx == effect->prev_x && ny == effect->prev_y &&
+            count >= 1) {
+            /* Not straight back, unless it is the only way — handled below by
+               letting a lone candidate through. */
+            continue;
+        }
+        open_x[count] = nx;
+        open_y[count] = ny;
+        count++;
+    }
+    if (count == 0) {
+        /* Only the way back: take it. */
+        for (int i = 0; i < 4; i++) {
+            int nx = cx + step[i][0];
+            int ny = cy + step[i][1];
+            if (maze_inside(nx, ny) && !effect->maze[ny][nx]) {
+                open_x[0] = nx;
+                open_y[0] = ny;
+                count = 1;
+                break;
+            }
+        }
+    }
+    if (count == 0) {
+        return;
+    }
+
+    /* Prefer to keep going the way that lines up with the current facing, so a
+       long corridor is walked as a corridor and the camera does not weave. */
+    int best = 0;
+    double best_dot = -2.0;
+    double fx = cos(effect->cam_angle);
+    double fy = sin(effect->cam_angle);
+    for (int i = 0; i < count; i++) {
+        double dx = (open_x[i] + 0.5) - effect->cam_x;
+        double dy = (open_y[i] + 0.5) - effect->cam_y;
+        double len = sqrt(dx * dx + dy * dy);
+        if (len < 1e-6) {
+            continue;
+        }
+        double dot = (dx / len) * fx + (dy / len) * fy;
+        if (dot > best_dot) {
+            best_dot = dot;
+            best = i;
+        }
+    }
+    /* A coin toss at a junction, so the walk does not always take the straight
+       way and the maze is explored rather than beelined. */
+    if (count > 1 && (rand() % 100) < 35) {
+        best = rand() % count;
+    }
+
+    effect->prev_x = effect->cell_x;
+    effect->prev_y = effect->cell_y;
+    effect->has_prev = 1;
+    effect->target_x = open_x[best];
+    effect->target_y = open_y[best];
+}
+
+/* Build the maze's palette from the two session colours. A wall's face is the
+   primary colour shaded down towards the background as it gets further away, so
+   distance reads as the corridor darkening into the fog; the ceiling and the
+   floor are the background a shade pulled towards the wall. Made once, on the
+   first frame, when there is a display to allocate colours on. */
+static void prepare_maze(SsEffect *effect, Display *display) {
+    if (effect->maze_ready) {
+        return;
+    }
+    XColor primary;
+    XColor background;
+    Colormap colormap = DefaultColormap(display, DefaultScreen(display));
+    memset(&primary, 0, sizeof(primary));
+    memset(&background, 0, sizeof(background));
+    primary.pixel = effect->primary;
+    background.pixel = effect->background;
+    XQueryColor(display, colormap, &primary);
+    XQueryColor(display, colormap, &background);
+
+    for (int shade = 0; shade < SS_MAZE_SHADES; shade++) {
+        double t = (double)shade / (double)(SS_MAZE_SHADES - 1);
+        /* Near walls want the wall well lit; far ones melt into the fog. Two
+           ramps so a wall seen straight on and one seen edge on read apart. */
+        double face_t = 1.0 - t * 0.85;
+        double side_t = 1.0 - t * 0.95;
+        double r, g, b;
+
+        r = (background.red   + (primary.red   - background.red)   * face_t) / 65535.0;
+        g = (background.green + (primary.green - background.green) * face_t) / 65535.0;
+        b = (background.blue  + (primary.blue  - background.blue)  * face_t) / 65535.0;
+        unsigned long face = alloc_rgb(display, r, g, b);
+        effect->maze_wall[0][shade] = face ? face : effect->primary;
+
+        r = (background.red   + (primary.red   - background.red)   * side_t) / 65535.0;
+        g = (background.green + (primary.green - background.green) * side_t) / 65535.0;
+        b = (background.blue  + (primary.blue  - background.blue)  * side_t) / 65535.0;
+        unsigned long side = alloc_rgb(display, r, g, b);
+        effect->maze_wall[1][shade] = side ? side : effect->primary;
+    }
+
+    double fr = (background.red   + primary.red   * 0.18) / 65535.0 / 1.0;
+    double fg = (background.green + primary.green * 0.18) / 65535.0 / 1.0;
+    double fb = (background.blue  + primary.blue  * 0.18) / 65535.0 / 1.0;
+    unsigned long floor = alloc_rgb(display, fr, fg, fb);
+    effect->maze_floor = floor ? floor : effect->background;
+
+    double cr = (background.red   + primary.red   * 0.10) / 65535.0 / 1.0;
+    double cg = (background.green + primary.green * 0.10) / 65535.0 / 1.0;
+    double cb = (background.blue  + primary.blue  * 0.10) / 65535.0 / 1.0;
+    unsigned long ceiling = alloc_rgb(display, cr, cg, cb);
+    effect->maze_ceiling = ceiling ? ceiling : effect->background;
+
+    effect->maze_ready = 1;
+}
+
+static void maze_reset(SsEffect *effect, int width, int height) {
+    seed_once();
     effect->width = width;
     effect->height = height;
-    effect->wall_angle = 0.0;
-    effect->wall_cols = 11;
-    effect->wall_rows = 8;
+
+    maze_carve(effect);
+
+    effect->cell_x = 1;
+    effect->cell_y = 1;
+    effect->cam_x = 1.5;
+    effect->cam_y = 1.5;
+    effect->has_prev = 0;
+    effect->cam_angle = ((double)(rand() % 360)) * M_PI / 180.0;
+    effect->target_x = 1;
+    effect->target_y = 1;
+    maze_choose_next(effect);
+    /* The facing is set from the walk's first choice, so the camera never opens
+       looking at a wall it then has to turn from. */
+    effect->cam_angle = atan2((effect->target_y + 0.5) - effect->cam_y,
+                              (effect->target_x + 0.5) - effect->cam_x);
 }
 
-static void wall_brick(SsEffect *effect, Display *display, Drawable drawable,
-                       GC gc, XPoint points[4]) {
-    XSetForeground(display, gc, effect->primary);
-    XFillPolygon(display, drawable, gc, points, 4, Convex, CoordModeOrigin);
-    XSetForeground(display, gc, effect->background);
-    XDrawLines(display, drawable, gc, points, 4, CoordModeOrigin);
-    XDrawLine(display, drawable, gc, points[3].x, points[3].y,
-              points[0].x, points[0].y);
+/* Walk the camera a step towards the middle of the cell it is heading for, and
+   choose again when it arrives. The facing turns smoothly towards the way it is
+   going, so a corner is a turn and not a snap. */
+static void maze_advance(SsEffect *effect) {
+    double tx = effect->target_x + 0.5;
+    double ty = effect->target_y + 0.5;
+    double dx = tx - effect->cam_x;
+    double dy = ty - effect->cam_y;
+    double len = sqrt(dx * dx + dy * dy);
+
+    const double speed = 0.021;   /* cells per frame */
+
+    if (len <= speed) {
+        effect->cam_x = tx;
+        effect->cam_y = ty;
+        effect->cell_x = effect->target_x;
+        effect->cell_y = effect->target_y;
+        maze_choose_next(effect);
+        tx = effect->target_x + 0.5;
+        ty = effect->target_y + 0.5;
+        dx = tx - effect->cam_x;
+        dy = ty - effect->cam_y;
+        len = sqrt(dx * dx + dy * dy);
+    }
+    if (len > 1e-6) {
+        effect->cam_x += (dx / len) * speed;
+        effect->cam_y += (dy / len) * speed;
+    }
+
+    /* Ease the facing towards the direction of travel, the short way round. */
+    double want = atan2(dy, dx);
+    double diff = want - effect->cam_angle;
+    while (diff > M_PI)  diff -= 2.0 * M_PI;
+    while (diff < -M_PI) diff += 2.0 * M_PI;
+    effect->cam_angle += diff * 0.14;
 }
 
-static void wall_draw(SsEffect *effect, Display *display, Drawable drawable,
-                      GC gc) {
-    XSetForeground(display, gc, effect->background);
-    XFillRectangle(display, drawable, gc, 0, 0,
-                   (unsigned int)effect->width, (unsigned int)effect->height);
+/* What a ray from the camera into the grid hits: the distance along the ray to
+   the wall and which of the two wall orientations it was, so the drawing can
+   shade the two differently. See maze_draw for how a column's ray is cast. */
+typedef struct MazeHit {
+    double distance;
+    int side;      /* 0: a wall facing along X, 1: along Y */
+} MazeHit;
 
-    effect->wall_angle += 0.006;
-    double sin_a = sin(effect->wall_angle);
-    double cos_a = cos(effect->wall_angle);
+/* Cast one ray. A plain DDA walk over the grid: step to the next cell boundary
+   each time, in whichever axis is nearer, until a wall cell is entered. That is
+   the same walk a raycaster has always used — a handful of steps a column, so a
+   whole frame is a few thousand adds and multiplies and no trigonometry past
+   the column's own angle. */
+static int maze_cast(SsEffect *effect, double origin_x, double origin_y,
+                     double dir_x, double dir_y, MazeHit *hit) {
+    int map_x = (int)origin_x;
+    int map_y = (int)origin_y;
+    if (map_x < 0 || map_y < 0 || map_x >= SS_MAZE_WIDTH ||
+        map_y >= SS_MAZE_HEIGHT) {
+        return 0;
+    }
 
-    double cx = effect->width / 2.0;
-    double cy = effect->height / 2.0;
+    double delta_x = dir_x == 0.0 ? 1e30 : fabs(1.0 / dir_x);
+    double delta_y = dir_y == 0.0 ? 1e30 : fabs(1.0 / dir_y);
 
-    double cell_w = (double)effect->width / effect->wall_cols;
-    double cell_h = (double)effect->height / effect->wall_rows;
-    double cell = cell_w < cell_h ? cell_w : cell_h;
-    double brick_w = cell * 0.90;
-    double brick_h = cell * 0.90;
-    double fov = 700.0;
-    double cam_z = fov + effect->wall_cols * cell;
+    int step_x;
+    int step_y;
+    double side_x;
+    double side_y;
 
-    for (int row = 0; row < effect->wall_rows; row++) {
-        for (int col = 0; col < effect->wall_cols; col++) {
-            double wx = (col - (effect->wall_cols - 1) / 2.0) * cell;
-            double wy = (row - (effect->wall_rows - 1) / 2.0) * cell;
+    if (dir_x < 0.0) {
+        step_x = -1;
+        side_x = (origin_x - map_x) * delta_x;
+    } else {
+        step_x = 1;
+        side_x = (map_x + 1.0 - origin_x) * delta_x;
+    }
+    if (dir_y < 0.0) {
+        step_y = -1;
+        side_y = (origin_y - map_y) * delta_y;
+    } else {
+        step_y = 1;
+        side_y = (map_y + 1.0 - origin_y) * delta_y;
+    }
 
-            double lx[4] = { wx - brick_w / 2, wx + brick_w / 2,
-                             wx + brick_w / 2, wx - brick_w / 2 };
-            double ly[4] = { wy - brick_h / 2, wy - brick_h / 2,
-                             wy + brick_h / 2, wy + brick_h / 2 };
-
-            XPoint points[4];
-            for (int k = 0; k < 4; k++) {
-                double x = lx[k];
-                double z = 0.0;
-                double rx = x * cos_a - z * sin_a;
-                double rz = x * sin_a + z * cos_a;
-                double denom = cam_z + rz;
-                if (denom < 1.0) denom = 1.0;
-                double s = fov / denom;
-                points[k].x = (short)(cx + rx * s);
-                points[k].y = (short)(cy + ly[k] * s);
-            }
-            wall_brick(effect, display, drawable, gc, points);
+    int side = 0;
+    for (int guard = 0; guard < SS_MAZE_WIDTH * SS_MAZE_HEIGHT; guard++) {
+        if (side_x < side_y) {
+            side_x += delta_x;
+            map_x += step_x;
+            side = 0;
+        } else {
+            side_y += delta_y;
+            map_y += step_y;
+            side = 1;
         }
+        if (map_x < 0 || map_y < 0 || map_x >= SS_MAZE_WIDTH ||
+            map_y >= SS_MAZE_HEIGHT) {
+            return 0;
+        }
+        if (effect->maze[map_y][map_x]) {
+            hit->distance = (side == 0) ? (side_x - delta_x)
+                                        : (side_y - delta_y);
+            if (hit->distance < 0.02) {
+                hit->distance = 0.02;
+            }
+            hit->side = side;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void maze_draw(SsEffect *effect, Display *display, Drawable drawable,
+                      GC gc) {
+    prepare_maze(effect, display);
+
+    /* One step of the walk BEFORE the frame is cast, so the view is cast from
+       where the walker has just arrived and not from where it was a frame ago. */
+    maze_advance(effect);
+
+    const int width = effect->width;
+    const int height = effect->height;
+
+    /* The ceiling and the floor, split by the horizon. The wall columns are
+       drawn over them from the horizon outwards, so a corridor's opening is a
+       gap between the two bands. */
+    int horizon = height / 2;
+    XSetForeground(display, gc, effect->maze_ceiling);
+    XFillRectangle(display, drawable, gc, 0, 0, (unsigned int)width,
+                   (unsigned int)horizon);
+    XSetForeground(display, gc, effect->maze_floor);
+    XFillRectangle(display, drawable, gc, 0, (unsigned int)horizon,
+                   (unsigned int)width, (unsigned int)(height - horizon));
+
+    /* The projection: a wall one cell away and one cell tall fills two thirds
+       of the screen height, so the corridors read as close and the camera sits
+       low. `scale` turns "distance in cells" into "height in pixels". */
+    double scale = (double)height * 1.15;
+    double half_fov = 33.0 * M_PI / 180.0;   /* a 66-degree view */
+
+    for (int col = 0; col < width; col++) {
+        double t = ((double)col + 0.5) / (double)width;   /* 0..1 across */
+        double angle = effect->cam_angle + (t - 0.5) * 2.0 * half_fov;
+        double dir_x = cos(angle);
+        double dir_y = sin(angle);
+
+        MazeHit hit;
+        if (!maze_cast(effect, effect->cam_x, effect->cam_y,
+                       dir_x, dir_y, &hit)) {
+            continue;
+        }
+
+        /* Fisheye correction: a wall dead ahead and one far to the side are the
+           same distance and must be the same height, so the distance is
+           measured along the camera's facing and not along the ray. */
+        double corrected = hit.distance *
+                           cos(angle - effect->cam_angle);
+        if (corrected < 0.02) {
+            corrected = 0.02;
+        }
+
+        double wall_h = scale / corrected;
+        int top = (int)(horizon - wall_h * 0.5);
+        int bottom = (int)(horizon + wall_h * 0.5);
+        if (top < 0) {
+            top = 0;
+        }
+        if (bottom > height) {
+            bottom = height;
+        }
+        if (bottom <= top) {
+            continue;
+        }
+
+        /* Shade by distance: a near wall is bright and a far one fades to the
+           fog, and a wall seen edge on is a step darker than one seen square,
+           which is what gives the corridors a corner where they turn. */
+        double fog = hit.distance / (double)SS_MAZE_WIDTH;
+        if (fog > 1.0) {
+            fog = 1.0;
+        }
+        int shade = (int)((1.0 - fog) * (SS_MAZE_SHADES - 1));
+        if (shade < 0) {
+            shade = 0;
+        }
+        if (shade >= SS_MAZE_SHADES) {
+            shade = SS_MAZE_SHADES - 1;
+        }
+        XSetForeground(display, gc, effect->maze_wall[hit.side][shade]);
+        XFillRectangle(display, drawable, gc, col, top, 1,
+                       (unsigned int)(bottom - top));
     }
 }
 
@@ -479,12 +839,13 @@ void ss_effect_init(SsEffect *effect, SsEffectKind kind,
     effect->primary = primary;
     effect->background = background;
     effect->colours_ready = 0;
+    effect->maze_ready = 0;
     effect->eye = primary;
 
     if (kind == SS_EFFECT_3DWALL) {
-        effect->draw = wall_draw;
-        effect->reset = wall_reset;
-        wall_reset(effect, width, height);
+        effect->draw = maze_draw;
+        effect->reset = maze_reset;
+        maze_reset(effect, width, height);
     } else {
         effect->draw = pipe_draw;
         effect->reset = pipe_reset;

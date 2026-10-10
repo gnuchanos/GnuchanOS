@@ -19,11 +19,17 @@
  * line is tessellated by the X server, and a thousand collinear points would
  * cost it a thousand pieces to say one straight line.
  *
- * The wall is a grid of bricks on a plane turned about the vertical axis.
+ * The 3dwall is a MAZE WALKED IN THE FIRST PERSON, the way the old brick maze
+ * screen saver was: a grid of walls with corridors between them, and a camera
+ * low down in those corridors, looking ahead and walking. It is a real 3D view
+ * and not a flat pattern of squares — every wall is cast per screen column and
+ * drawn at the height its distance makes it, so the corridors open away from
+ * the camera and the maze turns as the camera turns. See the maze section of
+ * ss_effect.c for how the walls are cast and how the walker chooses its way.
  *
- * Everything is Xlib's own drawing — thick lines and filled discs — because a
- * screen saver that needed a graphics stack would be one that does not start on
- * a machine whose driver is having a bad day.
+ * Everything is Xlib's own drawing — thick lines, filled discs and filled
+ * rectangles — because a screen saver that needed a graphics stack would be one
+ * that does not start on a machine whose driver is having a bad day.
  */
 #ifndef GNUCHANSS_EFFECT_H
 #define GNUCHANSS_EFFECT_H
@@ -43,6 +49,20 @@
 /* How many purples the worms are drawn in. Each worm picks one at random, so
    the colony is a spread of purples and not one flat colour. */
 #define SS_PIPE_COLOURS 8
+
+/* --- the maze -------------------------------------------------------------
+ *
+ * The grid the 3dwall is built from. Both sides are ODD on purpose: a maze
+ * carved on an odd grid leaves a wall cell between every two corridors, which
+ * is what makes a grid of cells a maze of rooms rather than one open field.
+ * The camera walks the odd cells and the even cells are the walls between
+ * them. */
+#define SS_MAZE_WIDTH  21
+#define SS_MAZE_HEIGHT 21
+
+/* How many shades one wall face is drawn in, from the near, lit end to the
+   background at the far end. Distance reads as fog through them. */
+#define SS_MAZE_SHADES 16
 
 /* One crawling worm. `x`,`y` is the head in screen pixels and `dx`,`dy` the way
    it is going (one of the four axes); the head walks until `run` pixels are
@@ -83,7 +103,7 @@ struct SsEffect {
     int height;
 
     /* The session's own colours, as pixels: the background the frame is cleared
-       to, and the colour the wall is built from. */
+       to, and the colour the maze's walls are built from. */
     unsigned long primary;
     unsigned long background;
 
@@ -99,10 +119,34 @@ struct SsEffect {
 
     SsPipe pipes[SS_MAX_PIPES];
 
-    /* The wall's state. */
-    double wall_angle;
-    int wall_cols;
-    int wall_rows;
+    /* --- the maze, and the camera walking it ------------------------------
+     *
+     * `maze[y][x]` is 1 for a wall cell and 0 for a corridor. The camera is a
+     * point in those cells (`cam_x`,`cam_y`, so 1.5 is the middle of cell 1)
+     * with a facing (`cam_angle`, radians), and `target_*` is the cell it is on
+     * its way to the middle of. `cell_*` is the cell it is in and `prev_*` the
+     * one it came from — kept so the walker can prefer not to turn straight
+     * back at every junction. */
+    int maze[SS_MAZE_HEIGHT][SS_MAZE_WIDTH];
+    int cell_x;
+    int cell_y;
+    int target_x;
+    int target_y;
+    int prev_x;
+    int prev_y;
+    int has_prev;
+    double cam_x;
+    double cam_y;
+    double cam_angle;
+
+    /* The colours the maze is drawn from: a wall face, shaded from near to far,
+       for each of the two orientations a wall can have, and the ceiling and the
+       floor. Made on the first frame, when there is a display to allocate them
+       on. */
+    unsigned long maze_wall[2][SS_MAZE_SHADES];
+    unsigned long maze_floor;
+    unsigned long maze_ceiling;
+    int maze_ready;
 };
 
 /* Set up an effect of the given kind. The colours are pixels, already
