@@ -110,11 +110,15 @@ typedef struct NetUi {
        answers the mouse before it is clicked. */
     int hover;
 
-    /* The DNS line being edited, and its length. It is loaded from the current
-       servers when the DNS panel opens, so Apply sends back what is shown
-       unless the person changed it. */
-    char dns_input[NET_MAX_DNS_INPUT];
-    int dns_length;
+    /* The two DNS fields, the shape a Windows adapter's own DNS boxes have: a
+       Preferred server and an Alternate one. They are seeded from the current
+       servers when the panel opens — the first server into Preferred, the
+       second into Alternate — so Apply sends back what is shown unless it is
+       changed. Both empty applied means "back to automatic", which is that
+       same Windows dialog's "Obtain automatically". */
+    char dns_primary[NET_TEXT];
+    char dns_alternate[NET_TEXT];
+    int dns_focus;   /* 0 = the Preferred field has the caret, 1 = Alternate */
 
     /* The buttons, filled in by the layout before they are drawn and read by
        the click handler. Kept in the state rather than recomputed on a click

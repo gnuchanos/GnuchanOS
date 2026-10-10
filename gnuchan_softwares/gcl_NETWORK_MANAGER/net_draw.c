@@ -383,6 +383,37 @@ static void draw_devices(NetUi *ui) {
 
 /* --- the DNS panel -------------------------------------------------------- */
 
+/* One labelled field: the label above it, the box, the text, a caret when the
+   field has the focus, and the caret pixel. The shape a person filling in a
+   form expects — label, then a box under it — and the same shape the Windows
+   adapter's DNS boxes have. */
+static void draw_dns_field(NetUi *ui, int x, int right, int y,
+                           const char *label, const char *value, int focused) {
+    int ascent = ui->style.font ? ui->style.font->ascent : 16;
+    int field_h = row_height(ui);
+
+    text(ui, x, y + ascent, label, ui->style.text_muted);
+    y += row_height(ui);
+
+    fill(ui, ui->style.field, x, y, right - x, field_h);
+    outline(ui, focused ? ui->style.accent : ui->style.panel_edge,
+            x, y, right - x, field_h);
+
+    char shown[NET_TEXT];
+    net_style_fit(ui->display, ui->style.font, value,
+                  right - x - 2 * ui->style.padding, shown, sizeof(shown));
+    text(ui, x + ui->style.padding, y + ascent, shown, ui->style.text);
+
+    /* The caret, blinking is not done — a still bar at the end of the text is
+       what says "you are typing here"; only the focused field has it. */
+    if (focused) {
+        fill(ui, ui->style.accent,
+             x + ui->style.padding +
+                 net_style_text_width(ui->display, ui->style.font, shown),
+             y + ui->style.padding / 2, 2, field_h - ui->style.padding);
+    }
+}
+
 static void draw_dns(NetUi *ui) {
     int top = body_top_y(ui);
     int left = ui->style.padding;
@@ -390,24 +421,34 @@ static void draw_dns(NetUi *ui) {
     int ascent = ui->style.font ? ui->style.font->ascent : 16;
     int y = top;
 
-    /* The servers as they are now. */
+    /* The servers as they are now, and where they came from, so the current
+       state is readable without opening another tool. */
     char header[NET_TEXT * 2];
     if (ui->dns.source[0]) {
-        snprintf(header, sizeof(header), "Current servers (from %s):",
+        snprintf(header, sizeof(header), "Current DNS (from %s):",
                  ui->dns.source);
     } else {
-        snprintf(header, sizeof(header), "Current servers:");
+        snprintf(header, sizeof(header), "Current DNS:");
     }
     text(ui, left, y + ascent, header, ui->style.accent);
     y += row_height(ui);
 
     if (ui->dns.count == 0) {
         text(ui, left + ui->style.padding, y + ascent,
-             "none were read; enter some below", ui->style.text_muted);
-        y += row_height(ui);
+             "(none set — the network's own are used)",
+             ui->style.text_muted);
     } else {
         for (int i = 0; i < ui->dns.count; i++) {
-            text(ui, left + ui->style.padding, y + ascent, ui->dns.servers[i],
+            const char *role = (i == 0) ? "Preferred"
+                                        : (i == 1 ? "Alternate" : "");
+            char line[NET_TEXT * 2];
+            if (role[0]) {
+                snprintf(line, sizeof(line), "%s  —  %s", role,
+                         ui->dns.servers[i]);
+            } else {
+                snprintf(line, sizeof(line), "%s", ui->dns.servers[i]);
+            }
+            text(ui, left + ui->style.padding, y + ascent, line,
                  ui->style.text);
             y += row_height(ui);
         }
@@ -415,27 +456,17 @@ static void draw_dns(NetUi *ui) {
 
     y += ui->style.padding;
 
-    /* The editable line. Space-separated addresses; Apply reads it. */
-    text(ui, left, y + ascent, "Set servers (space separated):",
-         ui->style.text_muted);
-    y += row_height(ui);
+    /* The two boxes, the way Windows asks the same question. */
+    draw_dns_field(ui, left, right, y, "Preferred DNS server",
+                   ui->dns_primary, ui->dns_focus == 0);
+    y += 2 * row_height(ui) + ui->style.padding;
 
-    int field_h = row_height(ui);
-    fill(ui, ui->style.field, left, y, right - left, field_h);
-    outline(ui, ui->style.panel_edge, left, y, right - left, field_h);
-
-    char shown[NET_MAX_DNS_INPUT];
-    net_style_fit(ui->display, ui->style.font, ui->dns_input,
-                  right - left - 2 * ui->style.padding, shown, sizeof(shown));
-    text(ui, left + ui->style.padding, y + ascent, shown, ui->style.text);
-    fill(ui, ui->style.accent,
-         left + ui->style.padding +
-             net_style_text_width(ui->display, ui->style.font, shown),
-         y + ui->style.padding / 2, 2, field_h - ui->style.padding);
-    y += field_h + ui->style.padding * 2;
+    draw_dns_field(ui, left, right, y, "Alternate DNS server",
+                   ui->dns_alternate, ui->dns_focus == 1);
+    y += 2 * row_height(ui) + ui->style.padding;
 
     text(ui, left, y + ascent,
-         "Apply sets them; empty applied means back to automatic.",
+         "Apply sets them. Both empty = automatic (the network's own).",
          ui->style.text_muted);
 }
 
@@ -455,7 +486,7 @@ static void draw_status_line(NetUi *ui) {
 static void draw_help(NetUi *ui) {
     const char *help;
     if (ui->mode == NET_MODE_DNS) {
-        help = "dns    type servers   Enter apply   Escape back";
+        help = "Tab switch field   Enter apply   Escape back";
     } else {
         help = "Up/Down move   Enter up/down   w wifi   d DNS   r refresh   "
                "Escape close";

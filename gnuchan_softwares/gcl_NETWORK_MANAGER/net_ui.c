@@ -106,12 +106,10 @@ static void work_out_size(NetUi *ui) {
     int body_rows;
 
     if (ui->mode == NET_MODE_DNS) {
-        /* The header, the servers (plus one for the empty case), the set-server
-           label, the field, and a hint: a fixed few rows. */
-        body_rows = 2 + ui->dns.count + 4;
-        if (ui->dns.count == 0) {
-            body_rows = 6;
-        }
+        /* The "Current DNS" header; one row per server (a single line when
+           there are none); then the two labelled fields — a label row and a box
+           row each; and the hint at the foot. */
+        body_rows = 1 + (ui->dns.count > 0 ? ui->dns.count : 1) + 4 + 1;
     } else {
         body_rows = ui->config.running_rows;
     }
@@ -149,8 +147,8 @@ static void refresh_devices(NetUi *ui) {
     ui->hover = -1;
 }
 
-/* Fill the DNS panel: the servers as they are, and the editable line seeded
-   with them so Apply sends back what is shown unless it is changed. The link
+/* Fill the DNS panel: the servers as they are now, and the two fields seeded
+   from them so Apply sends back what is shown unless it is changed. The link
    the servers are read for is the chosen interface's, so a per-link server set
    shows for the link it belongs to. */
 static void load_dns(NetUi *ui) {
@@ -160,56 +158,62 @@ static void load_dns(NetUi *ui) {
     }
     net_dns_load(&ui->dns, &ui->config, link);
 
-    ui->dns_input[0] = '\0';
-    ui->dns_length = 0;
-    for (int i = 0; i < ui->dns.count; i++) {
-        size_t used = strlen(ui->dns_input);
-        snprintf(ui->dns_input + used, sizeof(ui->dns_input) - used,
-                 i == 0 ? "%s" : " %s", ui->dns.servers[i]);
+    ui->dns_primary[0] = '\0';
+    ui->dns_alternate[0] = '\0';
+    if (ui->dns.count > 0) {
+        snprintf(ui->dns_primary, sizeof(ui->dns_primary), "%s",
+                 ui->dns.servers[0]);
     }
-    ui->dns_length = (int)strlen(ui->dns_input);
+    if (ui->dns.count > 1) {
+        snprintf(ui->dns_alternate, sizeof(ui->dns_alternate), "%s",
+                 ui->dns.servers[1]);
+    }
+    ui->dns_focus = 0;
 }
 
-/* --- the DNS line --------------------------------------------------------- */
+/* --- the two DNS fields ---------------------------------------------------
+ *
+ * The shape a Windows adapter's own DNS boxes have: a Preferred server and an
+ * Alternate one. Two fields and not one line of addresses, because that is the
+ * question a person has — "what is my primary DNS, what is my secondary" — and
+ * a row of addresses asks it less clearly. `dns_focus` says which one the
+ * caret is in; Tab (or Up/Down) moves between them. */
 
-static int dns_input_append(NetUi *ui, const char *text) {
+static char *dns_field(NetUi *ui) {
+    return ui->dns_focus == 0 ? ui->dns_primary : ui->dns_alternate;
+}
+
+static int dns_field_append(NetUi *ui, const char *text) {
+    char *field = dns_field(ui);
+    size_t used = strlen(field);
     size_t length = strlen(text);
-    if (ui->dns_length + (int)length >= NET_MAX_DNS_INPUT) {
+    if (used + length >= NET_TEXT) {
         return 0;
     }
-    memcpy(ui->dns_input + ui->dns_length, text, length);
-    ui->dns_length += (int)length;
-    ui->dns_input[ui->dns_length] = '\0';
+    memcpy(field + used, text, length);
+    field[used + length] = '\0';
     return 1;
 }
 
-static int dns_input_backspace(NetUi *ui) {
-    if (ui->dns_length == 0) {
+static int dns_field_backspace(NetUi *ui) {
+    char *field = dns_field(ui);
+    size_t length = strlen(field);
+    if (length == 0) {
         return 0;
     }
-    ui->dns_input[--ui->dns_length] = '\0';
+    field[length - 1] = '\0';
     return 1;
 }
 
-/* Split the line on spaces into a server list. Returns the count. */
-static int dns_parse_input(const char *input, char servers[NET_MAX_DNS][NET_TEXT]) {
+/* The servers to apply, in order: the Preferred one first, the Alternate one
+   second, and neither when both are empty (which is "back to automatic"). */
+static int dns_collect(NetUi *ui, const char *list[NET_MAX_DNS]) {
     int count = 0;
-    const char *p = input;
-    while (p && *p && count < NET_MAX_DNS) {
-        while (*p == ' ' || *p == '\t') {
-            p++;
-        }
-        if (!*p) {
-            break;
-        }
-        int at = 0;
-        while (*p && *p != ' ' && *p != '\t' && at < NET_TEXT - 1) {
-            servers[count][at++] = *p++;
-        }
-        servers[count][at] = '\0';
-        if (at > 0) {
-            count++;
-        }
+    if (ui->dns_primary[0]) {
+        list[count++] = ui->dns_primary;
+    }
+    if (ui->dns_alternate[0]) {
+        list[count++] = ui->dns_alternate;
     }
     return count;
 }
@@ -261,13 +265,8 @@ static void do_wifi(NetUi *ui) {
 }
 
 static void do_apply_dns(NetUi *ui) {
-    char servers[NET_MAX_DNS][NET_TEXT];
-    int count = dns_parse_input(ui->dns_input, servers);
-
     const char *list[NET_MAX_DNS];
-    for (int i = 0; i < count; i++) {
-        list[i] = servers[i];
-    }
+    int count = dns_collect(ui, list);
 
     const char *link = "";
     if (ui->selected >= 0 && ui->selected < ui->devices.count) {
@@ -326,8 +325,10 @@ static void dispatch_action(NetUi *ui, NetAction action) {
         do_apply_dns(ui);
         break;
     case NET_ACTION_DNS_REVERT:
-        ui->dns_input[0] = '\0';
-        ui->dns_length = 0;
+        /* Empty both fields and apply: no servers is "back to automatic",
+           which net_dns_set() turns into a revert. */
+        ui->dns_primary[0] = '\0';
+        ui->dns_alternate[0] = '\0';
         do_apply_dns(ui);
         break;
     default:
@@ -372,8 +373,19 @@ static void handle_dns_key(NetUi *ui, KeySym symbol, XKeyEvent *key) {
     case XK_KP_Enter:
         dispatch_action(ui, NET_ACTION_DNS_APPLY);
         return;
+    case XK_Tab:
+    case XK_Up:
+    case XK_Down:
+    case XK_KP_Up:
+    case XK_KP_Down:
+        /* Tab (or either arrow) moves the caret between the two fields, the
+           way it does in the dialog this copies. Taking a field with the mouse
+           is not needed: there are two, and one key swaps them. */
+        ui->dns_focus = ui->dns_focus ? 0 : 1;
+        net_draw(ui);
+        return;
     case XK_BackSpace:
-        if (dns_input_backspace(ui)) {
+        if (dns_field_backspace(ui)) {
             net_draw(ui);
         }
         return;
@@ -393,7 +405,7 @@ static void handle_dns_key(NetUi *ui, KeySym symbol, XKeyEvent *key) {
             return;
         }
     }
-    if (dns_input_append(ui, buffer)) {
+    if (dns_field_append(ui, buffer)) {
         ui->status[0] = '\0';
         net_draw(ui);
     }

@@ -48,9 +48,33 @@ int net_dns_valid_server(const char *text) {
     return digits > 0 && dots == 3;   /* an IPv4 address shape */
 }
 
-/* Walk a whitespace-separated run of addresses from `text`, appending each to
-   `list` until `max` is reached. Used by both readers, because resolvectl
-   prints its servers space-separated on one line. */
+/* Whether an address is one a person would ever type in a DNS box, which is
+   the test for showing it. IPv6 link-local addresses (fe80::) and the loopback
+   resolver (::1, 127.0.0.1) are what a router hands out on its own and what a
+   stub resolver runs on; they are not a server anyone chose, and in a pair of
+   boxes that ask "which server do you want" they are noise. Windows shows none
+   of them, and neither does this: a real DNS address, v4 or global v6, is
+   kept. */
+static int is_showable_server(const char *address) {
+    if (!address || !address[0]) {
+        return 0;
+    }
+    if (strncmp(address, "fe80:", 5) == 0 ||
+        strncmp(address, "FE80:", 5) == 0) {
+        return 0;                     /* IPv6 link-local */
+    }
+    if (strcmp(address, "::1") == 0 || strcmp(address, "127.0.0.1") == 0 ||
+        strcmp(address, "0.0.0.0") == 0) {
+        return 0;                     /* loopback / unset */
+    }
+    return 1;
+}
+
+/* Walk a whitespace-separated run of addresses from `text`, appending each that
+   a person could have chosen to `list` until `max` is reached. Used by both
+   readers, because resolvectl prints its servers space-separated on one line.
+   A link-local or loopback address is skipped, so the list a person sees is the
+   servers that were actually configured. */
 static void collect_servers(NetDnsList *list, const char *text, int max) {
     while (text && *text && list->count < max) {
         while (*text == ' ' || *text == '\t' || *text == ',') {
@@ -66,7 +90,14 @@ static void collect_servers(NetDnsList *list, const char *text, int max) {
             address[at++] = *text++;
         }
         address[at] = '\0';
-        if (address[0]) {
+        /* resolvectl marks a link-local server with its link, "fe80::1%wlan0";
+           the part after the percent is the interface, not the address, and is
+           dropped so the address reads as it would be typed. */
+        char *percent = strchr(address, '%');
+        if (percent) {
+            *percent = '\0';
+        }
+        if (is_showable_server(address)) {
             snprintf(list->servers[list->count], NET_TEXT, "%s", address);
             list->count++;
         }
