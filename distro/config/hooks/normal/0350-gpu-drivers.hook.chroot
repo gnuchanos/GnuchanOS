@@ -1,0 +1,239 @@
+#!/bin/sh
+# GnuchanOS - the graphics drivers the boot menu can choose between.
+#
+# The ISO's boot menu offers one entry per driver (see gpu_menu.py and the
+# 0080-boot-branding hook): the generic entry, and "Live System - NVIDIA (new)",
+# "Live System - NVIDIA (legacy)", "Live System - AMD" and "Live System -
+# Intel". Each extra entry carries a `gnuchan.gpu=` word on its kernel command
+# line, and this hook is what turns that word into a working driver once the
+# live system is up.
+#
+# It does two things:
+#
+#   1. It writes /usr/local/sbin/gnuchan-gpu-select, the program that reads the
+#      word from /proc/cmdline and brings up the named driver, and the systemd
+#      unit that runs it early in boot. The unit is enabled, so the choice is
+#      honoured on every boot.
+#
+#   2. It stages the driver packages the entries may need into a pool on the
+#      ISO - /usr/share/gnuchanos/gpu-pool - because a live system that is not
+#      online yet still has to be able to install the driver the menu entry
+#      promised. The download is best effort: a build host with no network, or
+#      a package this Debian release does not carry, leaves the pool short and
+#      the selector asks apt at boot instead.
+#
+# WHAT THIS HOOK DELIBERATELY DOES NOT DO is install a proprietary driver into
+# the image. Only ONE NVIDIA driver version can exist on a system at a time and
+# the versions exclude one another, so installing one here would make the ISO
+# refuse the others - and, worse, would blacklist nouveau for every card the
+# chosen version does not cover, which is a black screen rather than a slow
+# one. The image is built with the OPEN source drivers (nouveau, amdgpu,
+# i915/xe), which light up every card; the proprietary driver is what the menu
+# entry asks for at boot and what this hook makes possible.
+set -eu
+
+log() { printf '==> gpu-drivers: %s\n' "$1"; }
+
+POOL=/usr/share/gnuchanos/gpu-pool
+SELECTOR=/usr/local/sbin/gnuchan-gpu-select
+UNIT=gnuchan-gpu-select.service
+
+# --- 1. the selector ---------------------------------------------------------
+
+install -d /usr/local/sbin
+
+cat > "$SELECTOR" <<'SELECTOR_SCRIPT'
+#!/bin/sh
+# gnuchan-gpu-select - bring up the graphics driver the boot menu asked for.
+#
+# The boot menu appends one word to the kernel command line:
+#
+#     gnuchan.gpu=nvidia-new      the current proprietary NVIDIA driver
+#     gnuchan.gpu=nvidia-legacy   the legacy proprietary driver (older cards)
+#     gnuchan.gpu=amd             the open amdgpu driver, forced
+#     gnuchan.gpu=intel           the open i915/xe driver, forced
+#
+# No word at all - the generic "Live System" entry - leaves the open source
+# driver the kernel already chose, and this script does nothing.
+#
+# The proprietary driver is installed from the pool the ISO carries
+# (/usr/share/gnuchanos/gpu-pool). A live system that is not online still gets
+# the driver the menu entry promised, because the packages are on the disc. If
+# the pool does not hold them, apt is asked, and if that fails too the script
+# leaves the open driver in place rather than blacklisting it and leaving a
+# machine with no display at all.
+set -u
+
+log() { printf 'gnuchan-gpu-select: %s\n' "$1"; }
+
+POOL=/usr/share/gnuchanos/gpu-pool
+
+word() {
+    # The value of gnuchan.gpu= on the kernel command line, or empty.
+    for token in $(cat /proc/cmdline); do
+        case "$token" in
+            gnuchan.gpu=*) printf '%s' "${token#gnuchan.gpu=}"; return 0 ;;
+        esac
+    done
+    return 0
+}
+
+load_module() {
+    modprobe "$1" 2>/dev/null && log "loaded $1"
+}
+
+blacklist_nouveau() {
+    printf 'blacklist nouveau\noptions nouveau modeset=0\n' \
+        > /etc/modprobe.d/gnuchan-nouveau-off.conf
+}
+
+install_from_pool() {
+    # Install every .deb the pool holds for the named family. The pool is one
+    # flat directory, so "nvidia" or "nvidia-legacy" is enough to tell the two
+    # sets apart by file name.
+    family=$1
+    found=0
+    for package in "$POOL"/${family}*.deb; do
+        [ -e "$package" ] || continue
+        found=1
+        dpkg -i "$package" || true
+    done
+    [ "$found" -eq 1 ]
+}
+
+install_from_apt() {
+    if ! apt-get update >/dev/null 2>&1; then
+        return 1
+    fi
+    apt-get install -y --no-install-recommends "$@" >/dev/null 2>&1
+}
+
+bring_up_nvidia() {
+    family=$1       # "nvidia" for the current driver, "nvidia-legacy" for old
+    log "bringing up the proprietary NVIDIA driver ($family)"
+
+    installed=0
+    if install_from_pool "$family"; then
+        installed=1
+    elif install_from_apt "$family-driver"; then
+        installed=1
+    fi
+
+    if [ "$installed" -eq 0 ]; then
+        log "the $family driver is not on the disc and could not be fetched;"
+        log "staying on the open source driver (nothing is blacklisted)"
+        exit 0
+    fi
+
+    # Only NOW is nouveau switched off: a driver that is not installed must not
+    # have its replacement blacklisted, or the machine comes up with no display.
+    blacklist_nouveau
+    if command -v depmod >/dev/null 2>&1; then
+        depmod -a
+    fi
+    load_module nvidia
+    log "the $family driver is installed; a reboot makes it permanent"
+}
+
+case "$(word)" in
+    nvidia-new)
+        bring_up_nvidia nvidia
+        ;;
+    nvidia-legacy)
+        bring_up_nvidia nvidia-legacy
+        ;;
+    amd)
+        load_module amdgpu
+        ;;
+    intel)
+        load_module i915 || load_module xe
+        ;;
+    "")
+        : # the generic entry; the kernel's own choice stands
+        ;;
+    *)
+        log "unknown gnuchan.gpu value '$(word)'; the open driver stands"
+        ;;
+esac
+
+exit 0
+SELECTOR_SCRIPT
+chmod 0755 "$SELECTOR"
+log "wrote $SELECTOR"
+
+# --- 2. the unit -------------------------------------------------------------
+
+# It runs before the display manager: the driver has to be in place before X
+# opens the card. network-online.target is NOT required - the pool is on the
+# disc, and a machine that is offline still gets the driver its entry promised.
+cat > /etc/systemd/system/$UNIT <<'UNIT_FILE'
+[Unit]
+Description=Bring up the graphics driver the boot menu asked for
+DefaultDependencies=no
+After=systemd-modules-load.service local-fs.target
+Before=gnuchandm.service display-manager.service
+Wants=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/gnuchan-gpu-select
+
+[Install]
+WantedBy=multi-user.target
+UNIT_FILE
+log "wrote /etc/systemd/system/$UNIT"
+
+if systemctl enable "$UNIT" >/dev/null 2>&1; then
+    log "enabled $UNIT"
+else
+    log "could not enable $UNIT now; it is still installed"
+fi
+
+# --- 3. the driver pool ------------------------------------------------------
+
+# What the pool holds, and why. Only what a live session may need to install at
+# boot is staged; the open source drivers are already in the kernel and need
+# nothing.
+#
+#   nvidia-driver              the current driver: Maxwell (GTX 900) and newer,
+#                              which includes the GTX 1050 Ti.
+#   nvidia-legacy-470xx-driver the legacy driver for Kepler (GTX 600/700) and
+#                              the cards after it the current driver dropped.
+#
+# A package this Debian release does not carry simply is not downloaded; the
+# selector then asks apt, and a truly unavailable driver is left alone rather
+# than half-installed.
+install -d "$POOL"
+log "staging the driver packages into $POOL"
+
+stage() {
+    package=$1
+    # --download-only leaves the .deb in apt's cache; it is copied from there
+    # into the pool and the cache is left as apt had it.
+    if apt-get install -y --no-install-recommends --download-only "$package" \
+            >/dev/null 2>&1; then
+        for cached in /var/cache/apt/archives/${package}_*.deb; do
+            [ -e "$cached" ] || continue
+            cp -f "$cached" "$POOL/"
+        done
+        log "staged $package"
+    else
+        log "$package is not available here; it is not in the pool"
+    fi
+}
+
+# The kernel headers the proprietary module is built against are staged too: on
+# a live system the module is built at install time (DKMS), and without them
+# the driver installs but cannot load.
+stage_dependencies() {
+    for package in linux-headers-amd64 dkms build-essential; do
+        stage "$package"
+    done
+}
+
+stage nvidia-driver
+stage nvidia-legacy-470xx-driver
+stage_dependencies
+
+log "done"

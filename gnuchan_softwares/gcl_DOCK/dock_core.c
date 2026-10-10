@@ -552,6 +552,13 @@ static void core_handle_click(DockCore *core, XButtonEvent *press) {
 
     switch (item->kind) {
     case DOCK_ITEM_SETTINGS:
+        /* The settings icon opens the desktop's control panel. It used to do
+           nothing — "the settings window is the next thing to be written" —
+           and this is that window: GnuChanSettings, which edits every
+           program's settings file by clicking. It is named on PATH the same
+           way the terminal is, so the dock does not have to know where it
+           lives. */
+        dock_core_run_command("GnuChanSettings");
         break;
     case DOCK_ITEM_TERMINAL:
         dock_core_run_command(item->command);

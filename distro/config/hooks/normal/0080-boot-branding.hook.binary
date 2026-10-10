@@ -38,6 +38,14 @@
 # `${_PROJECT}`, which it sets to "Debian GNU/Linux", and that string reaches
 # the ISOLINUX labels and the GRUB entries alike.
 #
+# AND IT ADDS THE GRAPHICS DRIVER ENTRIES, before anything else, so they are
+# there on a BIOS-only build and an EFI one alike. The menu gets one entry per
+# graphics driver - NVIDIA (new), NVIDIA (legacy), AMD, Intel - and each is the
+# ISO's own first entry with a `gnuchan.gpu=` word appended to its kernel
+# command line. The live system reads that word while it boots and brings up
+# the matching driver, so the choice is made in the menu rather than by running
+# an installer afterwards.
+#
 # WHERE THE FILES ARE. live-build runs a binary hook from inside the binary
 # tree, so ISOLINUX is at `isolinux/` and GRUB at `boot/grub/`. Older layouts
 # put the tree one level down as `binary/`, so both are looked for. The built
@@ -71,6 +79,31 @@ if [ -z "$ROOT" ]; then
     exit 0
 fi
 log "binary tree: $ROOT"
+
+# --- the graphics driver entries ---------------------------------------------
+
+# The menu gets one entry per graphics driver, so the driver is chosen BEFORE
+# the kernel starts rather than after: a person who wants the NVIDIA
+# proprietary driver picks "Live System - NVIDIA (new)" instead of booting the
+# generic entry and running an installer by hand.
+#
+# This runs FIRST, before the text branding and the GRUB section below, because
+# the GRUB section exits early on a BIOS-only build and the GPU entries belong
+# to the ISOLINUX menu just as much as to the GRUB one - a build with no EFI
+# tree still has to be offered the choice.
+#
+# The two menus are edited by the script beside this hook, because that editing
+# is the same in both and reads better as one program than as two sed
+# invocations. A missing gpu_menu.py is not fatal - the menus keep the
+# distribution's own single entry and every card still boots on the open source
+# driver - so a build that did not carry the script still produces a working
+# image.
+GPU_MENU="$(dirname "$0")/gpu_menu.py"
+if [ -f "$GPU_MENU" ] && command -v python3 >/dev/null 2>&1; then
+    python3 "$GPU_MENU" "$ROOT" || log "the graphics driver entries could not be added"
+else
+    log "no gpu_menu.py beside this hook; the menus keep their single entry"
+fi
 
 # --- the text ----------------------------------------------------------------
 
