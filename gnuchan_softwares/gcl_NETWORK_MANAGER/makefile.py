@@ -22,9 +22,14 @@
 # wireless one. The two are installed separately and neither needs the other to
 # build.
 #
-# The manager talks to the system through nmcli (NetworkManager), ip (the
-# kernel) and resolvectl (systemd-resolved), all of which come with the system,
-# so there is no runtime library to install beyond what the build needs.
+# The manager talks to the system through nmcli (NetworkManager) and ip (the
+# kernel), which come with the system, and through two things it DRIVES at run
+# time: resolvectl (systemd-resolved), for the DNS panel, and zapret, for the
+# DPI bypass. Neither is linked against, so neither is a build dependency; both
+# are installed here, at install time, so that one `python3 makefile.py` leaves
+# the machine able to do everything the manager offers. A failure installing
+# either is reported and the install carries on — the manager still opens and
+# shows every interface.
 #
 # License: GPL3
 # =============================================================================
@@ -36,6 +41,9 @@ import platform
 import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
+import urllib.request
 from pathlib import Path
 
 try:
@@ -91,6 +99,18 @@ HEADERS = (
 
 ELEVATED_VARIABLE = "GNUCHANNET_ELEVATED"
 
+# zapret — the DPI bypass the manager's DPI button switches on and off. It is
+# not linked against; like systemd-resolved it is installed at install time so
+# the button has something to drive. The version is pinned so two machines get
+# the same thing, and the paths are the ones net_dpi.c falls back to.
+ZAPRET_VERSION = "72.13"
+ZAPRET_DIR = Path("/opt/zapret")
+ZAPRET_INIT = ZAPRET_DIR / "init.d" / "sysv" / "zapret"
+ZAPRET_TARBALL = (
+    f"https://github.com/bol-van/zapret/releases/download/"
+    f"v{ZAPRET_VERSION}/zapret-v{ZAPRET_VERSION}.tar.gz"
+)
+
 
 def step(message: str) -> None:
     print(f"==> {message}", flush=True)
@@ -109,13 +129,15 @@ def run(
     capture: bool = False,
     environment: dict[str, str] | None = None,
     cwd: Path | None = None,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     if capture:
         return subprocess.run(
             command, check=False, capture_output=True, text=True,
-            env=environment, cwd=cwd,
+            env=environment, cwd=cwd, input=input_text,
         )
-    return subprocess.run(command, check=False, text=True, env=environment, cwd=cwd)
+    return subprocess.run(command, check=False, text=True, env=environment,
+                          cwd=cwd, input=input_text)
 
 
 def apt_environment() -> dict[str, str]:
@@ -260,6 +282,118 @@ def ensure_runtime_dependency() -> None:
                 detail(f"pointed {conf} at {stub}")
             except OSError:
                 detail(f"could not point {conf} at {stub}; set it by hand")
+
+
+def dpi_installed() -> bool:
+    """Whether zapret is already in place, asked the same way the manager's own
+    net_dpi_available() asks: the init script the DPI button runs is there."""
+    return ZAPRET_INIT.is_file()
+
+
+def download_zapret(destination: Path) -> bool:
+    """Fetch zapret's release tarball to `destination`. urllib is used rather
+    than wget/curl so this does not depend on a downloader being installed
+    before it can install one. Returns whether the file arrived."""
+    try:
+        urllib.request.urlretrieve(ZAPRET_TARBALL, destination)
+    except Exception as exc:  # URLError, HTTPError, timeouts, ...
+        detail(f"could not download zapret: {exc}")
+        return False
+    return destination.is_file() and destination.stat().st_size > 0
+
+
+def install_zapret_units() -> None:
+    """Make sure systemd knows the service, so the init script the DPI button
+    runs is wired into startup. zapret's easy installer normally does this; it
+    is repeated here because it is cheap and a machine where that step was
+    skipped would leave the button with nothing to start."""
+    source = ZAPRET_DIR / "init.d" / "systemd" / "zapret.service"
+    target = Path("/etc/systemd/system/zapret.service")
+    if not source.is_file() or target.exists():
+        return
+    try:
+        shutil.copyfile(source, target)
+    except OSError as exc:
+        detail(f"could not install the zapret service: {exc}")
+        return
+    run(["systemctl", "daemon-reload"])
+    run(["systemctl", "enable", "zapret"])
+
+
+def ensure_dpi_dependency() -> None:
+    """Install zapret — the DPI bypass the manager's DPI button switches.
+
+    The DNS half of this manager drives resolvectl, so
+    ensure_runtime_dependency() installs systemd-resolved. This is the same
+    idea for the DPI half: the button runs zapret's own init script (see
+    net_dpi.c), so zapret has to be present for the button to do anything. A
+    machine without it draws the button as unavailable and says why; installing
+    it here is what makes the feature work from one `python3 makefile.py`.
+
+    zapret comes from its official release at the pinned version, is unpacked
+    to /opt/zapret — the path net_dpi.c expects — and is set up with its OWN
+    easy installer, fed non-interactively, so the desync strategy is the one
+    zapret's blockcheck chooses for this network rather than one baked in here.
+    A failure at any step is reported and the rest of the install carries on:
+    the manager still opens and shows every interface.
+    """
+    if dpi_installed():
+        return
+
+    step("Installing zapret (the DPI bypass the DPI button switches)")
+    # What zapret's nfqws needs to sit in the packet path, plus the tools its
+    # installer itself calls.
+    apt_install(("nftables", "iptables", "curl", "wget", "tar", "gzip", "jq"))
+    # What building it needs, in case the release's prebuilt binaries do not
+    # match this kernel and zapret falls back to compiling.
+    apt_install(("make", "gcc", "zlib1g-dev", "libcap-dev",
+                 "libnetfilter-queue-dev", "libmnl-dev", "libsystemd-dev"))
+
+    work = Path(tempfile.mkdtemp(prefix="gnuchan-zapret-"))
+    tarball = work / f"zapret-v{ZAPRET_VERSION}.tar.gz"
+    try:
+        if not download_zapret(tarball):
+            detail("zapret was not installed; the DPI button will report that "
+                   "no bypass is installed until it is")
+            return
+        with tarfile.open(tarball) as archive:
+            archive.extractall(work)
+        source = work / f"zapret-v{ZAPRET_VERSION}"
+        if not source.is_dir():
+            detail("the zapret archive did not contain what was expected")
+            return
+        if ZAPRET_DIR.exists():
+            shutil.rmtree(ZAPRET_DIR)
+        shutil.copytree(source, ZAPRET_DIR)
+    except (OSError, tarfile.TarError) as exc:
+        detail(f"could not unpack zapret: {exc}")
+        return
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    # The easy installer does the real setup: it places the binaries, works out
+    # the firewall type, and runs blockcheck to choose a desync that gets past
+    # this network. It is a prompt-driven script, so answers are fed the way its
+    # own one-paste install lines feed them — accept the defaults, enable nfqws.
+    # Run from /opt/zapret so it does not try to copy itself anywhere.
+    answers = "\n\n\n4\n\n\nY\n\n\n\n\n\n"
+    subprocess.run(["sh", str(ZAPRET_DIR / "install_prereq.sh")],
+                   input="\n\n", text=True, check=False, cwd=ZAPRET_DIR)
+    subprocess.run(["sh", str(ZAPRET_DIR / "install_bin.sh")],
+                   text=True, check=False, cwd=ZAPRET_DIR)
+    run(["sh", str(ZAPRET_DIR / "install_easy.sh")], input_text=answers,
+        cwd=ZAPRET_DIR)
+
+    # A belt for the braces above: if the easy installer did not get as far as
+    # registering the service, register it so the init script the button runs is
+    # wired into systemd.
+    install_zapret_units()
+
+    if dpi_installed():
+        detail("installed zapret under /opt/zapret")
+    else:
+        detail("zapret was downloaded but not set up; the DPI button will "
+               "report that no bypass is installed until it is")
 
 
 def x11_flags() -> tuple[list[str], list[str]]:
@@ -467,6 +601,7 @@ def main() -> int:
         ensure_build_dependencies()
         binary = build()
         ensure_runtime_dependency()
+        ensure_dpi_dependency()
         install(binary)
         install_config()
         note("")
