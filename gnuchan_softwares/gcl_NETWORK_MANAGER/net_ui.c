@@ -333,6 +333,38 @@ static void do_apply_dns(NetUi *ui) {
     net_draw(ui);
 }
 
+/* Turn encrypted DNS (DNS-over-TLS) on or off for the chosen link. This is the
+   one action that gets a query past a network that filters by reading the name
+   inside a port-53 packet — the reason a blocked site opened in Chromium (whose
+   own DNS-over-HTTPS does the same) but not in ping or any program on the
+   system resolver. It flips `dns_secure` and tells resolvectl. */
+static void do_secure_dns(NetUi *ui) {
+    const char *link = "";
+    if (ui->selected >= 0 && ui->selected < ui->devices.count) {
+        link = ui->devices.items[ui->selected].name;
+    }
+
+    int wanted = !ui->dns_secure;
+    snprintf(ui->status, sizeof(ui->status),
+             "%s encrypted DNS…", wanted ? "Turning on" : "Turning off");
+    net_draw(ui);
+
+    char error[NET_TEXT];
+    if (net_dns_secure(&ui->config, link, wanted, error, sizeof(error)) == 0) {
+        ui->dns_secure = wanted;
+        if (wanted) {
+            snprintf(ui->status, sizeof(ui->status),
+                     "Encrypted DNS is on — queries now leave over TLS");
+        } else {
+            snprintf(ui->status, sizeof(ui->status),
+                     "Encrypted DNS is off");
+        }
+    } else {
+        snprintf(ui->status, sizeof(ui->status), "%s", error);
+    }
+    net_draw(ui);
+}
+
 /* Run the action a button — or a letter — stands for. The one place they are
    named, so the mouse and the keyboard cannot drift apart. */
 static void dispatch_action(NetUi *ui, NetAction action) {
@@ -372,6 +404,9 @@ static void dispatch_action(NetUi *ui, NetAction action) {
         ui->dns_v6_pref[0] = '\0';
         ui->dns_v6_alt[0] = '\0';
         do_apply_dns(ui);
+        break;
+    case NET_ACTION_DNS_SECURE:
+        do_secure_dns(ui);
         break;
     default:
         break;

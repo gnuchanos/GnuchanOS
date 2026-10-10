@@ -161,6 +161,17 @@ network-manager
 wpasupplicant
 wireless-tools
 rfkill
+# systemd-resolved is the resolver GnuChanNetworkManager drives with resolvectl,
+# and the image was going without it: `resolvectl` answered "command not found",
+# so the manager's per-link DNS path had nothing to call and every lookup left
+# the machine as plain port-53 traffic. That matters beyond tidiness — on a
+# network that filters DNS BY NAME (a blocked site answers google.com but
+# refuses discord.com from the same 8.8.8.8), plain DNS cannot be escaped by
+# changing servers, and the only way out is encrypted DNS. systemd-resolved is
+# what provides it: DNS-over-TLS, set with `resolvectl dnsovertls <link> yes`,
+# which encrypts the query so a middlebox cannot read the name and refuse it.
+# It is also what makes the manager's own resolvectl commands work at all.
+systemd-resolved
 # The kernel firmware the wireless cards need. The firmware is not optional and
 # is easy to leave out by accident: a card with no firmware has NO interface at
 # all, so `nmcli` shows nothing to connect to and the card looks like it is not

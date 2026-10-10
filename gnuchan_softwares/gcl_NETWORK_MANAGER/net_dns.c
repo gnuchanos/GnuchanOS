@@ -343,3 +343,52 @@ int net_dns_set(const NetConfig *config, const char *link,
 
     return write_resolv_conf(servers, count, error, size);
 }
+
+int net_dns_secure(const NetConfig *config, const char *link, int on,
+                   char *error, unsigned int size) {
+    if (error && size) {
+        error[0] = '\0';
+    }
+
+    /* Encrypted DNS is systemd-resolved's to do; there is no equivalent in
+       /etc/resolv.conf, which is a plain list of addresses with nowhere to say
+       "and talk TLS". A machine without resolvectl therefore cannot be made
+       secure from here, and saying so is the honest answer rather than writing
+       a file that changes nothing. */
+    if (!net_shell_have(config->resolvectl)) {
+        if (error && size) {
+            snprintf(error, size,
+                     "resolvectl is not installed, so encrypted DNS is not "
+                     "available (install systemd-resolved)");
+        }
+        return -1;
+    }
+
+    /* `resolvectl dnsovertls <link> yes` turns DNS-over-TLS on for that link;
+       with no link it applies to the global scope. The name is quoted the same
+       way every other argument in this file is. */
+    char command[NET_TEXT * 4];
+    if (link && link[0]) {
+        char quoted[NET_TEXT * 2];
+        net_shell_quote(link, quoted, sizeof(quoted));
+        snprintf(command, sizeof(command), "%s dnsovertls %s %s",
+                 config->resolvectl, quoted, on ? "yes" : "no");
+    } else {
+        snprintf(command, sizeof(command), "%s dnsovertls %s",
+                 config->resolvectl, on ? "yes" : "no");
+    }
+
+    static char output[NET_TEXT * 4];
+    if (net_shell_run(command, output, sizeof(output)) != 0) {
+        if (error && size) {
+            char *newline = strchr(output, '\n');
+            if (newline) {
+                *newline = '\0';
+            }
+            snprintf(error, size, "%s",
+                     output[0] ? output : "resolvectl refused the change");
+        }
+        return -1;
+    }
+    return 0;
+}

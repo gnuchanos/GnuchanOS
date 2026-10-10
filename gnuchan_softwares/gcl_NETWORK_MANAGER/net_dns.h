@@ -53,4 +53,15 @@ int net_dns_set(const NetConfig *config, const char *link,
  * caught before it is applied. Returns 1 when it is plausible. */
 int net_dns_valid_server(const char *text);
 
+/* Turn DNS-over-TLS on or off for `link` (or the global scope when it is
+ * empty), with `resolvectl dnsovertls`. This is what makes a query leave the
+ * machine ENCRYPTED, so a network that filters by reading the name inside a
+ * port-53 packet can neither read it nor refuse it — the same thing Chromium
+ * does with its own DNS-over-HTTPS, but for every program on the machine
+ * (ping, dig, a browser on the system resolver, all of them). Needs resolvectl,
+ * so it needs systemd-resolved installed. Returns 0 on success, -1 on failure
+ * with a short message in `error`. */
+int net_dns_secure(const NetConfig *config, const char *link, int on,
+                   char *error, unsigned int size);
+
 #endif /* GNUCHANNET_DNS_H */

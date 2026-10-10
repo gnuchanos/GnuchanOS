@@ -64,8 +64,9 @@ typedef enum NetAction {
     NET_ACTION_DNS,          /* show the DNS panel                         */
     NET_ACTION_BACK,         /* back to the devices panel                  */
     NET_ACTION_REFRESH,      /* read the interfaces again                  */
-    NET_ACTION_DNS_APPLY,    /* set the resolver to the line               */
+    NET_ACTION_DNS_APPLY,    /* set the resolver to the box                */
     NET_ACTION_DNS_REVERT,   /* put the resolver back to automatic         */
+    NET_ACTION_DNS_SECURE,   /* turn encrypted DNS (DoT) on or off         */
 } NetAction;
 
 typedef struct NetButton {
@@ -127,6 +128,15 @@ typedef struct NetUi {
     char dns_v6_pref[NET_TEXT];
     char dns_v6_alt[NET_TEXT];
     int dns_focus;   /* 0..3: v4 preferred, v4 alternate, v6 preferred, v6 alt */
+
+    /* Whether encrypted DNS (DNS-over-TLS) is on. It is a toggle the person
+       flips, not something read back from the system — resolvectl has no plain
+       "is it on" query — so this is what was last asked for, and the button
+       follows it: "Secure DNS: on" / "Secure DNS: off". Encrypted DNS is the
+       one thing that gets a query past a network that filters by reading the
+       name inside a port-53 packet, so it is worth a button of its own rather
+       than a line in a config file. */
+    int dns_secure;
 
     /* The buttons, filled in by the layout before they are drawn and read by
        the click handler. Kept in the state rather than recomputed on a click

@@ -118,13 +118,31 @@ static const NetButtonDef kDeviceButtons[] = {
 #define DEVICE_BUTTON_COUNT \
     ((int)(sizeof(kDeviceButtons) / sizeof(kDeviceButtons[0])))
 
+/* The DNS buttons. The third is a toggle — "Secure DNS: on" / "Secure DNS: off"
+   — so the label here is the off shape and button_label() below supplies the
+   live one from the state. The table carries it so the count, the order and the
+   action live in one place. */
 static const NetButtonDef kDnsButtons[] = {
-    { "Apply",  NET_ACTION_DNS_APPLY  },
-    { "Revert", NET_ACTION_DNS_REVERT },
-    { "Back",   NET_ACTION_BACK       },
+    { "Apply",           NET_ACTION_DNS_APPLY  },
+    { "Revert",          NET_ACTION_DNS_REVERT },
+    { "Secure DNS: off", NET_ACTION_DNS_SECURE },
+    { "Back",            NET_ACTION_BACK       },
 };
 #define DNS_BUTTON_COUNT \
     ((int)(sizeof(kDnsButtons) / sizeof(kDnsButtons[0])))
+
+/* The label a button actually shows. Every button uses its table label except
+   the DNS panel's Secure DNS toggle, whose word follows the state — so the
+   layout and the drawing must ask here rather than read the table directly, or
+   the box would be sized for "off" while drawn as "on" and the text would
+   overrun it. */
+static const char *button_label(const NetUi *ui, const NetButtonDef *table,
+                                int index) {
+    if (table == kDnsButtons && index == 2) {
+        return ui->dns_secure ? "Secure DNS: on" : "Secure DNS: off";
+    }
+    return table[index].label;
+}
 
 /* Lay out one row of buttons, centred, shrinking the air until it fits the
    window. `table` and `count` are one of the two above. */
@@ -145,7 +163,7 @@ static void layout_row(NetUi *ui, const NetButtonDef *table, int count) {
     int total = 0;
     for (int i = 0; i < count; i++) {
         total += net_style_text_width(ui->display, ui->style.font,
-                                      table[i].label) + 2 * pad;
+                                      button_label(ui, table, i)) + 2 * pad;
     }
     total += gap * (count - 1);
 
@@ -169,7 +187,7 @@ static void layout_row(NetUi *ui, const NetButtonDef *table, int count) {
 
     for (int i = 0; i < count; i++) {
         int width = net_style_text_width(ui->display, ui->style.font,
-                                         table[i].label) + 2 * pad;
+                                         button_label(ui, table, i)) + 2 * pad;
         ui->buttons[i].x = x;
         ui->buttons[i].y = band;
         ui->buttons[i].width = width;
@@ -199,10 +217,16 @@ static void draw_buttons(NetUi *ui) {
              button->width, button->height);
         outline(ui, ui->style.panel_edge, button->x, button->y,
                 button->width, button->height);
-        const char *label = table[i].label;
+        const char *label = button_label(ui, table, i);
         int label_w = net_style_text_width(ui->display, ui->style.font, label);
         int text_x = button->x + (button->width - label_w) / 2;
-        text(ui, text_x, band_baseline(ui, button->y), label, ui->style.text);
+        /* A Secure DNS button that is ON is drawn in the connected colour, so
+           the state is readable at a glance and not only by reading the word. */
+        unsigned long colour =
+            (table == kDnsButtons && i == 2 && ui->dns_secure)
+                ? ui->style.connected
+                : ui->style.text;
+        text(ui, text_x, band_baseline(ui, button->y), label, colour);
     }
 }
 
