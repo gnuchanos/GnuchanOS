@@ -19,17 +19,23 @@
 # It is a separate program from the wifi manager and installs on its own. Where
 # the wifi manager JOINS a wireless network, this one shows every interface and
 # does the general work — DNS, up/down — and opens the wifi manager for the
-# wireless one. The two are installed separately and neither needs the other to
-# build.
+# wireless one.
 #
-# The manager talks to the system through nmcli (NetworkManager) and ip (the
-# kernel), which come with the system, and through two things it DRIVES at run
-# time: resolvectl (systemd-resolved), for the DNS panel, and zapret, for the
-# DPI bypass. Neither is linked against, so neither is a build dependency; both
-# are installed here, at install time, so that one `python3 makefile.py` leaves
-# the machine able to do everything the manager offers. A failure installing
-# either is reported and the install carries on — the manager still opens and
-# shows every interface.
+# Besides the manager itself this installs the two things the manager DRIVES at
+# run time, the way the well-known zapret one-paste installers do, so that ONE
+# `python3 makefile.py` leaves a machine able to reach a site its network
+# blocks:
+#
+#   * an ENCRYPTED resolver (dnscrypt-proxy), because the most common block is
+#     not DPI at all but plain DNS rewriting — a name is answered with the
+#     ISP's own address and every connection to it fails its certificate check.
+#     Nothing zapret does can fix that; the answer arrived over port 53 before
+#     any TLS. Encrypting the query is what fixes it.
+#
+#   * zapret (nfqws), the DPI desynchroniser, for the case where the block is
+#     the TLS name read inside a TCP packet rather than the DNS answer. Its
+#     desync is chosen by ITS OWN blockcheck for the network at hand and written
+#     into its config, because one ISP's working method is another's no-op.
 #
 # License: GPL3
 # =============================================================================
@@ -43,6 +49,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -99,10 +106,22 @@ HEADERS = (
 
 ELEVATED_VARIABLE = "GNUCHANNET_ELEVATED"
 
-# zapret — the DPI bypass the manager's DPI button switches on and off. It is
-# not linked against; like systemd-resolved it is installed at install time so
-# the button has something to drive. The version is pinned so two machines get
-# the same thing, and the paths are the ones net_dpi.c falls back to.
+# --- encrypted DNS, the primary fix ---------------------------------------
+#
+# The most common way a network "blocks Discord" is not any kind of DPI: it
+# answers the NAME with its own address, so every program connects to the ISP
+# and fails the certificate check ("UnknownIssuer", an ISP hostname in the
+# ping). zapret cannot help — it fragments TCP payloads, and the lie arrived in
+# the DNS answer over UDP 53 before any TLS began. A query that leaves over an
+# encrypted channel cannot be read, so it cannot be answered with a lie.
+#
+# dnscrypt-proxy is what the reference installer uses off systemd, and what
+# Debian ships; it is run here on the loopback and /etc/resolv.conf is pointed
+# at it, which is the same shape as that installer's ending state.
+DNSCRYPT_CONFIG = Path("/etc/dnscrypt-proxy/dnscrypt-proxy.toml")
+DNSCRYPT_CACHE = Path("/var/cache/dnscrypt-proxy")
+
+# --- zapret, the DPI fix ---------------------------------------------------
 ZAPRET_VERSION = "72.13"
 ZAPRET_DIR = Path("/opt/zapret")
 ZAPRET_INIT = ZAPRET_DIR / "init.d" / "sysv" / "zapret"
@@ -110,6 +129,15 @@ ZAPRET_TARBALL = (
     f"https://github.com/bol-van/zapret/releases/download/"
     f"v{ZAPRET_VERSION}/zapret-v{ZAPRET_VERSION}.tar.gz"
 )
+
+# The names zapret's blockcheck is run against to find a working bypass. The
+# reference installer walks these and stops at the first that fails — a name
+# that fails is one this network is blocking.
+BLOCKCHECK_DOMAINS = ("discord.com", "facebook.com", "instagram.com",
+                      "youtube.com", "x.com", "tiktok.com")
+# Used when blockcheck finds no nfqws method at all. The reference's own
+# --dev default, and a desync that works on many networks.
+FALLBACK_NFQWS_OPT = "--dpi-desync=fake --dpi-desync-ttl=3"
 
 
 def step(message: str) -> None:
@@ -231,58 +259,127 @@ def resolvectl_present() -> bool:
 
 
 def ensure_runtime_dependency() -> None:
-    """Install what the manager DRIVES at run time — not what it is built from.
-
-    Every DNS action this manager takes goes through resolvectl, which is
+    """Install what the manager DRIVES for its DNS panel — not what it is built
+    from. Every DNS action in the window goes through resolvectl, which is
     systemd-resolved's own tool: setting the servers, reverting to automatic,
-    and turning on the encrypted DNS that gets a query past a network which
-    filters by reading the name inside a port-53 packet. A machine without it
-    can still SHOW the interfaces but cannot change the resolver at all, and the
-    person is left to discover and install it by hand — which is not the
-    installer's job to push onto them.
-
-    It is not a build dependency: nothing here links against it, so it is not in
-    ensure_build_dependencies(). It is installed here, at install time, so that
-    running `python3 makefile.py` once leaves the machine able to do everything
-    the manager offers.
+    and the encrypted-DNS toggle. A machine without it can still SHOW the
+    interfaces but cannot change the resolver, so it is installed here.
     """
     if resolvectl_present():
         return
-    step("Installing systemd-resolved (the resolver the manager drives)")
+    step("Installing systemd-resolved (the resolver the DNS panel drives)")
     if not apt_install(("systemd-resolved",)):
-        # Not fatal: the manager still opens and shows the interfaces. But the
-        # person is told plainly, because the DNS buttons will refuse otherwise.
-        detail("could not install systemd-resolved; the DNS buttons will "
-               "report that resolvectl is missing")
+        detail("could not install systemd-resolved; the DNS panel will report "
+               "that resolvectl is missing")
         return
     detail("installed systemd-resolved")
-    # The package ships the service; enabling and starting it is what actually
-    # puts resolvectl's socket in place, so it is done here rather than left to
-    # a reboot.
     run(["systemctl", "enable", "--now", "systemd-resolved"])
-    # Point /etc/resolv.conf at the stub resolver so the rest of the system
-    # (ping, dig, and every program on getaddrinfo) asks systemd-resolved, which
-    # is where the manager's settings and encrypted DNS take effect. The link is
-    # made only when the file is a plain file or already the stub link, so a
-    # machine whose resolv.conf is managed some other way is left as it is.
-    stub = "/run/systemd/resolve/stub-resolv.conf"
-    conf = "/etc/resolv.conf"
-    if Path(stub).exists():
-        try:
-            current = os.path.realpath(conf)
-        except OSError:
-            current = ""
-        if current != stub:
-            try:
-                os.replace(conf, conf + ".gnuchan-backup")
-            except OSError:
-                pass
-            try:
-                os.symlink(stub, conf)
-                detail(f"pointed {conf} at {stub}")
-            except OSError:
-                detail(f"could not point {conf} at {stub}; set it by hand")
 
+
+# --- encrypted DNS ---------------------------------------------------------
+
+def dnscrypt_config_text() -> str:
+    """dnscrypt-proxy's config: listen on the loopback, and fetch the public
+    resolver list from the same sources the reference installer uses. The
+    minisign key is dnscrypt-proxy's own published one, which is what makes the
+    fetched list trustworthy."""
+    return (
+        'listen_addresses = ["127.0.0.1:53", "[::1]:53"]\n'
+        '\n'
+        '[sources.public-resolvers]\n'
+        'urls = [\n'
+        '  "https://raw.github.com/dnscrypt/dnscrypt-resolvers/refs/heads/'
+        'master/v3/public-resolvers.md",\n'
+        '  "https://raw.githack.com/dnscrypt/dnscrypt-resolvers/refs/heads/'
+        'master/v3/public-resolvers.md",\n'
+        '  "https://cdn.jsdelivr.net/gh/dnscrypt/dnscrypt-resolvers/v3/'
+        'public-resolvers.md",\n'
+        '  "https://download.dnscrypt.info/resolvers-list/v3/'
+        'public-resolvers.md"\n'
+        ']\n'
+        'minisign_key = '
+        '"RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3"\n'
+        'cache_file = "/var/cache/dnscrypt-proxy/public-resolvers.md"\n'
+    )
+
+
+def point_resolv_conf_at_local_resolver() -> None:
+    """Point the machine at the local encrypted resolver, as the reference
+    installer's ending state does. A symlink to systemd-resolved's stub is
+    unlinked first, so a plain file replaces it rather than being written
+    through."""
+    conf = Path("/etc/resolv.conf")
+    try:
+        if conf.is_symlink():
+            conf.unlink()
+    except OSError:
+        pass
+    try:
+        conf.write_text("nameserver 127.0.0.1\nnameserver ::1\n",
+                        encoding="utf-8")
+    except OSError as exc:
+        detail(f"could not rewrite {conf}: {exc}")
+
+
+def dnscrypt_answers() -> bool:
+    """Whether dnscrypt-proxy answers a query right now, asked with dig against
+    the loopback — the same probe the reference installer loops on."""
+    dig = shutil.which("dig")
+    if dig is None:
+        # No dig to ask with; assume it came up rather than loop forever.
+        return True
+    for address in ("127.0.0.1", "::1"):
+        probe = run([dig, "+time=1", "+tries=1", f"@{address}",
+                     "example.com"], capture=True)
+        if probe.returncode == 0:
+            return True
+    return False
+
+
+def ensure_encrypted_dns() -> None:
+    """Encrypt the machine's DNS with a local dnscrypt-proxy.
+
+    This is the reference installer's FIRST step, and the fix for the failure
+    where a name resolves to the ISP's own address and every connection to it
+    fails its certificate check. A query that leaves encrypted cannot be read,
+    so it cannot be answered with a lie. A failure at any step is reported and
+    the install carries on — the manager still opens and the plain resolver
+    still answers, just not privately.
+    """
+    step("Encrypting DNS (dnscrypt-proxy on 127.0.0.1)")
+    apt_install(("dnscrypt-proxy", "dnsutils"))
+    if shutil.which("dnscrypt-proxy") is None:
+        detail("dnscrypt-proxy is not available; DNS is left as it is, so a "
+               "network that rewrites names will still misdirect them")
+        return
+
+    try:
+        DNSCRYPT_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        DNSCRYPT_CACHE.mkdir(parents=True, exist_ok=True)
+        DNSCRYPT_CONFIG.write_text(dnscrypt_config_text(), encoding="utf-8")
+    except OSError as exc:
+        detail(f"could not write {DNSCRYPT_CONFIG}: {exc}")
+        return
+
+    run(["systemctl", "enable", "dnscrypt-proxy"])
+    run(["systemctl", "restart", "dnscrypt-proxy"])
+
+    # Point the machine at it only once it actually answers — a resolver that
+    # is not up yet would leave every name failing, which is worse than the
+    # plain resolver it replaces.
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if dnscrypt_answers():
+            point_resolv_conf_at_local_resolver()
+            detail("DNS now leaves the machine encrypted")
+            return
+        run(["systemctl", "restart", "dnscrypt-proxy"])
+        time.sleep(5)
+
+    detail("dnscrypt-proxy did not answer in time; DNS is left as it is")
+
+
+# --- zapret ----------------------------------------------------------------
 
 def dpi_installed() -> bool:
     """Whether zapret is already in place, asked the same way the manager's own
@@ -303,10 +400,10 @@ def download_zapret(destination: Path) -> bool:
 
 
 def install_zapret_units() -> None:
-    """Make sure systemd knows the service, so the init script the DPI button
-    runs is wired into startup. zapret's easy installer normally does this; it
-    is repeated here because it is cheap and a machine where that step was
-    skipped would leave the button with nothing to start."""
+    """Make sure systemd knows the zapret service, so the init script the DPI
+    button runs is wired into startup. zapret's easy installer normally does
+    this; it is repeated here because it is cheap and a machine where that step
+    was skipped would leave the button with nothing to start."""
     source = ZAPRET_DIR / "init.d" / "systemd" / "zapret.service"
     target = Path("/etc/systemd/system/zapret.service")
     if not source.is_file() or target.exists():
@@ -320,22 +417,111 @@ def install_zapret_units() -> None:
     run(["systemctl", "enable", "zapret"])
 
 
+def parse_blockcheck_nfqws(output: str, domain: str) -> str:
+    """The nfqws options blockcheck found for `domain`, or empty. blockcheck
+    prints a summary line per working method; this takes the first that names
+    the domain and an nfqws desync, and returns only the options — everything
+    before the 'nfqws' word is the test's label, not part of the method."""
+    for line in output.splitlines():
+        if "curl_test_https" not in line or "nfqws" not in line:
+            continue
+        if domain not in line:
+            continue
+        _, _, tail = line.partition("nfqws")
+        candidate = tail.strip()
+        if candidate:
+            return candidate
+    return ""
+
+
+def write_nfqws_opt(method: str) -> None:
+    """Write the chosen bypass into zapret's config the way the reference
+    installer does: replace the whole (possibly multi-line, quote-delimited)
+    NFQWS_OPT value with one line, then restart the service so it is live."""
+    config = ZAPRET_DIR / "config"
+    if not config.is_file():
+        return
+    try:
+        lines = config.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        detail(f"could not read {config}: {exc}")
+        return
+
+    out: list[str] = []
+    skipping = False
+    replaced = False
+    for line in lines:
+        stripped = line.strip()
+        if not replaced and stripped.startswith('NFQWS_OPT="'):
+            out.append(f'NFQWS_OPT="{method} <HOSTLIST>"')
+            replaced = True
+            if stripped.count('"') < 2:
+                skipping = True          # the value runs to a closing quote
+            continue
+        if skipping:
+            if stripped == '"':
+                skipping = False
+            continue
+        out.append(line)
+
+    if not replaced:
+        return
+    try:
+        config.write_text("\n".join(out) + "\n", encoding="utf-8")
+    except OSError as exc:
+        detail(f"could not write {config}: {exc}")
+        return
+    detail(f"bypass method set: {method}")
+    run(["systemctl", "restart", "zapret"])
+
+
+def choose_and_apply_bypass_method() -> None:
+    """Ask zapret's own blockcheck which desync gets past this network.
+
+    The easy installer leaves a generic desync in the config. The reference
+    installer instead runs blockcheck against a blocked name and writes the
+    method that actually worked into NFQWS_OPT — a desync that is right for one
+    ISP is wrong for another, so this is what makes the bypass real rather than
+    nominal. If no name looks blocked, or blockcheck finds no nfqws method, the
+    easy installer's default is left alone.
+    """
+    blockcheck = ZAPRET_DIR / "blockcheck.sh"
+    if not blockcheck.is_file():
+        return
+
+    domain = ""
+    for candidate in BLOCKCHECK_DOMAINS:
+        probe = run(["curl", "--max-time", "10", "-sSI",
+                     f"https://{candidate}"], capture=True)
+        if probe.returncode != 0:
+            domain = candidate
+            break
+    if not domain:
+        detail("no blocked test name found; leaving the default bypass")
+        return
+
+    step(f"Choosing a bypass for this network (blockcheck on {domain})")
+    # blockcheck is prompt-driven; these are the answers the reference installer
+    # feeds it — the name, then N to the extras it offers.
+    answers = f"{domain}\n\nN\n\n\nN\n\n\n\n"
+    result = run(["sh", str(blockcheck)], input_text=answers, capture=True,
+                 cwd=ZAPRET_DIR)
+    method = parse_blockcheck_nfqws(result.stdout, domain)
+    if not method:
+        method = FALLBACK_NFQWS_OPT
+        detail("blockcheck found no nfqws method; using the default")
+    write_nfqws_opt(method)
+
+
 def ensure_dpi_dependency() -> None:
     """Install zapret — the DPI bypass the manager's DPI button switches.
 
-    The DNS half of this manager drives resolvectl, so
-    ensure_runtime_dependency() installs systemd-resolved. This is the same
-    idea for the DPI half: the button runs zapret's own init script (see
-    net_dpi.c), so zapret has to be present for the button to do anything. A
-    machine without it draws the button as unavailable and says why; installing
-    it here is what makes the feature work from one `python3 makefile.py`.
-
     zapret comes from its official release at the pinned version, is unpacked
     to /opt/zapret — the path net_dpi.c expects — and is set up with its OWN
-    easy installer, fed non-interactively, so the desync strategy is the one
-    zapret's blockcheck chooses for this network rather than one baked in here.
-    A failure at any step is reported and the rest of the install carries on:
-    the manager still opens and shows every interface.
+    easy installer, fed non-interactively, so the desync is chosen for this
+    network rather than baked in here. A failure at any step is reported and the
+    rest of the install carries on: the manager still opens and shows every
+    interface, and the DPI button reports that no bypass is installed.
     """
     if dpi_installed():
         return
@@ -343,11 +529,8 @@ def ensure_dpi_dependency() -> None:
     step("Installing zapret (the DPI bypass the DPI button switches)")
     # What zapret's nfqws needs to sit in the packet path, plus the tools its
     # installer itself calls.
-    apt_install(("nftables", "iptables", "curl", "wget", "tar", "gzip", "jq"))
-    # What building it needs, in case the release's prebuilt binaries do not
-    # match this kernel and zapret falls back to compiling.
-    apt_install(("make", "gcc", "zlib1g-dev", "libcap-dev",
-                 "libnetfilter-queue-dev", "libmnl-dev", "libsystemd-dev"))
+    apt_install(("nftables", "iptables", "curl", "wget", "tar", "gzip", "jq",
+                 "dnsutils"))
 
     work = Path(tempfile.mkdtemp(prefix="gnuchan-zapret-"))
     tarball = work / f"zapret-v{ZAPRET_VERSION}.tar.gz"
@@ -372,22 +555,20 @@ def ensure_dpi_dependency() -> None:
         shutil.rmtree(work, ignore_errors=True)
 
     # The easy installer does the real setup: it places the binaries, works out
-    # the firewall type, and runs blockcheck to choose a desync that gets past
-    # this network. It is a prompt-driven script, so answers are fed the way its
-    # own one-paste install lines feed them — accept the defaults, enable nfqws.
-    # Run from /opt/zapret so it does not try to copy itself anywhere.
-    answers = "\n\n\n4\n\n\nY\n\n\n\n\n\n"
+    # the firewall type, and enables nfqws. It is prompt-driven, so answers are
+    # fed the way the reference installer feeds them — accept the defaults.
     subprocess.run(["sh", str(ZAPRET_DIR / "install_prereq.sh")],
                    input="\n\n", text=True, check=False, cwd=ZAPRET_DIR)
     subprocess.run(["sh", str(ZAPRET_DIR / "install_bin.sh")],
                    text=True, check=False, cwd=ZAPRET_DIR)
-    run(["sh", str(ZAPRET_DIR / "install_easy.sh")], input_text=answers,
-        cwd=ZAPRET_DIR)
+    run(["sh", str(ZAPRET_DIR / "install_easy.sh")],
+        input_text="\n\n\n4\n\n\nY\n\n\n\n\n\n", cwd=ZAPRET_DIR)
 
-    # A belt for the braces above: if the easy installer did not get as far as
-    # registering the service, register it so the init script the button runs is
-    # wired into systemd.
     install_zapret_units()
+
+    # The easy installer leaves a generic desync in the config; ask zapret's own
+    # blockcheck which method actually works on this network and write it in.
+    choose_and_apply_bypass_method()
 
     if dpi_installed():
         detail("installed zapret under /opt/zapret")
@@ -395,6 +576,8 @@ def ensure_dpi_dependency() -> None:
         detail("zapret was downloaded but not set up; the DPI button will "
                "report that no bypass is installed until it is")
 
+
+# --- building and installing ----------------------------------------------
 
 def x11_flags() -> tuple[list[str], list[str]]:
     """The compiler and linker flags for the X libraries the manager uses.
@@ -601,6 +784,7 @@ def main() -> int:
         ensure_build_dependencies()
         binary = build()
         ensure_runtime_dependency()
+        ensure_encrypted_dns()
         ensure_dpi_dependency()
         install(binary)
         install_config()
