@@ -42,6 +42,10 @@
 #define UI_FIELD_WIDTH   320
 #define UI_SWITCH_WIDTH  64
 
+/* The height of one name in an open dropdown. Shorter than a row, because a
+   list of names is read as a list and not as a column of fields. */
+#define UI_CHOICE_HEIGHT 30
+
 /* Which row holds the keyboard. -1 means none, which is the state the panel
    opens in — nothing is focused until a person clicks a field. */
 #define UI_FOCUS_NONE (-1)
