@@ -315,6 +315,39 @@ static const SettingDef wm_settings[] = {
            SETTING_COLOR, SETTING_ASSIGN, "gcl_Switcher", "#2a1035"),
 };
 
+/* --- GnuChan Themes --------------------------------------------------------
+ *
+ * Which GTK theme, icon theme and mouse cursor the session uses. All three are
+ * written as gcl_themes.*(...) calls in GnuChanWM.py — that is the file
+ * wm_theme.c reads them from — so this category edits the same file the window
+ * manager's own category does, and only the three theme calls are ever touched.
+ *
+ * Every row names its own call, and it has to: one file carries all three
+ * calls, and "ThemeName" appears in each of them. Scoping a row to its call is
+ * what tells the GTK theme's name from the icon theme's — without it the reader
+ * would find the first ThemeName in the file and put it in every row.
+ *
+ * These are the names the installer scripts (dotfile/GTK_THEME,
+ * dotfile/ICON_THEME, dotfile/ICON_MOUSE_THEME) install the themes under, so the
+ * fallbacks match what a fresh GnuchanOS has selected. */
+static const SettingDef theme_settings[] = {
+    ROW_IN("ThemeName", "GTK theme", "GTK", SETTING_TEXT, SETTING_CALL,
+           "gcl_themes.Theme_gtk", "GnuChanTheme"),
+    ROW_IN("ThemePath", "GTK theme path", "GTK", SETTING_TEXT, SETTING_CALL,
+           "gcl_themes.Theme_gtk", "/usr/share/themes/GnuChanTheme"),
+
+    ROW_IN("ThemeName", "Icon theme", "Icons", SETTING_TEXT, SETTING_CALL,
+           "gcl_themes.Theme_icon", "GnuChanIcon"),
+    ROW_IN("ThemePath", "Icon theme path", "Icons", SETTING_TEXT, SETTING_CALL,
+           "gcl_themes.Theme_icon", "/usr/share/icons/GnuChanIcon"),
+
+    ROW_IN("ThemeName", "Mouse cursor", "Cursor", SETTING_TEXT, SETTING_CALL,
+           "gcl_themes.Theme_cursor", "GnuChanMouseIcons"),
+    ROW_IN("ThemePath", "Cursor theme path", "Cursor", SETTING_TEXT,
+           SETTING_CALL, "gcl_themes.Theme_cursor",
+           "/usr/share/icons/GnuChanMouseIcons"),
+};
+
 /* --- the table ------------------------------------------------------------- */
 
 static const AppDef app_table[] = {
@@ -383,6 +416,12 @@ static const AppDef app_table[] = {
         "GnuChanWM", "GnuChanWM.py", "gcl_Window",
         SETTING_FUNC, 1,
         wm_settings, (int)(sizeof(wm_settings) / sizeof(wm_settings[0])),
+    },
+    {
+        "GnuChan Themes", "GTK theme, icons and mouse cursor",
+        "GnuChanWM", "GnuChanWM.py", "gcl_themes",
+        SETTING_CALL, 1,
+        theme_settings, (int)(sizeof(theme_settings) / sizeof(theme_settings[0])),
     },
 };
 
