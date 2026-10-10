@@ -349,6 +349,40 @@ static const SettingDef theme_settings[] = {
            "/usr/share/icons/GnuChanMouseIcons"),
 };
 
+/* --- GnuChanNetworkManager -------------------------------------------------
+ *
+ * The general network manager: every interface, DNS, and the door to the wifi
+ * manager. It writes a flat `Name = value` file (config.py) — no calls — so
+ * every row here is SETTING_FLAT, the program's own style.
+ *
+ * The keys must match net_config.c's reader exactly: a name the reader does not
+ * know is skipped there, so a mistyped key here would be a field that does
+ * nothing.
+ */
+static const SettingDef net_settings[] = {
+    TEXT("NmcliPath",    "nmcli path",    "Programs", "nmcli"),
+    TEXT("IpPath",       "ip path",       "Programs", "ip"),
+    TEXT("ResolvectlPath", "resolvectl path", "Programs", "resolvectl"),
+    TEXT("WifiManager",  "wifi manager program", "Programs", "GnuChanWifi"),
+
+    TEXT("Title",      "Title",       "Window", "Network"),
+    TEXT("FontFamily", "Font family", "Window", "monospace"),
+    INT("FontSize",    "Font size",   "Window", "14"),
+    INT("Width",       "Width",       "Window", "640"),
+    INT("RunningRows", "Interface rows", "Window", "6"),
+
+    COLOR("Background", "Background",  "Palette", "#1a0b2e"),
+    COLOR("Panel",      "Panel",       "Palette", "#32143f"),
+    COLOR("PanelEdge",  "Panel edge",  "Palette", "#7b2cbf"),
+    COLOR("Field",      "Field",       "Palette", "#241033"),
+    COLOR("Text",       "Text",        "Palette", "#e0c3fc"),
+    COLOR("TextMuted",  "Muted text",  "Palette", "#9d7bba"),
+    COLOR("Accent",     "Accent",      "Palette", "#c77dff"),
+    COLOR("Connected",  "Connected",   "Palette", "#9ece6a"),
+    COLOR("Disabled",   "Disabled",    "Palette", "#ff9e64"),
+    COLOR("Selection",  "Selection",   "Palette", "#5a2a8f"),
+};
+
 /* --- the table ------------------------------------------------------------- */
 
 static const AppDef app_table[] = {
@@ -399,6 +433,12 @@ static const AppDef app_table[] = {
         "GnuChanWifi", "config.py", "",
         SETTING_FLAT, 0,
         wifi_settings, (int)(sizeof(wifi_settings) / sizeof(wifi_settings[0])),
+    },
+    {
+        "GnuChanNetworkManager", "Interfaces, DNS and the resolver",
+        "GnuChanNetworkManager", "config.py", "",
+        SETTING_FLAT, 0,
+        net_settings, (int)(sizeof(net_settings) / sizeof(net_settings[0])),
     },
     {
         "GnuChanTop", "The system monitor",
