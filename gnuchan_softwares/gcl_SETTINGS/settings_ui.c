@@ -122,7 +122,8 @@ static void save_page(SettingsUi *ui) {
                  ui->page.app->name);
         ui->status_failed = 0;
     } else {
-        snprintf(ui->status, sizeof(ui->status), "Kaydedilemedi: %s", reason);
+        snprintf(ui->status, sizeof(ui->status), "Kaydedilemedi: %.200s",
+                 reason);
         ui->status_failed = 1;
     }
 }

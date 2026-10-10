@@ -723,7 +723,8 @@ int settings_save(const AppDef *app, const SettingValue *values, char *reason) {
     if (!file) {
         free(out);
         free(created);
-        snprintf(reason, SETTINGS_TEXT_LENGTH, "cannot write %s", temporary);
+        snprintf(reason, SETTINGS_TEXT_LENGTH, "cannot write %.200s",
+                 temporary);
         return -1;
     }
     size_t wrote = fwrite(out, 1, o, file);
@@ -732,12 +733,13 @@ int settings_save(const AppDef *app, const SettingValue *values, char *reason) {
     free(created);
     if (wrote != o || !close_ok) {
         remove(temporary);
-        snprintf(reason, SETTINGS_TEXT_LENGTH, "cannot finish writing %s", path);
+        snprintf(reason, SETTINGS_TEXT_LENGTH, "cannot finish writing %.200s",
+                 path);
         return -1;
     }
     if (rename(temporary, path) != 0) {
         remove(temporary);
-        snprintf(reason, SETTINGS_TEXT_LENGTH, "cannot replace %s", path);
+        snprintf(reason, SETTINGS_TEXT_LENGTH, "cannot replace %.200s", path);
         return -1;
     }
     return 0;
