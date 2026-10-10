@@ -553,14 +553,20 @@ static void core_handle_click(DockCore *core, XButtonEvent *press) {
     switch (item->kind) {
     case DOCK_ITEM_SETTINGS:
         /* The settings icon opens the desktop's control panel — GnuChanSettings,
-           which edits every program's settings file by clicking. The command is
-           the one the settings file names (SettingsCommand), which defaults to
-           "GnuChanSettings" on PATH, so the dock does not have to know where the
-           binary lives; a session whose PATH does not reach it can name the full
-           path instead. Running item->command and not a string fixed here is
-           what makes that possible, and it is the same thing the terminal slot
-           already does. */
-        dock_core_run_command(item->command);
+           which edits every program's settings file by clicking. When the panel
+           is already open its window is in this very slot (see dock_items.c),
+           and a click raises THAT window instead of launching a second panel:
+           one gear, one panel, and clicking the gear again brings the open
+           panel forward. Only when none is open does it launch the command.
+           The command is the one the settings file names (SettingsCommand),
+           which defaults to "GnuChanSettings" on PATH, so the dock does not
+           have to know where the binary lives; a session whose PATH does not
+           reach it can name the full path instead. */
+        if (item->window_count > 0) {
+            dock_core_activate(core, item->windows[0]);
+        } else {
+            dock_core_run_command(item->command);
+        }
         break;
     case DOCK_ITEM_TERMINAL:
         dock_core_run_command(item->command);

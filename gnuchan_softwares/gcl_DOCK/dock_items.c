@@ -26,6 +26,14 @@
 #define DOCK_TERMINAL_CLASS "GnuChanTerm"
 #define DOCK_TERMINAL_INSTANCE "gcl_terminal"
 
+/* The same two names for the settings panel. An open GnuChanSettings is not a
+   program of its own on the dock: the gear is already there as a fixed slot,
+   so the panel's window belongs in that slot and not as a second gear beside
+   it. This is what the terminal slot does for terminals, applied to the panel
+   the gear opens. */
+#define DOCK_SETTINGS_CLASS "GnuChanSettings"
+#define DOCK_SETTINGS_INSTANCE "gcl_settings"
+
 /* How many programs' icons the dock remembers at once. One per class seen, so
    it is the number of distinct programs a session runs rather than the number
    of windows it has open. */
@@ -162,6 +170,12 @@ static int is_terminal_window(const char *wm_class, const char *instance) {
     return (wm_class[0] && strcasecmp(wm_class, DOCK_TERMINAL_CLASS) == 0) ||
            (instance[0] &&
             strcasecmp(instance, DOCK_TERMINAL_INSTANCE) == 0);
+}
+
+static int is_settings_window(const char *wm_class, const char *instance) {
+    return (wm_class[0] && strcasecmp(wm_class, DOCK_SETTINGS_CLASS) == 0) ||
+           (instance[0] &&
+            strcasecmp(instance, DOCK_SETTINGS_INSTANCE) == 0);
 }
 
 /* Which workspace a window is on, read from its _NET_WM_DESKTOP. Returns -1
@@ -309,7 +323,8 @@ static void group_window(DockCore *core, Window client, const char *wm_class,
     }
 }
 
-static void items_add_windows(DockCore *core, DockItem *terminal) {
+static void items_add_windows(DockCore *core, DockItem *terminal,
+                              DockItem *settings) {
     Atom actual_type = None;
     int actual_format = 0;
     unsigned long items = 0;
@@ -358,6 +373,21 @@ static void items_add_windows(DockCore *core, DockItem *terminal) {
             continue;
         }
 
+        if (is_settings_window(wm_class, instance)) {
+            /* The settings panel, into the gear's own slot — the same thing
+               done for terminals above. Without this the panel is an ordinary
+               window and gets a slot of its own, so the dock shows a SECOND
+               settings icon while the panel is open; the fixed gear is already
+               there, so the panel's window belongs inside it. */
+            if (settings && settings->window_count < DOCK_MAX_ITEMS) {
+                settings->windows[settings->window_count++] = client;
+                if (client == core->active_window) {
+                    settings->has_focus = 1;
+                }
+            }
+            continue;
+        }
+
         char title[DOCK_TEXT_LENGTH];
         dock_window_title(core, client, title, sizeof(title));
         group_window(core, client, wm_class, title);
@@ -384,13 +414,15 @@ void dock_items_free_icons(DockCore *core) {
 void dock_items_build(DockCore *core) {
     dock_items_clear(core);
 
+    DockItem *settings = NULL;
     if (core->config.settings_enabled) {
         /* The settings slot carries its own command, exactly as the terminal
            slot does: the dock runs what the settings file names rather than a
            command hard-coded here, so a session whose PATH does not reach the
            install directory can point it at the binary by full path. */
-        item_add(core, DOCK_ITEM_SETTINGS, core->config.settings_label,
-                 core->config.settings_command);
+        settings = item_add(core, DOCK_ITEM_SETTINGS,
+                            core->config.settings_label,
+                            core->config.settings_command);
     }
 
     DockItem *terminal = NULL;
@@ -401,7 +433,7 @@ void dock_items_build(DockCore *core) {
     }
 
     if (core->config.show_running) {
-        items_add_windows(core, terminal);
+        items_add_windows(core, terminal, settings);
     }
 }
 
@@ -413,7 +445,11 @@ int dock_item_is_category(const DockItem *item) {
         return 1;
     }
     /* The terminal is a category once something is running in it: it then shows
-       the count and lists the terminals, exactly as any other group does. */
+       the count and lists the terminals, exactly as any other group does. The
+       settings gear is deliberately NOT one: it holds at most the panel it
+       opened, and a click on it is meant to open the panel or raise the one
+       already open — one act, no list in between. dock_core.c's click handler
+       does exactly that. */
     if (item->kind == DOCK_ITEM_TERMINAL) {
         return item->window_count >= 1;
     }

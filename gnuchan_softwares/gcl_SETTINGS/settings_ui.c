@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include <X11/Xatom.h>
+#include <X11/Xutil.h>
 #include <X11/keysym.h>
 
 #include "settings_draw.h"
@@ -425,6 +426,20 @@ int settings_ui_open(SettingsUi *ui) {
         return -1;
     }
     XStoreName(ui->display, ui->window, "GnuChanSettings");
+
+    /* The window's class, which is how the dock knows what this program is.
+       It reads WM_CLASS to tell one program's windows from another's and to
+       gather them — see dock_items.c — and a window that set none is a window
+       with no name to gather by. The instance is the name a single window is
+       started under and the class the program's own name, exactly as the
+       terminal sets them, so the dock can collect every GnuChanSettings window
+       into its one settings slot instead of drawing each as another icon. */
+    {
+        XClassHint hint;
+        hint.res_name = (char *)"gcl_settings";
+        hint.res_class = (char *)"GnuChanSettings";
+        XSetClassHint(ui->display, ui->window, &hint);
+    }
 
     /* The whole panel is painted into this pixmap and copied to the window in
        ONE XCopyArea, rather than drawn straight onto the window a shape at a
