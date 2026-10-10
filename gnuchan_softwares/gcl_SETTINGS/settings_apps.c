@@ -323,27 +323,27 @@ static const SettingDef wm_settings[] = {
  * wm_theme.c reads them from — so this category edits the same file the window
  * manager's own category does, and only the three theme calls are ever touched.
  *
- * Every row names its own call, and it has to: one file carries all three
- * calls, and "ThemeName" appears in each of them. Scoping a row to its call is
- * what tells the GTK theme's name from the icon theme's — without it the reader
- * would find the first ThemeName in the file and put it in every row.
+ * Only the PATH is offered. The name a theme is selected by is not a value a
+ * person changes on this desktop: wm_theme.c's choose_theme() falls back to the
+ * shipped names (GnuChanTheme / GnuChanIcon / GnuChanMouseIcons) when the file
+ * names none, and those are exactly the names the installers in dotfile/
+ * install under — so leaving the name out of the panel and out of a freshly
+ * written file still selects the right theme. What varies, and what a person
+ * does edit, is where the theme is: a path that names a theme built in a home
+ * directory is linked into place by wm_theme.c, so the path is the one field
+ * worth showing.
  *
- * These are the names the installer scripts (dotfile/GTK_THEME,
- * dotfile/ICON_THEME, dotfile/ICON_MOUSE_THEME) install the themes under, so the
- * fallbacks match what a fresh GnuchanOS has selected. */
+ * Every row still names its own call: one file carries all three calls, and
+ * scoping a row to its call is what tells the GTK theme's path from the icon
+ * theme's and the cursor's — without it the reader would find the first
+ * ThemePath in the file and put it in every row. */
 static const SettingDef theme_settings[] = {
-    ROW_IN("ThemeName", "GTK theme", "GTK", SETTING_TEXT, SETTING_CALL,
-           "gcl_themes.Theme_gtk", "GnuChanTheme"),
     ROW_IN("ThemePath", "GTK theme path", "GTK", SETTING_TEXT, SETTING_CALL,
            "gcl_themes.Theme_gtk", "/usr/share/themes/GnuChanTheme"),
 
-    ROW_IN("ThemeName", "Icon theme", "Icons", SETTING_TEXT, SETTING_CALL,
-           "gcl_themes.Theme_icon", "GnuChanIcon"),
     ROW_IN("ThemePath", "Icon theme path", "Icons", SETTING_TEXT, SETTING_CALL,
            "gcl_themes.Theme_icon", "/usr/share/icons/GnuChanIcon"),
 
-    ROW_IN("ThemeName", "Mouse cursor", "Cursor", SETTING_TEXT, SETTING_CALL,
-           "gcl_themes.Theme_cursor", "GnuChanMouseIcons"),
     ROW_IN("ThemePath", "Cursor theme path", "Cursor", SETTING_TEXT,
            SETTING_CALL, "gcl_themes.Theme_cursor",
            "/usr/share/icons/GnuChanMouseIcons"),
