@@ -20,6 +20,8 @@ void net_config_defaults(NetConfig *config) {
     snprintf(config->nmcli, sizeof(config->nmcli), "nmcli");
     snprintf(config->ip, sizeof(config->ip), "ip");
     snprintf(config->resolvectl, sizeof(config->resolvectl), "resolvectl");
+    snprintf(config->dpi_init, sizeof(config->dpi_init),
+             "/opt/zapret/init.d/sysv/zapret");
     snprintf(config->wifi_manager, sizeof(config->wifi_manager),
              "GnuChanWifi");
 
@@ -82,6 +84,10 @@ static void apply_setting(NetConfig *config, const char *name,
     } else if (strcmp(name, "ResolvectlPath") == 0 ||
                strcmp(name, "Resolvectl") == 0) {
         SET_TEXT(resolvectl);
+    } else if (strcmp(name, "DpiInitPath") == 0 ||
+               strcmp(name, "DpiInit") == 0 ||
+               strcmp(name, "ZapretInit") == 0) {
+        SET_TEXT(dpi_init);
     } else if (strcmp(name, "WifiManager") == 0 ||
                strcmp(name, "WifiProgram") == 0) {
         SET_TEXT(wifi_manager);

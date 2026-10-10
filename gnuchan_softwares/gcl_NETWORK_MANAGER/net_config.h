@@ -16,6 +16,7 @@
  *     IpPath       = "ip"
  *     ResolvectlPath = "resolvectl"
  *     WifiManager  = "GnuChanWifi"     # the program the wifi button opens
+ *     DpiInitPath  = "/opt/zapret/init.d/sysv/zapret"  # zapret's own script
  *     FontFamily   = "monospace"
  *     FontSize     = 14
  *     Width        = 640
@@ -42,6 +43,12 @@ typedef struct NetConfig {
     char nmcli[NET_TEXT];
     char ip[NET_TEXT];
     char resolvectl[NET_TEXT];
+
+    /* Where zapret's own init script lives — the script that starts and stops
+       the DPI bypass (see net_dpi.c). zapret's installer puts it under
+       /opt/zapret, and that is the default; it is named here because a machine
+       that unpacked zapret somewhere else can point at it. */
+    char dpi_init[NET_TEXT];
 
     /* The program the "Open Wi-Fi" button runs. The wifi manager is the one
        program that knows how to join a wireless network; a general network

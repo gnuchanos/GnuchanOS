@@ -113,6 +113,7 @@ static const NetButtonDef kDeviceButtons[] = {
     { "Up/Down",    NET_ACTION_TOGGLE  },
     { "Open Wi-Fi", NET_ACTION_WIFI    },
     { "DNS",        NET_ACTION_DNS     },
+    { "DPI: Open",  NET_ACTION_DPI     },
     { "Refresh",    NET_ACTION_REFRESH },
 };
 #define DEVICE_BUTTON_COUNT \
@@ -140,6 +141,14 @@ static const char *button_label(const NetUi *ui, const NetButtonDef *table,
                                 int index) {
     if (table == kDnsButtons && index == 2) {
         return ui->dns_secure ? "Secure DNS: on" : "Secure DNS: off";
+    }
+    /* The device panel's DPI button is a toggle too: it reads "DPI: Open" when
+       the bypass is off and "DPI: Close" when it is on, so the word says what
+       pressing it will do. The live label is produced here for the same reason
+       the Secure DNS one is — the box is sized from this, so a box sized for
+       "Open" and drawn as "Close" would overrun its own text. */
+    if (table == kDeviceButtons && index == 3) {
+        return ui->dpi_active ? "DPI: Close" : "DPI: Open";
     }
     return table[index].label;
 }
@@ -220,10 +229,12 @@ static void draw_buttons(NetUi *ui) {
         const char *label = button_label(ui, table, i);
         int label_w = net_style_text_width(ui->display, ui->style.font, label);
         int text_x = button->x + (button->width - label_w) / 2;
-        /* A Secure DNS button that is ON is drawn in the connected colour, so
-           the state is readable at a glance and not only by reading the word. */
+        /* A Secure DNS button that is ON — and the device panel's DPI button
+           when the bypass is running — is drawn in the connected colour, so the
+           state is readable at a glance and not only by reading the word. */
         unsigned long colour =
-            (table == kDnsButtons && i == 2 && ui->dns_secure)
+            ((table == kDnsButtons && i == 2 && ui->dns_secure) ||
+             (table == kDeviceButtons && i == 3 && ui->dpi_active))
                 ? ui->style.connected
                 : ui->style.text;
         text(ui, text_x, band_baseline(ui, button->y), label, colour);
@@ -564,8 +575,8 @@ static void draw_help(NetUi *ui) {
     if (ui->mode == NET_MODE_DNS) {
         help = "Tab switch field   Enter apply   Escape back";
     } else {
-        help = "Up/Down move   Enter up/down   w wifi   d DNS   r refresh   "
-               "Escape close";
+        help = "Up/Down move   Enter up/down   w wifi   d DNS   p DPI   "
+               "r refresh   Escape close";
     }
     int descent = ui->style.font ? ui->style.font->descent : 4;
     text(ui, ui->style.padding, help_y(ui) + row_height(ui) - descent - 2,

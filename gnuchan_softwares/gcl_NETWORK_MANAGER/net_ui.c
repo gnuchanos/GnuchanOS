@@ -129,6 +129,16 @@ static void resize_for_mode(NetUi *ui) {
 
 /* --- reading the state ---------------------------------------------------- */
 
+/* Read whether a DPI bypass is installed and whether it is running now. Both
+   answers come from the system (net_dpi.c) rather than from a flag set here,
+   because the bypass can be started outside this window — by a boot service, or
+   by hand from a shell — and the button has to point the way the system
+   actually is. Called at open and whenever the picture is refreshed. */
+static void refresh_dpi(NetUi *ui) {
+    ui->dpi_available = net_dpi_available(&ui->config);
+    ui->dpi_active = ui->dpi_available ? net_dpi_active(&ui->config) : 0;
+}
+
 /* Read the interfaces, and the resolver for the chosen link (or the global one
    when nothing is chosen). Called at open and after an action. */
 static void refresh_devices(NetUi *ui) {
@@ -304,6 +314,42 @@ static void do_wifi(NetUi *ui) {
     net_draw(ui);
 }
 
+/* Start or stop the DPI bypass. This is the one action that lets the WHOLE
+   machine reach a site a filter blocks by reading the TLS name inside a packet:
+   zapret's nfqws fragments the first packet so the name is never readable in
+   one piece, and the filter lets it through. It is the same thing Chromium does
+   with its own QUIC/DNS-over-HTTPS, but for every program on the system. The
+   state is read back from the system afterwards rather than assumed, so the
+   button shows what is, not what was asked for. */
+static void do_dpi(NetUi *ui) {
+    if (!ui->dpi_available) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "No DPI bypass is installed; install zapret to switch one on");
+        net_draw(ui);
+        return;
+    }
+
+    int wanted = !ui->dpi_active;
+    snprintf(ui->status, sizeof(ui->status), "%s the DPI bypass…",
+             wanted ? "Starting" : "Stopping");
+    net_draw(ui);
+
+    char error[NET_TEXT];
+    if (net_dpi_set(&ui->config, wanted, error, sizeof(error)) == 0) {
+        refresh_dpi(ui);
+        if (ui->dpi_active) {
+            snprintf(ui->status, sizeof(ui->status),
+                     "The DPI bypass is on — blocked sites now open everywhere");
+        } else {
+            snprintf(ui->status, sizeof(ui->status), "The DPI bypass is off");
+        }
+    } else {
+        refresh_dpi(ui);
+        snprintf(ui->status, sizeof(ui->status), "%s", error);
+    }
+    net_draw(ui);
+}
+
 static void do_apply_dns(NetUi *ui) {
     const char *list[NET_MAX_DNS];
     int count = dns_collect(ui, list);
@@ -381,6 +427,9 @@ static void dispatch_action(NetUi *ui, NetAction action) {
         load_dns(ui);
         resize_for_mode(ui);
         net_draw(ui);
+        break;
+    case NET_ACTION_DPI:
+        do_dpi(ui);
         break;
     case NET_ACTION_BACK:
         ui->mode = NET_MODE_DEVICES;
@@ -508,6 +557,9 @@ static void handle_devices_key(NetUi *ui, KeySym symbol) {
         return;
     case XK_d:
         dispatch_action(ui, NET_ACTION_DNS);
+        return;
+    case XK_p:
+        dispatch_action(ui, NET_ACTION_DPI);
         return;
     case XK_r:
         dispatch_action(ui, NET_ACTION_REFRESH);
@@ -678,6 +730,7 @@ int net_ui_open(NetUi *ui, const char *config_path) {
     }
 
     refresh_devices(ui);
+    refresh_dpi(ui);
     load_dns(ui);
     work_out_size(ui);
 

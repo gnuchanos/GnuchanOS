@@ -12,7 +12,10 @@
  *            loopback — with its state and its address. Up/Down brings the
  *            chosen one up or down; Open Wi-Fi starts the wifi manager, which
  *            is the program that knows how to JOIN a network; DNS switches to
- *            the resolver panel.
+ *            the resolver panel; DPI: Open starts the DPI bypass (zapret's
+ *            nfqws) that lets the whole machine reach a site a filter blocks by
+ *            reading the TLS name inside a packet, and turns it off again. See
+ *            net_dpi.c.
  *
  *   DNS      the resolver the machine asks: the servers as they are and where
  *            they came from (resolvectl or /etc/resolv.conf), then four boxes
@@ -62,6 +65,7 @@ typedef enum NetAction {
     NET_ACTION_TOGGLE,       /* bring the chosen interface up or down      */
     NET_ACTION_WIFI,         /* start the wifi manager                     */
     NET_ACTION_DNS,          /* show the DNS panel                         */
+    NET_ACTION_DPI,          /* start or stop the DPI bypass (zapret)      */
     NET_ACTION_BACK,         /* back to the devices panel                  */
     NET_ACTION_REFRESH,      /* read the interfaces again                  */
     NET_ACTION_DNS_APPLY,    /* set the resolver to the box                */
@@ -137,6 +141,16 @@ typedef struct NetUi {
        name inside a port-53 packet, so it is worth a button of its own rather
        than a line in a config file. */
     int dns_secure;
+
+    /* Whether the DPI bypass is running, and whether zapret is installed to run
+       at all. Both are read back from the system (net_dpi_active() and
+       net_dpi_available()) rather than remembered, because the bypass can be
+       started outside this window — by a boot service or by hand — and the
+       button has to show what IS, not what was last pressed. `dpi_available` is
+       what marks the button unavailable on a machine with no zapret;
+       `dpi_active` is what makes it read "DPI: Close" rather than "DPI: Open". */
+    int dpi_active;
+    int dpi_available;
 
     /* The buttons, filled in by the layout before they are drawn and read by
        the click handler. Kept in the state rather than recomputed on a click

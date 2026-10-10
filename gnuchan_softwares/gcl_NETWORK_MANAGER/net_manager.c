@@ -77,6 +77,14 @@ static int list_state(const char *config_path) {
     char wifi[NET_TEXT];
     net_device_first_wifi(&devices, wifi, sizeof(wifi));
     printf("wireless: %s\n", wifi[0] ? wifi : "(none)");
+
+    /* The DPI bypass: whether one is installed to switch on, and whether it is
+       running now — the same two facts the button shows. */
+    if (net_dpi_available(&config)) {
+        printf("dpi: %s\n", net_dpi_active(&config) ? "on" : "off");
+    } else {
+        printf("dpi: not installed\n");
+    }
     return 0;
 }
 
@@ -93,6 +101,7 @@ static void print_help(void) {
            "  Enter         bring the chosen interface up or down\n"
            "  w             open the wifi manager\n"
            "  d             show the resolver panel\n"
+           "  p             start or stop the DPI bypass (zapret)\n"
            "  r             read the interfaces again\n"
            "  Escape        close (or go back from the resolver panel)\n"
            "\n"
