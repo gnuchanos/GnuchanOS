@@ -202,6 +202,64 @@ def ensure_build_dependencies() -> None:
     detail("installed: " + ", ".join(needed))
 
 
+def resolvectl_present() -> bool:
+    return shutil.which("resolvectl") is not None
+
+
+def ensure_runtime_dependency() -> None:
+    """Install what the manager DRIVES at run time — not what it is built from.
+
+    Every DNS action this manager takes goes through resolvectl, which is
+    systemd-resolved's own tool: setting the servers, reverting to automatic,
+    and turning on the encrypted DNS that gets a query past a network which
+    filters by reading the name inside a port-53 packet. A machine without it
+    can still SHOW the interfaces but cannot change the resolver at all, and the
+    person is left to discover and install it by hand — which is not the
+    installer's job to push onto them.
+
+    It is not a build dependency: nothing here links against it, so it is not in
+    ensure_build_dependencies(). It is installed here, at install time, so that
+    running `python3 makefile.py` once leaves the machine able to do everything
+    the manager offers.
+    """
+    if resolvectl_present():
+        return
+    step("Installing systemd-resolved (the resolver the manager drives)")
+    if not apt_install(("systemd-resolved",)):
+        # Not fatal: the manager still opens and shows the interfaces. But the
+        # person is told plainly, because the DNS buttons will refuse otherwise.
+        detail("could not install systemd-resolved; the DNS buttons will "
+               "report that resolvectl is missing")
+        return
+    detail("installed systemd-resolved")
+    # The package ships the service; enabling and starting it is what actually
+    # puts resolvectl's socket in place, so it is done here rather than left to
+    # a reboot.
+    run(["systemctl", "enable", "--now", "systemd-resolved"])
+    # Point /etc/resolv.conf at the stub resolver so the rest of the system
+    # (ping, dig, and every program on getaddrinfo) asks systemd-resolved, which
+    # is where the manager's settings and encrypted DNS take effect. The link is
+    # made only when the file is a plain file or already the stub link, so a
+    # machine whose resolv.conf is managed some other way is left as it is.
+    stub = "/run/systemd/resolve/stub-resolv.conf"
+    conf = "/etc/resolv.conf"
+    if Path(stub).exists():
+        try:
+            current = os.path.realpath(conf)
+        except OSError:
+            current = ""
+        if current != stub:
+            try:
+                os.replace(conf, conf + ".gnuchan-backup")
+            except OSError:
+                pass
+            try:
+                os.symlink(stub, conf)
+                detail(f"pointed {conf} at {stub}")
+            except OSError:
+                detail(f"could not point {conf} at {stub}; set it by hand")
+
+
 def x11_flags() -> tuple[list[str], list[str]]:
     """The compiler and linker flags for the X libraries the manager uses.
 
@@ -403,19 +461,23 @@ def main() -> int:
         note(f"Built {binary}.")
         return 0
 
+    if action == "install":
+        ensure_build_dependencies()
+        binary = build()
+        ensure_runtime_dependency()
+        install(binary)
+        install_config()
+        note("")
+        note("GnuChanNetworkManager is installed. Run GnuChanNetworkManager, or")
+        note("bind it in the window manager's settings script.")
+        return 0
+
     if action == "run":
         return run_program(build(), [])
 
     if action == "list":
         return run_program(build(), ["--list"])
 
-    ensure_build_dependencies()
-    binary = build()
-    install(binary)
-    install_config()
-    note("")
-    note("GnuChanNetworkManager is installed. Run GnuChanNetworkManager, or")
-    note("bind it in the window manager's settings script.")
     return 0
 
 
