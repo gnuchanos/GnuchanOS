@@ -570,48 +570,58 @@ static void prepare_maze(SsEffect *effect, Display *display) {
     if (effect->maze_ready) {
         return;
     }
-    XColor primary;
-    XColor background;
-    Colormap colormap = DefaultColormap(display, DefaultScreen(display));
-    memset(&primary, 0, sizeof(primary));
-    memset(&background, 0, sizeof(background));
-    primary.pixel = effect->primary;
-    background.pixel = effect->background;
-    XQueryColor(display, colormap, &primary);
-    XQueryColor(display, colormap, &background);
-
+    /* The two wall orientations are TWO DIFFERENT PURPLES and not one shade
+     * apart, because that is what a person reads the corridors by: a wall you
+     * walk up to (seen square, one hue) and the wall of a corridor running
+     * away to the side (seen edge on, another hue) have to tell apart at a
+     * glance, or the maze is a flat wall of colour sliding past. On top of
+     * each the distance is run from bright (near) down to the background
+     * (far), so a corridor darkens into the distance and the walk reads as
+     * movement.
+     *
+     * The ramps are built in HSV and not by mixing towards the background: a
+     * mix towards a dark background turns every purple into the same muddy
+     * near-black, which is the flatness this replaces. */
     for (int shade = 0; shade < SS_MAZE_SHADES; shade++) {
-        double t = (double)shade / (double)(SS_MAZE_SHADES - 1);
-        /* Near walls want the wall well lit; far ones melt into the fog. Two
-           ramps so a wall seen straight on and one seen edge on read apart. */
-        double face_t = 1.0 - t * 0.85;
-        double side_t = 1.0 - t * 0.95;
-        double r, g, b;
+        double fade = 1.0 - (double)shade / (double)(SS_MAZE_SHADES - 1);
 
-        r = (background.red   + (primary.red   - background.red)   * face_t) / 65535.0;
-        g = (background.green + (primary.green - background.green) * face_t) / 65535.0;
-        b = (background.blue  + (primary.blue  - background.blue)  * face_t) / 65535.0;
-        unsigned long face = alloc_rgb(display, r, g, b);
-        effect->maze_wall[0][shade] = face ? face : effect->primary;
+        /* A wall faced square: a bright violet. */
+        double face[3];
+        hsv_to_rgb(282.0, 0.62 + 0.20 * fade, 0.30 + 0.62 * fade, face);
+        unsigned long face_pixel = alloc_rgb(display, face[0], face[1], face[2]);
+        effect->maze_wall[0][shade] = face_pixel ? face_pixel : effect->primary;
 
-        r = (background.red   + (primary.red   - background.red)   * side_t) / 65535.0;
-        g = (background.green + (primary.green - background.green) * side_t) / 65535.0;
-        b = (background.blue  + (primary.blue  - background.blue)  * side_t) / 65535.0;
-        unsigned long side = alloc_rgb(display, r, g, b);
-        effect->maze_wall[1][shade] = side ? side : effect->primary;
+        /* A wall seen edge on: a deeper, bluer purple, so a side corridor and
+         * a wall ahead are never mistaken for each other. */
+        double side[3];
+        hsv_to_rgb(256.0, 0.70 + 0.18 * fade, 0.20 + 0.48 * fade, side);
+        unsigned long side_pixel = alloc_rgb(display, side[0], side[1], side[2]);
+        effect->maze_wall[1][shade] = side_pixel ? side_pixel : effect->primary;
     }
 
-    double fr = (background.red   + primary.red   * 0.18) / 65535.0 / 1.0;
-    double fg = (background.green + primary.green * 0.18) / 65535.0 / 1.0;
-    double fb = (background.blue  + primary.blue  * 0.18) / 65535.0 / 1.0;
-    unsigned long floor = alloc_rgb(display, fr, fg, fb);
-    effect->maze_floor = floor ? floor : effect->background;
+    /* The bright line where two faces meet — a corner of a corridor. Without
+     * it a turn is only a change of hue; with it the corner is a drawn edge,
+     * which is what makes the shape of the maze read. */
+    {
+        double edge[3];
+        hsv_to_rgb(292.0, 0.55, 0.96, edge);
+        unsigned long e = alloc_rgb(display, edge[0], edge[1], edge[2]);
+        effect->maze_edge = e ? e : effect->primary;
+    }
 
-    double cr = (background.red   + primary.red   * 0.10) / 65535.0 / 1.0;
-    double cg = (background.green + primary.green * 0.10) / 65535.0 / 1.0;
-    double cb = (background.blue  + primary.blue  * 0.10) / 65535.0 / 1.0;
-    unsigned long ceiling = alloc_rgb(display, cr, cg, cb);
-    effect->maze_ceiling = ceiling ? ceiling : effect->background;
+    /* The floor and the ceiling: pulls of the wall hue, the floor a touch
+     * brighter than the ceiling so the two bands of the corridor tell apart. */
+    {
+        double floor[3];
+        hsv_to_rgb(280.0, 0.60, 0.24, floor);
+        unsigned long f = alloc_rgb(display, floor[0], floor[1], floor[2]);
+        effect->maze_floor = f ? f : effect->background;
+
+        double ceiling[3];
+        hsv_to_rgb(280.0, 0.60, 0.15, ceiling);
+        unsigned long c = alloc_rgb(display, ceiling[0], ceiling[1], ceiling[2]);
+        effect->maze_ceiling = c ? c : effect->background;
+    }
 
     effect->maze_ready = 1;
 }
@@ -770,11 +780,19 @@ static void maze_draw(SsEffect *effect, Display *display, Drawable drawable,
     XFillRectangle(display, drawable, gc, 0, (unsigned int)horizon,
                    (unsigned int)width, (unsigned int)(height - horizon));
 
-    /* The projection: a wall one cell away and one cell tall fills two thirds
-       of the screen height, so the corridors read as close and the camera sits
-       low. `scale` turns "distance in cells" into "height in pixels". */
-    double scale = (double)height * 1.15;
+    /* `scale` turns "distance in cells" into "height in pixels". A wall one
+       cell away comes out a little under the screen height, which leaves the
+       ceiling and the floor showing above and below it — so a corridor reads as
+       a corridor with an open top and bottom, and not as a slab of colour that
+       fills the screen and makes the walker feel he is inside the wall. */
+    double scale = (double)height * 0.90;
     double half_fov = 33.0 * M_PI / 180.0;   /* a 66-degree view */
+
+    /* The face and the distance the last column hit, so a column can tell when
+       it has crossed from one wall face to another. The jump is what marks a
+       corner of the corridor, and a corner drawn is a corner seen. */
+    double previous_distance = -1.0;
+    int previous_side = -1;
 
     for (int col = 0; col < width; col++) {
         double t = ((double)col + 0.5) / (double)width;   /* 0..1 across */
@@ -810,14 +828,16 @@ static void maze_draw(SsEffect *effect, Display *display, Drawable drawable,
             continue;
         }
 
-        /* Shade by distance: a near wall is bright and a far one fades to the
-           fog, and a wall seen edge on is a step darker than one seen square,
-           which is what gives the corridors a corner where they turn. */
-        double fog = hit.distance / (double)SS_MAZE_WIDTH;
+        /* Shade by distance: shade 0 is the bright, near end of the ramp and
+           the last shade is the background at the far end, so a wall you are
+           close to is bright and one down the corridor has faded. Getting this
+           the other way round — bright far, dark near — is what made the maze
+           read as flat colour rather than as a place to walk through. */
+        double fog = hit.distance / ((double)SS_MAZE_WIDTH * 0.6);
         if (fog > 1.0) {
             fog = 1.0;
         }
-        int shade = (int)((1.0 - fog) * (SS_MAZE_SHADES - 1));
+        int shade = (int)(fog * (SS_MAZE_SHADES - 1));
         if (shade < 0) {
             shade = 0;
         }
@@ -827,6 +847,20 @@ static void maze_draw(SsEffect *effect, Display *display, Drawable drawable,
         XSetForeground(display, gc, effect->maze_wall[hit.side][shade]);
         XFillRectangle(display, drawable, gc, col, top, 1,
                        (unsigned int)(bottom - top));
+
+        /* A corner: this column's wall is a different face from the last one's,
+           either because the distance jumped or because the wall turned a
+           quarter. A bright line drawn there is the edge of the corridor, and
+           it is what lets the eye follow the maze instead of a wash of purple. */
+        if (previous_distance < 0.0 ||
+            fabs(corrected - previous_distance) > 0.12 ||
+            hit.side != previous_side) {
+            XSetForeground(display, gc, effect->maze_edge);
+            XFillRectangle(display, drawable, gc, col, top, 1,
+                           (unsigned int)(bottom - top));
+        }
+        previous_distance = corrected;
+        previous_side = hit.side;
     }
 }
 

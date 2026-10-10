@@ -144,6 +144,7 @@ struct SsEffect {
        floor. Made on the first frame, when there is a display to allocate them
        on. */
     unsigned long maze_wall[2][SS_MAZE_SHADES];
+    unsigned long maze_edge;      /* the bright line where two faces meet */
     unsigned long maze_floor;
     unsigned long maze_ceiling;
     int maze_ready;
