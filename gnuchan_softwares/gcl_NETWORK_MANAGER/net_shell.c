@@ -38,44 +38,66 @@ void net_shell_quote(const char *in, char *out, unsigned int size) {
 }
 
 int net_shell_run(const char *command, char *out, unsigned int size) {
-    /* Room for the longest command a caller can build, plus the wrapper and
-       the " 2>&1" added below, so the command that reaches the shell is
+    if (size) {
+        out[0] = '\0';
+    }
+    if (!command || !command[0]) {
+        return 127;
+    }
+
+    /* The output goes to a temporary FILE rather than through a pipe. A pipe
+       is read until it reaches its end of input, and the command being run is
+       not always the only holder of the pipe's write end: zapret's init script
+       STARTS the nfqws daemon, which inherits the open descriptors, so the
+       pipe would never reach its end and the caller would wait on it forever —
+       even after the script itself had finished, or been killed by the timeout
+       below. That is what froze the window on "Starting the DPI bypass...". A
+       file has no such owner: reading it stops at whatever has been written,
+       and a daemon keeping it open changes nothing. */
+    char path[] = "/tmp/gnuchannet-XXXXXX";
+    int fd = mkstemp(path);
+    if (fd < 0) {
+        return 127;
+    }
+    close(fd);
+
+    /* Room for the longest command a caller can build, plus the wrapper, the
+       redirect and the "2>&1", so the command that reaches the shell is
        whole. */
     char line[NET_TEXT * 12];
 
     /* Every command is given a hard ceiling, and this is not belt-and-braces:
        it is what keeps the window from freezing. These run on the UI thread,
        and a few of them talk to a service rather than doing a quick job —
-       resolvectl asks systemd-resolved over D-Bus, nmcli asks NetworkManager —
-       and a service that is starting, wedged, or simply slow keeps the caller
-       blocked for as long as D-Bus's own timeout allows (tens of seconds). A
-       window frozen during an "Apply" is indistinguishable from a crash. With
-       `timeout` each command is given a few seconds and then killed, the
-       action reports that it did not answer, and the window stays alive.
-       timeout is coreutils and is on every Debian. */
-    const char *prefix = net_shell_have("timeout") ? "timeout 8 " : "";
-    snprintf(line, sizeof(line), "%s%s 2>&1", prefix, command);
+       resolvectl asks systemd-resolved over D-Bus, nmcli asks NetworkManager,
+       and zapret's init script sets up firewall rules — and a service that is
+       starting, wedged, or simply slow keeps the caller blocked for as long as
+       its own timeout allows (tens of seconds). A window frozen during an
+       "Apply" is indistinguishable from a crash. With `timeout` each command
+       is given a few seconds and then killed, the action reports that it did
+       not answer, and the window stays alive. timeout is coreutils and is on
+       every Debian. */
+    const char *prefix = net_shell_have("timeout") ? "timeout 20 " : "";
+    snprintf(line, sizeof(line), "%s%s > %s 2>&1", prefix, command, path);
 
-    FILE *pipe = popen(line, "r");
-    if (!pipe) {
-        if (size) {
-            out[0] = '\0';
+    int status = system(line);
+
+    /* Read back whatever the command wrote. Beyond the buffer the rest is
+       dropped, and the file is removed whether or not anything was read. */
+    FILE *file = fopen(path, "r");
+    if (file) {
+        unsigned int at = 0;
+        int c;
+        while ((c = fgetc(file)) != EOF) {
+            if (at + 1 < size) {
+                out[at++] = (char)c;
+            }
         }
-        return 127;
+        out[at] = '\0';
+        fclose(file);
     }
+    unlink(path);
 
-    unsigned int at = 0;
-    int c;
-    while ((c = fgetc(pipe)) != EOF) {
-        if (at + 1 < size) {
-            out[at++] = (char)c;
-        }
-        /* Past the buffer the rest is read and dropped: draining the pipe is
-           what keeps pclose from waiting on a full pipe. */
-    }
-    out[at] = '\0';
-
-    int status = pclose(pipe);
     if (status == -1) {
         return 127;
     }

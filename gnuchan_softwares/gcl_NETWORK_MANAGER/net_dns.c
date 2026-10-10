@@ -287,24 +287,38 @@ int net_dns_set(const NetConfig *config, const char *link,
     }
 
     if (net_shell_have(config->resolvectl)) {
-        char command[NET_TEXT * 8];
-        char quote_link[NET_TEXT * 2];
-        if (link && link[0]) {
-            net_shell_quote(link, quote_link, sizeof(quote_link));
-        } else {
-            quote_link[0] = '\0';
+        /* resolvectl's dns and revert are PER-INTERFACE — both take a LINK and
+           neither has a global form. The only thing a person can reach from
+           this panel is one interface's resolver, which is exactly what the
+           device list above the panel chose. A link is therefore required, and
+           asking without one is answered plainly rather than run as a command
+           that cannot mean anything.
+
+           The earlier code did the opposite: it sent "resolvectl dns ~.
+           <servers>" and a bare "resolvectl revert" for the no-link case. The
+           man page says ~. is a routing DOMAIN (it goes with the `domain`
+           command), not a link, and revert with no LINK is a usage error — so
+           both of those always failed, which is why Revert reported a failure
+           whenever no interface was selected. */
+        if (!link || !link[0]) {
+            if (error && size) {
+                snprintf(error, size,
+                         "choose an interface first — resolvectl sets DNS per "
+                         "interface");
+            }
+            return -1;
         }
 
+        char quote_link[NET_TEXT * 2];
+        net_shell_quote(link, quote_link, sizeof(quote_link));
+
+        char command[NET_TEXT * 8];
         if (count == 0) {
-            /* No servers asked for means "go back to automatic", which
-               resolvectl does with revert. */
-            if (link && link[0]) {
-                snprintf(command, sizeof(command), "%s revert %s",
-                         config->resolvectl, quote_link);
-            } else {
-                snprintf(command, sizeof(command), "%s revert",
-                         config->resolvectl);
-            }
+            /* No servers asked for means "go back to automatic": revert the
+               interface to the servers the network handed it, undoing every
+               dns/domain change this panel made. */
+            snprintf(command, sizeof(command), "%s revert %s",
+                     config->resolvectl, quote_link);
         } else {
             char list_text[NET_TEXT * NET_MAX_DNS * 2] = "";
             for (int i = 0; i < count; i++) {
@@ -314,16 +328,8 @@ int net_dns_set(const NetConfig *config, const char *link,
                 snprintf(list_text + used, sizeof(list_text) - used, " %s",
                          quoted);
             }
-            if (link && link[0]) {
-                snprintf(command, sizeof(command), "%s dns %s%s",
-                         config->resolvectl, quote_link, list_text);
-            } else {
-                /* The special name "~." is systemd-resolved's own spelling for
-                   the global scope: it is the routing domain that matches
-                   every name, so servers set against it answer everything. */
-                snprintf(command, sizeof(command), "%s dns ~.%s",
-                         config->resolvectl, list_text);
-            }
+            snprintf(command, sizeof(command), "%s dns %s%s",
+                     config->resolvectl, quote_link, list_text);
         }
 
         static char output[NET_TEXT * 4];
@@ -339,6 +345,22 @@ int net_dns_set(const NetConfig *config, const char *link,
             return -1;
         }
         return 0;
+    }
+
+    /* Without resolvectl the resolver is a plain /etc/resolv.conf. Setting
+       servers writes them there; but a REVERT (no servers) has nothing to go
+       back to — this program kept no copy of what was there before, and
+       writing a file with no nameserver line would not "restore automatic", it
+       would leave the machine unable to resolve anything at all. So a revert
+       without resolvectl is refused with that reason rather than silently
+       breaking DNS. */
+    if (count == 0) {
+        if (error && size) {
+            snprintf(error, size,
+                     "automatic DNS cannot be restored without resolvectl "
+                     "(install systemd-resolved)");
+        }
+        return -1;
     }
 
     return write_resolv_conf(servers, count, error, size);
