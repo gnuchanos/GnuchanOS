@@ -8,43 +8,47 @@
 #
 # NEDEN AYRI BIR SCRIPT
 # ---------------------
-# AMD, Intel ve ESKI NVIDIA kartlar acik kaynak suruculerle (amdgpu, i915,
-# nouveau) calisir ve o yollar live ISO'da HAZIRDIR: gerekli cekirdek
-# firmware'i paket listesine eklenmistir (firmware-amd-graphics,
-# firmware-intel-graphics, firmware-nvidia-graphics). Bir NVIDIA karti takili
-# bir makinede ISO bu haliyle acilir; masaustu nouveau ile gelir.
+# AMD ve Intel kartlar acik kaynak suruculerle (amdgpu, i915/xe) calisir ve o
+# yollar live ISO'da HAZIRDIR: gerekli cekirdek firmware'i paket listesine
+# eklenmistir (firmware-amd-graphics, firmware-intel-graphics). Bu iki uretici
+# icin ek bir adim GEREKMEZ - kart takilir takilmaz tam hizda acilir.
 #
-# Ama NVIDIA'nin TAM performans veren surucusu `nvidia-driver` ozeldir ve
+# NVIDIA'nin TAM performans veren surucusu `nvidia-driver` ise OZELdir ve
 # live ISO'ya gomulemez. Iki nedeni var ve ikisi de gercektir:
 #
 #   1. SURUM KART NESLINE BAGLIDIR. Tek bir sistemde ayni anda yalnizca BIR
 #      NVIDIA surucu surumu olabilir; surumler birbirini dislar. Guncel surucu
-#      Maxwell (GTX 900) ve sonrasini destekler; Kepler (GTX 600/700) icin
-#      nvidia-legacy-470xx, Fermi ve oncesi icin nvidia-legacy-390xx gerekir.
-#      "GTX 1050 Ti ve oncesi" tek bir paketle karsilanamaz - hangisi oldugu
-#      karta gore degisir. Bu yuzden karari Debian'in kendi araci `nvidia-detect`
-#      verir ve bu script onun soyledigini kurar.
+#      Maxwell (GTX 900) ve sonrasini destekler - GTX 1050 Ti BURADADIR;
+#      Kepler (GTX 600/700) icin nvidia-legacy-470xx, Fermi ve oncesi icin
+#      nvidia-legacy-390xx gerekir. "GTX 1050 Ti ve oncesi" TEK bir paketle
+#      karsilanamaz - hangisi oldugu karta gore degisir. Bu yuzden karari
+#      Debian'in kendi araci `nvidia-detect` verir ve bu script onun soyledigini
+#      kurar; kart listesi Debian ile birlikte guncellenir.
 #
-#   2. NOUVEAU ILE CATISIR. nvidia-driver kurulunca nouveau'yu blacklist eder.
-#      Bir live ISO'da bu geri donusu olmayan bir bahistir: kart listede yoksa
-#      (cok yeni Blackwell ya da cok eski bir kart) siyah ekran kalir ve
-#      nouveau'ya donus yoktur. Bu yuzden ISO'da VARSAYILAN nouveau'dur; ozel
-#      surucu, kullanicinin kendi makinesinde actigi bir adimdir.
+#   2. NOUVEAU ILE CATISIR. nvidia-driver kurulunca acik kaynak nouveau surucusu
+#      blacklist edilir. Bir live ISO'da bu geri donusu olmayan bir bahistir:
+#      surucunun kapsamadigi bir karta gomulurse siyah ekran kalir ve nouveau'ya
+#      donus yoktur. Bu yuzden ISO nouveau ile acilir (kart HER ZAMAN goruntuye
+#      gelir); ozel surucu, kullanicinin kendi makinesinde actigi bir adimdir.
 #
-# Bu script tam olarak o adimdir: karti okur, Debian'in `nvidia-detect` araciyla
-# DOGRU surumun hangisi oldugunu ogrenir ve onu kurar - boylece hem GTX 1050 Ti
-# (Pascal, guncel surucu) hem de daha eski bir kart (legacy surucu) tek bir
-# komutla dogru sekilde kurulur. Karari elle vermez, Debian'in tablosuna
-# birakir: kart listesi Debian ile birlikte guncellenir.
+# Ozel surucu kurulunca yalnizca o kart tam hiza cikmaz: script ayrica
+#   - NVIDIA'nin ZORUNLU cekirdek modu ayarini yazar (`nvidia_drm modeset=1`),
+#   - HIBRIT (Optimus) laptopta panelin hangi karta bagli oldugunu bilir ve
+#     `fbdev=1` ile konsolu canli tutar; boylece GPU'lu bir laptop da tam
+#     hizda acilir, yazilim render'a (llvmpipe) DUSMEZ.
 #
 # NE DEGISTIRIR
 #     apt)  nvidia-detect, ardindan onun onerdigi surucu paketi
 #           (nvidia-driver ya da nvidia-legacy-XXXX-driver) ve
 #           linux-headers-amd64 (DKMS cekirdek modulunu derleyebilsin diye)
+#     /etc/modprobe.d/gnuchan-nvidia.conf
+#           `options nvidia_drm modeset=1 fbdev=1` - KMS. NVIDIA 495 ve
+#           sonrasinda ZORUNLUDUR: yazilmazsa surucu yuklenir ama X/Wayland onu
+#           kullanamaz ve masaustu llvmpipe'a duser.
 #     nouveau otomatik blacklist edilir (surucu paketinin kendisi yapar)
 #
-# --revert ozel surucuyu kaldirir ve nouveau geri gelir; kurulan cekirdek
-# modulu de paketleriyle birlikte gider.
+# --revert ozel surucuyu ve bu scriptin yazdigi modprobe dosyasini kaldirir;
+# nouveau geri gelir, kurulan cekirdek modulu de paketleriyle birlikte gider.
 #
 # Lisans: GPL3
 # =============================================================================
@@ -61,6 +65,12 @@ from pathlib import Path
 #: Bir NVIDIA kartin PCI uretici kimligi; lspci -nn ciktisinda boyle gorunur.
 NVIDIA_VENDOR_ID = "10de"
 
+#: Diger iki ureticinin PCI kimlikleri. Bir makinede NVIDIA ile birlikte
+#: gorunurlerse makine HIBRITtir (Optimus laptop): panel iGPU'ya baglidir,
+#: NVIDIA kart PRIME offloading icin arkada render eder.
+INTEL_VENDOR_ID = "8086"
+AMD_VENDOR_ID = "1002"
+
 #: Debian'in "bu karta hangi surucu" sorusunu yanitlayan araci. Karari bu verir:
 #: guncel mi legacy mi, hangi legacy serisi. Cihaz kimligi tablosu Debian ile
 #: guncellendigi icin yeni kartlar bu script degismeden taninir.
@@ -73,6 +83,33 @@ RECOMMENDATION = re.compile(r"\b(nvidia-(?:legacy-\d+xx-)?driver)\b")
 #: DKMS'in ozel cekirdek modulunu derleyebilmesi icin. Meta paket: her cekirdek
 #: guncellemesinde headers'in de gelmesini saglar.
 HEADERS_PACKAGE = "linux-headers-amd64"
+
+#: Bu scriptin yazdigi NVIDIA cekirdek-modu yapilandirmasi.
+MODPROBE_PATH = Path("/etc/modprobe.d/gnuchan-nvidia.conf")
+
+#: KMS ayari. `modeset=1` NVIDIA 495+ icin ZORUNLUDUR: olmadan surucu yuklenir
+#: ama X/Wayland kullanamaz ve masaustu yazilim render'a duser. `fbdev=1` ise
+#: karta bagli bir ekran olmadiginda bile calisan bir konsol/framebuffer birakir
+#: - HIBRIT bir laptopta normal durum budur (panel iGPU'da, NVIDIA arkada
+#: render eder). Ikisi birlikte hem tek-GPU hem Optimus makinede tam hizi verir.
+MODPROBE_TEXT = """\
+# GnuChanOS / GnuChanDM: NVIDIA cekirdek modu (KMS).
+#
+# Bu dosyayi install_nvidia.py yazar.
+#
+# `modeset=1` NVIDIA 495 ve sonrasinda ZORUNLUDUR: yazilmazsa surucu yuklenir
+# ama X/Wayland onu kullanamaz ve masaustu yazilim render'a (llvmpipe) duser.
+#
+# `fbdev=1` karta bagli bir ekran olmadiginda da calisan bir framebuffer
+# birakir. HIBRIT bir laptopta normal durum budur: panel Intel/AMD iGPU'ya
+# baglidir, NVIDIA kart PRIME offloading icin arkada render eder. Bu olmadan
+# konsol ve erken acilis boyle bir makinede bos gelebilir.
+options nvidia_drm modeset=1 fbdev=1
+"""
+
+#: Dosyayi bu scriptin yazdigini isaretler; `--revert` yalnizca kendi yazdigini
+#: silmek icin bunu arar ve bir kullanicinin kendi modprobe dosyasina dokunmaz.
+MODPROBE_MARKER = "install_nvidia.py"
 
 
 # --- cikti -------------------------------------------------------------------
@@ -165,23 +202,52 @@ class GpuState:
 
     def __init__(self) -> None:
         self.cards = self._cards()
+        self.other_gpus = self._other_gpus()
         self.detect_present = which(DETECT_TOOL) is not None
         self.recommended = self._recommended()
         self.proprietary_installed = self._proprietary_installed()
 
-    def _cards(self) -> list[str]:
-        """lspci'nin NVIDIA satirlari; hic yoksa bos liste."""
+    def _display_lines(self) -> list[str]:
+        """lspci'nin ekran denetleyicisi satirlari (VGA/3D/Display)."""
         if which("lspci") is None:
             return []
         result = run([tool("lspci"), "-nn"], capture=True)
+        return [
+            line for line in result.stdout.splitlines()
+            if "vga" in line.lower()
+            or "3d" in line.lower()
+            or "display" in line.lower()
+        ]
+
+    def _cards(self) -> list[str]:
+        """lspci'nin NVIDIA satirlari; hic yoksa bos liste."""
         found: list[str] = []
-        for line in result.stdout.splitlines():
-            low = line.lower()
-            if "vga" in low or "3d" in low or "display" in low:
-                if NVIDIA_VENDOR_ID in line.lower():
-                    _, _, name = line.partition(": ")
-                    found.append(name.strip() or line.strip())
+        for line in self._display_lines():
+            if NVIDIA_VENDOR_ID in line.lower():
+                _, _, name = line.partition(": ")
+                found.append(name.strip() or line.strip())
         return found
+
+    def _other_gpus(self) -> list[str]:
+        """NVIDIA disindaki ekran denetleyicileri (Intel/AMD).
+
+        Bir tane varsa makine HIBRITtir (Optimus/PRIME): oturum iGPU uzerinde
+        kosar, agir is NVIDIA'ya devredilir.
+        """
+        found: list[str] = []
+        for line in self._display_lines():
+            lowered = line.lower()
+            if NVIDIA_VENDOR_ID in lowered:
+                continue
+            if INTEL_VENDOR_ID in lowered or AMD_VENDOR_ID in lowered:
+                _, _, name = line.partition(": ")
+                found.append(name.strip() or line.strip())
+        return found
+
+    @property
+    def is_hybrid(self) -> bool:
+        """NVIDIA ile birlikte bir iGPU var mi."""
+        return bool(self.cards) and bool(self.other_gpus)
 
     def _recommended(self) -> str:
         """nvidia-detect'in onerdigi surucu paketi; yoksa bos dize.
@@ -216,6 +282,10 @@ def report(log: Log, state: GpuState) -> None:
             log.detail(f"kart              {card}")
     else:
         log.detail("kart              NVIDIA ekran karti bulunamadi")
+    if state.other_gpus:
+        for gpu in state.other_gpus:
+            log.detail(f"ikinci GPU        {gpu}")
+        log.detail("makine            HIBRIT (Optimus/PRIME)")
     log.detail(f"cekirdek          {state.kernel()}")
     log.detail(f"nvidia-detect     {'var' if state.detect_present else 'yok'}")
     log.detail(f"onerilen surucu   {state.recommended or '(henuz bilinmiyor)'}")
@@ -226,10 +296,13 @@ def report(log: Log, state: GpuState) -> None:
     log.note()
     if not state.cards:
         log.note("Bu makinede NVIDIA karti yok; ozel surucuye gerek yok.")
-        log.note("AMD/Intel/NVIDIA-eski kartlar acik kaynak suruculerle calisir ve")
-        log.note("gerekli firmware live ISO'dadir.")
+        log.note("Intel/AMD kartlar acik kaynak suruculerle (i915/xe, amdgpu) tam")
+        log.note("hizda calisir ve gerekli firmware live ISO'dadir.")
     elif state.proprietary_installed:
         log.note("Ozel NVIDIA surucusu kurulu. Tam performans icin etkindir.")
+        if state.is_hybrid:
+            log.note("Hibrit makine: oturum iGPU'da kosar; agir is icin PRIME")
+            log.note("offloading kullanilir (asagida).")
     elif not state.detect_present:
         log.note("Kart var ama karar araci yok. Kurmak icin:")
         log.note("    sudo python3 install_nvidia.py")
@@ -270,6 +343,52 @@ def install_packages(log: Log, packages: tuple[str, ...]) -> bool:
     return True
 
 
+# --- KMS yapilandirmasi ------------------------------------------------------
+
+
+def write_kms_config(log: Log) -> bool:
+    """`nvidia_drm modeset=1 fbdev=1` yaz. NVIDIA 495+ icin ZORUNLU.
+
+    Bu dosya olmadan surucu yuklenir ama X/Wayland onu kullanamaz ve masaustu
+    yazilim render'a (llvmpipe) duser - yani kart kurulu olmasina ragmen
+    'calismiyor' gorunur. Bu, bu scriptin onledigi ana tuzaktir.
+    """
+    try:
+        MODPROBE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        MODPROBE_PATH.write_text(MODPROBE_TEXT, encoding="utf-8")
+        MODPROBE_PATH.chmod(0o644)
+    except OSError as error:
+        log.warn(f"modprobe yapilandirmasi yazilamadi: {error}")
+        return False
+    log.detail(f"yazildi: {MODPROBE_PATH} (nvidia_drm modeset=1 fbdev=1)")
+    return True
+
+
+def is_our_kms_config() -> bool:
+    """modprobe dosyasini bu script mi yazdi."""
+    try:
+        return MODPROBE_MARKER in MODPROBE_PATH.read_text(
+            encoding="utf-8", errors="replace"
+        )
+    except OSError:
+        return False
+
+
+def remove_kms_config(log: Log) -> None:
+    """Bu scriptin yazdigi modprobe dosyasini sil; kullanicininki kalsin."""
+    if not MODPROBE_PATH.exists():
+        log.detail(f"{MODPROBE_PATH} zaten yok")
+        return
+    if not is_our_kms_config():
+        log.detail(f"{MODPROBE_PATH} bu script yazmadi; dokunulmuyor")
+        return
+    try:
+        MODPROBE_PATH.unlink()
+        log.detail(f"silindi: {MODPROBE_PATH}")
+    except OSError as error:
+        log.warn(f"silinemedi: {error}")
+
+
 # --- kurulum -----------------------------------------------------------------
 
 
@@ -294,8 +413,7 @@ def install(log: Log, state: GpuState) -> int:
     if not state.recommended:
         log.warn(
             "nvidia-detect bir surucu onerisi vermedi. Kart cok yeni olabilir "
-            "(surucu henuz yok) ya da taninmiyor. Acik kaynak nouveau ile "
-            "kullanmaya devam edebilirsiniz."
+            "(surucu henuz yok) ya da taninmiyor."
         )
         return 1
 
@@ -314,12 +432,34 @@ def install(log: Log, state: GpuState) -> int:
     if not install_packages(log, tuple(needed)):
         return 1
 
+    # Paketler kuruldu; simdi KMS ayari. Bu olmadan surucu kurulu ama kullanilamaz.
+    log.note()
+    log.step("NVIDIA cekirdek modu (KMS) yapilandiriliyor")
+    kms_written = write_kms_config(log)
+
     final = GpuState()
     log.note()
     if final.proprietary_installed:
         log.note("Ozel NVIDIA surucusu kuruldu. Tam performans etkin olacak.")
     else:
         log.note("Paketler kuruldu; cekirdek modulu bir sonraki acilista yuklenir.")
+    if not kms_written:
+        log.warn(
+            "KMS ayari yazilamadi; surucu yuklenir ama X onu kullanamaz ve "
+            "masaustu llvmpipe'a duser. Elle ekleyin:\n"
+            "    echo 'options nvidia_drm modeset=1 fbdev=1' | "
+            "sudo tee /etc/modprobe.d/gnuchan-nvidia.conf"
+        )
+
+    if final.is_hybrid:
+        log.note()
+        log.step("Hibrit (Optimus) makine")
+        log.note("Panel Intel/AMD iGPU uzerinde kosar; NVIDIA kart PRIME ile")
+        log.note("agir is yuklenince devreye girer. Bir uygulamayi NVIDIA'da")
+        log.note("calistirmak icin:")
+        log.note("    __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia <uygulama>")
+        log.note("Tum GPU'lari listelemek icin:  xrandr --listproviders")
+
     log.note()
     log.note("ONEMLI: X yeniden baslatilmali (ya da makine).")
     log.note("    sudo systemctl restart gnuchandm     # ya da: sudo reboot")
@@ -332,9 +472,10 @@ def revert(log: Log) -> int:
     """Ozel surucuyu kaldir; nouveau geri gelir.
 
     Kaldirilacak paket adi surume gore degistigi icin once ne kurulu oldugu
-    bulunur: nvidia-detect'in onerisi ve kurulu nvidia surucu paketleri
-    taranir. Ardindan o paketler apt ile kaldirilir; surucu paketi cekilince
-    nouveau blacklist'i de kalkar ve bir sonraki oturumda nouveau yuklenir.
+    bulunur: kurulu nvidia surucu paketleri taranir. Ardindan o paketler apt
+    ile kaldirilir; surucu paketi cekilince nouveau blacklist'i de kalkar ve
+    bir sonraki oturumda nouveau yuklenir. Bu scriptin yazdigi KMS dosyasi da
+    silinir.
     """
     log.step("Kurulu NVIDIA surucu paketleri bulunuyor")
     installed: list[str] = []
@@ -349,16 +490,17 @@ def revert(log: Log) -> int:
 
     if not installed:
         log.detail("kurulu ozel surucu paketi yok")
-        log.note("Geri alinacak bir sey yok.")
-        return 0
+    else:
+        log.detail("kaldirilacak: " + ", ".join(installed))
+        command = [tool("apt-get"), "purge", "-y", *installed]
+        if run(command, environment=apt_environment()).returncode != 0:
+            log.warn("paketler kaldirilamadi")
+            return 1
+        run([tool("depmod"), "-a"], capture=True)
 
-    log.detail("kaldirilacak: " + ", ".join(installed))
-    command = [tool("apt-get"), "purge", "-y", *installed]
-    if run(command, environment=apt_environment()).returncode != 0:
-        log.warn("paketler kaldirilamadi")
-        return 1
+    log.step("KMS yapilandirmasi kaldiriliyor")
+    remove_kms_config(log)
 
-    run([tool("depmod"), "-a"], capture=True)
     log.note()
     log.note("Ozel surucu kaldirildi; nouveau bir sonraki oturumda geri gelir.")
     log.note("X'i yeniden baslatin:  sudo systemctl restart gnuchandm")
@@ -372,7 +514,7 @@ def usage() -> None:
     print(
         "kullanim: python3 install_nvidia.py [--status | --revert]\n"
         "\n"
-        "  (parametresiz)  kart icin dogru ozel surucuyu kur\n"
+        "  (parametresiz)  kart icin dogru ozel surucuyu kur (KMS dahil)\n"
         "  --status        durumu yaz, hicbir sey degistirme\n"
         "  --revert        ozel surucuyu kaldir, nouveau'ya don\n"
     )
