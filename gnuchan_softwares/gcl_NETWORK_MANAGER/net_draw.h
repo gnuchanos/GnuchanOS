@@ -32,4 +32,12 @@ int net_visible_rows(const NetUi *ui);
    same rectangles are there for the drawing and for a click. */
 void net_layout_buttons(NetUi *ui);
 
+/* The rectangle of DNS box `index` (0 = IPv4 preferred, 1 = IPv4 alternate,
+   2 = IPv6 preferred, 3 = IPv6 alternate), for the DNS panel. Returns 1 and
+   fills the four out-parameters, or 0 when there is no such box. Shared by the
+   drawing and the click handler so a box that is drawn and a box that is
+   clicked are the same rectangle. */
+int net_dns_box_rect(const NetUi *ui, int index,
+                     int *x, int *y, int *width, int *height);
+
 #endif /* GNUCHANNET_DRAW_H */

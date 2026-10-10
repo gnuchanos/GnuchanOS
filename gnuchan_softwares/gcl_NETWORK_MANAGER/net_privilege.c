@@ -167,6 +167,85 @@ static int run_sudo(int argc, char **argv, const char *password) {
     return -1;
 }
 
+/* Run the copy through sudo WITHOUT a password window, letting sudo ask on the
+   terminal the program was started from. This is the path for a launch from a
+   shell.
+
+   Why a separate path at all: started in a terminal, the program would have
+   asked for the password TWICE — once in the X dialog this file shows, and once
+   on the terminal, where sudo can also ask. Two prompts for one password, one of
+   them on a terminal the person thought they were done with, is what made the
+   program look broken from a shell. When there IS a terminal, that terminal is
+   the place to ask and no window is shown at all; the window is only for a
+   launch from the launcher, where there is no terminal to ask on.
+
+   stdin, stdout and stderr are left attached, so sudo's prompt and any error it
+   prints are seen exactly as any other sudo. */
+static int run_sudo_in_terminal(int argc, char **argv) {
+    char self[PATH_MAX];
+    self_path(argc, argv, self, sizeof(self));
+
+    char kept[KEEP_COUNT][PATH_MAX + 64];
+    const char *kept_pointers[KEEP_COUNT + 1];
+    int kept_count = 0;
+    for (int i = 0; i < KEEP_COUNT; i++) {
+        const char *value = getenv(kKeep[i]);
+        if (value && value[0]) {
+            snprintf(kept[kept_count], sizeof(kept[0]), "%s=%s",
+                     kKeep[i], value);
+            kept_pointers[kept_count] = kept[kept_count];
+            kept_count++;
+        }
+    }
+    kept_pointers[kept_count] = NULL;
+
+    char elevated[sizeof(GNUCHANNET_ELEVATED_VARIABLE) + 2];
+    snprintf(elevated, sizeof(elevated), "%s=1",
+             GNUCHANNET_ELEVATED_VARIABLE);
+
+    /* sudo -E env ELEVATED=1 <kept...> /abs/self <args...>
+     *
+     * No -S: the password is sudo's to ask for here. */
+    int slots = 4 + kept_count + 1 + (argc > 1 ? argc - 1 : 0) + 1;
+    char **command = calloc((size_t)slots, sizeof(char *));
+    if (!command) {
+        return -1;
+    }
+
+    int at = 0;
+    command[at++] = (char *)"sudo";
+    command[at++] = (char *)"-E";
+    command[at++] = (char *)"env";
+    command[at++] = elevated;
+    for (int i = 0; i < kept_count; i++) {
+        command[at++] = (char *)kept_pointers[i];
+    }
+    command[at++] = self;
+    for (int i = 1; i < argc; i++) {
+        command[at++] = argv[i];
+    }
+    command[at] = NULL;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        free(command);
+        return -1;
+    }
+    if (pid == 0) {
+        execvp("sudo", command);
+        _exit(127);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    free(command);
+
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    return -1;
+}
+
 int net_privilege_ensure(int argc, char **argv, const NetConfig *config) {
     if (is_root()) {
         return 0;
@@ -178,7 +257,22 @@ int net_privilege_ensure(int argc, char **argv, const NetConfig *config) {
         return 0;
     }
 
-    /* The one thing the person sees before the manager opens. */
+    /* From a terminal, sudo asks there itself — no window, and therefore no
+       second prompt. See run_sudo_in_terminal(). */
+    if (isatty(STDIN_FILENO)) {
+        int result = run_sudo_in_terminal(argc, argv);
+        if (result < 0) {
+            fprintf(stderr,
+                    "gnuchannetworkmanager: sudo could not be run; the window "
+                    "will open, but the DNS and the interfaces cannot be "
+                    "changed\n");
+            return -1;
+        }
+        exit(result);
+    }
+
+    /* No terminal — started from the launcher. The password is asked for in a
+       window, because there is nowhere else to ask. */
     char password[NET_LOGIN_MAX];
     if (net_login_prompt(config, password, sizeof(password)) != 0) {
         fprintf(stderr,

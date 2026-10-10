@@ -409,31 +409,67 @@ static void draw_devices(NetUi *ui) {
 
 /* --- the DNS panel -------------------------------------------------------- */
 
-/* One labelled box, at a given x span: the label above it, the box, the text,
-   and a caret when the box has the focus. `x` and `width` are its own, so two
-   boxes sit side by side under one label. */
-static void draw_dns_box(NetUi *ui, int x, int width, int y,
+/* The rectangle of DNS box `index`, for both the drawing and the click. The
+   panel is: the "Current DNS" header and one line of servers, then the IPv4
+   heading and its two boxes, then the IPv6 heading and its two boxes. A box is
+   two rows — its label, then the field — so the field's y is the label's row
+   plus one. Written once and used by both, so a box that is drawn and a box
+   that is clicked are the same rectangle and cannot drift apart. */
+int net_dns_box_rect(const NetUi *ui, int index,
+                     int *x, int *y, int *width, int *height) {
+    if (index < 0 || index > 3) {
+        return 0;
+    }
+    int left = ui->style.padding;
+    int right = ui->width - ui->style.padding;
+    int row = row_height(ui);
+    int column_gap = ui->style.padding * 2;
+    int half = (right - left - column_gap) / 2;
+
+    /* The panel, top down: the "Current DNS" header, the servers line, a gap,
+       then four boxes in two rows of two — IPv4's pair, a gap, IPv6's pair.
+       Each box is two rows (its label, then its field), and the family is named
+       IN the label ("IPv4 Preferred"), so there is no separate heading row to
+       drift out of step. `label_top` is the first box's label row; a box's
+       field is one row below its label. */
+    int label_top = body_top_y(ui) + 2 * row + ui->style.padding;
+    int group = index / 2;                 /* 0 = IPv4, 1 = IPv6 */
+    int label_y = label_top + group * (2 * row + ui->style.padding);
+    int field_y = label_y + row;
+
+    int column = index % 2;                /* 0 = Preferred, 1 = Alternate */
+    *x = left + column * (half + column_gap);
+    *y = field_y;
+    *width = half;
+    *height = row;
+    return 1;
+}
+
+/* One labelled box, at a given span and field row: the label on the row above
+   the field, the field itself, the text, and a caret when the box has the
+   focus. `box_y` is the FIELD row; the label goes one row above it, which is
+   the same geometry net_dns_box_rect() reports. */
+static void draw_dns_box(NetUi *ui, int x, int width, int box_y,
                          const char *label, const char *value, int focused) {
     int ascent = ui->style.font ? ui->style.font->ascent : 16;
     int field_h = row_height(ui);
 
-    text(ui, x, y + ascent, label, ui->style.text_muted);
-    y += row_height(ui);
+    text(ui, x, box_y - row_height(ui) + ascent, label, ui->style.text_muted);
 
-    fill(ui, ui->style.field, x, y, width, field_h);
+    fill(ui, ui->style.field, x, box_y, width, field_h);
     outline(ui, focused ? ui->style.accent : ui->style.panel_edge,
-            x, y, width, field_h);
+            x, box_y, width, field_h);
 
     char shown[NET_TEXT];
     net_style_fit(ui->display, ui->style.font, value,
                   width - 2 * ui->style.padding, shown, sizeof(shown));
-    text(ui, x + ui->style.padding, y + ascent, shown, ui->style.text);
+    text(ui, x + ui->style.padding, box_y + ascent, shown, ui->style.text);
 
     if (focused) {
         fill(ui, ui->style.accent,
              x + ui->style.padding +
                  net_style_text_width(ui->display, ui->style.font, shown),
-             y + ui->style.padding / 2, 2, field_h - ui->style.padding);
+             box_y + ui->style.padding / 2, 2, field_h - ui->style.padding);
     }
 }
 
@@ -479,26 +515,32 @@ static void draw_dns(NetUi *ui) {
 
     y += ui->style.padding;
 
-    /* IPv4: a heading, then its Preferred and Alternate boxes side by side.
-       IPv6: the same, under its own heading. Two families, because a person
-       filling in Google DNS has two IPv4 values and two IPv6 ones, and each
-       pair belongs together. */
-    text(ui, left, y + ascent, "IPv4", ui->style.accent);
-    y += row_height(ui);
-    draw_dns_box(ui, left, half, y, "Preferred", ui->dns_v4_pref,
-                 ui->dns_focus == 0);
-    draw_dns_box(ui, left + half + column_gap, half, y, "Alternate",
-                 ui->dns_v4_alt, ui->dns_focus == 1);
-    y += 2 * row_height(ui) + ui->style.padding;
+    /* Four boxes in two rows of two: IPv4's pair, then IPv6's pair. The family
+       is named IN each label ("IPv4 Preferred") rather than on a heading row of
+       its own, so the geometry net_dns_box_rect() reports and the geometry this
+       draws are the same walk down from the top — no separate heading to get
+       out of step with the click. */
+    static const char *const labels[4] = {
+        "IPv4 Preferred", "IPv4 Alternate",
+        "IPv6 Preferred", "IPv6 Alternate",
+    };
+    const char *const values[4] = {
+        ui->dns_v4_pref, ui->dns_v4_alt, ui->dns_v6_pref, ui->dns_v6_alt,
+    };
 
-    text(ui, left, y + ascent, "IPv6", ui->style.accent);
-    y += row_height(ui);
-    draw_dns_box(ui, left, half, y, "Preferred", ui->dns_v6_pref,
-                 ui->dns_focus == 2);
-    draw_dns_box(ui, left + half + column_gap, half, y, "Alternate",
-                 ui->dns_v6_alt, ui->dns_focus == 3);
-    y += 2 * row_height(ui) + ui->style.padding;
+    for (int i = 0; i < 4; i++) {
+        int bx = 0, by = 0, bw = 0, bh = 0;
+        net_dns_box_rect(ui, i, &bx, &by, &bw, &bh);
+        draw_dns_box(ui, bx, bw, by, labels[i], values[i],
+                     ui->dns_focus == i);
+    }
 
+    /* The hint sits under the last box's field row. */
+    y = body_top_y(ui) + 2 * row_height(ui) + ui->style.padding +
+        2 * (2 * row_height(ui) + ui->style.padding) + row_height(ui);
+    (void)half;
+    (void)column_gap;
+    (void)ascent;
     text(ui, left, y + ascent,
          "Apply sets them. All empty = automatic (the network's own).",
          ui->style.text_muted);

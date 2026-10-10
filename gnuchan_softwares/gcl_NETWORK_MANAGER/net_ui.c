@@ -599,6 +599,26 @@ static void handle_click(NetUi *ui, XButtonEvent *button) {
         }
     }
 
+    /* In the DNS panel a click on a box puts the caret in it, the way clicking
+       a text field does everywhere else. This was missing and it read as a dead
+       window: four boxes you could only reach with Tab. The rectangle comes
+       from net_dns_box_rect(), the same one the box is drawn with. */
+    if (ui->mode == NET_MODE_DNS) {
+        for (int i = 0; i < 4; i++) {
+            int bx = 0, by = 0, bw = 0, bh = 0;
+            if (!net_dns_box_rect(ui, i, &bx, &by, &bw, &bh)) {
+                continue;
+            }
+            if (button->x >= bx && button->x < bx + bw &&
+                button->y >= by && button->y < by + bh) {
+                ui->dns_focus = i;
+                net_draw(ui);
+                return;
+            }
+        }
+        return;
+    }
+
     if (ui->mode != NET_MODE_DEVICES) {
         return;
     }

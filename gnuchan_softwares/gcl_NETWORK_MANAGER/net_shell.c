@@ -38,10 +38,23 @@ void net_shell_quote(const char *in, char *out, unsigned int size) {
 }
 
 int net_shell_run(const char *command, char *out, unsigned int size) {
-    /* Room for the longest command a caller can build, plus the " 2>&1" added
-       below, so the command that reaches the shell is the whole command. */
+    /* Room for the longest command a caller can build, plus the wrapper and
+       the " 2>&1" added below, so the command that reaches the shell is
+       whole. */
     char line[NET_TEXT * 12];
-    snprintf(line, sizeof(line), "%s 2>&1", command);
+
+    /* Every command is given a hard ceiling, and this is not belt-and-braces:
+       it is what keeps the window from freezing. These run on the UI thread,
+       and a few of them talk to a service rather than doing a quick job —
+       resolvectl asks systemd-resolved over D-Bus, nmcli asks NetworkManager —
+       and a service that is starting, wedged, or simply slow keeps the caller
+       blocked for as long as D-Bus's own timeout allows (tens of seconds). A
+       window frozen during an "Apply" is indistinguishable from a crash. With
+       `timeout` each command is given a few seconds and then killed, the
+       action reports that it did not answer, and the window stays alive.
+       timeout is coreutils and is on every Debian. */
+    const char *prefix = net_shell_have("timeout") ? "timeout 8 " : "";
+    snprintf(line, sizeof(line), "%s%s 2>&1", prefix, command);
 
     FILE *pipe = popen(line, "r");
     if (!pipe) {
