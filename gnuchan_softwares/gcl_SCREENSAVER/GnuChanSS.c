@@ -551,6 +551,28 @@ int main(int argc, char **argv) {
          * pointer move); the loop then goes straight back to waiting, which
          * arms the saver for the next quiet spell. */
         while (!s_should_stop) {
+            /* Read the settings again BEFORE each show, so the daemon shows
+               what the file says now and not what it said at login.
+             *
+             * This is the whole reason the daemon and the --once path used to
+             * disagree: --once reads the file every time it runs, and the
+             * daemon read it exactly once, at session start, then held that
+             * copy for as long as the session lived. Editing the effect — asking
+             * for 3dwall instead of pipe — therefore changed the show raised by
+             * the key and left the automatic one on the old choice, so the same
+             * desk showed two different pictures depending on what raised it.
+             * Re-reading here makes the file the single answer for both paths:
+             * whatever it says when the desk goes quiet is what comes up. A
+             * read that fails leaves the last good settings and says so, exactly
+             * as the first read does. */
+            SsConfig fresh;
+            if (ss_config_load_default(&fresh) == 0) {
+                config = fresh;
+                primary = pixel_of(display, screen, config.primary,
+                                   WhitePixel(display, screen));
+                background = pixel_of(display, screen, config.background,
+                                      BlackPixel(display, screen));
+            }
             wait_for_idle(display, config.idle_seconds);
             if (s_should_stop) {
                 break;
