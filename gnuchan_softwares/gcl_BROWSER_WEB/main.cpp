@@ -16,6 +16,12 @@
  * this is the one place they can be set for both a person running the binary
  * and a test that runs it.
  *
+ * One switch below is not about speed. Chromium resolves names with its own
+ * client unless it is told otherwise, which is why a DNS server set in
+ * GnuChanNetworkManager did not reach this browser: the built-in resolver is
+ * turned off so lookups go through the system's — the same resolver every other
+ * program on the machine asks.
+ *
  *     GnuChanBrowser              the optimised software profile below
  *     GnuChanBrowser --software   accepted for compatibility; the same thing
  */
@@ -83,18 +89,42 @@ int main(int argc, char **argv) {
                                        heap is a promise of garbage collection
                                        later, and there is only 4 GB here
          --disk-cache-size=52428800    a 50 MB disk cache instead of the
-                                       default; less written, less read back
-         --disable-features=...        the background machinery that has no
-                                       place in a light browser: the back/
-                                       forward page cache, translate, the
-                                       optimisation-hints fetch, and the media
-                                       router */
+                                       default; less written, less read back */
     flags +=
         "--enable-low-end-device-mode "
         "--js-flags=--max-old-space-size=128 "
-        "--disk-cache-size=52428800 "
+        "--disk-cache-size=52428800 ";
+
+    /* The system's resolver, not the browser's own — and this is the reason a
+       DNS change made in GnuChanNetworkManager reached every program on the
+       machine except this one.
+
+       Chromium ships its own DNS client (the "async" resolver) and turns it on
+       by default. That client reads the nameservers for itself, keeps its own
+       cache, and — left alone — quietly upgrades to DNS-over-HTTPS when it
+       recognises the configured server. So a server just set in the network
+       manager is not the one the browser asks: it is still asking whatever its
+       own client read when it started, or a DoH provider it chose by itself.
+
+       Turning the built-in resolver off sends name lookups back through the
+       operating system (getaddrinfo), which is the same path every other
+       program takes: it reads /etc/resolv.conf and, through it,
+       systemd-resolved — the resolver GnuChanNetworkManager sets and the one
+       the rest of the desktop already uses. DoH is turned off with it, so a
+       lookup cannot leave for a provider that was never chosen.
+
+         AsyncDns       the browser's own resolver; off means the system's is
+                        used
+         DnsOverHttps   the silent upgrade to a DoH provider; off keeps the
+                        servers that were chosen
+
+       These sit in the same --disable-features list as the background
+       machinery below because Chromium reads that switch once: a second
+       --disable-features on the command line replaces this one rather than
+       adding to it, so every disabled feature has to be named here. */
+    flags +=
         "--disable-features=BackForwardCache,Translate,OptimizationHints,"
-        "MediaRouter ";
+        "MediaRouter,AsyncDns,DnsOverHttps ";
 
     /* Fewer programs, and no rescue timers. The network service normally runs
        as its own process; on a machine this small it is worth folding into the
