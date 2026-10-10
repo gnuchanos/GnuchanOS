@@ -44,6 +44,7 @@
 #include "net_config.h"
 #include "net_device.h"
 #include "net_dns.h"
+#include "net_dpi.h"
 #include "net_style.h"
 
 /* The most a DNS line typed here may be. Far longer than a row of addresses. */

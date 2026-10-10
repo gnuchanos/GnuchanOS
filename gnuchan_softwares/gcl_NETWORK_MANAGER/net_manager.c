@@ -25,6 +25,7 @@
 #include "net_config.h"
 #include "net_device.h"
 #include "net_dns.h"
+#include "net_dpi.h"
 #include "net_privilege.h"
 #include "net_ui.h"
 
