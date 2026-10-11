@@ -1,0 +1,28 @@
+# ── Line ending policy ─────────────────────────────────────
+# Keep files in LF form in the repo even if edited on Windows.
+# Otherwise scripts break in Linux/CI due to CRLF line endings (shebang breaks).
+
+* text=auto
+
+# Shell and boot scripts must always use LF
+*.sh      text eol=lf
+# The live ISO's build tree (distro/). These files are executed: build.sh
+# configures and builds, and live-build runs config/hooks/*.chroot inside the
+# image. A CRLF checkout would break every shebang (a "#!/bin/sh\r" is a
+# different interpreter name) and leave the hooks unrunnable, so they are
+# pinned to LF regardless of the platform they are edited on.
+distro/build.sh            text eol=lf
+*.hook.chroot              text eol=lf
+*.hook.binary              text eol=lf
+# The bootloader splash the live ISO is built with (distro/config/bootloaders/).
+# It is rendered to a PNG by the build, and XML treats a stray CR as ordinary
+# whitespace, so CRLF would not break it - but the rest of the build tree is
+# pinned to LF and a file that is the odd one out is a file that gets forgotten.
+*.svg                      text eol=lf
+os/boot/init    text eol=lf
+os/boot/initrc  text eol=lf
+os/boot/inittab text eol=lf
+os/boot/grub.cfg    text eol=lf
+os/boot/os-release  text eol=lf
+os/build/gnuchanos-build.conf text eol=lf
+.github/workflows/*.yml text eol=lf

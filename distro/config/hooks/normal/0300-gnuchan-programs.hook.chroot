@@ -1,0 +1,69 @@
+#!/bin/sh
+# GnuchanOS - build and install every Gnuchan program, and the GCL language.
+#
+# The programs live in their own repositories now (GnuChanTerm, GnuChanWM, ...,
+# and the GCL language) and are fetched and installed by GnuChanPrograms.sh,
+# which is this tree's own file and is staged under /opt/gnuchanos beside
+# everything else. This hook does not repeat the list of them: it runs that
+# script, so a program added there is on the ISO without a second list here to
+# keep in step.
+#
+# The script is NOT fatal to the build. It reports a program it could not fetch
+# or build and carries on, on purpose: the repositories are private while they
+# are being prepared, the build machine may have no network, and an image that
+# is otherwise finished should not be thrown away over one program. What it
+# leaves out is missing from the image and its summary says so - but the build
+# still produces an image. A release build that wants the opposite sets
+# GNUCHAN_PROGRAMS_STRICT=1 in the environment.
+#
+# SUDO_USER is set to the live user, and that is not cosmetic. Several of these
+# installers put a settings script (GnuChanTerm.py, GnuChanWM.py, GnuChanDM.py)
+# under the home of the account that ran sudo, read back from SUDO_USER, and
+# chown it to that account. Under a plain root build SUDO_USER is unset, so
+# every one of those files would land in /root and the live session - which logs
+# in as `gnuchanos` - would read none of them, falling back to the built-in
+# colours.
+#
+# The XDG variables are set for the same kind of reason: the installers resolve
+# a per-user cache or data directory from them, and one that is unset resolves
+# to root's.
+set -eu
+
+log() { printf '==> programs: %s\n' "$1"; }
+
+LIVE_USER=gnuchanos
+LIVE_HOME=/home/$LIVE_USER
+STAGE=/opt/gnuchanos
+
+# --- the Gnuchan programs and the GCL language -------------------------------
+
+PROGRAMS="$STAGE/GnuChanPrograms.sh"
+if [ -f "$PROGRAMS" ]; then
+    log "running GnuChanPrograms.sh"
+    SUDO_USER="$LIVE_USER" \
+    HOME="$LIVE_HOME" \
+    USER="$LIVE_USER" \
+    LOGNAME="$LIVE_USER" \
+    XDG_CONFIG_HOME="$LIVE_HOME/.config" \
+    XDG_DATA_HOME="$LIVE_HOME/.local/share" \
+    XDG_CACHE_HOME="$LIVE_HOME/.cache" \
+        sh "$PROGRAMS" || {
+            # The script reports failures and exits 0 unless STRICT is set, so
+            # a non-zero here is either STRICT or a broken script. Neither is
+            # made fatal to the image: the summary above says what happened.
+            log "GnuChanPrograms.sh reported a failure; see its summary above"
+        }
+else
+    log "no $PROGRAMS; no Gnuchan programs in this image"
+fi
+
+# --- the live user owns what was written for them ----------------------------
+
+if id "$LIVE_USER" >/dev/null 2>&1; then
+    uid=$(id -u "$LIVE_USER")
+    gid=$(id -g "$LIVE_USER")
+    chown -R "$uid:$gid" "$LIVE_HOME"
+    log "gave $LIVE_HOME back to $LIVE_USER"
+fi
+
+log "done"

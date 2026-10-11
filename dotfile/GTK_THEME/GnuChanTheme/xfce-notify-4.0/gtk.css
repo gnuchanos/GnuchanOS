@@ -1,0 +1,91 @@
+/* ============================================================================
+ * GnuchanPurple - Xfce notification daemon stylesheet
+ * ----------------------------------------------------------------------------
+ * xfce4-notifyd reads <theme>/xfce-notify-4.0/gtk.css for its popups. It is a
+ * separate file from the GTK 3 theme because the daemon loads it by itself and
+ * expects plain CSS with no imports.
+ *
+ * License: GPL3
+ * ========================================================================== */
+
+@define-color bg_color       #180a22;
+@define-color fg_color       #ead7ff;
+@define-color border_color   #6d28d9;
+@define-color accent_color   #a855f7;
+@define-color error_bg_color #86198f;
+
+#XfceNotifyWindow {
+  background-color: @bg_color;
+  background-image: none;
+  border: 1px solid @border_color;
+  border-radius: 10px;
+  color: @fg_color;
+  box-shadow: 0 8px 24px 2px rgba(0, 0, 0, 0.60);
+}
+
+#XfceNotifyWindow:hover {
+  border-color: @accent_color;
+}
+
+#XfceNotifyWindow label {
+  color: @fg_color;
+}
+
+#XfceNotifyWindow label#summary {
+  color: #f3e8ff;
+  font-weight: 600;
+}
+
+#XfceNotifyWindow label#body {
+  color: #b78ed6;
+}
+
+#XfceNotifyWindow image {
+  color: @accent_color;
+}
+
+#XfceNotifyWindow button {
+  background-color: #1c0b27;
+  background-image: none;
+  border: 1px solid #32143f;
+  border-radius: 6px;
+  color: @fg_color;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+#XfceNotifyWindow button:hover {
+  background-color: #281036;
+  border-color: @accent_color;
+  color: #f3e8ff;
+}
+
+#XfceNotifyWindow button:active {
+  background-color: #542080;
+  color: #ffffff;
+}
+
+#XfceNotifyWindow progressbar trough {
+  background-color: #09030d;
+  border: 1px solid #32143f;
+  border-radius: 9999px;
+  min-height: 6px;
+}
+
+#XfceNotifyWindow progressbar progress {
+  background-color: @accent_color;
+  border: none;
+  border-radius: 9999px;
+  min-height: 6px;
+}
+
+#XfceNotifyWindow .notify-close-button {
+  color: #b78ed6;
+  background-color: transparent;
+  border: none;
+}
+
+#XfceNotifyWindow .notify-close-button:hover {
+  color: #ffffff;
+  background-color: #542080;
+}

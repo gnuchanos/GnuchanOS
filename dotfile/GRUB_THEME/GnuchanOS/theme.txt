@@ -1,0 +1,125 @@
+# =============================================================================
+# GnuchanOS - GRUB 2 theme
+# -----------------------------------------------------------------------------
+# Installed by settings_grub.py into /usr/share/grub/themes/GnuchanOS and into
+# /boot/grub/themes/GnuchanOS, which is the copy GRUB itself reads: the boot
+# loader can only open files on the filesystem it was started from, so a theme
+# in /usr/share is unreachable on a machine whose /boot is a separate partition.
+# The script writes both, generates every image this file names, and replaces
+# @FONT@ with the name of the font it found on this machine.
+#
+# The font name is not a file name. GRUB looks a font up by the name written
+# inside the font file - "Unifont Regular 16" for the unicode.pf2 that Debian's
+# grub-common installs - so the script reads that name out of the .pf2 rather
+# than guessing it here.
+#
+# The colours are the GnuchanPurple palette: the same values as the GTK theme,
+# the icon theme, the cursor theme and dotfile/vscodium_theme/settings.json,
+# which is the source of truth for them.
+#
+# GRUB's theme format, for anyone editing this: a global property is
+# `name: "value"`, a component is `+ type { ... }` with `name = value` inside
+# it, a comment starts with #, and a value that is not a word must be quoted.
+# =============================================================================
+
+# The title - the line of text drawn across the top of the screen - is empty
+# on purpose, and it is why title-text is here at all: GRUB's view starts with
+# the wording "GRUB Boot Menu" in it and draws whatever is there unless the
+# theme says otherwise, so the property has to be set to "" to take the line
+# away. Leaving it out entirely would put GRUB's own wording back, and a
+# non-empty value here would draw the distribution name again. An empty title
+# draws nothing at all, not even a blank strip, which is why the title-font and
+# title-color that went with it are gone too.
+title-text: ""
+
+message-font: "@FONT@"
+message-color: "#f3e8ff"
+message-bg-color: "#1c0532"
+
+# GRUB accepts three words for each of these and refuses the whole theme over
+# any other: left/center/right across, top/center/bottom down. "middle" is not
+# one of them, and neither is anything else that reads like it.
+#
+# The wallpaper is STRETCHED to the screen, not cropped. "crop" keeps the
+# picture's own aspect and fills the screen by cutting off whatever hangs over
+# the edges, so on a panel that is not 16:9 the top and bottom - or the sides -
+# of the picture are simply gone. "stretch" scales the whole 1920x1080 image to
+# whatever the mode is, so the entire wallpaper is always on screen, at the
+# cost of a slight distortion on a panel whose ratio differs. That distortion
+# is what a stretched wallpaper is, and it is what was asked for here. The
+# align properties do nothing under "stretch" - the image fills the screen
+# exactly - and are left in place only so the two other methods remain a
+# one-word edit away.
+desktop-image: "background.png"
+desktop-image-scale-method: "stretch"
+desktop-image-h-align: "center"
+desktop-image-v-align: "center"
+desktop-color: "#1c0532"
+
+terminal-font: "@FONT@"
+terminal-box: "terminal_box_*.png"
+terminal-left: "8%"
+terminal-top: "8%"
+terminal-width: "84%"
+terminal-height: "84%"
+terminal-border: "0"
+
+# The entries. The menu box is the translucent panel, the selected item box is
+# the brighter one drawn behind the highlighted entry, and the icons are read
+# from icons/<class>.png - GRUB tries the classes of an entry in the order
+# grub.cfg lists them and uses the first file it finds, so a Debian entry
+# (--class debian --class gnu-linux --class gnu --class os) gets the Debian
+# icon and anything unrecognised falls back to os.png.
++ boot_menu {
+    left = 18%
+    top = 20%
+    width = 64%
+    height = 58%
+    item_font = "@FONT@"
+    item_color = "#ead7ff"
+    selected_item_color = "#ffffff"
+    item_height = 34
+    item_padding = 8
+    # Wide enough for the selection box. GRUB insets that box by the size of the
+    # select_*.png slices, which are 5 pixels, so it is 44 pixels tall around an
+    # entry and the entries have to sit that far apart or the highlight covers
+    # the entry below it.
+    item_spacing = 12
+    item_icon_space = 12
+    icon_width = 28
+    icon_height = 28
+    menu_pixmap_style = "menu_*.png"
+    selected_item_pixmap_style = "select_*.png"
+    scrollbar = true
+    scrollbar_width = 10
+    scrollbar_thumb = "scrollbar_thumb_*.png"
+}
+
+# The countdown: the bar across the bottom of the menu, with the number of
+# seconds left written on it. The id is what ties it to GRUB's own timeout.
++ progress_bar {
+    id = "__timeout__"
+    left = 18%
+    top = 84%
+    width = 64%
+    height = 18
+    show_text = true
+    font = "@FONT@"
+    text_color = "#d8a4ff"
+    fg_color = "#a855f7"
+    bg_color = "#180a22"
+    border_color = "#6d28d9"
+    text = "@TIMEOUT_NOTIFICATION_LONG@"
+}
+
+# The key hints along the bottom edge.
++ label {
+    left = 0
+    top = 100%-24
+    width = 100%
+    height = 20
+    align = "center"
+    text = "@KEYMAP_MIDDLE@"
+    font = "@FONT@"
+    color = "#b78ed6"
+}

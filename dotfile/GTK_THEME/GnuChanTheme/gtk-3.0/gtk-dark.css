@@ -1,0 +1,14 @@
+/* ============================================================================
+ * GnuchanPurple - GTK 3 dark variant
+ * ----------------------------------------------------------------------------
+ * GTK 3 loads gtk-dark.css instead of gtk.css for applications that ask for
+ * the dark variant (gtk-application-prefer-dark-theme=1, or GTK_THEME=...:dark).
+ *
+ * GnuchanPurple is a dark-only theme, so this file simply forwards to the main
+ * stylesheet instead of duplicating several hundred lines that would then have
+ * to be kept in sync by hand.
+ *
+ * License: GPL3
+ * ========================================================================== */
+
+@import url("gtk.css");

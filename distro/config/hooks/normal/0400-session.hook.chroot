@@ -1,0 +1,80 @@
+#!/bin/sh
+# GnuchanOS - the live session: GnuChanDM greets, GnuChanWM is the session.
+#
+# The desktop's own display manager, GnuChanDM, IS what brings this image up.
+# An earlier version of this hook bypassed it: it logged the live user in on
+# tty1 with an autologin getty and started X from ~/.bash_profile, which meant
+# the greeter was never in the chain at all - so logging out of the desktop
+# dropped the user straight back into a new desktop, because the thing that
+# was supposed to catch a logout (the greeter) was not running. That is the
+# fault this file now fixes: GnuChanDM owns the console, starts the session,
+# and is still there when the session ends, so a logout lands on the login
+# screen where it belongs.
+#
+# PAM: GnuChanDM checks a password with pam_start("gnuchandm") and GnuChanSL
+# (the lock screen) with pam_start("gnuchansl"). Neither service file was ever
+# written, and pam_start REFUSES an unknown service, so both programs failed
+# every password they were ever given - which is why the lock screen would not
+# open. The two files are written here.
+#
+# The account also has a real password now (see the liveuser hook).
+set -eu
+
+log() { printf '==> session: %s\n' "$1"; }
+
+LIVE_USER=gnuchanos
+LIVE_HOME=/home/$LIVE_USER
+
+# --- 1. the PAM services the greeter and the lock screen ask for -------------
+
+install -d /etc/pam.d
+
+cat > /etc/pam.d/gnuchandm <<'EOF'
+# GnuchanOS - the display manager's own PAM policy. See the session hook.
+@include common-auth
+@include common-account
+@include common-session
+@include common-password
+EOF
+
+cat > /etc/pam.d/gnuchansl <<'EOF'
+# GnuchanOS - the lock screen's own PAM policy. See the session hook.
+@include common-auth
+@include common-account
+@include common-session
+@include common-password
+EOF
+
+chmod 0644 /etc/pam.d/gnuchandm /etc/pam.d/gnuchansl
+log "wrote /etc/pam.d/gnuchandm and /etc/pam.d/gnuchansl"
+
+# --- 2. the greeter owns the console -----------------------------------------
+
+if systemctl list-unit-files gnuchandm.service >/dev/null 2>&1; then
+    systemctl enable gnuchandm.service >/dev/null 2>&1 || true
+    log "gnuchandm is enabled as the display manager"
+else
+    log "gnuchandm.service is not present; the programs hook should have made it"
+fi
+systemctl set-default graphical.target >/dev/null 2>&1 || true
+
+systemctl mask getty@tty1.service autovt@tty1.service >/dev/null 2>&1 || true
+log "tty1 is reserved for the display manager"
+
+# --- 3. let the X server the greeter starts reach its devices -----------------
+
+install -d /etc/X11
+cat > /etc/X11/Xwrapper.config <<'EOF'
+# GnuchanOS live image - the display manager starts the X server.
+allowed_users=anybody
+needs_root_rights=yes
+EOF
+log "wrote /etc/X11/Xwrapper.config"
+
+# --- 4. no leftover autologin from the old session hook ----------------------
+
+rm -f /etc/systemd/system/getty@tty1.service.d/autologin.conf
+rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+rm -f "$LIVE_HOME/.bash_profile" "$LIVE_HOME/.xinitrc"
+
+log "done"

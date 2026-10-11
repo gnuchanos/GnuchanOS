@@ -1,0 +1,74 @@
+# ── Build outputs ──────────────────────────────────────────
+*.exe
+*.o
+# NOT a blanket `*.obj`: the Wavefront 3D models under assets/
+# (terrain.obj, water.obj, cube.obj) share that extension and are project
+# CONTENT, not compiler output. Blanket-ignoring them kept every model out of
+# the repository, so a fresh clone ran the fps demo with no terrain, water or
+# cube at all. `language/build/` and `_temp/` already exclude every real
+# compiler object, so the two lines below split the extension by PURPOSE: the
+# general rule still catches stray objects, the negation keeps the assets.
+*.obj
+!**/assets/*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.out
+nul
+todo.md
+# ...but the icon theme's plan is part of the theme, not a scratch note.
+!dotfile/ICON_THEME/TODO.md
+_temp/
+language/tests/*
+
+!language/tests/
+# Build output. Every makefile.py in this repository writes its product under
+# _temp/ (already ignored above), so nothing here should ever be produced in the
+# tree again. The entries below are the OLD output locations plus the generated
+# sources that used to be written into language/_SRC/: they are listed so that a
+# tree which still has them - or a stale build run - cannot dirty the working
+# directory and block `git pull` with "merge first".
+language/build/
+language/_SRC/embed_freemono.c
+language/_SRC/embed_icon.c
+gnuchan_softwares/gcl_WM/build/
+gnuchan_softwares/gcl_DM/build/
+# ── GCL test temp files (_NOTES/) ──────────────────────────
+language/_NOTES/t_*.gcsf
+language/_NOTES/t_*.gcsf.c
+# ── Python embeddable (downloaded, not source) ─────────────
+*.pyd
+*.zip
+*.cat
+*.pth
+# ── OS / IDE garbage ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vs/
+.vscode/
+.idea/
+# ── Python cache ──────────────────────────────────────────
+__pycache__/
+*.pyc
+wwww
+export.py
+# ── GnuchanOS live ISO (distro/) ──────────────────────────
+# distro/_build is where build.sh writes: the working copy of the live-build
+# tree, the chroot and binary trees, and the finished .iso. None of it is
+# source and all of it is large.
+distro/_build/
+# auto/config copies the source trees into the overlay before the build, so
+# that live-build can copy them into the image. That copy is build output and
+# is regenerated on every run; the authored configuration is beside it under
+# config/, which IS tracked.
+distro/config/includes.chroot/opt/gnuchanos/
+# distro/repos/ is where a CI run or a developer drops local checkouts of the
+# program repositories so the image build uses them instead of cloning (see
+# build.sh and GnuChanPrograms.sh). They are other repositories' sources, not
+# this one's, and are fetched fresh every time - so nothing about them belongs
+# in this tree's history.
+distro/repos/

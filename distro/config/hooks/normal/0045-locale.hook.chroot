@@ -1,0 +1,85 @@
+#!/bin/sh
+# GnuchanOS - generate the locales and set the system default.
+#
+# WHY THIS HOOK EXISTS. The package list installs `locales`, but installing that
+# package and GENERATING a locale are two different things, and nothing in this
+# tree ran locale-gen or set a system default. /etc/locale.gen ships with every
+# entry commented out, so `locale-gen` on a fresh image compiles nothing, and
+# with LANG unset the whole system comes up in the C locale. The visible cost is
+# that non-ASCII text - Turkish in particular, which this image is for - is not
+# UTF-8 to any program that asks: a terminal prints ? for it, filenames and
+# window titles mangle, and a program calling setlocale(LC_ALL, "") gets an
+# encoding that cannot represent the characters at all. The Gnuchan programs
+# call setlocale(LC_ALL, "") themselves (GnuChanTop, the runner, the network
+# manager, the lock screen), so they are exactly the programs this affects. The
+# XTerm settings script even carries a C-locale fallback (settings_xterm.py) as
+# a workaround for it - this hook is the fix that makes the workaround moot.
+#
+# WHAT IT DOES
+#
+#   1. writes the locales to build into /etc/locale.gen - a UTF-8 locale for
+#      English and one for Turkish.
+#   2. runs locale-gen, which is what actually compiles them into
+#      /usr/lib/locale.
+#   3. sets the system default to en_US.UTF-8. English is the default on
+#      PURPOSE: it is the locale every program is tested against, and the
+#      Turkish locale carries the dotless-i casing rules (I -> ı, i -> İ) that
+#      quietly change how case-insensitive matching behaves in software not
+#      written for it. Turkish is GENERATED and one command away
+#      (`localectl set-locale LANG=tr_TR.UTF-8`); it is just not the default.
+#
+# Both files a login session reads the default from are written: locale.conf is
+# systemd's own, and default/locale is what Debian's PAM environment reads.
+# Writing one and not the other is how a machine ends up with its text console
+# and its graphical session disagreeing about the locale.
+set -eu
+
+log() { printf '==> locale: %s\n' "$1"; }
+
+LANG_DEFAULT=en_US.UTF-8
+EXTRA_LOCALE=tr_TR.UTF-8
+
+# --- 1. what to generate -----------------------------------------------------
+
+# Written whole rather than appended to. /etc/locale.gen is a list of what to
+# build, and a half-kept one is a list whose meaning depends on which lines
+# happened to be there. The two UTF-8 entries are the whole list.
+cat > /etc/locale.gen <<EOF
+# GnuchanOS - the locales this image generates. See 0045-locale.hook.chroot.
+$LANG_DEFAULT UTF-8
+$EXTRA_LOCALE UTF-8
+EOF
+log "wrote /etc/locale.gen ($LANG_DEFAULT, $EXTRA_LOCALE)"
+
+# --- 2. generate them --------------------------------------------------------
+
+# locale-gen reads /etc/locale.gen and compiles each entry. It is what the
+# `locales` package's own postinst runs; running it here is what makes the
+# entries above real rather than a list of wishes.
+if command -v locale-gen >/dev/null 2>&1; then
+    locale-gen >/dev/null 2>&1 || log "locale-gen reported a problem"
+    if locale -a 2>/dev/null | grep -qi '^en_US\.utf8$'; then
+        log "generated the locales"
+    else
+        log "locale-gen ran but en_US.UTF-8 is not listed; check /etc/locale.gen"
+    fi
+else
+    log "locale-gen is not present; the locales package should be in the list"
+fi
+
+# --- 3. the system default ---------------------------------------------------
+
+cat > /etc/locale.conf <<EOF
+# GnuchanOS - the system default locale. See 0045-locale.hook.chroot.
+LANG=$LANG_DEFAULT
+EOF
+chmod 0644 /etc/locale.conf
+
+cat > /etc/default/locale <<EOF
+# GnuchanOS - the locale a PAM login session starts with. See the same hook.
+LANG=$LANG_DEFAULT
+EOF
+chmod 0644 /etc/default/locale
+
+log "default locale set to $LANG_DEFAULT"
+log "done"

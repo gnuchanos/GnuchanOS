@@ -1,0 +1,169 @@
+#!/bin/sh
+# GnuchanOS - make the network actually work at boot.
+#
+# WHY THIS HOOK EXISTS. The package list installs network-manager and
+# systemd-resolved, but installing a package and RUNNING its service are two
+# different things, and nothing in this tree turned either service on. The image
+# booted relying on the packages' own systemd presets, and the symptom of
+# getting that wrong is exactly what was seen on the live ISO: a wireless
+# connection that associates and takes a lease, and no internet behind it.
+# Association is the driver's job; passing traffic needs an address, a route and
+# a resolver, and those come from NetworkManager and systemd-resolved actually
+# running.
+#
+# THE RESOLV.CONF TRAP, AND WHY IT IS SET UP AT BOOT AND NOT HERE.
+#
+# systemd-resolved is the resolver GnuChanNetworkManager drives with resolvectl
+# (see net_dns.c). When resolved owns the resolver, /etc/resolv.conf has to
+# point at its stub, /run/systemd/resolve/stub-resolv.conf, or every program on
+# the machine keeps asking a resolver nobody is listening on and every lookup
+# fails - a network that is up in every visible sense and reaches nothing by
+# name. That much is one symlink.
+#
+# That symlink is NOT made here, and the reason is a trap worth writing down.
+# THE CHROOT IS STILL BEING BUILT WHEN THIS HOOK RUNS, AND THE HOOKS AFTER IT
+# STILL NEED DNS. The XLibre install (0100) runs apt; the programs hook (0300)
+# fetches Lua, Python and Raylib. Both reach the network through /etc/resolv.conf.
+# The stub does not exist during the build - it lives on /run, which is empty
+# until systemd is running, and systemd is not running in a chroot - so a
+# symlink made here would be DANGLING for the rest of the build and would break
+# every download after this line. An earlier draft of this hook did exactly that.
+#
+# So the symlink is made at BOOT, by the small unit installed below, ordered
+# before NetworkManager so the resolver is in place before anything asks it.
+# That is safe for the build (the build's own resolv.conf is left alone) and
+# correct at boot (the stub exists by then, because resolved was started before
+# the unit runs).
+#
+# WHAT IT DOES
+#
+#   1. enables NetworkManager, so a connection is brought up with a lease.
+#   2. enables systemd-resolved, the resolver the manager's DNS panel drives.
+#   3. tells NetworkManager to hand its DNS to systemd-resolved, which is the
+#      handover the manager's per-link resolvectl commands expect. Without it
+#      NetworkManager and resolved can both try to own DNS and one of them
+#      loses - another way to arrive at "connected, no internet".
+#   4. installs the boot-time unit that points /etc/resolv.conf at resolved's
+#      stub, so name lookups actually go to the resolver that has the servers.
+#
+# Each step is guarded and reported, so a build missing one package still
+# produces an image and says which part was skipped.
+set -eu
+
+log() { printf '==> network: %s\n' "$1"; }
+
+# --- 1. NetworkManager -------------------------------------------------------
+
+if systemctl list-unit-files NetworkManager.service >/dev/null 2>&1; then
+    systemctl enable NetworkManager.service >/dev/null 2>&1 || true
+    log "enabled NetworkManager"
+else
+    log "NetworkManager.service is not in this image; the live session will" \
+        "have no manager to bring a connection up"
+fi
+
+# --- 2. systemd-resolved -----------------------------------------------------
+
+RESOLVED=0
+if systemctl list-unit-files systemd-resolved.service >/dev/null 2>&1; then
+    systemctl enable systemd-resolved.service >/dev/null 2>&1 || true
+    log "enabled systemd-resolved"
+    RESOLVED=1
+else
+    log "systemd-resolved is not in this image; the manager's resolvectl" \
+        "actions will fall back to reading /etc/resolv.conf"
+fi
+
+# --- 3. NetworkManager hands DNS to resolved ---------------------------------
+
+# A drop-in rather than an edit of NetworkManager.conf, so the distribution's
+# own file is untouched and this is one visible line of policy. `dns=systemd-
+# resolved` is what makes NetworkManager push the lease's DNS servers into
+# resolved instead of writing resolv.conf itself - which it cannot do anyway
+# once resolv.conf is the stub symlink. Written only when resolved is present,
+# since it names a backend that would otherwise not exist.
+if [ "$RESOLVED" -eq 1 ]; then
+    install -d /etc/NetworkManager/conf.d
+    cat > /etc/NetworkManager/conf.d/90-gnuchan-dns.conf <<'EOF'
+# GnuchanOS - NetworkManager gives its DNS servers to systemd-resolved, which
+# is the resolver GnuChanNetworkManager drives. See 0070-network.hook.chroot.
+[main]
+dns=systemd-resolved
+EOF
+    chmod 0644 /etc/NetworkManager/conf.d/90-gnuchan-dns.conf
+    log "wrote /etc/NetworkManager/conf.d/90-gnuchan-dns.conf"
+fi
+
+# --- 4. the boot-time resolv.conf unit ---------------------------------------
+
+# Only meaningful when resolved is in the image: pointing resolv.conf at a stub
+# that will never be served is the very failure this is here to prevent.
+if [ "$RESOLVED" -eq 1 ]; then
+    install -d /usr/local/sbin
+
+    cat > /usr/local/sbin/gnuchan-resolvconf <<'RESOLVCONF_SCRIPT'
+#!/bin/sh
+# gnuchan-resolvconf - point /etc/resolv.conf at systemd-resolved's stub.
+#
+# Run at boot by gnuchan-resolvconf.service (see 0070-network.hook.chroot). It
+# is done here and not while the image is built because the stub only exists
+# once systemd-resolved is running, and the build itself still needs a working
+# resolv.conf for the downloads the later hooks make.
+set -eu
+
+STUB=/run/systemd/resolve/stub-resolv.conf
+
+# Already correct: nothing to do.
+if [ -L /etc/resolv.conf ] && [ "$(readlink /etc/resolv.conf)" = "$STUB" ]; then
+    exit 0
+fi
+
+# The stub has to be there. If resolved did not come up, /etc/resolv.conf is
+# left exactly as it is - a machine whose resolved failed keeps whatever
+# resolver it had rather than being given a dangling symlink and no DNS at all.
+if [ ! -e "$STUB" ]; then
+    echo "gnuchan-resolvconf: $STUB is not present; /etc/resolv.conf is left as it is" >&2
+    exit 0
+fi
+
+# Keep a plain file aside before replacing it, so a resolver that was working is
+# recoverable. A symlink to somewhere else is replaced outright.
+if [ -e /etc/resolv.conf ] && [ ! -L /etc/resolv.conf ]; then
+    cp -f /etc/resolv.conf /etc/resolv.conf.gnuchan-backup 2>/dev/null || true
+fi
+
+rm -f /etc/resolv.conf
+ln -s "$STUB" /etc/resolv.conf
+RESOLVCONF_SCRIPT
+    chmod 0755 /usr/local/sbin/gnuchan-resolvconf
+    log "wrote /usr/local/sbin/gnuchan-resolvconf"
+
+    cat > /etc/systemd/system/gnuchan-resolvconf.service <<'UNIT_FILE'
+[Unit]
+Description=Point /etc/resolv.conf at systemd-resolved
+# resolved creates the stub on /run; ordering after it means the file is there
+# when the script runs, so the symlink is never left dangling.
+After=systemd-resolved.service
+Wants=systemd-resolved.service
+# and before anything that will resolve a name.
+Before=NetworkManager.service network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/gnuchan-resolvconf
+
+[Install]
+WantedBy=multi-user.target
+UNIT_FILE
+    chmod 0644 /etc/systemd/system/gnuchan-resolvconf.service
+    log "wrote /etc/systemd/system/gnuchan-resolvconf.service"
+
+    if systemctl enable gnuchan-resolvconf.service >/dev/null 2>&1; then
+        log "enabled gnuchan-resolvconf"
+    else
+        log "could not enable gnuchan-resolvconf now; it is still installed"
+    fi
+fi
+
+log "done"

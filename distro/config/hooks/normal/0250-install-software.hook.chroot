@@ -1,0 +1,41 @@
+#!/bin/sh
+# GnuchanOS - the services and settings that dotfile/Install_Software.py sets.
+#
+# Install_Software.py is the list of what a GnuchanOS machine carries on top of
+# a base: the Deluge torrent client and the libtorrent bindings under it, the
+# ssh daemon, irqbalance and ntpsec. The packages themselves are installed from
+# the package list (GnuchanOS.list.chroot), because that is what a live image
+# can do at build time. What is left over is the part of that script which only
+# means anything on a running machine - turning the services on and setting the
+# clock - and that is what this hook does, so an image built here comes up with
+# the same services running as a machine whose owner ran the script.
+#
+# The purge half of Install_Software.py is deliberately NOT repeated: it removes
+# XFCE and Firefox from a machine that has them, and a freshly built image has
+# neither, so there is nothing there for it to remove.
+set -eu
+
+log() { printf '==> install-software: %s\n' "$1"; }
+
+# The units Install_Software.py turns on with `systemctl enable --now`. `--now`
+# cannot be honoured while the image is built - there is no running systemd in
+# the chroot to start a unit in - so the units are ENABLED here and systemd
+# starts them when the live system boots.
+for unit in ssh irqbalance ntpsec; do
+    if systemctl list-unit-files "$unit.service" >/dev/null 2>&1; then
+        systemctl enable "$unit.service" >/dev/null 2>&1 || true
+        log "enabled $unit"
+    else
+        log "$unit is not in this image; skipped"
+    fi
+done
+
+# The script offers to set the timezone to Europe/Istanbul and turns on NTP.
+# Both are written into the image, so the live system comes up on Istanbul time
+# and keeps it from the network.
+log "setting the timezone to Europe/Istanbul"
+install -d /etc
+ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
+printf 'Europe/Istanbul\n' > /etc/timezone
+
+log "done"

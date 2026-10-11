@@ -1,0 +1,84 @@
+#!/bin/sh
+# GnuchanOS - take the sources back out of the image.
+#
+# /opt/gnuchanos is where build.sh staged what it had - the dotfiles, the assets
+# and the book - and where GnuChanPrograms.sh left the repositories it fetched
+# and the build output under them. The finished image should carry the INSTALLED
+# programs and not the trees they were built from: leaving them in would put
+# full checkouts - and every object file the builds wrote under their _temp/ -
+# on the ISO, doubling its size for files nobody at a live session has any use
+# for.
+#
+# The book is the one thing worth keeping, and it is kept because it is the
+# documentation for the language the image carries. It is moved out before the
+# tree goes.
+set -eu
+
+log() { printf '==> cleanup: %s\n' "$1"; }
+
+STAGE=/opt/gnuchanos
+
+# --- keep the documentation --------------------------------------------------
+
+if [ -d "$STAGE/book" ]; then
+    install -d /usr/share/gnuchanos
+    rm -rf /usr/share/gnuchanos/book
+    cp -a "$STAGE/book" /usr/share/gnuchanos/book
+    log "kept the GCL book at /usr/share/gnuchanos/book"
+fi
+
+# --- keep the NVIDIA driver installer ----------------------------------------
+
+# The NVIDIA proprietary driver cannot be installed at build time and must not
+# be: its version depends on the card (Pascal and newer take the current driver,
+# Kepler takes nvidia-legacy-470xx, Fermi and older take 390xx) and the versions
+# exclude one another, so the right one can only be chosen on the real machine.
+# The installer that makes that choice is kept here, next to the book, so it is
+# on the finished image for the user to run once - the same reason the book is
+# kept: it is something a live session may need and the source tree is the only
+# place it exists.
+#
+# The live image itself comes up on nouveau (open source) with the firmware in
+# the package list, so every NVIDIA card boots; this installer is the opt-in step
+# towards full performance.
+if [ -d "$STAGE/dotfile/NVIDIA" ]; then
+    install -d /usr/share/gnuchanos/NVIDIA
+    cp -a "$STAGE/dotfile/NVIDIA/." /usr/share/gnuchanos/NVIDIA/
+    log "kept the NVIDIA driver installer at /usr/share/gnuchanos/NVIDIA"
+fi
+
+# --- drop the sources --------------------------------------------------------
+
+if [ -d "$STAGE" ]; then
+    rm -rf "$STAGE"
+    log "removed $STAGE (the source trees and the build output under them)"
+fi
+
+# The build chain also writes scratch under the tree's own _temp/ when it is
+# run from it; that is under $STAGE and went with it. Nothing else is left.
+
+# --- one last look -----------------------------------------------------------
+
+# The point of the whole image is a desktop that starts, so the two programs a
+# live session needs are checked before the image is packed. Both are cheap and
+# both are fatal if missing, and finding out here is better than a black screen
+# on someone's laptop.
+#
+# They are looked for where each one actually goes and not on root's PATH:
+# GnuChanWM is installed system-wide into /usr/local/bin, while `gcl` is a
+# per-user install (its own installer writes ~/.local/bin/gcl, because the
+# build ran with SUDO_USER set to the live user - see the programs hook). So
+# the two are asked for in the two different places.
+wm_missing=0
+gcl_missing=0
+[ -x /usr/local/bin/GnuChanWM ] || wm_missing=1
+[ -x /home/gnuchanos/.local/bin/gcl ] || gcl_missing=1
+
+if [ "$wm_missing" -eq 1 ]; then
+    log "WARNING: /usr/local/bin/GnuChanWM is not in the finished image"
+fi
+if [ "$gcl_missing" -eq 1 ]; then
+    log "WARNING: /home/gnuchanos/.local/bin/gcl is not in the finished image"
+fi
+
+log "done"

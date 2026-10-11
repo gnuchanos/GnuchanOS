@@ -1,0 +1,541 @@
+// ============================================================================
+// GnuchanOS - Plymouth boot splash, script module
+// ----------------------------------------------------------------------------
+// Run by the script module of plymouth. The language is not Lua, although it
+// looks like it: functions are declared with `fun`, a statement ends with a
+// semicolon, a variable is global unless it is declared local, an array comes
+// into being the first time something is assigned to one of its elements, and
+// there is no `%` operator - so the arithmetic below is written without one.
+//
+// What is on the screen, from the back:
+//
+//   1. the wallpaper, assets/bg.png, scaled so that it covers the screen and
+//      centred, so a screen of a different shape crops it rather than
+//      stretching it into a different picture;
+//   2. the GnuchanOS logo, centred, faded in over the first moments of the
+//      boot - the logo is the only thing on the screen during them;
+//   3. a ring of twelve dots turning below the logo, which is what says the
+//      boot is running on a machine that never reports how far it has got;
+//   4. a progress bar near the bottom, filled by whatever the boot reports
+//      through Plymouth.SetBootProgressFunction. It stays empty and dim on a
+//      machine that reports nothing, which is most of them outside Debian and
+//      Ubuntu, and the ring above it is what carries the animation there;
+//   5. the messages plymouth asks to have shown, centred above the bar;
+//   6. the passphrase panel in the middle, shown by
+//      Plymouth.SetDisplayPasswordFunction and hidden again by
+//      Plymouth.SetDisplayNormalFunction, so an encrypted root asks for its
+//      password in this theme instead of in plymouth's own fallback.
+//
+// Every image is named without a directory. ImageDir in the .plymouth file
+// beside this script is the theme directory the installer wrote them into,
+// and plymouth resolves every name against it.
+//
+// The last thing the script does is lay the screen out, set the background
+// colour behind the wallpaper and register the callbacks. Nothing above that
+// point runs on its own.
+// ============================================================================
+
+
+// --- the palette -------------------------------------------------------------
+// The GnuchanPurple palette: the same values as the GTK theme, the icon theme,
+// the cursor theme, the GRUB theme and dotfile/vscodium_theme/settings.json,
+// which is the source of truth for it. Image.Text wants three numbers between
+// zero and one per colour, which is why these are written as divisions rather
+// than as the hexadecimal they are everywhere else.
+
+ACCENT_R = 168 / 255;
+ACCENT_G = 85 / 255;
+ACCENT_B = 247 / 255;
+
+PALE_R = 216 / 255;
+PALE_G = 164 / 255;
+PALE_B = 255 / 255;
+
+BRIGHT_R = 243 / 255;
+BRIGHT_G = 232 / 255;
+BRIGHT_B = 255 / 255;
+
+// The colour behind the wallpaper, used for the first frame - before the
+// scaled wallpaper sprite has been drawn once - and wherever a screen is
+// wider than the picture covers.
+
+BACKDROP_R = 9 / 255;
+BACKDROP_G = 3 / 255;
+BACKDROP_B = 13 / 255;
+
+
+// --- the animation -----------------------------------------------------------
+// The ring turns by moving the bright dot around it rather than by moving the
+// dots: the dot SPINNER_STEP of a turn ahead of its neighbour is the
+// brightest, the ones behind it fade towards SPINNER_DIM, and the whole ring
+// reads as turning although not one dot ever changes place.
+
+SPINNER_DOTS = 12;
+SPINNER_FRAMES_PER_REVOLUTION = 144;
+SPINNER_STEP = SPINNER_DOTS / SPINNER_FRAMES_PER_REVOLUTION;
+SPINNER_DIM = 0.12;
+
+TWO_PI = Math.Pi * 2;
+
+// The logo is opaque from this frame on, and the boot only fades out of it
+// once plymouth has been told the boot is over.
+
+LOGO_FADE_FRAMES = 24;
+
+
+// --- the screen --------------------------------------------------------------
+// Everything below is measured from the screen, so the theme is laid out the
+// same way at 1920x1080 as at 1024x768. The dimensions are covered by the
+// wallpaper, so a screen of another shape is not a problem.
+
+screen_width = Window.GetWidth();
+screen_height = Window.GetHeight();
+screen_short_side = Math.Min(screen_width, screen_height);
+centre_x = Math.Int(screen_width / 2);
+
+// The logo sits above the middle, so it is not covered by the ring below it
+// and the panel that appears in the middle when a passphrase is wanted.
+
+logo_size = Math.Clamp(Math.Int(screen_height * 0.22), 112, 288);
+logo_x = Math.Int(centre_x - logo_size / 2);
+logo_y = Math.Int(screen_height * 0.34 - logo_size / 2);
+
+spinner_radius = Math.Max(28, Math.Int(screen_short_side * 0.055));
+dot_size = Math.Max(8, Math.Int(spinner_radius * 0.34));
+spinner_x = centre_x;
+spinner_y = Math.Int(screen_height * 0.56);
+
+bar_height = Math.Max(3, Math.Int(screen_height * 0.010));
+bar_width = Math.Int(screen_width * 0.30);
+bar_x = Math.Int(centre_x - bar_width / 2);
+bar_y = Math.Int(screen_height * 0.915);
+
+message_y = Math.Int(screen_height * 0.80);
+
+// The passphrase panel: a fixed share of the screen, with a floor and a
+// ceiling so that it is neither a sliver on a small screen nor a barn door on
+// a large one.
+
+panel_width = Math.Clamp(Math.Int(screen_width * 0.38), 340, 620);
+panel_height = Math.Clamp(Math.Int(screen_height * 0.16), 116, 172);
+panel_x = Math.Int(centre_x - panel_width / 2);
+panel_y = Math.Int(screen_height / 2 - panel_height / 2);
+
+// Inside the panel: the lock on the left, then the field the passphrase is
+// typed into, both on the lower of the panel's two rows. The prompt is the
+// upper row.
+
+panel_margin = Math.Int(panel_width * 0.06);
+lock_size = Math.Int(panel_height * 0.30);
+lock_x = Math.Int(panel_x + panel_margin);
+lock_y = Math.Int(panel_y + panel_height * 0.58 - lock_size / 2);
+
+field_height = lock_size;
+field_x = Math.Int(lock_x + lock_size + panel_width * 0.05);
+field_width = Math.Int(panel_x + panel_width - panel_margin - field_x);
+field_y = Math.Int(panel_y + panel_height * 0.58 - field_height / 2);
+
+prompt_y = Math.Int(panel_y + panel_height * 0.26);
+
+// The bullets are drawn inside the field, one per character typed, starting a
+// little way in from its left edge and stopping before its right edge.
+// MAX_BULLETS is the ceiling rather than the count: the sprites are made once
+// and shown one at a time, because making them while the passphrase is being
+// typed would allocate an image on every keystroke.
+
+MAX_BULLETS = 24;
+bullet_size = Math.Max(6, Math.Int(field_height * 0.36));
+bullet_gap = Math.Int(bullet_size * 1.5);
+bullet_x = Math.Int(field_x + field_height * 0.30);
+bullet_y = Math.Int(field_y + field_height / 2 - bullet_size / 2);
+
+
+// --- the images --------------------------------------------------------------
+// Two of these are the repository's own pictures and are copied into the theme
+// by the installer: background.png is assets/bg.png and logo.png is
+// assets/logo.png fitted onto a transparent square. The rest are drawn by the
+// installer with the same few primitives the GRUB theme is drawn with, so the
+// theme has no image in it that someone has to keep in step by hand.
+
+background_image = Image("background.png");
+logo_image = Image("logo.png");
+dot_image = Image("dot.png");
+bullet_image = Image("bullet.png");
+lock_image = Image("lock.png");
+panel_image = Image("panel.png");
+field_image = Image("field.png");
+progress_track_image = Image("progress_track.png");
+progress_fill_image = Image("progress_fill.png");
+
+
+// --- what is on the screen ---------------------------------------------------
+// Every sprite is made here, at the top level, so that the callbacks below only
+// ever move or fade something that already exists. The z order is the order
+// they are listed in: the wallpaper is at the very back, the passphrase panel
+// in front of everything, and the bullets in front of the field they sit in.
+
+background_sprite = Sprite();
+background_sprite.SetZ(-1000);
+
+logo_sprite = Sprite(logo_image);
+logo_sprite.SetZ(10);
+logo_sprite.SetOpacity(0.0);
+
+progress_track_sprite = Sprite(progress_track_image);
+progress_track_sprite.SetZ(5);
+progress_track_sprite.SetOpacity(0.85);
+
+progress_fill_sprite = Sprite(progress_fill_image);
+progress_fill_sprite.SetZ(6);
+progress_fill_sprite.SetOpacity(0.0);
+
+// A sprite with no image draws nothing and costs nothing, which is what the
+// message and the prompt are until the first time plymouth has something to
+// say in them.
+
+message_sprite = Sprite();
+message_sprite.SetZ(7);
+message_sprite.SetOpacity(0.0);
+
+panel_sprite = Sprite(panel_image);
+panel_sprite.SetZ(100);
+panel_sprite.SetOpacity(0.0);
+
+field_sprite = Sprite(field_image);
+field_sprite.SetZ(101);
+field_sprite.SetOpacity(0.0);
+
+lock_sprite = Sprite(lock_image);
+lock_sprite.SetZ(102);
+lock_sprite.SetOpacity(0.0);
+
+prompt_sprite = Sprite();
+prompt_sprite.SetZ(103);
+prompt_sprite.SetOpacity(0.0);
+
+// A question's answer is drawn as text rather than as bullets, which is the
+// one thing that tells the two kinds of prompt apart: a passphrase is secret
+// and an answer to a question is not.
+
+answer_sprite = Sprite();
+answer_sprite.SetZ(105);
+answer_sprite.SetOpacity(0.0);
+
+for (i = 0; i < MAX_BULLETS; i++) {
+    bullet_sprite[i] = Sprite(bullet_image);
+    bullet_sprite[i].SetZ(104);
+    bullet_sprite[i].SetOpacity(0.0);
+}
+
+// The ring: twelve sprites placed evenly around a circle. The angle of each one
+// is worked out from its index rather than accumulated, so the ring cannot
+// drift out of shape over a long boot.
+
+for (i = 0; i < SPINNER_DOTS; i++) {
+    dot_angle[i] = i * TWO_PI / SPINNER_DOTS;
+    dot_sprite[i] = Sprite(dot_image);
+    dot_sprite[i].SetZ(8);
+    dot_sprite[i].SetOpacity(SPINNER_DIM);
+}
+
+
+// --- laying the screen out ---------------------------------------------------
+// These are called once at the bottom of the file and again whenever the screen
+// changes size, which is what happens when the video mode is set for real part
+// way through a boot: the frames before that are drawn at whatever mode the
+// firmware left behind.
+
+fun layout_background() {
+    // Cover rather than fit: the wallpaper is scaled by whichever of the two
+    // ratios is larger, so it always reaches both edges and the part that falls
+    // outside the screen is cropped. Fitting it instead would leave bars of the
+    // backdrop colour along two edges on a screen of another shape.
+    scale_x = screen_width / background_image.GetWidth();
+    scale_y = screen_height / background_image.GetHeight();
+    scale = Math.Max(scale_x, scale_y);
+    width = Math.Int(background_image.GetWidth() * scale);
+    height = Math.Int(background_image.GetHeight() * scale);
+    background_sprite.SetImage(background_image.Scale(width, height));
+    background_sprite.SetPosition(Math.Int((screen_width - width) / 2), Math.Int((screen_height - height) / 2), -1000);
+}
+
+fun layout_logo() {
+    logo_sprite.SetImage(logo_image.Scale(logo_size, logo_size));
+    logo_sprite.SetPosition(logo_x, logo_y, 10);
+}
+
+fun layout_spinner() {
+    half = dot_size / 2;
+    for (i = 0; i < SPINNER_DOTS; i++) {
+        dot_sprite[i].SetImage(dot_image.Scale(dot_size, dot_size));
+        dot_sprite[i].SetPosition(
+            Math.Int(spinner_x + spinner_radius * Math.Sin(dot_angle[i]) - half),
+            Math.Int(spinner_y - spinner_radius * Math.Cos(dot_angle[i]) - half),
+            8);
+    }
+}
+
+fun layout_progress() {
+    progress_track_sprite.SetImage(progress_track_image.Scale(bar_width, bar_height));
+    progress_track_sprite.SetPosition(bar_x, bar_y, 5);
+    // The fill is empty until something reports a progress, and the sprite
+    // keeps whatever width it was last given rather than being blanked: the
+    // next report rescales it anyway, and scaling to nothing is not something
+    // an image is obliged to survive.
+    if (boot_progress > 0.0) {
+        width = Math.Max(1, Math.Int(bar_width * boot_progress));
+        progress_fill_sprite.SetImage(progress_fill_image.Scale(width, bar_height));
+        progress_fill_sprite.SetPosition(bar_x, bar_y, 6);
+    }
+}
+
+fun layout_dialog() {
+    panel_sprite.SetImage(panel_image.Scale(panel_width, panel_height));
+    panel_sprite.SetPosition(panel_x, panel_y, 100);
+    field_sprite.SetImage(field_image.Scale(field_width, field_height));
+    field_sprite.SetPosition(field_x, field_y, 101);
+    lock_sprite.SetImage(lock_image.Scale(lock_size, lock_size));
+    lock_sprite.SetPosition(lock_x, lock_y, 102);
+    for (i = 0; i < MAX_BULLETS; i++) {
+        bullet_sprite[i].SetImage(bullet_image.Scale(bullet_size, bullet_size));
+        bullet_sprite[i].SetPosition(bullet_x + i * bullet_gap, bullet_y, 104);
+    }
+}
+
+
+// --- the animation -----------------------------------------------------------
+// The frame counter is all the timing there is: the refresh function is called
+// by plymouthd whenever it has a frame to spare, and there is no clock in the
+// script language, so an animation timed against one would have to be timed
+// against something the theme is not given.
+
+refresh_frame = 0;
+spinner_head = 0.0;
+boot_progress = 0.0;
+drawn_progress = -1.0;
+quitting = 0;
+
+fun refresh_spinner() {
+    for (i = 0; i < SPINNER_DOTS; i++) {
+        // How far this dot is behind the head, as a share of a whole turn.
+        // Subtracting two numbers that are both within one turn of each other
+        // leaves a value between -1 and 1, so bringing it back into range is
+        // one addition and not a loop.
+        distance = (spinner_head - i) / SPINNER_DOTS;
+        if (distance < 0) {
+            distance = distance + 1.0;
+        }
+        fade = 1.0 - distance;
+        dot_sprite[i].SetOpacity(SPINNER_DIM + (1.0 - SPINNER_DIM) * fade * fade);
+    }
+    spinner_head = spinner_head + SPINNER_STEP;
+    if (spinner_head >= SPINNER_DOTS) {
+        spinner_head = spinner_head - SPINNER_DOTS;
+    }
+}
+
+fun refresh_progress() {
+    if (boot_progress <= 0.0) {
+        // Nothing has reported how far the boot has got, which is the usual
+        // state of affairs outside Debian and Ubuntu. The ring above carries
+        // the animation instead, and an empty bar says so honestly.
+        progress_fill_sprite.SetOpacity(0.0);
+    } else {
+        if (drawn_progress < boot_progress) {
+            drawn_progress = boot_progress;
+            width = Math.Max(1, Math.Int(bar_width * boot_progress));
+            progress_fill_sprite.SetImage(progress_fill_image.Scale(width, bar_height));
+            progress_fill_sprite.SetPosition(bar_x, bar_y, 6);
+        }
+        // A slow pulse, so a boot that has stalled at one percentage looks
+        // different from one that has finished.
+        progress_fill_sprite.SetOpacity(0.82 + 0.18 * Math.Sin(refresh_frame / 22.0));
+    }
+}
+
+fun refresh () {
+    refresh_frame = refresh_frame + 1;
+    if (quitting == 0) {
+        if (refresh_frame <= LOGO_FADE_FRAMES) {
+            logo_sprite.SetOpacity(refresh_frame / LOGO_FADE_FRAMES);
+        } else {
+            logo_sprite.SetOpacity(1.0);
+        }
+        refresh_spinner();
+        refresh_progress();
+    }
+}
+
+
+// --- what plymouth asks for --------------------------------------------------
+
+fun progress_callback (duration, progress) {
+    boot_progress = Math.Clamp(progress, 0.0, 1.0);
+}
+
+fun message_callback (text) {
+    if (text == "") {
+        message_sprite.SetOpacity(0.0);
+    } else {
+        image = Image.Text(text, PALE_R, PALE_G, PALE_B);
+        message_sprite.SetImage(image);
+        message_sprite.SetPosition(Math.Int(centre_x - image.GetWidth() / 2), message_y, 7);
+        message_sprite.SetOpacity(1.0);
+    }
+}
+
+// Faded out rather than blanked: the sprite keeps the image it was given, so
+// the next message is rendered once instead of twice, and the two look the
+// same either way.
+
+fun hide_message_callback (text) {
+    message_sprite.SetOpacity(0.0);
+}
+
+fun prompt_callback (text) {
+    if (text == "") {
+        prompt_sprite.SetOpacity(0.0);
+    } else {
+        image = Image.Text(text, BRIGHT_R, BRIGHT_G, BRIGHT_B);
+        prompt_sprite.SetImage(image);
+        prompt_sprite.SetPosition(Math.Int(centre_x - image.GetWidth() / 2), prompt_y, 103);
+        prompt_sprite.SetOpacity(1.0);
+    }
+}
+
+// The panel is drawn by fading the sprites in and out rather than by making
+// and destroying them: a passphrase is asked for more than once on a machine
+// with several encrypted volumes, and building the panel again each time would
+// allocate nine images per prompt.
+
+fun show_dialog (opacity) {
+    panel_sprite.SetOpacity(opacity);
+    field_sprite.SetOpacity(opacity);
+    lock_sprite.SetOpacity(opacity);
+}
+
+fun display_normal_callback () {
+    show_dialog(0.0);
+    prompt_sprite.SetOpacity(0.0);
+    answer_sprite.SetOpacity(0.0);
+    for (i = 0; i < MAX_BULLETS; i++) {
+        bullet_sprite[i].SetOpacity(0.0);
+    }
+}
+
+fun display_password_callback (prompt, bullets) {
+    show_dialog(1.0);
+    prompt_callback(prompt);
+    answer_sprite.SetOpacity(0.0);
+    count = Math.Min(bullets, MAX_BULLETS);
+    for (i = 0; i < MAX_BULLETS; i++) {
+        if (i < count) {
+            bullet_sprite[i].SetOpacity(1.0);
+        } else {
+            bullet_sprite[i].SetOpacity(0.0);
+        }
+    }
+}
+
+// A question is drawn on the same panel as a passphrase. What differs is the
+// field: plymouth hands over what has been typed as the second argument, and
+// here it is shown as the text it is, one run of text and not one bullet per
+// letter. The prompt above it is plymouth's own, the same as a passphrase's.
+
+fun display_question_callback (prompt, entry) {
+    show_dialog(1.0);
+    prompt_callback(prompt);
+    for (i = 0; i < MAX_BULLETS; i++) {
+        bullet_sprite[i].SetOpacity(0.0);
+    }
+    if (entry == "") {
+        answer_sprite.SetOpacity(0.0);
+    } else {
+        image = Image.Text(entry, PALE_R, PALE_G, PALE_B);
+        answer_sprite.SetImage(image);
+        answer_sprite.SetPosition(
+            Math.Int(field_x + field_height * 0.30),
+            Math.Int(field_y + field_height / 2 - image.GetHeight() / 2),
+            105);
+        answer_sprite.SetOpacity(1.0);
+    }
+}
+
+fun quit_callback () {
+    quitting = 1;
+    logo_sprite.SetOpacity(1.0);
+    for (i = 0; i < SPINNER_DOTS; i++) {
+        dot_sprite[i].SetOpacity(0.0);
+    }
+    progress_fill_sprite.SetOpacity(0.0);
+    progress_track_sprite.SetOpacity(0.0);
+    message_sprite.SetOpacity(0.0);
+}
+
+fun refresh_size () {
+    // The video mode the kernel sets is not always the one the firmware left
+    // behind, so the screen is re-measured and re-laid out rather than laid
+    // out once at load. A boot that never changes mode - which is most of them
+    // - pays one comparison a frame for it. The test is for growth and not for
+    // difference on purpose: a mode change part way through a boot goes from
+    // the smaller mode to the larger one, and a theme that only ever has to
+    // notice that needs no operator beyond the ones plymouth's own script
+    // library is written with.
+    if (screen_width < Window.GetWidth()) {
+        screen_width = Window.GetWidth();
+        screen_height = Window.GetHeight();
+        screen_short_side = Math.Min(screen_width, screen_height);
+        centre_x = Math.Int(screen_width / 2);
+        logo_size = Math.Clamp(Math.Int(screen_height * 0.22), 112, 288);
+        logo_x = Math.Int(centre_x - logo_size / 2);
+        logo_y = Math.Int(screen_height * 0.34 - logo_size / 2);
+        spinner_radius = Math.Max(28, Math.Int(screen_short_side * 0.055));
+        dot_size = Math.Max(8, Math.Int(spinner_radius * 0.34));
+        spinner_y = Math.Int(screen_height * 0.56);
+        bar_height = Math.Max(3, Math.Int(screen_height * 0.010));
+        bar_width = Math.Int(screen_width * 0.30);
+        bar_x = Math.Int(centre_x - bar_width / 2);
+        bar_y = Math.Int(screen_height * 0.915);
+        message_y = Math.Int(screen_height * 0.80);
+        layout_background();
+        layout_logo();
+        layout_spinner();
+        layout_progress();
+        layout_dialog();
+    }
+}
+
+
+// --- the callbacks plymouth is given -----------------------------------------
+// The refresh function is the whole animation, so it is the one that also
+// checks whether the screen has changed under it.
+
+fun frame () {
+    refresh_size();
+    refresh();
+}
+
+Plymouth.SetRefreshFunction(frame);
+Plymouth.SetBootProgressFunction(progress_callback);
+Plymouth.SetDisplayMessageFunction(message_callback);
+Plymouth.SetHideMessageFunction(hide_message_callback);
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+Plymouth.SetDisplayQuestionFunction(display_question_callback);
+Plymouth.SetQuitFunction(quit_callback);
+
+
+// --- the first frame ---------------------------------------------------------
+// Every sprite is placed and every colour set before plymouth is handed the
+// refresh function, so the very first frame drawn is the finished screen and
+// not a screen full of unplaced sprites that the next one corrects.
+
+Window.SetBackgroundTopColor(BACKDROP_R, BACKDROP_G, BACKDROP_B);
+Window.SetBackgroundBottomColor(BACKDROP_R, BACKDROP_G, BACKDROP_B);
+
+layout_background();
+layout_logo();
+layout_spinner();
+layout_progress();
+layout_dialog();
+display_normal_callback();
