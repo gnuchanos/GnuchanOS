@@ -509,26 +509,32 @@ def start_bypass() -> None:
         run(["sh", str(ZAPRET_INIT), "start"], cwd=ZAPRET_DIR)
 
 
-def write_nfqws_opt(method: str) -> None:
-    """Write the chosen bypass into zapret's config the way the reference
-    installer does: replace the whole (possibly multi-line, quote-delimited)
-    NFQWS_OPT value with one line, then restart the service so it is live."""
+def set_config_variable(name: str, value: str) -> bool:
+    """Force NAME="value" in zapret's config, replacing whatever was there.
+
+    The WHOLE existing assignment is replaced, not just its first line: a
+    value like NFQWS_OPT is quoted and can run over several lines to its
+    closing quote, and rewriting only the first of them would leave the rest
+    of the old value behind as stray text. A name the file does not carry at
+    all is appended, so a setting a given zapret version does not ship by
+    default can still be set. Returns whether the file was written.
+    """
     config = ZAPRET_DIR / "config"
     if not config.is_file():
-        return
+        return False
     try:
         lines = config.read_text(encoding="utf-8").splitlines()
     except OSError as exc:
         detail(f"could not read {config}: {exc}")
-        return
+        return False
 
     out: list[str] = []
     skipping = False
     replaced = False
     for line in lines:
         stripped = line.strip()
-        if not replaced and stripped.startswith('NFQWS_OPT="'):
-            out.append(f'NFQWS_OPT="{method} <HOSTLIST>"')
+        if not replaced and stripped.startswith(f"{name}="):
+            out.append(f'{name}="{value}"')
             replaced = True
             if stripped.count('"') < 2:
                 skipping = True          # the value runs to a closing quote
@@ -540,14 +546,55 @@ def write_nfqws_opt(method: str) -> None:
         out.append(line)
 
     if not replaced:
-        return
+        out.append(f'{name}="{value}"')
+
     try:
         config.write_text("\n".join(out) + "\n", encoding="utf-8")
     except OSError as exc:
         detail(f"could not write {config}: {exc}")
-        return
-    detail(f"bypass method set: {method}")
+        return False
+    return True
+
+
+def write_nfqws_opt(method: str) -> None:
+    """Write the chosen desync into the config and bring the service up so it
+    is live."""
+    if set_config_variable("NFQWS_OPT", f"{method} <HOSTLIST>"):
+        detail(f"bypass method set: {method}")
     start_bypass()
+
+
+def enable_dpi_in_config() -> None:
+    """Turn the bypass ON in zapret's config — the switch that decides whether
+    the daemon is launched at all.
+
+    THIS IS THE REASON THE DPI BUTTON DID NOTHING. install_easy.sh is
+    interactive, and the config it ships (config.default) has
+    `NFQWS_ENABLE=0`: the installer asks "enable nfqws ?" and its answer is
+    taken from that value, i.e. NO. The bootstrap here feeds that installer a
+    fixed string of answers, and the question does not sit at a fixed place -
+    the prompts before it (the firewall type, IPv6, whether the system is
+    virtualised, the filter mode, the two tpws modes) depend on the machine.
+    When a fed answer does not land on it, nfqws is left disabled. The bypass
+    is then INSTALLED AND NEVER STARTED: the DPI button runs zapret's init
+    script, the script reads NFQWS_ENABLE=0 and launches no daemon, so the
+    button looks like it does nothing at all. Writing the desync (NFQWS_OPT)
+    is not enough for the same reason - an option for a daemon that never
+    starts changes nothing.
+
+    So the two settings the feature actually depends on are written here,
+    deterministically, rather than left to where an answer happened to land:
+
+      NFQWS_ENABLE=1   run the nfqws daemon - the switch for the whole feature;
+      MODE_FILTER=none send every connection on the redirected ports through it,
+                       which is the "blocked sites open everywhere" the button
+                       promises, rather than only names on a hostlist this
+                       image does not carry.
+    """
+    if set_config_variable("NFQWS_ENABLE", "1"):
+        detail("nfqws is enabled in the config")
+    if set_config_variable("MODE_FILTER", "none"):
+        detail("the bypass applies to all redirected traffic (MODE_FILTER=none)")
 
 
 def choose_and_apply_bypass_method() -> None:
@@ -673,6 +720,13 @@ def configure_dpi_bypass() -> None:
     zapret was already present."""
     if not dpi_installed():
         return
+
+    # The config is put into a WORKING state BEFORE anything is measured or
+    # started. This order is the whole point and it was the bug: the image was
+    # shipping a bypass that was installed with nfqws switched off, so every
+    # measurement and every start after this ran against a bypass the config
+    # had disabled.
+    enable_dpi_in_config()
     choose_and_apply_bypass_method()
 
     if shutil.which("pgrep") is not None:
