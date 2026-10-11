@@ -62,11 +62,28 @@ jobs:
       # here touches are removed to make room, and `df` is printed so a run that
       # does run out of space says so at the top of the log rather than half an
       # hour in.
+      #
+      # EACH REMOVAL IS BOUNDED BY A TIMEOUT AND ALLOWED TO FAIL, and that is
+      # the whole shape of this step. These are multi-gigabyte trees and a plain
+      # `rm -rf` over one of them can run for minutes with no output at all - a
+      # run that looks hung before it has built anything. A single `rm` naming
+      # several of them also gives up on the rest the moment one is busy. The
+      # loop removes one at a time, gives each a hard limit, and carries on
+      # whether or not it worked: the only thing this step owes the build is
+      # space, and a tree that was already gone, or could not be removed, is not
+      # a reason to fail a run at its first move.
       - name: Free disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
-                      /usr/local/share/boost /opt/hostedtoolcache || true
-          sudo apt-get clean
+          for tree in \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/lib/android \
+            /usr/local/share/boost \
+            /opt/hostedtoolcache; do
+            echo "removing $tree"
+            timeout 180 sudo rm -rf "$tree" || echo "  (could not, or timed out; carrying on)"
+          done
+          sudo apt-get clean || true
           df -h /
 
       # The programs and the GCL language live in their own repositories and are
