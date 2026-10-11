@@ -136,10 +136,11 @@ ZAPRET_TARBALL = (
     f"v{ZAPRET_VERSION}/zapret-v{ZAPRET_VERSION}.tar.gz"
 )
 
-# The names zapret's blockcheck is run against to find a working bypass. The
-# reference installer walks these and stops at the first that fails — a name
-# that fails is one this network is blocking.
-BLOCKCHECK_DOMAINS = ("discord.com", "facebook.com", "instagram.com",
+# The names blockcheck is run against to find a working bypass. updates.discord
+# is first because it is the host the Discord installer actually fetches from,
+# and the one observed being reset HERE: its name resolves correctly but the TLS
+# handshake is cut, which is exactly the case a DPI desync is for.
+BLOCKCHECK_DOMAINS = ("updates.discord.com", "discord.com", "instagram.com",
                       "youtube.com", "x.com", "tiktok.com")
 # Used when blockcheck finds no nfqws method at all. The reference's own
 # --dev default, and a desync that works on many networks.
@@ -472,6 +473,19 @@ def parse_blockcheck_nfqws(output: str, domain: str) -> str:
     return ""
 
 
+def stop_bypass() -> None:
+    """Take the bypass down. Needed before measuring: with nfqws running every
+    name comes back fine, so a probe made in that state sees no block at all."""
+    if run(["systemctl", "stop", "zapret"], capture=True).returncode != 0:
+        run(["sh", str(ZAPRET_INIT), "stop"], cwd=ZAPRET_DIR)
+
+
+def start_bypass() -> None:
+    """Bring the bypass back up."""
+    if run(["systemctl", "start", "zapret"], capture=True).returncode != 0:
+        run(["sh", str(ZAPRET_INIT), "start"], cwd=ZAPRET_DIR)
+
+
 def write_nfqws_opt(method: str) -> None:
     """Write the chosen bypass into zapret's config the way the reference
     installer does: replace the whole (possibly multi-line, quote-delimited)
@@ -510,11 +524,7 @@ def write_nfqws_opt(method: str) -> None:
         detail(f"could not write {config}: {exc}")
         return
     detail(f"bypass method set: {method}")
-    # Restart so the new method is live. systemd when the unit is there (the
-    # easy installer normally registers it), and otherwise the init script the
-    # manager's own DPI button runs — the config is read at start either way.
-    if run(["systemctl", "restart", "zapret"], capture=True).returncode != 0:
-        run(["sh", str(ZAPRET_INIT), "start"], cwd=ZAPRET_DIR)
+    start_bypass()
 
 
 def choose_and_apply_bypass_method() -> None:
@@ -531,6 +541,12 @@ def choose_and_apply_bypass_method() -> None:
     if not blockcheck.is_file():
         return
 
+    # The probe is made with the bypass STOPPED. With nfqws running every name
+    # comes back fine — that is its whole purpose — so a probe in that state
+    # reports "no block" and this step silently does nothing, which is the trap
+    # the earlier run fell into. The block is only visible with the bypass off.
+    stop_bypass()
+
     domain = ""
     for candidate in BLOCKCHECK_DOMAINS:
         probe = run(["curl", "--max-time", "10", "-sSI",
@@ -539,10 +555,14 @@ def choose_and_apply_bypass_method() -> None:
             domain = candidate
             break
     if not domain:
-        detail("no blocked test name found; leaving the default bypass")
+        detail("this network resets none of the test names; the default "
+               "bypass stays")
+        start_bypass()
         return
 
-    step(f"Choosing a bypass for this network (blockcheck on {domain})")
+    detail(f"\"{domain}\" is reset without the bypass, so blockcheck is run "
+           f"against it")
+    step("Choosing a bypass for this network")
     detail("this is zapret's own test and takes a few minutes; it prints as "
            "it goes")
     # blockcheck is prompt-driven; these are the answers the reference installer
@@ -610,9 +630,7 @@ def ensure_dpi_dependency() -> None:
     the path net_dpi.c expects — and is skipped when it is already there. The
     DESYNC is chosen every run: it, not the install, is what decides whether a
     packet gets past the filter, and it has to be chosen against the network in
-    the state it is in right now. (A run made while a DNS hijack was still in
-    place saw no DPI block to fix and chose nothing — which is exactly the trap
-    this avoids.)
+    the state it is in right now.
     """
     if dpi_installed():
         detail("zapret is already installed under /opt/zapret")
