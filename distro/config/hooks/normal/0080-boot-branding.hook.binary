@@ -40,7 +40,7 @@
 #
 # AND IT ADDS THE GRAPHICS DRIVER ENTRIES, before anything else, so they are
 # there on a BIOS-only build and an EFI one alike. The menu gets one entry per
-# graphics driver - NVIDIA (new), NVIDIA (legacy), AMD, Intel - and each is the
+# graphics driver - NVIDIA (new), NVIDIA (legacy), Radeon, Intel - and each is the
 # ISO's own first entry with a `gnuchan.gpu=` word appended to its kernel
 # command line. The live system reads that word while it boots and brings up
 # the matching driver, so the choice is made in the menu rather than by running
@@ -84,7 +84,7 @@ log "binary tree: $ROOT"
 
 # The menu gets one entry per graphics driver, so the driver is chosen BEFORE
 # the kernel starts rather than after: a person who wants the NVIDIA
-# proprietary driver picks "Live System - NVIDIA (new)" instead of booting the
+# proprietary driver picks "Live System -> NVIDIA (new)" instead of booting the
 # generic entry and running an installer by hand.
 #
 # This runs FIRST, before the text branding and the GRUB section below, because

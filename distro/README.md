@@ -92,12 +92,33 @@ and the language inside the chroot, on top of the usual debootstrap.
 The hooks are what make the image GnuchanOS, and each one is a step that cannot
 be expressed as a package:
 
+    0045-locale              generate the locales and set the system default.
+                             The `locales` package alone does nothing: every
+                             entry in /etc/locale.gen ships commented out, so
+                             without this the image comes up in the C locale
+                             and every program that calls setlocale - which
+                             the Gnuchan programs all do - gets an encoding
+                             that cannot represent Turkish text. en_US.UTF-8
+                             and tr_TR.UTF-8 are generated; English is the
+                             default.
     0050-liveuser            create the live user (`gnuchanos`, password
                              `gnuchanos`), first, so the installers that write
                              into its home have a home
     0060-branding            name the machine GnuChanOS (os-release, issue,
                              motd, lsb-release), so the console does not say
                              "Debian GNU/Linux 13"
+    0070-network             turn the network ON: enable NetworkManager and
+                             systemd-resolved, tell NetworkManager to hand its
+                             DNS to resolved, and install the boot-time unit
+                             that points /etc/resolv.conf at resolved's stub.
+                             Without it the image connects to a wireless
+                             network and passes no traffic - association is the
+                             driver's job, but an address, a route and a
+                             resolver come from these two services running.
+                             The resolv.conf symlink is made at BOOT and not
+                             here on purpose: the stub does not exist in the
+                             chroot, and 0100 and 0300 still need DNS to
+                             download while the image is built.
     0080-boot-branding       a BINARY hook: give the ISO's OWN boot menu the
                              GnuchanOS look. The ISO has TWO boot menus and they
                              are drawn differently, which is the whole reason

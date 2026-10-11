@@ -35,6 +35,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "dm_core.h"
@@ -121,6 +122,33 @@ static void install_x_cookie(const struct passwd *user, const char *home,
     chmod(auth_path, S_IRUSR | S_IWUSR);
 }
 
+/* Wait, briefly, for a path to appear.
+ *
+ * The runtime directory is made by pam_systemd while the login is opened, which
+ * has already happened by the time this runs — but the SESSION BUS on it is a
+ * socket systemd's user instance creates separately, and that can land a
+ * fraction of a second later. Looking once and giving up is how a session comes
+ * up with no bus and every notification it ever shows goes nowhere. The wait is
+ * short (a second at most) and abandoned quietly: a machine with no user bus at
+ * all is not made worse by leaving the variable unset, which is why the caller
+ * still tests before setting anything.
+ */
+static int wait_for_path(const char *path, long milliseconds) {
+    long waited = 0;
+    for (;;) {
+        struct stat info;
+        if (stat(path, &info) == 0) {
+            return 1;
+        }
+        if (waited >= milliseconds) {
+            return 0;
+        }
+        struct timespec pause = { 0, 20 * 1000 * 1000 };  /* 20 ms */
+        nanosleep(&pause, NULL);
+        waited += 20;
+    }
+}
+
 static void set_session_environment(const struct passwd *user, const char *home,
                                     const char *auth_path, const char *display) {
     setenv("HOME", home, 1);
@@ -157,14 +185,18 @@ static void set_session_environment(const struct passwd *user, const char *home,
        compiler can no longer prove the result fits. */
     char runtime[256];
     snprintf(runtime, sizeof(runtime), "/run/user/%u", (unsigned)user->pw_uid);
-    struct stat runtime_info;
-    if (stat(runtime, &runtime_info) == 0 && S_ISDIR(runtime_info.st_mode)) {
+    /* The runtime directory is made by pam_systemd on the login, which has
+       already been opened; a short wait covers the moment between the two. */
+    if (wait_for_path(runtime, 1000)) {
         setenv("XDG_RUNTIME_DIR", runtime, 1);
 
         char bus_path[280];
         snprintf(bus_path, sizeof(bus_path), "%s/bus", runtime);
-        struct stat bus_info;
-        if (stat(bus_path, &bus_info) == 0) {
+        /* The bus socket is created a beat after the directory, so it is the
+           one that really needs waiting for. A second is generous and still
+           bounded: a machine with no user bus at all pays it once and leaves
+           the variable unset, which is the correct outcome there. */
+        if (wait_for_path(bus_path, 1000)) {
             char bus[300];
             snprintf(bus, sizeof(bus), "unix:path=%s", bus_path);
             setenv("DBUS_SESSION_BUS_ADDRESS", bus, 1);

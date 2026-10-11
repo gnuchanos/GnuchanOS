@@ -14,6 +14,7 @@
 #define GNUCHANDM_CORE_H
 
 #include <X11/Xlib.h>
+#include <security/pam_appl.h>
 
 #include "dm_module.h"
 #include "dm_sessions.h"
@@ -98,6 +99,14 @@ struct DmCore {
     DmConfig config;
     DmStyle style;
     int running;
+
+    /* The PAM handle for the login in progress, or NULL when nobody is logged
+       in. It is held for the WHOLE session and deliberately not closed when
+       the password checks out: pam_end is what makes pam_systemd tear down
+       /run/user/$UID and the session bus, so closing it at login would take
+       the desktop's own bus away the moment it was needed. It is released by
+       dm_auth_end() once the session has ended. See dm_auth.c. */
+    pam_handle_t *pam;
 
     /* --- the login form --------------------------------------------------- */
 
@@ -238,9 +247,25 @@ void dm_draw_text(DmCore *core, int x, int y, const char *text,
                   XFontStruct *font, unsigned long colour);
 int  dm_draw_text_width(XFontStruct *font, const char *text, int length);
 
-/* dm_auth.c — check a user name and a password. Returns 1 when the pair is
-   correct, 0 when it is not. */
-int dm_auth_check(const char *username, const char *password);
+/* dm_auth.c — authenticate a user and OPEN the PAM session.
+
+   Returns 1 when the password is right and the session opened, 0 otherwise.
+
+   The session is opened here (pam_open_session) and not only the password
+   checked. pam_systemd runs on exactly that call, and it is what registers the
+   login with systemd-logind — which in turn creates /run/user/$UID and starts
+   the user's D-Bus. Checking the password alone leaves the session without a
+   bus, so the notification server and every background daemon that wants one
+   has nowhere to hold a name.
+
+   Uses the user name and password already in core. On success the handle is
+   kept in core->pam and must be released with dm_auth_end() once the session
+   has ended. */
+int dm_auth_check(DmCore *core);
+
+/* Close the session dm_auth_check opened and release its handle, so logind is
+   told the login is over. Safe to call when there is no handle. */
+void dm_auth_end(DmCore *core);
 
 /* dm_sessions.c — read the sessions installed on this machine. */
 int dm_sessions_scan(DmSession *out, int max);

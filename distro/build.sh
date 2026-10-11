@@ -152,6 +152,24 @@ note "staged $STAGE"
 
 # --- the build --------------------------------------------------------------
 
+# THE DEBOOTSTRAP VARIANT IS LEFT AT ITS DEFAULT ON PURPOSE.
+#
+# An earlier version passed --variant=minbase to shrink the image, and that one
+# flag is what broke the network. debootstrap's minbase variant installs only
+# ESSENTIAL packages: the whole Priority: important layer is left out, and that
+# layer is where the base networking tools live - iproute2 (`ip`), iputils-ping
+# (`ping`), and the rest of what a machine needs before anything above it can
+# use the network. The result was an image with no `ip` at all, and a wireless
+# connection that associated and took a lease but could not pass traffic,
+# because the tools that put an address and a route on the interface were not
+# there. (--apt-recommends false does NOT cause this and is kept: iproute2 and
+# iputils-ping are Priority: important, not Recommends, so what dropped them was
+# the variant and not the recommends.)
+#
+# The default variant costs a little image size and is the only one that carries
+# the standard base. It is left alone here, and the tools that matter to the
+# Gnuchan programs are ALSO named in the package list, so the image does not
+# depend on the variant staying standard.
 cd "$WORK"
 say "Configuring live-build ($DISTRIBUTION/$ARCHITECTURE)"
 lb config \
@@ -161,7 +179,6 @@ lb config \
     --binary-images iso-hybrid \
     --bootappend-live "boot=live components username=gnuchanos hostname=gnuchan quiet splash" \
     --apt-recommends false \
-    --debootstrap-options "--variant=minbase" \
     --mirror-bootstrap "http://deb.debian.org/debian" \
     --mirror-chroot "http://deb.debian.org/debian" \
     --mirror-binary "http://deb.debian.org/debian" \

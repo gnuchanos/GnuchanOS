@@ -53,15 +53,21 @@ static void open_log(void) {
     setvbuf(stderr, NULL, _IOLBF, 0);
 }
 
-/* Check the password, then — only then — start a session. */
+/* Check the password and open the session, then — only then — start it. */
 static void attempt_login(DmCore *core) {
-    if (dm_auth_check(core->username, core->password)) {
+    /* dm_auth_check opens a PAM session as well as checking the password, so
+       pam_systemd runs and the user's runtime directory and session bus come
+       up before dm_session_start builds the environment from them. The handle
+       it leaves in core->pam is closed below, once the session has ended. */
+    if (dm_auth_check(core)) {
         dm_form_clear_password(core);
         if (dm_session_start(core, core->username) != 0) {
             dm_form_set_message(core, "could not start the session", 1);
         }
-        /* Reached when the session has ended — the user logged out. The user
-           name is kept, so the keyboard goes straight to the password. */
+        /* Reached when the session has ended — the user logged out. The login
+           is closed with it, so logind tears the runtime directory and the bus
+           down and a fresh login builds them again. */
+        dm_auth_end(core);
         core->focus = DM_FOCUS_PASSWORD;
         dm_form_set_message(core, NULL, 0);
         dm_core_redraw(core);

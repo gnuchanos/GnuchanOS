@@ -141,6 +141,19 @@ xserver-xorg-legacy
 # dbus-x11 provides the session bus helpers a desktop session expects; the
 # notification server and every program that talks to it want a session bus.
 dbus-x11
+# The user-session machinery. Both of these are Recommends - libpam-systemd of
+# systemd, dbus-user-session of dbus - so --apt-recommends false drops them, and
+# without them the graphical session has no runtime directory and no session
+# bus. The chain: pam_systemd, which lives in libpam-systemd, registers the login
+# with systemd-logind, and logind is what creates /run/user/$UID and starts the
+# user's D-Bus. dbus-user-session is what puts the bus socket at
+# $XDG_RUNTIME_DIR/bus that the environment points at. GnuChanDM starts the
+# session itself and looks for exactly those two paths (see dm_session.c): with
+# the packages absent they never exist, so the notification server holds its
+# name on no bus and every program that wants one either gives up or spawns an
+# invisible bus of its own.
+libpam-systemd
+dbus-user-session
 
 # --- GnuChanBrowser is a Qt program ---
 qt6-base-dev
@@ -161,6 +174,18 @@ network-manager
 wpasupplicant
 wireless-tools
 rfkill
+# ping and `ip`, named explicitly. Both are Priority: important and come in
+# with the standard base, so with the default debootstrap variant they are on
+# the image already - but naming them is deliberate. An earlier build passed
+# --variant=minbase, which installs only ESSENTIAL packages and silently
+# dropped the whole important layer: the image booted with no `ip` and no
+# `ping`, and a wireless link that associated and took a lease passed nothing,
+# because the tools that put an address and a route on the interface were not
+# there. The variant is fixed in build.sh; these two lines make the tools the
+# Gnuchan programs actually call (net_device.c runs `ip -o -4 addr show`,
+# net_ui.c runs `ip link set`) survive any future change to that variant.
+iputils-ping
+iproute2
 # systemd-resolved is the resolver GnuChanNetworkManager drives with resolvectl,
 # and the image was going without it: `resolvectl` answered "command not found",
 # so the manager's per-link DNS path had nothing to call and every lookup left

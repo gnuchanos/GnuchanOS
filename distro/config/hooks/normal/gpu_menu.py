@@ -7,10 +7,10 @@
 # system reads that word from /proc/cmdline while it boots and brings up the
 # matching driver.
 #
-#     Live System - NVIDIA (new)      gnuchan.gpu=nvidia-new
-#     Live System - NVIDIA (legacy)   gnuchan.gpu=nvidia-legacy
-#     Live System - AMD               gnuchan.gpu=amd
-#     Live System - Intel             gnuchan.gpu=intel
+#     Live System -> NVIDIA (new)     gnuchan.gpu=nvidia-new
+#     Live System -> NVIDIA (legacy)  gnuchan.gpu=nvidia-legacy
+#     Live System -> Radeon           gnuchan.gpu=amd
+#     Live System -> Intel            gnuchan.gpu=intel
 #
 # License: GPL3
 # =============================================================================
@@ -22,10 +22,10 @@ import sys
 from pathlib import Path
 
 GPU_CHOICES = (
-    ("Live System - NVIDIA (new)",    "gnuchan.gpu=nvidia-new"),
-    ("Live System - NVIDIA (legacy)", "gnuchan.gpu=nvidia-legacy"),
-    ("Live System - AMD",             "gnuchan.gpu=amd"),
-    ("Live System - Intel",           "gnuchan.gpu=intel"),
+    ("Live System -> NVIDIA (new)",    "gnuchan.gpu=nvidia-new"),
+    ("Live System -> NVIDIA (legacy)", "gnuchan.gpu=nvidia-legacy"),
+    ("Live System -> Radeon",          "gnuchan.gpu=amd"),
+    ("Live System -> Intel",           "gnuchan.gpu=intel"),
 )
 
 GPU_PARAMETER = "gnuchan.gpu="
