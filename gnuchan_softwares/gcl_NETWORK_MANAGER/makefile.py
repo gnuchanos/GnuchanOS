@@ -457,20 +457,43 @@ def run_streaming(
 
 
 def parse_blockcheck_nfqws(output: str, domain: str) -> str:
-    """The nfqws options blockcheck found for `domain`, or empty. blockcheck
-    prints a summary line per working method; this takes the first that names
-    the domain and an nfqws desync, and returns only the options — everything
-    before the 'nfqws' word is the test's label, not part of the method."""
+    """The nfqws options that WORKED, read from blockcheck's own summary.
+
+    Only the `* SUMMARY` section is looked at, because it is the one that lists
+    the methods that succeeded. The long log above it carries a
+    "curl_test_https … : nfqws …" line for EVERY test, most of them failures
+    ("Connection reset by peer"), and taking the first line from the whole
+    output picks one of those — which is what happened: the method written out
+    was `multisplit --dpi-desync-split-pos=2`, a line blockcheck had marked
+    UNAVAILABLE, while the summary's first working method was
+    `fake --dpi-desync-ttl=3`. The reference installer reads the summary for the
+    same reason.
+
+    A ttl-based method is preferred when the summary offers one, as the
+    reference does: it needs no OS timestamp support and no particular server,
+    so it is the most portable of the working set.
+    """
+    inside = False
+    summary: list[str] = []
     for line in output.splitlines():
-        if "curl_test_https" not in line or "nfqws" not in line:
+        if line.strip().startswith("* SUMMARY"):
+            inside = True
             continue
-        if domain not in line:
-            continue
-        _, _, tail = line.partition("nfqws")
-        candidate = tail.strip()
-        if candidate:
-            return candidate
-    return ""
+        if inside and not line.strip():
+            break
+        if inside:
+            summary.append(line)
+
+    candidates = [
+        line for line in summary
+        if "curl_test_https" in line and "nfqws" in line and domain in line
+    ]
+    if not candidates:
+        return ""
+    with_ttl = [line for line in candidates if "ttl" in line.lower()]
+    chosen = with_ttl[0] if with_ttl else candidates[0]
+    _, _, tail = chosen.partition("nfqws")
+    return tail.strip()
 
 
 def stop_bypass() -> None:
