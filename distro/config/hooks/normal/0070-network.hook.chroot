@@ -36,10 +36,12 @@
 #      /etc/resolv.conf (rc-manager=unmanaged). Without that second half NM and
 #      resolved both try to own the file and one overwrites the other - the same
 #      "connected, nothing resolves" from a different direction.
-#   4. resolved gets FallbackDNS (public resolvers, used only when the lease's
-#      own give nothing) and opportunistic DNS-over-TLS. The encryption matters
-#      on the networks this image is built for: an ISP that filters DNS BY NAME
-#      cannot read an encrypted query, so the name is not what gets refused.
+#   4. resolved is pointed at a public resolver FORCED for every name
+#      (DNS=, Domains=~.), so an ISP resolver that refuses a name by policy is
+#      never the one asked. See section 3b.
+#   5. outgoing DNS is sent to that resolver on a NON-STANDARD PORT by a NAT
+#      rule (section 7), which is what defeats an interception that watches
+#      port 53. zapret covers the port-443 name; this covers the port-53 one.
 #
 # Each step is guarded and reported, so a build missing one package still
 # produces an image and says which part was skipped.
@@ -107,13 +109,35 @@ if [ "$RESOLVED" -eq 1 ]; then
 # is the TLS server name used to validate it; it is what lets the lookup be
 # encrypted rather than sent in the clear.
 #
-# DNSOverTLS=opportunistic encrypts the query whenever the resolver supports it
-# and falls back to plain DNS when it does not - the safe setting. `yes` would
-# turn a network that blocks port 853 into a machine with no DNS at all.
+# DNS and Domains=~. ARE THE FIX FOR THE ISME-GÖRE BLOCK, and this is the part
+# that actually matters. The symptom that proved it: `ping google.com` resolves
+# and `ping discord.com` answers "Temporary failure in name resolution". A
+# resolver that answers one name and refuses another is not broken - it is
+# BLOCKING BY NAME. The ISP's own DNS server refuses to answer discord.com, and
+# nothing done to packets (zapret, nfqws) can help: the name is never resolved,
+# so there is no packet to desync. The DNS layer itself has to be moved, and
+# section 7 moves it.
+#
+# FallbackDNS alone does NOT fix this: it is used only when the link's own server
+# gives NOTHING, and a server that answers google and refuses discord is still
+# "giving something", so the fallback is never tried. The server is FORCED
+# instead:
+#
+#   DNS=            the server to ask, named explicitly so the ISP's DHCP server
+#                   is not the one asked.
+#   Domains=~.      makes it the server for EVERY name (the `~.` routing domain),
+#                   so the ISP's resolver is never consulted at all.
+#
+# DNSOverTLS is left OFF on purpose: it is one way to slip past the
+# interception, and section 7 takes the other - the NON-STANDARD PORT the
+# Turkish GoodbyeDPI fork uses. Running both at once would point the two halves
+# at different servers, and the port shift is the one that fits these networks.
 [Resolve]
 DNSStubListener=yes
-FallbackDNS=1.1.1.1#cloudflare-dns.com 8.8.8.8#dns.google 9.9.9.9#dns.quad9.net 8.8.4.4#dns.google
-DNSOverTLS=opportunistic
+DNS=77.88.8.8
+Domains=~.
+DNSSEC=allow-downgrade
+FallbackDNS=77.88.8.8
 EOF
     chmod 0644 /etc/systemd/resolved.conf.d/90-gnuchan.conf
     log "wrote /etc/systemd/resolved.conf.d/90-gnuchan.conf"
@@ -443,6 +467,122 @@ else
             "bypass is installed until it is fetched on the machine"
     fi
     rm -rf "$zapret_work"
+fi
+
+# --- 7. the DNS half of the bypass -------------------------------------------
+
+# THIS IS A SECOND, SEPARATE BLOCK, and it is the one that was missing. Section
+# 6's zapret fragments the TLS name on port 443, which is the block that resets
+# a connection. This is the block that refuses the NAME, and it happens on port
+# 53 - or does not happen at all. The two look different to the person: the SNI
+# block gives a connection that hangs or resets, and this one gives
+#
+#     ping: discord.com: Temporary failure in name resolution
+#
+# while `ping google.com` works. A name that never resolves cannot be fixed by
+# fragmenting packets, because there is no packet to fragment yet. The DNS layer
+# has to be moved, and zapret does not move it - its own config.default covers
+#
+#     NFQWS_PORTS_TCP=80,443
+#     NFQWS_PORTS_UDP=443
+#
+# and nothing on port 53.
+#
+# The Turkish GoodbyeDPI fork solves exactly this, and says how in its command
+# line:
+#
+#     goodbyedpi.exe -5 --set-ttl 5 --dns-addr 77.88.8.8 --dns-port 1253 ...
+#
+# A public resolver is reached on a NON-STANDARD PORT. The interception watches
+# port 53; a query on 1253 is not seen, reaches the resolver untouched, and the
+# name is answered. This is the Linux equivalent written as a NAT rule, sending
+# outgoing DNS to 77.88.8.8:1253.
+#
+# Loopback is exempt, and that is the important guard: every program asks the
+# local resolver stub on 127.0.0.53, and redirecting THAT into the rule would
+# send the stub's own query to Yandex and let it ask nothing. The exemption is
+# the first rule in both back ends, and the redirect is only added when the
+# exemption is in place.
+#
+# nftables is preferred and iptables is the fallback, the same pair section 6
+# installs. The address is Yandex's because it is the one the reference fork uses
+# and the one known to answer on 1253; changing it is the SERVER line below.
+install -d /usr/local/sbin
+
+cat > /usr/local/sbin/gnuchan-dnsredir <<'DNSREDIR_SCRIPT'
+#!/bin/sh
+# gnuchan-dnsredir - send outgoing DNS to a resolver on a non-standard port, so
+# an interception watching port 53 never sees it. See 0070-network.hook.chroot.
+set -u
+
+SERVER=77.88.8.8
+PORT=1253
+
+say() { printf 'gnuchan-dnsredir: %s\n' "$1"; }
+
+applied=0
+
+# nftables first.
+if command -v nft >/dev/null 2>&1; then
+    nft delete table ip gnuchan_dns >/dev/null 2>&1 || true
+    if nft add table ip gnuchan_dns >/dev/null 2>&1 &&
+       nft 'add chain ip gnuchan_dns out { type nat hook output priority -100; }' >/dev/null 2>&1 &&
+       nft add rule ip gnuchan_dns out oif lo return >/dev/null 2>&1 &&
+       nft add rule ip gnuchan_dns out udp dport 53 counter dnat to "$SERVER:$PORT" >/dev/null 2>&1 &&
+       nft add rule ip gnuchan_dns out tcp dport 53 counter dnat to "$SERVER:$PORT" >/dev/null 2>&1; then
+        say "outgoing DNS -> $SERVER:$PORT (nftables)"
+        applied=1
+    fi
+fi
+
+# iptables otherwise. The loopback rule is added first and the redirect is added
+# only if it is there, so a failure cannot leave the stub redirected into itself.
+if [ "$applied" -eq 0 ] && command -v iptables >/dev/null 2>&1; then
+    if iptables -t nat -C OUTPUT -o lo -j RETURN >/dev/null 2>&1 ||
+       iptables -t nat -A OUTPUT -o lo -j RETURN >/dev/null 2>&1; then
+        iptables -t nat -C OUTPUT -p udp --dport 53 -j DNAT --to-destination "$SERVER:$PORT" >/dev/null 2>&1 ||
+            iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to-destination "$SERVER:$PORT" >/dev/null 2>&1 || true
+        iptables -t nat -C OUTPUT -p tcp --dport 53 -j DNAT --to-destination "$SERVER:$PORT" >/dev/null 2>&1 ||
+            iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to-destination "$SERVER:$PORT" >/dev/null 2>&1 || true
+        say "outgoing DNS -> $SERVER:$PORT (iptables)"
+        applied=1
+    fi
+fi
+
+if [ "$applied" -eq 0 ]; then
+    say "no firewall tool could take the rule; DNS was left as it was"
+fi
+
+exit 0
+DNSREDIR_SCRIPT
+chmod 0755 /usr/local/sbin/gnuchan-dnsredir
+log "wrote /usr/local/sbin/gnuchan-dnsredir"
+
+cat > /etc/systemd/system/gnuchan-dnsredir.service <<'DNSREDIR_UNIT'
+[Unit]
+Description=Send outgoing DNS to a resolver on a non-standard port
+# After the network, so there is an interface to install the rule on. It runs
+# before the unit that points resolv.conf at the stub, so the redirect is in
+# place by the time anything resolves.
+After=network-online.target
+Wants=network-online.target
+Before=gnuchan-resolvconf.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/gnuchan-dnsredir
+
+[Install]
+WantedBy=multi-user.target
+DNSREDIR_UNIT
+chmod 0644 /etc/systemd/system/gnuchan-dnsredir.service
+log "wrote /etc/systemd/system/gnuchan-dnsredir.service"
+
+if systemctl enable gnuchan-dnsredir.service >/dev/null 2>&1; then
+    log "enabled gnuchan-dnsredir"
+else
+    log "could not enable gnuchan-dnsredir now; it is still installed"
 fi
 
 log "done"
