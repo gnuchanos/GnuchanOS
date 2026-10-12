@@ -247,7 +247,14 @@ jobs:
             # reads in order when they list the files beside each other.
             split -b 1900M -d -a 2 --numeric-suffixes=1 \
                   "$iso" "$GITHUB_WORKSPACE/release/$named.part"
-            ( cd "$GITHUB_WORKSPACE/release" && sha256sum *.part > SHA256SUMS.txt )
+            # The glob is `.part*` and NOT `.part`, and that is a correction:
+            # split with --numeric-suffixes writes `...iso.part01`, `...part02`,
+            # etc., whose names END in `part01` - so a `*.part` pattern matches
+            # NONE of them. In a `set -e` shell an unmatched glob is passed
+            # through literally and sha256sum then fails on a file called
+            # "*.part", which aborts the whole step AFTER the hours-long build.
+            # `*.part*` matches every numbered part.
+            ( cd "$GITHUB_WORKSPACE/release" && sha256sum *.part* > SHA256SUMS.txt )
             cat > "$GITHUB_WORKSPACE/release/REASSEMBLE.txt" <<EOF
           GnuchanOS $version - the live ISO, shipped in parts.
 

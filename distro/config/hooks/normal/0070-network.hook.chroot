@@ -94,6 +94,47 @@ EOF
     log "wrote /etc/NetworkManager/conf.d/90-gnuchan-dns.conf"
 fi
 
+# --- 3b. the resolver's own settings ----------------------------------------
+#
+# resolved is enabled above, and that alone is not enough to reach the internet.
+# THE FAILURE THIS FIXES is the one a live session actually hits: the wireless
+# link associates, takes a lease, pings the router and the machine beside it -
+# and reports "no internet", because NAME LOOKUPS fail. Traffic is fine; the
+# resolver has nothing to answer with, or answers with a server that will not
+# serve it, and every program that works by name (a browser, apt, a package
+# looking for its update) reads that as the network being down.
+#
+# Two things are set here, both for that:
+#
+#   FallbackDNS   servers used when the link's own DHCP-provided resolvers give
+#                 nothing. A network that hands out a resolver which refuses,
+#                 is unreachable, or filters by name (the common case on the
+#                 ISPs this image is built for - see the package list's note on
+#                 DNS being filtered BY NAME) leaves a machine that is online in
+#                 every visible way and resolves nothing. A fallback means the
+#                 lookup still completes when the offered server does not.
+#
+#   DNSStubListener  written as `yes` explicitly rather than left to the
+#                 default, so the file itself says the stub at 127.0.0.53 is
+#                 the one to use - which is what the resolv.conf symlink below
+#                 points every program at.
+#
+# It is a drop-in under resolved.conf.d/, so the distribution's resolved.conf
+# is untouched and this is one visible block of policy.
+if [ "$RESOLVED" -eq 1 ]; then
+    install -d /etc/systemd/resolved.conf.d
+    cat > /etc/systemd/resolved.conf.d/90-gnuchan.conf <<'EOF'
+# GnuchanOS - a resolver that answers even when the link's own does not.
+# See 0070-network.hook.chroot. FallbackDNS is used only when the servers the
+# connection offered give nothing, so a working DHCP resolver is still preferred.
+[Resolve]
+DNSStubListener=yes
+FallbackDNS=1.1.1.1 8.8.8.8 9.9.9.9 8.8.4.4
+EOF
+    chmod 0644 /etc/systemd/resolved.conf.d/90-gnuchan.conf
+    log "wrote /etc/systemd/resolved.conf.d/90-gnuchan.conf"
+fi
+
 # --- 4. the boot-time resolv.conf unit ---------------------------------------
 
 # Only meaningful when resolved is in the image: pointing resolv.conf at a stub

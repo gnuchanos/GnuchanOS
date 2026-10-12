@@ -1,7 +1,7 @@
 #!/bin/sh
 # GnuchanOS - the graphics drivers the boot menu can choose between.
 #
-# The ISO's boot menu offers one entry per driver (see gpu_menu.py and the
+# The ISO's boot menu offers one entry per driver (see gpu_menu.sh and the
 # 0080-boot-branding hook): the generic entry, and "Live System -> NVIDIA (new)",
 # "Live System -> NVIDIA (legacy)", "Live System -> Radeon" and "Live System ->
 # Intel". Each extra entry carries a `gnuchan.gpu=` word on its kernel command

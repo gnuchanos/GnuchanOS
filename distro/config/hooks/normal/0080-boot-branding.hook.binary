@@ -98,11 +98,19 @@ log "binary tree: $ROOT"
 # distribution's own single entry and every card still boots on the open source
 # driver - so a build that did not carry the script still produces a working
 # image.
-GPU_MENU="$(dirname "$0")/gpu_menu.py"
-if [ -f "$GPU_MENU" ] && command -v python3 >/dev/null 2>&1; then
-    python3 "$GPU_MENU" "$ROOT" || log "the graphics driver entries could not be added"
+#
+# The editor is a plain shell script (gpu_menu.sh) and not a Python one, on
+# purpose. An earlier version ran a gpu_menu.py with `python3`, and the build is
+# driven from a minimal debian:trixie container whose only package is live-build
+# - which does NOT depend on python3. The interpreter was simply not there, the
+# hook added nothing, and the finished ISO came out with the distribution's own
+# single entry and no graphics choice at all. sh and awk are on every system
+# that can run live-build; a menu editor does not get to require anything more.
+GPU_MENU="$(dirname "$0")/gpu_menu.sh"
+if [ -f "$GPU_MENU" ]; then
+    sh "$GPU_MENU" "$ROOT" || log "the graphics driver entries could not be added"
 else
-    log "no gpu_menu.py beside this hook; the menus keep their single entry"
+    log "no gpu_menu.sh beside this hook; the menus keep their single entry"
 fi
 
 # --- the text ----------------------------------------------------------------

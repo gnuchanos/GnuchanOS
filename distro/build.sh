@@ -99,7 +99,7 @@ cp -a "$HERE/config" "$WORK/config"
 # and a loop using it fails on the first file and takes the cleanup with it.
 find "$WORK/config" -type f \
     \( -name '*.chroot' -o -name '*.list.chroot' -o -name '*.conf' \
-       -o -path '*/hooks/*' -o -path '*/package-lists/*' \) \
+       -o -name '*.sh' -o -path '*/hooks/*' -o -path '*/package-lists/*' \) \
     -exec sed -i 's/\r$//' {} + 2>/dev/null || true
 
 # The hooks are EXECUTED, so they have to carry the execute bit. It is set here
