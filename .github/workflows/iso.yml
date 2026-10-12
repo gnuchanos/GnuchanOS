@@ -200,23 +200,25 @@ jobs:
           ls -ld distro/_build
           ls -lh distro/_build/*.iso
 
-      # THE IMAGE IS SPLIT INTO PARTS, and this is required, not caution. A
-      # GitHub release refuses any single asset of 2 GiB or more, and a Debian
-      # desktop image with XLibre and every Gnuchan program on it is routinely
-      # larger than that: an unsplit ISO is a three-hour build that fails at the
-      # very last step for a reason that has nothing to do with the image. The
-      # image is therefore cut into parts each comfortably under the ceiling, a
-      # checksum is written per part, and a short note says how to put them back
-      # together.
+      # WHAT GOES IN THE RELEASE depends on ONE thing: whether the image fits in
+      # a single release file. GitHub refuses an asset of 2 GiB or more, so an
+      # image OVER that ceiling is the only case that has to be cut up - and an
+      # image that comes in UNDER it is published WHOLE, as one plainly named
+      # GnuchanOS-<version>-amd64.iso. Splitting an image that already fits is a
+      # release whose download is a file called "...iso.00.part" for no reason at
+      # all, and that is the whole of this step: small image, one file; large
+      # image, numbered parts and a note; never both, never a part when a whole
+      # would do.
       #
-      # `split` writes at least one part even for an image that fits whole, so
-      # the release is the same shape whether the image is large or small, and a
-      # person never has to guess which download path a given release took.
-      - name: Name and split the ISO into release-sized parts
+      # Everything is gathered into release/ first, so the upload and the release
+      # publish ONE name that holds whatever this run produced - the plain ISO or
+      # the parts - without either of them having to know which it was.
+      - name: Prepare the release files
         run: |
           set -eu
           version="${{ steps.version.outputs.version }}"
           cd distro/_build
+          mkdir -p "$GITHUB_WORKSPACE/release"
 
           iso="$(find . -maxdepth 1 -name 'GnuchanOS-*.iso' | head -n 1)"
           if [ -z "$iso" ]; then
@@ -229,46 +231,51 @@ jobs:
           # release names it after the VERSION, because that is what a person
           # choosing between releases is looking at.
           named="GnuchanOS-$version-amd64.iso"
-          mv "$iso" "$named"
+          size="$(stat -c %s "$iso")"
+          # 1900 MiB, under the 2 GiB ceiling with room for the asset's own
+          # metadata.
+          ceiling=$((1900 * 1024 * 1024))
 
-          # 1900 MiB, under the 2 GiB ceiling with room for the file's own
-          # metadata. --additional-suffix keeps ".part" on every piece, so the
-          # glob that rejoins them cannot catch the whole image by accident.
-          split -b 1900M -d --additional-suffix=.part "$named" "$named."
-
-          # The checksums are written WITHOUT a path prefix, so the file works
-          # in whatever directory a person downloaded the parts into.
-          sha256sum "$named".[0-9][0-9].part > split-sha256sum.txt
-
-          cat > REASSEMBLE.txt <<EOF
+          if [ "$size" -le "$ceiling" ]; then
+            echo "$named is $((size / 1024 / 1024)) MiB - it fits one release file, publishing it whole"
+            cp "$iso" "$GITHUB_WORKSPACE/release/$named"
+            ( cd "$GITHUB_WORKSPACE/release" && sha256sum "$named" > SHA256SUMS.txt )
+          else
+            echo "$named is $((size / 1024 / 1024)) MiB - over the release ceiling, splitting it"
+            # --numeric-suffixes=1 and two digits: ...iso.part01, part02, ...
+            # ONE is the first part, and a two-digit field is what a person
+            # reads in order when they list the files beside each other.
+            split -b 1900M -d -a 2 --numeric-suffixes=1 \
+                  "$iso" "$GITHUB_WORKSPACE/release/$named.part"
+            ( cd "$GITHUB_WORKSPACE/release" && sha256sum *.part > SHA256SUMS.txt )
+            cat > "$GITHUB_WORKSPACE/release/REASSEMBLE.txt" <<EOF
           GnuchanOS $version - the live ISO, shipped in parts.
 
-          A single release file may not be 2 GiB or more, so the image is cut
-          into numbered parts. Put them back together, IN ORDER, into one file:
+          A single release file may not be 2 GiB or more, and this image is
+          larger than that, so it is cut into numbered parts. Put them back
+          together, IN ORDER, into one file:
 
-              cat GnuchanOS-$version-amd64.iso.[0-9][0-9].part > GnuchanOS-$version-amd64.iso
+              cat $named.part* > $named
 
           Then check the parts you downloaded:
 
-              sha256sum -c split-sha256sum.txt
+              sha256sum -c SHA256SUMS.txt
 
           Write the rejoined image to a USB stick with dd or balenaEtcher.
           EOF
+          fi
 
-          ls -lh
+          ls -lh "$GITHUB_WORKSPACE/release"
 
-      - name: Upload the ISO parts
+      - name: Upload the release files
         uses: actions/upload-artifact@v4
         with:
           name: gnuchanos-iso
-          path: |
-            distro/_build/*.iso.[0-9][0-9].part
-            distro/_build/split-sha256sum.txt
-            distro/_build/REASSEMBLE.txt
+          path: release/
           if-no-files-found: error
-          # The parts are pieces of an already-compressed squashfs image, so the
-          # artifact's own zip pass gains nothing and only spends time on
-          # gigabytes. Off, so the upload is a copy.
+          # The files are an already-compressed squashfs image (or pieces of
+          # one), so the artifact's own zip pass gains nothing and only spends
+          # time on gigabytes. Off, so the upload is a copy.
           compression-level: 0
 
   release:
@@ -300,7 +307,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Download the ISO parts
+      - name: Download the release files
         uses: actions/download-artifact@v4
         with:
           name: gnuchanos-iso
@@ -324,10 +331,12 @@ jobs:
       # which is what makes the whole job safe to run again after a failure
       # anywhere before this point.
       #
-      # Everything the run produced is attached: the numbered parts, the
-      # checksum file and the reassembly note. The parts already carry the
-      # version in their names, so no renaming is done here and the checksums
-      # match the files as downloaded.
+      # Whatever the build job gathered is attached, and nothing here decides
+      # WHICH shape it is: a small image arrives as one plainly named
+      # GnuchanOS-<version>-amd64.iso, a large one as ...iso.part01, .part02, ...
+      # beside a SHA256SUMS.txt and, only in that case, a REASSEMBLE.txt. The
+      # download put them all under iso/, so one glob covers every case and this
+      # job never has to know which it was.
       - name: Publish the release
         if: steps.check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
@@ -335,7 +344,4 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           name: GnuchanOS ${{ steps.version.outputs.version }}
           generate_release_notes: true
-          files: |
-            iso/*.iso.[0-9][0-9].part
-            iso/split-sha256sum.txt
-            iso/REASSEMBLE.txt
+          files: iso/*

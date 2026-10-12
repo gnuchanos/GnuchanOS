@@ -31,6 +31,17 @@ dbus
 plymouth
 plymouth-themes
 initramfs-tools
+# zstd is what initramfs-tools compresses the initramfs WITH when it is here,
+# and without it the build says so and falls back to gzip:
+#
+#     W: No zstd in /usr/bin:/sbin:/bin, using gzip
+#
+# That warning is not fatal, which is exactly why it is worth fixing rather
+# than living with: the image still boots, but the initramfs it boots from is
+# the gzip one - markedly larger, and slower to decompress at boot on the
+# hardware a live USB is usually plugged into. zstd is a few hundred kilobytes
+# on the image and is the compression the distribution itself defaults to.
+zstd
 
 # --- GRUB, for the ISO's own boot menu to be themed. The theme installer
 #     (dotfile/GRUB_THEME/settings_grub.py) REFUSES to render a theme on a
