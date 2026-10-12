@@ -1,0 +1,13 @@
+{
+  "theme": {
+    "file": "/ventoy/theme/gnuchanos/theme.txt",
+    "gfxmode": "1920x1080",
+    "display_mode": "GUI",
+    "ventoy_left": "5%",
+    "ventoy_top": "95%",
+    "ventoy_color": "#c77dff",
+    "fonts": [
+      "/ventoy/theme/gnuchanos/unicode.pf2"
+    ]
+  }
+}

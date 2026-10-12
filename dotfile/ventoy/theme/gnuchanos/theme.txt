@@ -1,0 +1,89 @@
+# GnuChanOS - Ventoy theme (GRUB2). Purple palette.
+#
+# The background is the GnuchanOS wallpaper (assets/bg.png, 1920x1080), copied
+# in beside this file as background.png. Every colour is from the desktop's own
+# purple palette: the dark plum the desktop sits on (#27022b), the two purples
+# of the bar (#53055c, #940da3) and the light violet the focused window border
+# is drawn in (#c77dff).
+#
+# The menu boxes, the selection highlight and the scrollbar are the pixmaps
+# that shipped with Ventoy's own theme (menu_*.png, select_*.png, slider_*.png,
+# terminal_box_*.png); they are neutral grey, so the purple comes through the
+# item colours and the background rather than the boxes.
+
+desktop-image: "background.png"
+title-text: "GnuChanOS"
+title-color: "#c77dff"
+title-font: "Unifont Regular 16"
+message-color: "#f069ff"
+message-bg-color: "#27022b"
+
+terminal-box: "terminal_box_*.png"
+terminal-font: "Unifont Regular 16"
+
++ boot_menu {
+    left = 12%
+    width = 76%
+    top = 26%
+    height = 56%
+
+    menu_pixmap_style = "menu_*.png"
+
+    item_color = "#d9b3ff"
+    item_height = 34
+    item_padding = 4
+    item_spacing = 6
+
+    selected_item_color = "#ffffff"
+    selected_item_pixmap_style = "select_*.png"
+
+    item_icon_space = 8
+
+    scrollbar = true
+    scrollbar_width = 10
+    scrollbar_thumb = "slider_*.png"
+}
+
++ progress_bar {
+    id = "__timeout__"
+    text = "@TIMEOUT_NOTIFICATION_SHORT@"
+
+    left = 88%
+    width = 10%
+    top = 90%
+
+    text_color = "#c77dff"
+    fg_color = "#940da3"
+    bg_color = "#27022b"
+    border_color = "#c77dff"
+
+    bar_style = "*"
+    highlight_style = "*"
+}
+
+# The distribution's name, top-left, over the wallpaper.
++ hbox {
+    left = 2%
+    top = 3%
+    width = 40%
+    height = 30
+    + label { text = "GnuChanOS" color = "#c77dff" align = "left" }
+}
+
+# Ventoy's own hotkey hint and memory-disk flag, drawn in the palette rather
+# than the theme's blue and red.
++ hbox {
+    left = 2%
+    top = 95%
+    width = 40%
+    height = 25
+    + label { text = "@VTOY_HOTKEY_TIP@" color = "#c77dff" align = "left" }
+}
+
++ hbox {
+    left = 2%
+    top = 95%-25
+    width = 40%
+    height = 25
+    + label { text = "@VTOY_MEM_DISK@" color = "#f069ff" align = "left" }
+}
