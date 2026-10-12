@@ -341,4 +341,108 @@ EOF
     log "wrote a static /etc/resolv.conf (no resolved in this image)"
 fi
 
+# --- 6. zapret, so the manager's DPI button has something to run -------------
+
+# The DPI button runs /opt/zapret/init.d/sysv/zapret (see the manager's net_dpi.c
+# and its DpiInitPath). zapret is not a Debian package, so it is fetched and
+# unpacked here or the button runs a script that does not exist - which on the
+# live system is a DPI feature that does nothing.
+#
+# The manager's own makefile.py installs zapret too, and that is what an
+# installed MACHINE should use: it runs zapret's blockcheck to choose the desync
+# that works on that network. It is NOT reliable for the IMAGE build - blockcheck
+# needs a live network and install_easy.sh is interactive, so the step can fail
+# silently and the image ships with no /opt/zapret. This puts the tree and the
+# binaries in place deterministically, leaving blockcheck to the manager.
+#
+# A build host with no network reports and carries on, as the other fetches do.
+ZAPRET_VERSION="72.13"
+ZAPRET_DIR="/opt/zapret"
+
+if [ -x "$ZAPRET_DIR/init.d/sysv/zapret" ]; then
+    log "zapret is already installed under $ZAPRET_DIR"
+else
+    log "installing zapret (the DPI bypass the manager's DPI button runs)"
+
+    # The firewall tools nfqws sits behind. The manager's own makefile would
+    # apt-install these, but it SKIPS its whole zapret step when /opt/zapret is
+    # already there - and this hook is what put it there - so they are named
+    # here or they would be missing on a machine where nothing else pulls them
+    # in. nftables and iptables are the two back ends zapret's setup chooses
+    # between; both are installed so the init script works whichever it picks.
+    if command -v apt-get >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            nftables iptables >/dev/null 2>&1 || \
+            log "the firewall tools could not be installed; the bypass may not" \
+                "reach the packet path until they are"
+    fi
+
+    zapret_work=$(mktemp -d)
+    zapret_tar="$zapret_work/zapret.tar.gz"
+    zapret_url="https://github.com/bol-van/zapret/releases/download/v$ZAPRET_VERSION/zapret-v$ZAPRET_VERSION.tar.gz"
+
+    got=0
+    if command -v wget >/dev/null 2>&1; then
+        wget -q -O "$zapret_tar" "$zapret_url" && got=1 || true
+    fi
+    if [ "$got" -eq 0 ] && command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$zapret_tar" "$zapret_url" && got=1 || true
+    fi
+
+    if [ "$got" -eq 1 ] && [ -s "$zapret_tar" ]; then
+        tar -xzf "$zapret_tar" -C "$zapret_work" || true
+        zapret_src="$zapret_work/zapret-v$ZAPRET_VERSION"
+        if [ -d "$zapret_src" ]; then
+            rm -rf "$ZAPRET_DIR"
+            cp -a "$zapret_src" "$ZAPRET_DIR"
+
+            # The binaries and their prerequisites, non-interactively. The
+            # INTERACTIVE installer is not run: it asks about the firewall and
+            # picks a desync by testing the network, neither of which a chroot
+            # can answer. The settings it would write are forced below.
+            ( cd "$ZAPRET_DIR" && sh ./install_prereq.sh </dev/null >/dev/null 2>&1 ) || true
+            ( cd "$ZAPRET_DIR" && sh ./install_bin.sh >/dev/null 2>&1 ) || true
+
+            # NFQWS_ENABLE=1 is the switch for the whole feature: config.default
+            # ships 0, which makes the init script launch no daemon and the
+            # button look dead. MODE_FILTER=none sends every redirected
+            # connection through the daemon, the "blocked sites open everywhere"
+            # the button promises.
+            if [ -f "$ZAPRET_DIR/config" ]; then
+                sed -i 's/^NFQWS_ENABLE=.*/NFQWS_ENABLE=1/' "$ZAPRET_DIR/config" || true
+                grep -q '^NFQWS_ENABLE=' "$ZAPRET_DIR/config" || \
+                    printf 'NFQWS_ENABLE=1\n' >> "$ZAPRET_DIR/config"
+                sed -i 's/^MODE_FILTER=.*/MODE_FILTER=none/' "$ZAPRET_DIR/config" || true
+
+                # NFQWS_OPT is the desync ITSELF - the flags nfqws runs with. A
+                # config with the daemon enabled but no method set starts nfqws
+                # and lets every packet through unfragmented, which looks exactly
+                # like a bypass that does nothing. The method a given network
+                # needs is chosen by blockcheck on the real machine (the manager
+                # runs it there), so what is written here is the reference
+                # installer's own fallback - a desync that works on many
+                # networks - as a starting point rather than an empty string.
+                sed -i 's|^NFQWS_OPT=.*|NFQWS_OPT="--dpi-desync=fake --dpi-desync-ttl=3 <HOSTLIST>"|' \
+                    "$ZAPRET_DIR/config" || true
+                grep -q '^NFQWS_OPT=' "$ZAPRET_DIR/config" || \
+                    printf 'NFQWS_OPT="--dpi-desync=fake --dpi-desync-ttl=3 <HOSTLIST>"\n' \
+                        >> "$ZAPRET_DIR/config"
+            fi
+
+            if [ -f "$ZAPRET_DIR/init.d/systemd/zapret.service" ]; then
+                cp -f "$ZAPRET_DIR/init.d/systemd/zapret.service" \
+                    /etc/systemd/system/zapret.service
+                systemctl enable zapret >/dev/null 2>&1 || true
+            fi
+            log "installed zapret under $ZAPRET_DIR"
+        else
+            log "the zapret archive did not contain zapret-v$ZAPRET_VERSION"
+        fi
+    else
+        log "zapret could not be downloaded; the DPI button will report that no" \
+            "bypass is installed until it is fetched on the machine"
+    fi
+    rm -rf "$zapret_work"
+fi
+
 log "done"
