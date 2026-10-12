@@ -148,40 +148,71 @@ say() { printf 'gnuchan-resolvconf: %s\n' "$1"; }
 
 # Wait for the stub, up to about 15 seconds. It is created almost at once when
 # resolved is running; the wait only ever matters when it is not.
+write_fallback() {
+    # A plain file, not a symlink. `cp -f src /etc/resolv.conf` when resolv.conf
+    # is a symlink to the resolved stub writes THROUGH the link and into
+    # /run/systemd/resolve/stub-resolv.conf - corrupting resolved's own file
+    # instead of replacing the pointer to it. Unlinking first makes this a real
+    # file in its own right, which is what a fallback resolver has to be.
+    rm -f /etc/resolv.conf
+    if [ -e "$FALLBACK" ]; then
+        cp -f "$FALLBACK" /etc/resolv.conf
+    else
+        printf '%s\n' \
+            'nameserver 1.1.1.1' \
+            'nameserver 8.8.8.8' \
+            'nameserver 9.9.9.9' \
+            'nameserver 8.8.4.4' > /etc/resolv.conf
+    fi
+}
+
 tries=0
 while [ ! -e "$STUB" ] && [ "$tries" -lt 30 ]; do
     sleep 0.5
     tries=$((tries + 1))
 done
 
-if [ -e "$STUB" ]; then
-    if [ -L /etc/resolv.conf ] && \
-       [ "$(readlink /etc/resolv.conf)" = "$STUB" ]; then
-        say "resolv.conf already points at the resolved stub"
-        exit 0
-    fi
-    # Keep a plain file aside once, so whatever the image shipped is recoverable.
-    if [ -e /etc/resolv.conf ] && [ ! -L /etc/resolv.conf ] && \
-       [ ! -e /etc/resolv.conf.gnuchan-backup ]; then
-        cp -f /etc/resolv.conf /etc/resolv.conf.gnuchan-backup 2>/dev/null || true
-    fi
-    rm -f /etc/resolv.conf
-    ln -s "$STUB" /etc/resolv.conf
-    say "resolv.conf -> $STUB (systemd-resolved)"
+# No stub at all: write a resolver that answers rather than leave a dead one.
+if [ ! -e "$STUB" ]; then
+    say "no systemd-resolved stub; writing a fallback resolver"
+    write_fallback
     exit 0
 fi
 
-# No stub: write a resolver that answers rather than leave a dead one.
-say "systemd-resolved is not serving a stub; writing a fallback resolver"
-if [ -e "$FALLBACK" ]; then
-    cp -f "$FALLBACK" /etc/resolv.conf
-else
-    printf '%s\n' \
-        'nameserver 1.1.1.1' \
-        'nameserver 8.8.8.8' \
-        'nameserver 9.9.9.9' \
-        'nameserver 8.8.4.4' > /etc/resolv.conf
+# Keep a plain file aside once, so whatever the image shipped is recoverable.
+if [ -e /etc/resolv.conf ] && [ ! -L /etc/resolv.conf ] && \
+   [ ! -e /etc/resolv.conf.gnuchan-backup ]; then
+    cp -f /etc/resolv.conf /etc/resolv.conf.gnuchan-backup 2>/dev/null || true
 fi
+rm -f /etc/resolv.conf
+ln -s "$STUB" /etc/resolv.conf
+
+# POINTING AT THE STUB IS NOT THE SAME AS THE STUB ANSWERING, and the earlier
+# versions of this script stopped at the symlink. A stub that is listening but
+# has no upstream - which is what resolved looks like when NetworkManager has
+# not handed it the lease's servers yet, or handed it an address the network
+# refuses - reads to every program as "the network is down". That is the exact
+# failure being fixed, so the resolver is ASKED rather than assumed. `getent
+# hosts` goes through the C library and /etc/resolv.conf the way ping and every
+# other program do, so a lookup that succeeds here is a lookup that will
+# succeed for them.
+answers=1
+if command -v timeout >/dev/null 2>&1; then
+    timeout 5 getent hosts one.one.one.one >/dev/null 2>&1 || answers=0
+else
+    getent hosts one.one.one.one >/dev/null 2>&1 || answers=0
+fi
+
+if [ "$answers" -eq 1 ]; then
+    say "resolv.conf -> $STUB (systemd-resolved, answering)"
+    exit 0
+fi
+
+# The stub is there but does not resolve. Leaving the symlink would leave the
+# machine unable to look anything up, so the resolver is replaced with one that
+# does answer.
+say "the resolved stub did not answer; writing a fallback resolver"
+write_fallback
 exit 0
 RESOLVCONF_SCRIPT
 chmod 0755 /usr/local/sbin/gnuchan-resolvconf
@@ -215,9 +246,15 @@ Description=Point /etc/resolv.conf at a resolver that answers
 # default dependencies off, systemd no longer orders it against sysinit.target,
 # and the script can run in a filesystem that is not assembled yet. The bug was
 # never WHEN this ran; it was what the script did when it arrived.
-After=systemd-resolved.service
-Wants=systemd-resolved.service
-Before=NetworkManager.service network.target
+# AFTER the network, not before it. The earlier ordering, Before=NetworkManager,
+# is half the bug: it runs against a machine with no connection, when
+# systemd-resolved has no upstream servers yet and a resolver pointed at it can
+# answer nothing - and when the person connects afterwards, this does not run
+# again. Running after the manager means there is a connection to test
+# resolution against. A connection made later still is covered by the
+# NetworkManager dispatcher installed below, which runs on every connect event.
+After=systemd-resolved.service NetworkManager.service network-online.target
+Wants=systemd-resolved.service NetworkManager.service
 
 [Service]
 Type=oneshot
@@ -234,6 +271,57 @@ if systemctl enable gnuchan-resolvconf.service >/dev/null 2>&1; then
     log "enabled gnuchan-resolvconf"
 else
     log "could not enable gnuchan-resolvconf now; it is still installed"
+fi
+
+# --- 4b. the dispatcher: run the same script on every connection -------------
+
+# THIS IS THE PART THAT FIXES THE REPORTED FAILURE, and without it the unit
+# above is not enough. The unit runs once, at boot. On a live system the link is
+# usually brought up a moment AFTER boot - the person plugs in the cable or
+# picks a wireless network from the desktop - so by the time there is a network
+# to resolve against, the one-shot unit has already run and gone. What it left
+# behind was decided before any connection existed.
+#
+# NetworkManager runs every executable in /etc/NetworkManager/dispatcher.d/
+# whenever an interface changes state, AFTER it has taken the lease and (with
+# dns=systemd-resolved above) pushed the lease's servers into systemd-resolved.
+# So the dispatcher runs at exactly the moment a resolver is finally worth
+# pointing at, and calls the SAME script the unit does - one definition of "point
+# resolv.conf at something that answers", two entry points.
+#
+# It is called as `<script> <interface> <event>`; only `up` and
+# `connectivity-change` mean DNS may now be reachable. `down` is deliberately
+# not handled with a fallback write: dropping one link while another is up must
+# not replace a working resolver, and a real change is followed by an event that
+# corrects the file anyway.
+#
+# NetworkManager ignores a dispatcher script that is not owned by root and
+# executable; both are set. The directory is a drop-in NM reads without config.
+if [ "$RESOLVED" -eq 1 ]; then
+    install -d /etc/NetworkManager/dispatcher.d
+    cat > /etc/NetworkManager/dispatcher.d/90-gnuchan-resolvconf <<'DISPATCHER'
+#!/bin/sh
+# GnuchanOS - keep /etc/resolv.conf pointing at a resolver that answers, each
+# time a connection comes up. See 0070-network.hook.chroot.
+#
+# NetworkManager calls this as: <script> <interface> <event>. Only the event is
+# read; the resolver is global, not per-interface.
+set -u
+
+case "${2:-}" in
+    up|connectivity-change)
+        /usr/local/sbin/gnuchan-resolvconf
+        ;;
+    *)
+        :
+        ;;
+esac
+
+exit 0
+DISPATCHER
+    chmod 0755 /etc/NetworkManager/dispatcher.d/90-gnuchan-resolvconf
+    chown root:root /etc/NetworkManager/dispatcher.d/90-gnuchan-resolvconf 2>/dev/null || true
+    log "wrote /etc/NetworkManager/dispatcher.d/90-gnuchan-resolvconf"
 fi
 
 # --- 5. a safety net for the build with no resolved at all -------------------
