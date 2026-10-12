@@ -427,6 +427,21 @@ else
             ( cd "$ZAPRET_DIR" && sh ./install_prereq.sh </dev/null >/dev/null 2>&1 ) || true
             ( cd "$ZAPRET_DIR" && sh ./install_bin.sh >/dev/null 2>&1 ) || true
 
+            # THE CONFIG FILE HAS TO EXIST AND BE COMPLETE, or nfqws starts and
+            # does nothing. The init script sources `config`
+            # (ZAPRET_CONFIG="$ZAPRET_RW/config" in init.d/sysv/functions). The
+            # reference tree ships `config.default`, and it is `install_easy.sh` -
+            # interactive, and NOT run above, since it asks about the firewall
+            # and picks a desync by testing the network - that copies it across.
+            # Without the copy there is no `config` at all, and the sed below
+            # guarding on `[ -f .../config ]` silently does nothing: the image
+            # ships with no config, nfqws is started with none of its ports, no
+            # packet is queued to it, and the bypass does nothing. On the live
+            # system that is exactly a blocked site still resetting.
+            if [ ! -f "$ZAPRET_DIR/config" ] && [ -f "$ZAPRET_DIR/config.default" ]; then
+                cp -f "$ZAPRET_DIR/config.default" "$ZAPRET_DIR/config"
+            fi
+
             # NFQWS_ENABLE=1 is the switch for the whole feature: config.default
             # ships 0, which makes the init script launch no daemon and the
             # button look dead. MODE_FILTER=none sends every redirected
@@ -438,19 +453,36 @@ else
                     printf 'NFQWS_ENABLE=1\n' >> "$ZAPRET_DIR/config"
                 sed -i 's/^MODE_FILTER=.*/MODE_FILTER=none/' "$ZAPRET_DIR/config" || true
 
-                # NFQWS_OPT is the desync ITSELF - the flags nfqws runs with. A
-                # config with the daemon enabled but no method set starts nfqws
-                # and lets every packet through unfragmented, which looks exactly
-                # like a bypass that does nothing. The method a given network
-                # needs is chosen by blockcheck on the real machine (the manager
-                # runs it there), so what is written here is the reference
-                # installer's own fallback - a desync that works on many
-                # networks - as a starting point rather than an empty string.
-                sed -i 's|^NFQWS_OPT=.*|NFQWS_OPT="--dpi-desync=fake --dpi-desync-ttl=3 <HOSTLIST>"|' \
-                    "$ZAPRET_DIR/config" || true
-                grep -q '^NFQWS_OPT=' "$ZAPRET_DIR/config" || \
-                    printf 'NFQWS_OPT="--dpi-desync=fake --dpi-desync-ttl=3 <HOSTLIST>"\n' \
+                # NFQWS_PORTS_TCP / NFQWS_PORTS_UDP are the PORTS nfqws is fed.
+                # They are the line that makes the SNI block get handled at all:
+                # the `--filter-tcp=443` inside NFQWS_OPT below says WHAT to do
+                # to a port-443 packet, and these say WHICH packets reach nfqws.
+                # config.default sets 80,443 and 443, which is what the bypass
+                # needs; they are asserted so a config that reached here without
+                # them cannot silently feed the daemon nothing.
+                sed -i 's/^NFQWS_PORTS_TCP=.*/NFQWS_PORTS_TCP=80,443/' "$ZAPRET_DIR/config" || true
+                grep -q '^NFQWS_PORTS_TCP=' "$ZAPRET_DIR/config" || \
+                    printf 'NFQWS_PORTS_TCP=80,443\n' >> "$ZAPRET_DIR/config"
+                sed -i 's/^NFQWS_PORTS_UDP=.*/NFQWS_PORTS_UDP=443/' "$ZAPRET_DIR/config" || true
+                grep -q '^NFQWS_PORTS_UDP=' "$ZAPRET_DIR/config" || \
+                    printf 'NFQWS_PORTS_UDP=443\n' >> "$ZAPRET_DIR/config"
+
+                # NFQWS_OPT is the desync ITSELF - the flags nfqws runs with.
+                # config.default already carries a full working set (one method
+                # for 80, one for 443, one for udp/443), and they are KEPT rather
+                # than overwritten: the default pair - fake+multisplit on 80,
+                # fake+multidisorder with badseq,md5sig fooling on 443 - is what
+                # the reference installer ships because it clears the common
+                # filters, and replacing it with one invented line only ever
+                # breaks more networks than it fixes. The method a GIVEN network
+                # needs is chosen by blockcheck on the real machine, which the
+                # manager runs there. This only writes a fallback if the copied
+                # config somehow carried no NFQWS_OPT at all.
+                if ! grep -q '^NFQWS_OPT=' "$ZAPRET_DIR/config"; then
+                    printf '%s\n' \
+                        'NFQWS_OPT="--filter-tcp=80 --dpi-desync=fake,multisplit --dpi-desync-split-pos=method+2 --dpi-desync-fooling=md5sig --new --filter-tcp=443 --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,midsld --dpi-desync-fooling=badseq,md5sig --new --filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=6"' \
                         >> "$ZAPRET_DIR/config"
+                fi
             fi
 
             if [ -f "$ZAPRET_DIR/init.d/systemd/zapret.service" ]; then
