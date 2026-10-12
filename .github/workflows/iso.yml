@@ -177,6 +177,29 @@ jobs:
             debian:trixie \
             bash -c "apt-get update && apt-get install -y --no-install-recommends live-build && sh ./build.sh"
 
+      # THE BUILD OUTPUT IS ROOT'S, AND THE REST OF THE RUN IS NOT.
+      #
+      # The container above runs as root - it has to: live-build mounts and
+      # unmounts inside the chroot it builds - and it writes into distro/_build/
+      # through the bind mount, so the directory and the ISO in it come out
+      # owned by root. Every step after this runs as the runner user, and the
+      # very next thing it does is rename that ISO; a rename needs write
+      # permission on the DIRECTORY holding it, which a root-owned directory does
+      # not give, so the run died at "mv: cannot move ... Permission denied"
+      # AFTER the hours-long build it was the whole point of.
+      #
+      # Handing the directory back to the runner is the fix, and only the
+      # directory: a rename and the splits that follow are all changes to the
+      # DIRECTORY's own entries, so owning it is enough. -R is NOT used on
+      # purpose - under _build/work/ is the whole chroot and binary tree, a
+      # hundred thousand files whose ownership does not matter and whose
+      # recursive chown would cost minutes for nothing.
+      - name: Give the build output back to the runner user
+        run: |
+          sudo chown "$(id -u):$(id -g)" distro/_build
+          ls -ld distro/_build
+          ls -lh distro/_build/*.iso
+
       # THE IMAGE IS SPLIT INTO PARTS, and this is required, not caution. A
       # GitHub release refuses any single asset of 2 GiB or more, and a Debian
       # desktop image with XLibre and every Gnuchan program on it is routinely
