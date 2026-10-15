@@ -8,13 +8,10 @@
 # script, so a program added there is on the ISO without a second list here to
 # keep in step.
 #
-# The script is NOT fatal to the build. It reports a program it could not fetch
-# or build and carries on, on purpose: the repositories are private while they
-# are being prepared, the build machine may have no network, and an image that
-# is otherwise finished should not be thrown away over one program. What it
-# leaves out is missing from the image and its summary says so - but the build
-# still produces an image. A release build that wants the opposite sets
-# GNUCHAN_PROGRAMS_STRICT=1 in the environment.
+# A program that cannot be fetched or built makes the image build fail. Shipping
+# a desktop without its window manager or greeter is not a usable success.
+# Developers can explicitly opt out with GNUCHAN_PROGRAMS_STRICT=0 when they
+# need an incomplete image for offline work.
 #
 # SUDO_USER is set to the live user, and that is not cosmetic. Several of these
 # installers put a settings script (GnuChanTerm.py, GnuChanWM.py, GnuChanDM.py)
@@ -47,14 +44,10 @@ if [ -f "$PROGRAMS" ]; then
     XDG_CONFIG_HOME="$LIVE_HOME/.config" \
     XDG_DATA_HOME="$LIVE_HOME/.local/share" \
     XDG_CACHE_HOME="$LIVE_HOME/.cache" \
-        sh "$PROGRAMS" || {
-            # The script reports failures and exits 0 unless STRICT is set, so
-            # a non-zero here is either STRICT or a broken script. Neither is
-            # made fatal to the image: the summary above says what happened.
-            log "GnuChanPrograms.sh reported a failure; see its summary above"
-        }
+        GNUCHAN_PROGRAMS_STRICT="${GNUCHAN_PROGRAMS_STRICT:-1}" sh "$PROGRAMS"
 else
-    log "no $PROGRAMS; no Gnuchan programs in this image"
+    log "ERROR: no $PROGRAMS; the Gnuchan programs cannot be installed"
+    exit 1
 fi
 
 # --- the live user owns what was written for them ----------------------------

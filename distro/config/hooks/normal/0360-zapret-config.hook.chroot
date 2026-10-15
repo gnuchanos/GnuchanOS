@@ -1,0 +1,129 @@
+#!/bin/sh
+# GnuchanOS - make sure zapret's config is one that actually works.
+#
+# WHY THIS HOOK EXISTS, AND WHY IT RUNS THIS LATE.
+#
+# zapret is on the image: /opt/zapret is populated, nfqws is built and its
+# systemd unit is enabled. And the bypass still does nothing, because the CONFIG
+# it was given leaves the init script unable to install a single firewall rule.
+#
+# The init script (init.d/sysv/zapret) does this on `start`:
+#
+#     zapret_run_daemons
+#     [ "$INIT_APPLY_FW" != "1" ] || { zapret_apply_firewall; }
+#
+# INIT_APPLY_FW is the switch that lets the init script install the nftables
+# rules that hand packets to nfqws. It is NOT set in the config this image ended
+# up with, and no default for it exists anywhere in the tree, so the second line
+# short-circuits: the nfqws daemon starts and then sits receiving nothing,
+# because the rule that would queue a packet to it was never added. A bypass
+# that is installed and never engaged is, from the user's side, a bypass that
+# does not work - the exact "zapret calismiyor" this hook answers.
+#
+# NFQWS_PORTS_TCP and NFQWS_PORTS_UDP are the second half of the same fault.
+# They are the ports the rules are written FOR (common/nft.sh:
+#
+#     nft_apply_nfqws_in_out tcp "$NFQWS_PORTS_TCP" ... ),
+#
+# and with them unset there is nothing for the rule builder to name even once
+# INIT_APPLY_FW lets it run.
+#
+# The config is written by more than one thing - the network hook tries from
+# 0070, and GnuChanNetworkManager's own makefile runs zapret's install_easy.sh,
+# which rewrites the file with its own answers. So the values are forced HERE,
+# after both, rather than trusted to survive a writer that runs later. This hook
+# is numbered 0360: it runs after 0300 (the programs hook, and therefore after
+# GnuChanNetworkManager's install) and after 0350, and it is the last thing that
+# touches /opt/zapret/config on this image.
+#
+# It is deliberately NOT fatal and guards every step: an image built without
+# zapret (a build host with no network, a fetch that failed) still has to come
+# out, and it does - the desktop is unaffected.
+set -eu
+
+log() { printf '==> zapret-config: %s\n' "$1"; }
+
+ZAPRET_DIR=/opt/zapret
+CONFIG="$ZAPRET_DIR/config"
+SERVICE=/etc/systemd/system/zapret.service
+
+if [ ! -f "$CONFIG" ]; then
+    log "no $CONFIG; zapret is not on this image, nothing to configure"
+    exit 0
+fi
+
+# --- forcing one setting -----------------------------------------------------
+
+# Set NAME=value in the config, replacing the whole existing assignment, and
+# appending when the name is absent. A line-oriented edit is enough for the
+# names this hook writes: none of them is a multi-line quoted value - that is
+# NFQWS_OPT, and NFQWS_OPT is deliberately left alone below.
+ensure_setting() {
+    name="$1"
+    value="$2"
+
+    if grep -q "^${name}=" "$CONFIG" 2>/dev/null; then
+        sed -i "s|^${name}=.*|${name}=${value}|" "$CONFIG" || \
+            log "could not set $name"
+    else
+        printf '%s=%s\n' "$name" "$value" >> "$CONFIG" || \
+            log "could not append $name"
+    fi
+}
+
+# --- the settings the bypass depends on --------------------------------------
+
+# 1. Let the init script install its own firewall rules. Without this the rest
+#    of the file is beside the point: this is the switch that was missing.
+ensure_setting INIT_APPLY_FW 1
+
+# 2. Run the nfqws daemon at all. It is usually already 1 (both the network hook
+#    and the manager's makefile write it), and it is asserted so a config that
+#    reached here with it off cannot leave the DPI button dead.
+ensure_setting NFQWS_ENABLE 1
+
+# 3. The ports the rules are written for, following zapret's own config.default:
+#    HTTP and HTTPS on TCP, QUIC/HTTP3 on UDP 443. Without these the rule
+#    builder has no port to name.
+ensure_setting NFQWS_PORTS_TCP "80,443"
+ensure_setting NFQWS_PORTS_UDP "443"
+
+# 4. Send every connection on those ports through the daemon rather than only
+#    names on a hostlist this image does not ship - the "blocked sites open
+#    everywhere" the DPI button promises.
+ensure_setting MODE_FILTER none
+
+# NFQWS_OPT IS DELIBERATELY LEFT ALONE. It is the desync itself, and the one
+# that works is chosen per network by zapret's own blockcheck. The manager's
+# makefile already writes a working method there (or the portable ttl fallback
+# when blockcheck finds none), and overwriting it here with a second choice
+# would only ever make matters worse: a desync that clears one ISP's filter is a
+# no-op on another's.
+log "forced INIT_APPLY_FW, NFQWS_ENABLE, NFQWS_PORTS_TCP/UDP and MODE_FILTER"
+
+# --- the unit, so the corrected config is actually used ----------------------
+
+# A config only matters if something starts the service that reads it. The unit
+# is put in place from zapret's own copy when a build reached here without it,
+# and enabled, so a boot runs `zapret start` against the config above.
+if [ ! -f "$SERVICE" ] && [ -f "$ZAPRET_DIR/init.d/systemd/zapret.service" ]; then
+    cp -f "$ZAPRET_DIR/init.d/systemd/zapret.service" "$SERVICE" || \
+        log "could not install the zapret unit"
+    log "installed $SERVICE"
+fi
+
+if systemctl enable zapret.service >/dev/null 2>&1; then
+    log "enabled zapret.service"
+else
+    log "could not enable zapret.service now; it is still installed"
+fi
+
+# --- say what the file now holds, so a build log shows it worked -------------
+
+for name in INIT_APPLY_FW NFQWS_ENABLE NFQWS_PORTS_TCP NFQWS_PORTS_UDP \
+            MODE_FILTER; do
+    line=$(grep "^${name}=" "$CONFIG" 2>/dev/null | head -n 1 || true)
+    log "  ${line:-$name (not set)}"
+done
+
+log "done"

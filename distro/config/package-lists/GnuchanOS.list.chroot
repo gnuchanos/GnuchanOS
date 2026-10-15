@@ -43,14 +43,70 @@ initramfs-tools
 # on the image and is the compression the distribution itself defaults to.
 zstd
 
-# --- GRUB, for the ISO's own boot menu to be themed. The theme installer
-#     (dotfile/GRUB_THEME/settings_grub.py) REFUSES to render a theme on a
-#     machine with no GRUB - it answers "there is no menu to theme" and stops -
-#     so without grub-common the chroot never builds the GnuChanOS theme and the
-#     binary hook (0080-boot-branding) has nothing to copy into the ISO's boot
-#     menu. This is not GRUB as a boot loader (the ISO's is its own); it is the
-#     theme files and the tools the installer looks for. ---
+# --- GRUB. This block is the INSTALLER's boot loader, and grub-common alone was
+#     never enough for it. The install runs `grub-install` to write the boot code
+#     to the target disk, and `grub-install` is NOT in grub-common. Where each
+#     piece lives:
+#
+#       grub-common        shared files and the theme tools; also what
+#                          dotfile/GRUB_THEME/settings_grub.py needs to render
+#                          the GnuChanOS GRUB theme (it REFUSES on a machine
+#                          with no GRUB, so this stays)
+#       grub2-common       /usr/sbin/grub-install, grub-mkconfig, grub-mkimage,
+#                          grub-editenv - the PROGRAMS the installer runs
+#       grub-pc-bin        /usr/lib/grub/i386-pc - the BIOS modules grub-install
+#                          writes into the MBR
+#       grub-efi-amd64-bin /usr/lib/grub/x86_64-efi - the EFI modules it writes
+#                          into the ESP (efiBootLoader: grub in bootloader.conf)
+#
+#     Without these the installer reaches the bootloader step, cannot find
+#     grub-install, and stops - after the disk is already partitioned and the
+#     filesystem written, so the machine does not boot and the install cannot
+#     finish. The -bin packages are named rather than the grub-pc and
+#     grub-efi-amd64 META packages on purpose: the meta packages' postinst runs
+#     grub-install against the BUILD machine's own disks, which is never what a
+#     chroot wants, while the -bin packages only carry the modules.
+#
+#     (os-prober, which the module uses to find other systems for the menu, is
+#     pulled in by grub2-common's own dependency.) ---
 grub-common
+grub2-common
+grub-pc-bin
+grub-efi-amd64-bin
+# The disk tools the installer's partition step drives. They are the commands
+# the script calls, and their absence is invisible until a step needs one - the
+# install then stops with the command's own error and no way to go on.
+#
+#   parted, gdisk     partprobe and the GPT tools that make the kernel re-read a
+#                     table it just changed
+#   btrfs-progs       mkfs.btrfs - for a / on btrfs
+#   xfsprogs          mkfs.xfs   - for a / on xfs
+#   f2fs-tools        mkfs.f2fs  - for a / on f2fs (the script's default is
+#                     ext4, which needs none of these - e2fsprogs) ---
+parted
+gdisk
+btrfs-progs
+xfsprogs
+f2fs-tools
+# dosfstools is mkfs.fat / mkfs.vfat, and it is what makes the EFI System
+# Partition. An EFI install MUST create the ESP as FAT32; the script calls
+# mkfs.fat for exactly that, and with no dosfstools the EFI path stops at "the
+# partition could not be created". ext4 (the default) does not need it - this is
+# the EFI path's own requirement.
+dosfstools
+# efibootmgr is what writes the BOOT ENTRY INTO THE FIRMWARE, and it is the piece
+# whose absence is quietest and worst. On a UEFI machine grub-install COPIES the
+# GRUB files onto the ESP and then calls efibootmgr to add an NVRAM entry that
+# tells the firmware what to run. Without efibootmgr the copy still succeeds -
+# the files are there - but nothing points the firmware at them, so the machine
+# boots straight past GnuchanOS into whatever else is on the disk, or nowhere.
+# The install "succeeds" and the reboot shows the old system. Named here because
+# nothing else pulls it in and the build passes --apt-recommends false.
+efibootmgr
+# cryptsetup is the LUKS tooling. The installer's default is a plain ext4 root,
+# but LUKS is a layout a script or a hand-run of the parts may use, and it is a
+# small dependency to carry for the case.
+cryptsetup
 
 # --- the X server's own parts (XLibre provides the server; these are what it
 #     is built against and what its drivers need) ---
@@ -115,6 +171,19 @@ ca-certificates
 curl
 gnupg
 git
+# rsync is here because a step INSIDE the chroot calls it, and a chroot that
+# does not have it answers exactly
+#
+#     rsync failed with error code 127
+#
+# which is the shell's "command not found" - rsync is simply not installed. The
+# build's own host-side copy (build.sh installs rsync on the build machine) is
+# NOT this: it is the copy live-build uses to move the overlay into the chroot,
+# and it lives on the HOST. A program's build helper or a hook that runs in the
+# chroot looks for rsync in the chroot and there was none, so every such call
+# failed with 127. Naming it here is what puts it on the image, inside the
+# chroot, where the calls actually happen.
+rsync
 
 # --- what the programs link against ---
 libx11-dev
@@ -273,3 +342,54 @@ openssh-server
 # --- locale and time ---
 locales
 tzdata
+
+# --- the installer ----------------------------------------------------------
+#
+# THE INSTALLER IS THIS REPOSITORY'S OWN PROGRAM, NOT A DEBIAN PACKAGE, so there
+# is no `calamares` line here any more. Calamares used to be the installer and
+# was dropped: its bootloader module read a config key its file did not set and
+# died, it reported a failed grub-install as "returned error code 1" with the
+# real reason sent to a log file and not the screen, and its display manager
+# list does not know GnuChanDM.
+#
+# The replacement is a program of this repository, installer/, in two halves:
+#
+#   installer/src/          GnuChanInstall, the WINDOW - an X11 program built
+#                           with Xlib and Xft exactly like GnuChanSL, GnuChanDM
+#                           and GnuChanDock. It asks which disk and the account's
+#                           name and password and shows the install's output.
+#                           Its makefile.py compiles it in the chroot and
+#                           installs it; the 0450-installer hook runs it.
+#   installer/gnuchanos-install.sh
+#                           the INSTALL itself: one shell script the window runs
+#                           with the answers, that partitions, copies the
+#                           filesystem, writes the boot loader and makes the
+#                           account, printing every step.
+#
+# The window is built with the SAME X11 and Xft libraries the other Gnuchan
+# programs are, so libx11-dev/libxft-dev above (and the fonts and libx11-6 the
+# X session pulls in) are all it needs - nothing new is required for it.
+#
+# WHAT THE SCRIPT NEEDS, and where each comes from (all of these are also
+# pulled in by the base system, and are named here so the installer does not
+# depend on that staying true):
+#
+#   squashfs-tools  `unsquashfs`, which writes the live system onto the disk -
+#                   /run/live/medium/live/filesystem.squashfs is a squashfs and
+#                   this is the only thing that can read it. THE WHOLE INSTALL
+#                   DEPENDS ON IT; without it the script stops before touching
+#                   the disk.
+#   util-linux      `sfdisk` (partitioning), `wipefs`, `lsblk`, `blkid`,
+#                   `mount`/`umount`, `findmnt`
+#   e2fsprogs       `mkfs.ext4`
+#   parted          `partprobe`, and the partition-table tools the script calls
+#   dosfstools      `mkfs.fat`, for the EFI system partition on a UEFI machine
+#   efibootmgr      what grub-install calls to write the firmware boot entry
+#   initramfs-tools `update-initramfs`, to rebuild the initramfs for the target
+squashfs-tools
+util-linux
+e2fsprogs
+parted
+dosfstools
+efibootmgr
+initramfs-tools

@@ -3,11 +3,14 @@
 # GnuchanOS - GRUB 2 boot theme installer
 # -----------------------------------------------------------------------------
 # Installs a purple GRUB theme and makes the machine boot with it. Standard
-# library only, and no options: running
+# library only. For an ordinary install, running
 #
 #     python3 settings_grub.py
 #
-# is the whole install.
+# regenerates grub.cfg and checks the complete result. The live-image build
+# uses --stage-only because live-build's chroot has no mounted /dev or boot
+# filesystems; the installed-system installer generates grub.cfg after those
+# filesystems are mounted.
 #
 # What it does
 # ------------
@@ -47,8 +50,9 @@
 #      and a background image of the distribution's own, which the theme's
 #      desktop-image replaces. Every comment, blank line and unrelated key of
 #      the file survives, and the file as it was is kept beside it;
-#   6. regenerates grub.cfg with update-grub, or with grub-mkconfig on a machine
-#      that has no such wrapper, and then checks what was written: every file
+#   6. in a normal install, regenerates grub.cfg with update-grub, or with
+#      grub-mkconfig on a machine that has no such wrapper, and then checks what
+#      was written: every file
 #      the theme names is looked for, every generated image is decoded again,
 #      the font named in theme.txt is compared with the name inside the font
 #      that was shipped, /etc/default/grub is read back, and grub.cfg is
@@ -91,6 +95,7 @@
 
 from __future__ import annotations
 
+import argparse
 import math
 import os
 import shutil
@@ -2090,7 +2095,13 @@ def check_grub_cfg(boot_dir: Path, font_shipped: bool) -> list[str]:
     return problems
 
 
-def check_result(log: Log, boot_dir: Path, directories: tuple[Path, ...], font_name: str) -> int:
+def check_result(
+    log: Log,
+    boot_dir: Path,
+    directories: tuple[Path, ...],
+    font_name: str,
+    check_config: bool = True,
+) -> int:
     """Report what is wrong with the install, returning how many things are.
 
     The copies of the theme come first because a problem there is a problem
@@ -2104,7 +2115,8 @@ def check_result(log: Log, boot_dir: Path, directories: tuple[Path, ...], font_n
     for directory in directories:
         problems.extend(check_theme_dir(directory, font_name))
     problems.extend(check_grub_default(boot_dir))
-    problems.extend(check_grub_cfg(boot_dir, font_shipped))
+    if check_config:
+        problems.extend(check_grub_cfg(boot_dir, font_shipped))
 
     if not problems:
         log.note(
@@ -2137,7 +2149,15 @@ def cleanup(log: Log, build: Path) -> None:
 
 
 def main() -> int:
-    """Install the GnuchanOS GRUB theme, with no options to pass."""
+    """Install the theme, optionally leaving grub.cfg generation to the caller."""
+    parser = argparse.ArgumentParser(description="Install the GnuchanOS GRUB theme.")
+    parser.add_argument(
+        "--stage-only",
+        action="store_true",
+        help="install theme files and GRUB defaults without generating grub.cfg",
+    )
+    args = parser.parse_args()
+
     log = Log()
     ensure_root(log)
 
@@ -2179,11 +2199,20 @@ def main() -> int:
         log.step("Configuring GRUB")
         install_grub_default(log, boot_dir)
 
-        log.step("Regenerating grub.cfg")
-        regenerate_grub_config(log, boot_dir)
+        if args.stage_only:
+            log.step("Staging GRUB settings")
+            log.detail(
+                "grub.cfg generation is deferred until the installed system has "
+                "its boot filesystems mounted"
+            )
+        else:
+            log.step("Regenerating grub.cfg")
+            regenerate_grub_config(log, boot_dir)
 
         log.step("Checking the result")
-        problems = check_result(log, boot_dir, tuple(written), font_name)
+        problems = check_result(
+            log, boot_dir, tuple(written), font_name, check_config=not args.stage_only
+        )
     finally:
         cleanup(log, build)
 

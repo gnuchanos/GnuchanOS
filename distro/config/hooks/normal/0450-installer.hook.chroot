@@ -1,0 +1,114 @@
+#!/bin/sh
+# GnuchanOS - put the installer on the image.
+#
+# The image boots to a desktop; this hook is what makes that desktop able to
+# INSTALL ITSELF to a disk. The installer is a program of this repository,
+# installer/, and it is built and installed the same way every other Gnuchan
+# program is: its own makefile.py compiles it and installs it.
+#
+# --- what the installer IS --------------------------------------------------
+#
+# Two halves that install together, because one is useless without the other:
+#
+#   installer/src/            the WINDOW: an X11 program (Xlib and Xft, like
+#                             GnuChanSL and GnuChanDM) that asks which disk and
+#                             the account's name and password, then runs the
+#                             install and shows its output. makefile.py builds
+#                             it to /usr/local/bin/GnuChanInstall and writes the
+#                             launcher and the .desktop entries.
+#   installer/gnuchanos-install.sh
+#                             the INSTALL: the shell script that partitions,
+#                             unsquashfs's the live system, writes GRUB and makes
+#                             the account, printing every step. makefile.py
+#                             installs it to /usr/local/sbin/gnuchanos-install.
+#
+# The window does not touch a disk; the script does. That split is the whole
+# reason a failure is visible: the script prints each command's own output and
+# the window shows it.
+#
+# --- why it is built here, and not fetched ---------------------------------
+#
+# GnuChanPrograms.sh could carry it, but the installer is not a fetched program:
+# it belongs to THIS repository and is staged from installer/. So it is built
+# here, in the chroot, by its own makefile - the same "a program builds itself"
+# rule the rest of the tree follows. makefile.py installs whatever build
+# dependencies are missing (libx11-dev, libxft-dev, ...) with apt, so this hook
+# needs nothing prepared for it.
+#
+# License: GPL3.
+set -eu
+
+log() { printf '==> installer: %s\n' "$1"; }
+
+LIVE_USER=gnuchanos
+LIVE_HOME=/home/$LIVE_USER
+STAGE=/opt/gnuchanos
+SOURCE="$STAGE/installer"
+
+if [ ! -d "$SOURCE/src" ] || [ ! -f "$SOURCE/src/makefile.py" ]; then
+    log "ERROR: no $SOURCE/src/makefile.py in the image"
+    exit 1
+fi
+if [ ! -f "$SOURCE/gnuchanos-install.sh" ]; then
+    log "ERROR: no $SOURCE/gnuchanos-install.sh in the image"
+    exit 1
+fi
+
+# The icon the .desktop entries point at, from the repository's own assets.
+# Placed here rather than left to another hook so this one depends on nothing.
+install -d /usr/share/pixmaps/gnuchanos
+for _icon in logo.png icon.png; do
+    if [ -f "$STAGE/assets/$_icon" ]; then
+        cp -f "$STAGE/assets/$_icon" /usr/share/pixmaps/gnuchanos/logo.png
+        log "placed the installer icon ($_icon)"
+        break
+    fi
+done
+
+# Build and install. makefile.py is run the way any of the programs' is - its
+# default action builds and installs - and it names its own dependencies. A
+# missing installer is a broken live image, so build/install errors are fatal.
+log "building and installing the installer"
+python3 "$SOURCE/src/makefile.py" install
+[ -x /usr/local/bin/GnuChanInstall ] ||
+    { log "ERROR: GnuChanInstall was not installed"; exit 1; }
+[ -x /usr/local/sbin/gnuchanos-install ] ||
+    { log "ERROR: the installer engine was not installed"; exit 1; }
+[ -x /usr/local/bin/gnuchanos-installer ] ||
+    { log "ERROR: the installer launcher was not installed"; exit 1; }
+
+# GnuChanWM does not implement XDG autostart; it launches the commands in its
+# own GCL configuration. Add the installer there so the live ISO opens it as
+# soon as the desktop session starts. The installer removes this entry before
+# configuring the installed system.
+WM_CONFIG="$LIVE_HOME/.config/GnuChanWM/GnuChanWM.py"
+if [ ! -f "$WM_CONFIG" ]; then
+    log "ERROR: GnuChanWM configuration is missing: $WM_CONFIG"
+    exit 1
+fi
+python3 - "$WM_CONFIG" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+match = re.search(
+    r"(?ms)^([ \t]*gcl_autostart\.all\s*=\s*\[)(.*?)(^[ \t]*\])",
+    text,
+)
+if match is None:
+    raise SystemExit(f"error: no gcl_autostart.all list in {path}")
+
+body = match.group(2)
+if not re.search(r'(?m)^[ \t]*"gnuchanos-installer"\s*,?[ \t]*(?:#.*)?$', body):
+    body += '    "gnuchanos-installer",\n'
+    text = text[:match.start(2)] + body + text[match.end(2):]
+    path.write_text(text, encoding="utf-8")
+PY
+LIVE_UID=$(id -u "$LIVE_USER")
+LIVE_GID=$(id -g "$LIVE_USER")
+chown "$LIVE_UID:$LIVE_GID" "$WM_CONFIG"
+log "added the installer launcher to the live session's autostart list"
+
+log "done"

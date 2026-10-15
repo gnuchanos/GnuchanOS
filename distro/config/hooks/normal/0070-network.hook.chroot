@@ -467,6 +467,22 @@ else
                 grep -q '^NFQWS_PORTS_UDP=' "$ZAPRET_DIR/config" || \
                     printf 'NFQWS_PORTS_UDP=443\n' >> "$ZAPRET_DIR/config"
 
+                # INIT_APPLY_FW is the switch that lets zapret's init script
+                # install its OWN firewall rules - the ones that hand a packet
+                # to nfqws. Without it `zapret start` runs the daemon and skips
+                # zapret_apply_firewall entirely (init.d/sysv/zapret:
+                # "[ "$INIT_APPLY_FW" != "1" ] || zapret_apply_firewall"), so
+                # the daemon sits there receiving nothing and the bypass does
+                # nothing at all. It is asserted here as well as in the 0360
+                # hook, because this block is what puts zapret on the image and
+                # GnuChanNetworkManager's makefile REWRITES the config with its
+                # own answers afterwards; 0360 then runs last and forces every
+                # one of these again, so the final file is right whichever
+                # writer was last.
+                sed -i 's/^INIT_APPLY_FW=.*/INIT_APPLY_FW=1/' "$ZAPRET_DIR/config" || true
+                grep -q '^INIT_APPLY_FW=' "$ZAPRET_DIR/config" || \
+                    printf 'INIT_APPLY_FW=1\n' >> "$ZAPRET_DIR/config"
+
                 # NFQWS_OPT is the desync ITSELF - the flags nfqws runs with.
                 # config.default already carries a full working set (one method
                 # for 80, one for 443, one for udp/443), and they are KEPT rather

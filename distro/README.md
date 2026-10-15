@@ -4,8 +4,13 @@ This directory is the recipe for the GnuchanOS live ISO: a Debian-based image
 that carries the Gnuchan programs and the GCL language (each in its own
 repository, fetched at build time by `GnuChanPrograms.sh`), and the desktop's
 own files (`dotfile/`), and boots straight to the GnuChanWM desktop. Everything
-is installed **inside the image** - nothing is installed after boot. When the
-live image runs correctly, the installer (Calamares) is added on top of it.
+is installed **inside the image** - nothing is installed after boot. The
+installer is this repository's own program, not Calamares: a small X11 window
+(`installer/src/`, written in C against Xlib and Xft like the rest of the
+desktop) asks which disk and the account's name and password, then runs a shell
+script (`installer/gnuchanos-install.sh`) that partitions the disk, copies the
+live filesystem onto it, writes GRUB and makes the account - showing every line
+the script prints.
 
 Nothing here installs onto the machine that builds it. The image is produced in
 `distro/_build/` (ignored by git) and the live-build working tree never touches
@@ -33,11 +38,11 @@ the source tree.
     `gnuchanos` account and is fetched and installed by `GnuChanPrograms.sh`:
     the image is built by cloning them and running each one's own `makefile.py`,
     so nothing about how a program is built is repeated here. That script holds
-    the one list of what the programs are and the order they install in. A
-    program that cannot be fetched - a repository still private, a build machine
-    with no network - is reported and left out; the build still produces an
-    image, because one missing program is not worth throwing away a finished
-    one. Set `GNUCHAN_PROGRAMS_STRICT=1` to make that a hard failure instead.
+    the one list of what the programs are and the order they install in. The
+    distro build is strict: a program that cannot be fetched or built fails the
+    image build instead of shipping a desktop with missing components. Set
+    `GNUCHAN_PROGRAMS_STRICT=0` only when deliberately building an incomplete
+    development image.
 
   * **The GCL language** — its own repository (`gcl`), fetched by the same
     script as the programs and built by its own `makefile.py`, which is in that
@@ -66,6 +71,9 @@ the source tree.
     build.sh             build the ISO (run this on a Debian machine)
     GnuChanPrograms.sh   fetch and install the Gnuchan programs from their own
                          repositories (run inside the image by a hook)
+    installer/           the installer: src/ is GnuChanInstall, the X11 window,
+                         and gnuchanos-install.sh is the script that does the
+                         disk work (see "The installer" below)
     config/              the live-build configuration tree
     config/package-lists/  the packages the image carries
     config/hooks/normal/   scripts run inside the image, in name order
@@ -96,6 +104,23 @@ The result is `distro/_build/GnuchanOS-trixie-amd64.iso`.
 The build is long: it fetches Lua, Python and Raylib and compiles every program
 and the language inside the chroot, on top of the usual debootstrap.
 
+### Building from WSL
+
+The build works from WSL. When the source is on `/mnt/c`, it copies the tree to
+a fresh, unique directory under `/var/tmp` and copies the ISO back after a
+successful build. The ISO is copied in bounded chunks, verified, and only then
+replaces any previous output, so a failed copy leaves the complete Linux-side
+image available. Set `GNUCHANOS_BUILD_DIR` to choose a different Linux
+filesystem parent directory. It must be outside the source tree; existing
+directories are never cleared.
+
+When `GnuChanDM` is checked out beside `GnuchanOS` (for example,
+`Documents/GnuChanDM` beside `Documents/GnuchanOS`), that local checkout is
+used for the ISO in preference to the remote DM repository. An explicit
+checkout at `distro/repos/GnuChanDM` takes precedence over the sibling
+checkout. This lets local display-manager fixes be tested in a WSL ISO before
+they are published.
+
 ### Building an image without a token
 
 `build.sh` stages a directory of local checkouts into the image, at the path
@@ -112,6 +137,10 @@ from `github.com/gnuchanos` - so this is an optimisation, not a requirement,
 except where a repository is private, which the clone always required a
 credential for.
 
+The working checkout at `../GnuChanDM` is also staged automatically if present,
+unless `distro/repos/GnuChanDM` already exists. Thus local display-manager
+changes are used in a WSL image build before they are pushed to the remote.
+
 ## Continuous integration and releases
 
 `.github/workflows/iso.yml` builds the image and publishes it, **by hand**
@@ -124,8 +153,8 @@ program repositories **with a token** into `distro/repos/`, so the image build
 uses those checkouts and needs no network to github. The token is the
 `GNUCHAN_REPOS_TOKEN` secret, a PAT with read access to the program
 repositories. With the secret unset, the fetch falls back to anonymous https and
-a private repository simply does not arrive - which `GnuChanPrograms.sh` reports
-and does not fail on.
+a private repository simply does not arrive - which makes the strict image
+build fail rather than silently producing an incomplete ISO.
 
 The build itself runs in a **privileged `debian:trixie` container**, because
 `build.sh` is Debian-only and drives `live-build`, which needs root and mounts.
@@ -208,8 +237,30 @@ be expressed as a package:
                              wallpaper
     0300-gnuchan-programs    GnuChanPrograms.sh: the programs AND the GCL
                              language, each fetched from its own repository
+    0360-zapret-config       force the zapret config settings the bypass needs
+                             to RUN rather than merely be installed. The init
+                             script only applies its firewall rules when
+                             INIT_APPLY_FW=1, and GnuChanNetworkManager's own
+                             makefile rewrites the config from zapret's
+                             install_easy.sh, which does not set it - so
+                             without this the nfqws daemon starts and receives
+                             no packets at all. It runs AFTER 0300 (and so
+                             after the network manager installed zapret and
+                             rewrote the config) and is the last writer, so
+                             the finished config is right. NFQWS_OPT - the
+                             desync itself - is left alone, because the method
+                             that works is chosen per network by blockcheck.
     0400-session             write the PAM services and enable GnuChanDM as the
                              display manager (logout -> login screen)
+    0450-installer           build and install the installer: run
+                             installer/src/makefile.py, which compiles the X11
+                             window to /usr/local/bin/GnuChanInstall, installs
+                             the script to /usr/local/sbin/gnuchanos-install,
+                             and writes the launcher (/usr/local/bin/gnuchanos-
+                             installer, which runs the window as root) and the
+                             menu entry. It also adds the launcher to GnuChanWM's
+                             own autostart list; GnuChanDM remains enabled and
+                             still starts the chosen session.
     9990-cleanup             remove the sources, keep the book
 
 ### Why a hook and not a package list alone
@@ -240,6 +291,12 @@ lock screen unable to open.
 
 The notification server and the dock are started by GnuChanWM from its own
 autostart list in `~/.config/GnuChanWM/GnuChanWM.py`.
+
+On the live image, that same list starts `gnuchanos-installer` when GnuChanWM
+starts. The launcher uses the live user's passwordless sudo rule to open the
+installer as root without a password prompt; this does not skip GnuChanDM or
+log in the user automatically. The installer removes its autostart entry and
+the live-only sudo rule from the installed system.
 
 ## Boot menu branding
 
@@ -283,10 +340,65 @@ they are configured by their presence under `config/bootloaders/` and by the
 against the installed system's GRUB, which is a different thing from the menu the
 ISO itself boots with.
 
-## What is added later
+## The installer
 
-The installer (Calamares) goes on top of this image once it boots correctly.
-It is deliberately not part of the recipe yet: the live system has to work
-first, and an installer built before then is an installer nobody can test.
+The image carries the installer, and **it is the image installing itself**: the
+installer unsquashes the live system's own squashfs onto the target disk. There
+is no second build and no package list installed onto the machine - the bytes on
+the ISO are the bytes on the disk.
+
+THE INSTALLER IS THIS REPOSITORY'S OWN PROGRAM, AND IT IS NOT CALAMARES.
+Calamares used to be the installer and was dropped, because the install kept
+stopping inside it for reasons it would not show: its bootloader module read a
+config key its file did not set and died with "raised an exception"; a failed
+grub-install was reported only as "returned error code 1" with the real reason
+written to a log file and not the screen; and its display manager list does not
+know GnuChanDM.
+
+The replacement is two halves that install together, and the split between them
+is the point:
+
+  * **`installer/src/`** - **GnuChanInstall**, the WINDOW. An X11 program
+    written in C against Xlib and Xft, built the same way GnuChanSL, GnuChanDM
+    and GnuChanDock are, with its own `makefile.py`. It asks the four things a
+    person has to decide - which disk, the login name, the password (twice) and
+    the computer's name - validates them before anything is written, and then
+    shows the install running.
+
+  * **`installer/gnuchanos-install.sh`** - the INSTALL. One shell script that
+    partitions the disk (msdos for BIOS, gpt with an EFI partition for UEFI),
+    makes the filesystems, unsquashes the live system onto the target, writes
+    `/etc/fstab`, installs GRUB, rebuilds the initramfs, and creates the
+    account - printing every command's own output. Everything that touches the
+    disk is here, and on purpose: the tools it runs each print their own errors,
+    so a failure says what is wrong in its own words.
+
+    When writing the installed system's `/etc/default/grub`, it replaces the
+    live-only boot arguments but keeps the staged GnuchanOS theme and graphics
+    mode. It verifies that `grub-mkconfig` enabled that theme before reporting a
+    successful installation.
+
+The window does not touch a disk. It hands the answers to the script as
+environment variables, runs it as a child process, and reads its output a line
+at a time into a pane in the window - with `select()` on both the X connection
+and the script's pipe, in one thread, so the window keeps redrawing while the
+install runs and no Xlib call is ever made from a second thread. The script
+writes everything to `/var/log/gnuchanos-install.log` in the live environment
+and copies the completed log to the installed system at the same path.
+
+After pressing Install, type `ERASE` into the visible confirmation box and
+press Enter. Computer names accept uppercase or lowercase letters, digits and
+hyphens; they cannot start with or end with a hyphen.
+
+The disk is chosen from a dropdown in the first row; open it and click the
+intended disk, or use the arrow keys and Enter. With more than four disks, the
+list scrolls.
+
+One step is GnuchanOS's own rather than a stock installer's, and it is the
+account: the live image ships a `gnuchanos` user (the liveuser hook), so the
+script takes that account out of the target and hands its home to the account
+the person names. The new account is added to the `sudo` group and the
+available desktop-device groups. Everything else the installer does is what
+any installer does.
 
 ## License: GPL3

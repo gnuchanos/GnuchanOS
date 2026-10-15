@@ -59,26 +59,22 @@ fi
 
 # --- one last look -----------------------------------------------------------
 
-# The point of the whole image is a desktop that starts, so the two programs a
-# live session needs are checked before the image is packed. Both are cheap and
-# both are fatal if missing, and finding out here is better than a black screen
-# on someone's laptop.
+# The point of the whole image is a desktop that starts, so its window manager,
+# display manager, session entry and GCL runtime are checked before the image is
+# packed. Missing any of them fails the build rather than producing a broken
+# login screen or desktop.
 #
 # They are looked for where each one actually goes and not on root's PATH:
-# GnuChanWM is installed system-wide into /usr/local/bin, while `gcl` is a
-# per-user install (its own installer writes ~/.local/bin/gcl, because the
-# build ran with SUDO_USER set to the live user - see the programs hook). So
-# the two are asked for in the two different places.
-wm_missing=0
-gcl_missing=0
-[ -x /usr/local/bin/GnuChanWM ] || wm_missing=1
-[ -x /home/gnuchanos/.local/bin/gcl ] || gcl_missing=1
-
-if [ "$wm_missing" -eq 1 ]; then
-    log "WARNING: /usr/local/bin/GnuChanWM is not in the finished image"
-fi
-if [ "$gcl_missing" -eq 1 ]; then
-    log "WARNING: /home/gnuchanos/.local/bin/gcl is not in the finished image"
-fi
+# GnuChanWM and GnuChanDM are installed system-wide into /usr/local/bin, while
+# `gcl` is per-user under ~/.local/bin because the build runs with SUDO_USER set
+# to the live user (see the programs hook).
+[ -x /usr/local/bin/GnuChanWM ] ||
+    { log "ERROR: GnuChanWM is missing from the finished image"; exit 1; }
+[ -x /usr/local/bin/GnuChanDM ] ||
+    { log "ERROR: GnuChanDM is missing from the finished image"; exit 1; }
+[ -f /usr/share/xsessions/gnuchanwm.desktop ] ||
+    { log "ERROR: the GnuChanWM session entry is missing"; exit 1; }
+[ -x /home/gnuchanos/.local/bin/gcl ] ||
+    { log "ERROR: GCL is missing from the finished image"; exit 1; }
 
 log "done"

@@ -2,9 +2,9 @@
 """GnuchanPurple - xterm installer.
 
 Makes xterm a modern terminal: a real programming font with a Unicode
-fallback, Xft antialiasing, 256 colour and true colour, a long scrollback with
-a visible scrollbar, wheel, drag and keyboard scrolling, clipboard shortcuts
-and UTF-8.
+fallback, Xft antialiasing, 256 colour and true colour, a long scrollback,
+wheel and keyboard scrolling, clipboard shortcuts and UTF-8. A draggable
+scrollbar is configured when the installed xterm build supports it.
 
     python3 settings_xterm.py              # install and check
     python3 settings_xterm.py --check      # report problems only
@@ -642,26 +642,38 @@ def _resource_lines() -> list[str]:
         "XTerm*ptyInitialErase: false",
         "",
         "! scrolling: the wheel scrolls the scrollback, Shift+wheel forces it",
-        "! while a program has the mouse, and the bar on the right can be dragged",
+        "! while a program has the mouse; Shift+PageUp/PageDown scroll by a page",
         "XTerm*alternateScroll: false",
         "XTerm*scrollTtyOutput: false",
         "XTerm*scrollKey: false",
         "XTerm*fastScroll: true",
         "XTerm*jumpScroll: true",
         "XTerm*multiScroll: true",
-        "XTerm*scrollBar: true",
-        "XTerm*rightScrollBar: true",
-        f"XTerm*Scrollbar*width: {SCROLLBAR_WIDTH}",
-        f"XTerm*Scrollbar*Background: {SCROLLBAR_TROUGH}",
-        f"XTerm*Scrollbar*Foreground: {SCROLLBAR_THUMB}",
-        "XTerm*Scrollbar*BorderWidth: 0",
-        "XTerm*Scrollbar*Cursor: arrow",
-        "",
         "! sixel images scroll with the text instead of sticking to the window",
         "XTerm*sixelScrolling: true",
         "",
         "! colours, from dotfile/vscodium_theme/settings.json",
     ]
+
+    scrollbar_position = lines.index(
+        "! sixel images scroll with the text instead of sticking to the window"
+    )
+    if scrollbar_supported():
+        lines[scrollbar_position:scrollbar_position] = [
+            "XTerm*scrollBar: true",
+            "XTerm*rightScrollBar: true",
+            f"XTerm*Scrollbar*width: {SCROLLBAR_WIDTH}",
+            f"XTerm*Scrollbar*Background: {SCROLLBAR_TROUGH}",
+            f"XTerm*Scrollbar*Foreground: {SCROLLBAR_THUMB}",
+            "XTerm*Scrollbar*BorderWidth: 0",
+            "XTerm*Scrollbar*Cursor: arrow",
+            "",
+        ]
+    else:
+        lines[scrollbar_position:scrollbar_position] = [
+            "! This xterm build has no scrollbar; wheel and keyboard scrolling",
+            "! remain available.",
+        ]
 
     for name in (
         "foreground",
@@ -884,13 +896,15 @@ def scrollbar_supported() -> bool:
 
 
 #: Settings the installed block must contain for the terminal to be the one
-#: this script promises. The scrollbar is here because it is the setting that
-#: an xterm build, a later resource file or an older run of this script can
-#: take away without saying so.
+#: this script promises, independent of build-time optional features.
 REQUIRED_SETTINGS: tuple[str, ...] = (
+    "xterm*savelines:",
+)
+#: Required only when the installed xterm binary was built with scrollbar
+#: support.
+SCROLLBAR_SETTINGS: tuple[str, ...] = (
     "xterm*scrollbar: true",
     "xterm*rightscrollbar: true",
-    "xterm*savelines:",
 )
 
 #: Settings that must not be in the block: modifyOtherKeys at 1 or 2 makes every
@@ -914,7 +928,10 @@ def _flatten(text: str) -> str:
 def missing_settings() -> list[str]:
     """Which of the required settings are absent from the installed block."""
     text = _flatten(read_text(xresources_file()))
-    return [setting for setting in REQUIRED_SETTINGS if setting not in text]
+    required = REQUIRED_SETTINGS
+    if scrollbar_supported():
+        required += SCROLLBAR_SETTINGS
+    return [setting for setting in required if setting not in text]
 
 
 def unwanted_settings() -> list[str]:
@@ -957,9 +974,9 @@ def check_environment(log: Log) -> int:
     if shutil.which("xterm") is None:
         problems.append("xterm is not installed")
     elif not scrollbar_supported():
-        problems.append(
-            "this xterm was built without a scrollbar, so the scrollBar "
-            "resources do nothing in it; install the distribution's xterm"
+        log.note(
+            "scrollbar unavailable in this xterm build; scrollback remains "
+            "available with the wheel and Shift+PageUp/Shift+PageDown"
         )
 
     if not has_usable_font():
@@ -1148,7 +1165,10 @@ def main(argv: list[str] | None = None) -> int:
     log.note("  Ctrl+plus / Ctrl+minus / Ctrl+0   font size")
     log.note("  Shift+PageUp / Shift+PageDown     one page of scrollback")
     log.note("  wheel, Shift+wheel                scroll the scrollback")
-    log.note("  drag the scrollbar on the right   the scrollback, by hand")
+    if scrollbar_supported():
+        log.note("  drag the scrollbar on the right   the scrollback, by hand")
+    else:
+        log.note("  wheel / Shift+PageUp/Down         scroll the scrollback")
     log.note("")
     log.note(f"Settings: {xresources_file()}")
     log.note(f"Remove them with: {SCRIPT_NAME} --uninstall")

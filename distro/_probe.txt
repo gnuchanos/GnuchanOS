@@ -1,0 +1,12 @@
+== toplam satir ==
+166580
+== herhangi bir GnuChan programi (usr) ==
+== gcl ==
+== gnuchandm her yerde ==
+squashfs-root/etc/pam.d/gnuchandm
+== display-manager / graphical target ==
+== tty1 maskeli mi (dev/null link) ==
+squashfs-root/etc/systemd/system/getty.target.wants/getty@tty1.service
+== zapret (kullanicinin ekledigi) ==
+415
+== GnuChanPrograms.sh kalinti ==

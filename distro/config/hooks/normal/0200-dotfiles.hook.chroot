@@ -32,9 +32,10 @@ mkdir -p "$LIVE_HOME"
 
 run_as_root() {
     script=$1
+    shift
     [ -f "$script" ] || { log "no $script, skipped"; return 0; }
     log "running $(basename "$(dirname "$script")")/$(basename "$script")"
-    python3 "$script" || log "  ! $script exited $?"
+    python3 "$script" "$@"
 }
 
 # The theme installer needs a GRUB to install into: with neither /boot/grub
@@ -46,7 +47,10 @@ run_as_root() {
 # live filesystem, and the binary stage copies this theme out of it.
 install -d /boot/grub
 
-run_as_root "$SRC/GRUB_THEME/settings_grub.py"
+# This is a live-build chroot, not a booted system: /dev and the boot
+# filesystems are not mounted here, so update-grub cannot probe the root device.
+# The installer regenerates grub.cfg after mounting the target's filesystems.
+run_as_root "$SRC/GRUB_THEME/settings_grub.py" --stage-only
 run_as_root "$SRC/PLYMOUTH_THEME/settings_plymouth.py"
 
 # --- themes and settings a session reads (the live user's) -------------------
@@ -64,7 +68,7 @@ run_as_user() {
     XDG_CACHE_HOME="$LIVE_HOME/.cache" \
     USER="$LIVE_USER" \
     LOGNAME="$LIVE_USER" \
-        python3 "$script" || log "  ! $script exited $?"
+        python3 "$script"
 }
 
 run_as_user "$SRC/GTK_THEME/theme_install.py"

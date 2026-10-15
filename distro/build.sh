@@ -50,16 +50,140 @@ say() { printf '==> %s\n' "$1"; }
 note() { printf '    %s\n' "$1"; }
 die() { printf '  ! %s\n' "$1" >&2; exit 1; }
 
+copy_iso_back() {
+    source_iso=$1
+    destination_iso=$2
+    temporary_iso="${destination_iso}.tmp.$$"
+
+    if ! dd if="$source_iso" of="$temporary_iso" bs=4M conv=fsync status=progress; then
+        die "ISO copy failed; complete image remains at $source_iso (partial copy: $temporary_iso)"
+    fi
+    if ! cmp -s "$source_iso" "$temporary_iso"; then
+        die "ISO copy verification failed; complete image remains at $source_iso (copy: $temporary_iso)"
+    fi
+    mv -f "$temporary_iso" "$destination_iso" ||
+        die "could not finalize ISO at $destination_iso; complete image remains at $source_iso"
+}
+
 # --- checks -----------------------------------------------------------------
 
 [ "$(id -u)" -eq 0 ] || die "this builds a system image; run it as root"
 
+# --- build on a Linux filesystem ---------------------------------------------
+#
+# live-build builds a whole Debian system, and debootstrap cannot build one on a
+# Windows filesystem. A build run from /mnt/c fails at the first package with
+#
+#     E: Tried to extract package, but tar failed. Exit...
+#
+# because Windows' filesystem is case-INSENSITIVE - pam.7.gz and PAM.7.gz are
+# the same name, so tar cannot create the symlink - and it does not carry the
+# file modes or device nodes a Debian root needs. A network or removable mount
+# is the same. (WSL itself is FINE: loop devices and squashfs work there, which
+# is why the build succeeds once the TREE is on a Linux filesystem.)
+#
+# So rather than tell the user to move the tree, the tree is copied to a Linux
+# filesystem here, the build re-runs there, and the finished ISO is copied back
+# beside this script. It is automatic: `sudo sh build.sh` works from wherever it
+# was invoked - /mnt/c included.
+SOURCE_DISTRO="$HERE"
+FS_TYPE=$(stat -f -c %T "$SOURCE_DISTRO" 2>/dev/null || echo unknown)
+case "$FS_TYPE" in
+    ext2/ext3|ext4|xfs|btrfs|zfs|tmpfs|overlay)
+        : # a Linux filesystem: build here, as before
+        ;;
+    *)
+        if [ "${GNUCHANOS_RELOCATED:-0}" = "1" ]; then
+            die "the tree is still on '$FS_TYPE' after relocating; set GNUCHANOS_BUILD_DIR to a Linux path"
+        fi
+        BUILD_PARENT="${GNUCHANOS_BUILD_DIR:-/var/tmp}"
+        say "The tree is on '$FS_TYPE', which cannot hold a Debian build"
+        BUILD_PARENT=$(realpath -m -- "$BUILD_PARENT") ||
+            die "could not resolve GNUCHANOS_BUILD_DIR"
+        case "$BUILD_PARENT/" in
+            "$OS_ROOT/"*)
+                die "GNUCHANOS_BUILD_DIR must be outside the source tree"
+                ;;
+        esac
+        mkdir -p "$BUILD_PARENT"
+        BUILD_FS_TYPE=$(stat -f -c %T "$BUILD_PARENT" 2>/dev/null || echo unknown)
+        case "$BUILD_FS_TYPE" in
+            ext2/ext3|ext4|xfs|btrfs|zfs|tmpfs|overlay) ;;
+            *) die "GNUCHANOS_BUILD_DIR is on '$BUILD_FS_TYPE', not a Linux filesystem" ;;
+        esac
+        RELOCATE=$(mktemp -d "$BUILD_PARENT/gnuchanos-build.XXXXXX")
+        say "copying it to $RELOCATE (a Linux filesystem); the ISO is copied back"
+        # A unique directory avoids deleting a pre-existing user directory or
+        # confusing stale build output with the image produced by this run.
+        tar -C "$OS_ROOT" --exclude=./distro/_build --exclude=./.git -cf - . \
+            | tar -C "$RELOCATE" -xf -
+        if [ -d "$OS_ROOT/../GnuChanDM/src" ] &&
+           [ -f "$OS_ROOT/../GnuChanDM/src/makefile.py" ] &&
+           [ ! -d "$RELOCATE/distro/repos/GnuChanDM" ]; then
+            mkdir -p "$RELOCATE/distro/repos"
+            cp -a "$OS_ROOT/../GnuChanDM" "$RELOCATE/distro/repos/GnuChanDM"
+            rm -rf "$RELOCATE/distro/repos/GnuChanDM/.git"
+            note "staged the sibling GnuChanDM checkout for the relocated build"
+        fi
+        # Re-run in the copy. The guard variable stops a second relocation if
+        # the copy somehow landed on a filesystem that still is not Linux.
+        GNUCHANOS_RELOCATED=1 sh "$RELOCATE/distro/build.sh" || exit $?
+        # Put the finished ISO where the person running this expects it. Stream
+        # it in bounded chunks to avoid large-file copy allocation failures on
+        # WSL's Windows filesystem, verify it, then replace any partial old ISO.
+        set -- "$RELOCATE/distro/_build/"*.iso
+        [ -f "$1" ] || die "build completed but produced no ISO in $RELOCATE/distro/_build"
+        mkdir -p "$SOURCE_DISTRO/_build"
+        for source_iso do
+            destination_iso="$SOURCE_DISTRO/_build/$(basename "$source_iso")"
+            say "Copying $(basename "$source_iso") back to the Windows filesystem"
+            copy_iso_back "$source_iso" "$destination_iso"
+        done
+        say "ISO copied and verified in $SOURCE_DISTRO/_build/"
+        note "the build tree was kept at $RELOCATE"
+        exit 0
+        ;;
+esac
+
 command -v apt-get >/dev/null 2>&1 || die "this builds a Debian image and needs apt"
+
+# LIVE-BUILD AND RSYNC ARE INSTALLED TOGETHER, AND RSYNC IS THE ONE THAT KEEPS
+# BEING MISSED.
+#
+# rsync is only a RECOMMENDS of live-build, so --no-install-recommends drops it
+# - and live-build USES it: Chroot_copy_dir() in its own chroot.sh copies the
+# staged overlay into the chroot with `rsync`, and without rsync it falls back
+# to writing a tarball, entering the chroot and unpacking it byte by byte for
+# EVERY directory it stages. That is the "a build that looks hung" slow path.
+#
+# SO WHY BOTH CHECKS. The two are independent: a machine can already have
+# live-build (the first `command -v lb` is then skipped) while rsync is still
+# missing - which is exactly the state a machine left by an earlier run of this
+# script is in, because earlier it installed only live-build. Installing rsync
+# on its own line is what catches that state; the apt that may have just run is
+# not repeated, because apt-get install is idempotent.
+#
+# AND IT GOES ON THE IMAGE TOO. GnuChanPrograms.sh and the hooks that run INSIDE
+# the chroot call rsync in places (the program build helpers), and a chroot with
+# no rsync reports
+#
+#     rsync failed with error code 127
+#
+# which is rsync simply not being there. rsync is named in the package list
+# (GnuchanOS.list.chroot) for that reason, so the chroot has it; this block is
+# the HOST side, so the build machine that drives lb has it as well. Neither is
+# optional and neither is a substitute for the other.
+if ! command -v rsync >/dev/null 2>&1; then
+    say "Installing rsync on the build host (live-build copies its overlay"
+    say "  with it; the tarball fallback without it is why a build crawls)"
+    apt-get update
+    apt-get install -y --no-install-recommends rsync
+fi
 
 if ! command -v lb >/dev/null 2>&1; then
     say "Installing live-build"
     apt-get update
-    apt-get install -y --no-install-recommends live-build
+    apt-get install -y --no-install-recommends live-build rsync
 fi
 
 [ -d "$HERE/config/hooks" ] || die "no config/hooks beside this script"
@@ -99,7 +223,8 @@ cp -a "$HERE/config" "$WORK/config"
 # and a loop using it fails on the first file and takes the cleanup with it.
 find "$WORK/config" -type f \
     \( -name '*.chroot' -o -name '*.list.chroot' -o -name '*.conf' \
-       -o -name '*.sh' -o -path '*/hooks/*' -o -path '*/package-lists/*' \) \
+       -o -name '*.sh' -o -name '*.py' -o -name '*.qss' -o -name '*.qml' \
+       -o -name '*.desc' -o -path '*/hooks/*' -o -path '*/package-lists/*' \) \
     -exec sed -i 's/\r$//' {} + 2>/dev/null || true
 
 # The hooks are EXECUTED, so they have to carry the execute bit. It is set here
@@ -171,10 +296,26 @@ if [ -d "$HERE/repos" ]; then
     cp -a "$HERE/repos" "$STAGE/"
     note "staged local program checkouts from $HERE/repos"
 fi
+# Use the sibling checkout when present so local DM fixes are built into this
+# ISO instead of silently replaced by the remote default branch.
+DM_CHECKOUT="$OS_ROOT/../GnuChanDM"
+if [ -d "$DM_CHECKOUT/src" ] && [ -f "$DM_CHECKOUT/src/makefile.py" ] &&
+   [ ! -d "$STAGE/repos/GnuChanDM" ]; then
+    mkdir -p "$STAGE/repos"
+    cp -a "$DM_CHECKOUT" "$STAGE/repos/GnuChanDM"
+    rm -rf "$STAGE/repos/GnuChanDM/.git"
+    note "staged local GnuChanDM source from $DM_CHECKOUT"
+fi
 # The script that fetches and installs the programs is this tree's own and is
 # staged with everything else: the hook that runs it looks for it under
 # /opt/gnuchanos, beside the trees it installs from.
 cp -a "$HERE/GnuChanPrograms.sh" "$STAGE/"
+# The installer is this tree's own and is staged the same way, whole: its X11
+# window (installer/src/, built by its own makefile.py) and the shell script it
+# runs to do the disk work (installer/gnuchanos-install.sh). The 0450-installer
+# hook builds and installs both. It is a program of this repository, not a
+# package, so it is staged here and not fetched.
+cp -a "$HERE/installer" "$STAGE/"
 cp -a "$OS_ROOT/dotfile" "$STAGE/"
 # The GCL language is one of the fetched repositories now (see
 # GnuChanPrograms.sh, which carries it in the same list as the programs) - it is
@@ -190,6 +331,31 @@ cp -a "$OS_ROOT/dotfile" "$STAGE/"
 if [ -d "$OS_ROOT/assets" ]; then
     cp -a "$OS_ROOT/assets" "$STAGE/"
 fi
+
+# The overlay above carries files that are EXECUTED inside the image, and the
+# most important of them is GnuChanPrograms.sh - the 0300 hook runs it to fetch
+# and build every Gnuchan program. That is the whole reason a second CRLF pass
+# is needed here, and it is not belt-and-braces: the pass earlier in this
+# script normalises $WORK/config, and these files are staged INTO that tree
+# afterwards, so that pass runs over a directory they are not in yet.
+#
+# What a CRLF copy of GnuChanPrograms.sh does inside the chroot is fail before
+# it fetches anything. dash reads its "set -u" line as the option "-u\r" and
+# answers
+#
+#     set: Illegal option -
+#
+# and the script exits at once, so the image ships with NO Gnuchan program in
+# it at all - an ISO that boots to a bare X server with no window manager, no
+# terminal and no greeter, which is indistinguishable from "the programs do
+# not work" when the truth is "nothing ever ran". The same sed as the config/
+# pass, applied to the files that pass does not reach.
+find "$STAGE" -type f \
+    \( -name '*.chroot' -o -name '*.list.chroot' -o -name '*.conf' \
+       -o -name '*.sh' -o -name '*.py' -o -name '*.qss' -o -name '*.qml' \
+       -o -name '*.desc' -o -path '*/hooks/*' -o -path '*/package-lists/*' \) \
+    -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+
 note "staged $STAGE"
 
 # --- the build --------------------------------------------------------------

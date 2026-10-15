@@ -25,14 +25,11 @@
 # the makefile that reads it. Nothing has to be copied in from anywhere, and a
 # checkout of one repository builds and installs on its own.
 #
-# WHY IT DOES NOT FAIL THE BUILD
-# A release build must not stop because one program could not be fetched. The
-# repositories are private while they are being prepared, GitHub is not always
-# reachable from a build machine, and a program that has been renamed is a
-# program that is not there yet - none of that is a reason to throw away an
-# image that is otherwise finished. So a program that cannot be fetched or
-# cannot be built is REPORTED and the run carries on; the exit status is still
-# 0. A release build that wants the opposite sets GNUCHAN_PROGRAMS_STRICT=1.
+# FAILURE BEHAVIOR
+# Standalone runs default to best-effort: a fetch or build failure is reported,
+# and the remaining programs are still attempted. Set GNUCHAN_PROGRAMS_STRICT=1
+# to return a failure after the run. The distro hook enables strict mode so an
+# incomplete desktop cannot be packaged as a successful release image.
 #
 # Debian only, on purpose: every one of these programs is, and this installs
 # with apt-get and writes /usr.
@@ -40,9 +37,10 @@
 # License: GPL3
 # =============================================================================
 
-# No `set -e`: a failed clone or a failed makefile must not end the run, and
-# every step below checks its own result instead. `set -u` is kept, so a
-# misspelled variable is an error rather than an empty string.
+# No `set -e`: a failed clone or makefile must not prevent attempts to build
+# the remaining programs. Strict mode reports the aggregate failure at the end.
+# `set -u` is kept, so a misspelled variable is an error rather than an empty
+# string.
 set -u
 
 # --- what is fetched, and from where ------------------------------------------
@@ -67,8 +65,8 @@ WORK="${GNUCHAN_PROGRAMS_WORK:-/opt/gnuchanos/programs}"
 #: is copied rather than fetched, which is what makes an offline build possible.
 SRC="${GNUCHAN_PROGRAMS_SRC:-/opt/gnuchanos/repos}"
 
-#: Set to 1 to make a failure exit non-zero. Off by default - see the file
-#: comment for why a release image is built even when a program is missing.
+#: Set to 1 to make a failure exit non-zero. Off by default for standalone
+#: runs; the distro hook enables it for release-image builds.
 STRICT="${GNUCHAN_PROGRAMS_STRICT:-0}"
 
 #: The programs, in the order they are built and installed: the applications the
@@ -270,9 +268,8 @@ main() {
     [ -n "$installed" ] && printf '    installed:%s\n' "$installed"
     if [ -n "$failed" ]; then
         printf '    FAILED:%s\n' "$failed"
-        printf '    (a program that failed is missing from the image; the build\n'
-        printf '     carries on, because the repositories may still be private or\n'
-        printf '     the network may be down - see the file comment)\n'
+        printf '    (a program that failed is missing from the image; the remaining\n'
+        printf '     programs were still attempted - see the file comment)\n'
     fi
     [ -z "$installed" ] && [ -z "$failed" ] && printf '    no programs were listed\n'
 

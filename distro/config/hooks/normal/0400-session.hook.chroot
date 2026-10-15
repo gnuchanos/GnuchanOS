@@ -50,15 +50,14 @@ log "wrote /etc/pam.d/gnuchandm and /etc/pam.d/gnuchansl"
 
 # --- 2. the greeter owns the console -----------------------------------------
 
-if systemctl list-unit-files gnuchandm.service >/dev/null 2>&1; then
-    systemctl enable gnuchandm.service >/dev/null 2>&1 || true
-    log "gnuchandm is enabled as the display manager"
-else
-    log "gnuchandm.service is not present; the programs hook should have made it"
-fi
-systemctl set-default graphical.target >/dev/null 2>&1 || true
-
-systemctl mask getty@tty1.service autovt@tty1.service >/dev/null 2>&1 || true
+[ -x /usr/local/bin/GnuChanDM ] ||
+    { log "ERROR: GnuChanDM is missing; the program build did not complete"; exit 1; }
+[ -f /etc/systemd/system/gnuchandm.service ] ||
+    { log "ERROR: gnuchandm.service is missing; the program build did not complete"; exit 1; }
+systemctl enable gnuchandm.service
+log "enabled GnuChanDM as the display manager"
+systemctl set-default graphical.target
+systemctl mask getty@tty1.service autovt@tty1.service
 log "tty1 is reserved for the display manager"
 
 # --- 3. let the X server the greeter starts reach its devices -----------------

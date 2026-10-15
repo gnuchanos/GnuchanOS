@@ -171,11 +171,19 @@ jobs:
       # own mode out of the question.
       - name: Build the ISO
         run: |
+          # rsync is named BESIDE live-build for the same reason build.sh
+          # installs it: live-build copies its overlay into the chroot with
+          # rsync and drops to a tar-per-directory fallback without it, and
+          # rsync is only a Recommends of live-build - so the
+          # --no-install-recommends here would leave it out and every overlay
+          # copy would take the slow path. build.sh checks for it too, so this
+          # is belt-and-braces for the primary build path, and it costs one
+          # already-cached package.
           docker run --privileged --rm \
             -e DEBIAN_FRONTEND=noninteractive \
             -v "$PWD:$PWD" -w "$PWD/distro" \
             debian:trixie \
-            bash -c "apt-get update && apt-get install -y --no-install-recommends live-build && sh ./build.sh"
+            bash -c "apt-get update && apt-get install -y --no-install-recommends live-build rsync && sh ./build.sh"
 
       # THE BUILD OUTPUT IS ROOT'S, AND THE REST OF THE RUN IS NOT.
       #
