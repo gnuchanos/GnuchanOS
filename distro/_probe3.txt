@@ -1,8 +1,0 @@
-== chroot ici git clone testi ==
-Cloning into 'gt'...
-fatal: unable to access 'https://github.com/gnuchanos/GnuChanDM.git/': Could not resolve host: github.com
-CLONE_EXIT=128
-ls: cannot access 'gt/src/makefile.py': No such file or directory
-== chroot resolv.conf ==
-== chroot ca-certificates ==
--rw-r--r-- 1 root root 224449 Oct 13 19:23 /var/tmp/gnuchanos-build/distro/_build/work/chroot/etc/ssl/certs/ca-certificates.crt

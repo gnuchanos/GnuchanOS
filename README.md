@@ -65,7 +65,9 @@ Tested on a very old computer: a Dell Vostro A860.
 
 [GNUCHANOS] [DISTRO STILL WORK IN PROGRESS]
 
-- GOAL: ISO LIVE DESKTOP
-- IMAGE COMING SOON
+--- 
 
-I NEED SLEEP
+[INFO]
+
+# Username: gnuchanos
+# Password: gnuchanos
