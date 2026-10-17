@@ -1,6 +1,6 @@
 # GnuchanOS
 
-# distro --> it's not ready
+# The distro is ready for testing, but it's not suitable for everyday use yet.
 
 The surrounding operating-system distribution — shell environment, package set and
 desktop — is **not ready**.
