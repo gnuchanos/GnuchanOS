@@ -3,9 +3,8 @@
 # The distro is ready for testing, but it's not suitable for everyday use yet.
 
 [INFO]
-
-# Username: gnuchanos
-# Password: gnuchanos
+- Username: gnuchanos
+- Password: gnuchanos
 
 The language and its graphics modules live in their own repository:
 **[gcl](https://github.com/gnuchanos/gcl)** — see its
