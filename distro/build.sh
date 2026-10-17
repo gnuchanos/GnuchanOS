@@ -125,6 +125,14 @@ case "$FS_TYPE" in
             rm -rf "$RELOCATE/distro/repos/GnuChanDM/.git"
             note "staged the sibling GnuChanDM checkout for the relocated build"
         fi
+        if [ -d "$OS_ROOT/../GnuChanWM/src" ] &&
+           [ -f "$OS_ROOT/../GnuChanWM/src/makefile.py" ] &&
+           [ ! -d "$RELOCATE/distro/repos/GnuChanWM" ]; then
+            mkdir -p "$RELOCATE/distro/repos"
+            cp -a "$OS_ROOT/../GnuChanWM" "$RELOCATE/distro/repos/GnuChanWM"
+            rm -rf "$RELOCATE/distro/repos/GnuChanWM/.git"
+            note "staged the sibling GnuChanWM checkout for the relocated build"
+        fi
         # Re-run in the copy. The guard variable stops a second relocation if
         # the copy somehow landed on a filesystem that still is not Linux.
         GNUCHANOS_RELOCATED=1 sh "$RELOCATE/distro/build.sh" || exit $?
@@ -305,6 +313,16 @@ if [ -d "$DM_CHECKOUT/src" ] && [ -f "$DM_CHECKOUT/src/makefile.py" ] &&
     cp -a "$DM_CHECKOUT" "$STAGE/repos/GnuChanDM"
     rm -rf "$STAGE/repos/GnuChanDM/.git"
     note "staged local GnuChanDM source from $DM_CHECKOUT"
+fi
+# Use the sibling checkout too, so local WM fixes (including its shipped
+# settings) are built into the ISO instead of silently replaced by GitHub.
+WM_CHECKOUT="$OS_ROOT/../GnuChanWM"
+if [ -d "$WM_CHECKOUT/src" ] && [ -f "$WM_CHECKOUT/src/makefile.py" ] &&
+   [ ! -d "$STAGE/repos/GnuChanWM" ]; then
+    mkdir -p "$STAGE/repos"
+    cp -a "$WM_CHECKOUT" "$STAGE/repos/GnuChanWM"
+    rm -rf "$STAGE/repos/GnuChanWM/.git"
+    note "staged local GnuChanWM source from $WM_CHECKOUT"
 fi
 # The script that fetches and installs the programs is this tree's own and is
 # staged with everything else: the hook that runs it looks for it under

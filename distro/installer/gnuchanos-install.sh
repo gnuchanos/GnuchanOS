@@ -141,8 +141,8 @@ done
 [ -n "$SQUASHFS" ] || die "could not find the live filesystem (filesystem.squashfs); is this the live system?"
 
 for tool in wipefs sfdisk mkfs.ext4 unsquashfs grub-install grub-mkconfig \
-            chroot blkid mount umount getent useradd chpasswd usermod chown \
-            systemctl mountpoint install; do
+            chroot blkid mount umount getent useradd groupadd chpasswd usermod chown \
+            systemctl mountpoint install ssh-keygen; do
     command -v "$tool" >/dev/null 2>&1 || die "$tool is missing; this image cannot install itself"
 done
 [ ! -d "$TARGET" ] || ! mountpoint -q "$TARGET" ||
@@ -472,7 +472,10 @@ printf '%s:%s\n' "$NEWUSER" "$PASS1" | chroot "$TARGET" chpasswd
 
 chroot "$TARGET" getent group sudo >/dev/null ||
     die "the target has no sudo group; cannot configure an administrator account"
-for g in sudo audio video cdrom floppy dialout plugdev games netdev bluetooth lpadmin; do
+if ! chroot "$TARGET" getent group render >/dev/null 2>&1; then
+    chroot "$TARGET" groupadd --system render
+fi
+for g in sudo audio video render cdrom floppy dialout plugdev games netdev bluetooth lpadmin; do
     if chroot "$TARGET" getent group "$g" >/dev/null 2>&1; then
         chroot "$TARGET" usermod -aG "$g" "$NEWUSER"
     fi
@@ -503,6 +506,32 @@ if [ -f "$TARGET/home/$NEWUSER/.config/GnuChanWM/GnuChanWM.py" ]; then
     sed -i '/gnuchanos-installer/d' "$TARGET/home/$NEWUSER/.config/GnuChanWM/GnuChanWM.py"
 fi
 rm -f "$TARGET/usr/local/bin/gnuchanos-installer"
+
+# Give this installation its own SSH identity and make the daemon available
+# after reboot. The ISO intentionally contains no shared host keys.
+step "Preparing SSH for this installation"
+rm -f "$TARGET"/etc/ssh/ssh_host_*_key "$TARGET"/etc/ssh/ssh_host_*_key.pub
+chroot "$TARGET" ssh-keygen -A
+chroot "$TARGET" sh -c 'set -eu; set -- /etc/ssh/ssh_host_*_key; [ -s "$1" ]; /usr/sbin/sshd -t'
+chroot "$TARGET" systemctl unmask ssh.service
+chroot "$TARGET" systemctl enable ssh.service
+chroot "$TARGET" systemctl is-enabled --quiet ssh.service ||
+    die "ssh.service is not enabled in the installed system"
+note "generated and validated machine-specific SSH host keys; enabled ssh.service"
+
+step "Enabling firewall and power management"
+for tool in ufw tlp; do
+    [ -x "$TARGET/usr/sbin/$tool" ] ||
+        die "$tool is missing from the target filesystem"
+done
+for unit in gnuchanos-firewall-setup.service ufw.service tlp.service; do
+    [ -f "$TARGET/etc/systemd/system/$unit" ] ||
+    [ -f "$TARGET/usr/lib/systemd/system/$unit" ] ||
+    [ -f "$TARGET/lib/systemd/system/$unit" ] ||
+        die "$unit is missing from the target filesystem"
+    chroot "$TARGET" systemctl enable "$unit"
+done
+note "enabled UFW initialization, UFW, and TLP for the installed system"
 
 # GnuChanDM is the greeter the installed machine comes up to, and the graphical
 # target is what starts it. Do not hide failures here: a system with no enabled

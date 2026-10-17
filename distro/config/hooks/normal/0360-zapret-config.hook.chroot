@@ -112,10 +112,11 @@ if [ ! -f "$SERVICE" ] && [ -f "$ZAPRET_DIR/init.d/systemd/zapret.service" ]; th
     log "installed $SERVICE"
 fi
 
-if systemctl enable zapret.service >/dev/null 2>&1; then
+if systemctl enable zapret.service; then
     log "enabled zapret.service"
 else
-    log "could not enable zapret.service now; it is still installed"
+    log "ERROR: could not enable zapret.service"
+    exit 1
 fi
 
 # --- say what the file now holds, so a build log shows it worked -------------

@@ -17,18 +17,144 @@ set -eu
 
 log() { printf '==> install-software: %s\n' "$1"; }
 
+systemd_unit_exists() {
+    [ -f "/etc/systemd/system/$1" ] ||
+    [ -f "/usr/lib/systemd/system/$1" ] ||
+    [ -f "/lib/systemd/system/$1" ]
+}
+
 # The units Install_Software.py turns on with `systemctl enable --now`. `--now`
 # cannot be honoured while the image is built - there is no running systemd in
 # the chroot to start a unit in - so the units are ENABLED here and systemd
 # starts them when the live system boots.
-for unit in ssh irqbalance ntpsec; do
-    if systemctl list-unit-files "$unit.service" >/dev/null 2>&1; then
-        systemctl enable "$unit.service" >/dev/null 2>&1 || true
+for unit in irqbalance ntpsec; do
+    if systemd_unit_exists "$unit.service"; then
+        systemctl enable "$unit.service"
         log "enabled $unit"
     else
         log "$unit is not in this image; skipped"
     fi
 done
+
+# SSH is required both on the live ISO and after the installer copies this
+# filesystem. Do not hide enable failures: that produced an image where port 22
+# was closed even though the build log said SSH was enabled.
+if [ ! -x /usr/sbin/sshd ] || [ ! -x /usr/bin/ssh-keygen ] ||
+   ! systemd_unit_exists ssh.service; then
+    log "ERROR: openssh-server did not provide ssh.service"
+    exit 1
+fi
+systemctl unmask ssh.service
+systemctl enable ssh.service
+log "enabled ssh.service"
+
+# Debian's sshd can hit its start limit if it starts before host keys exist.
+# Generate per-machine keys and validate the config before every daemon start;
+# the final cleanup removes build-time keys from the reusable ISO.
+install -d /etc/systemd/system/ssh.service.d
+cat > /etc/systemd/system/ssh.service.d/10-gnuchanos-host-keys.conf <<'EOF'
+[Service]
+ExecStartPre=
+ExecStartPre=/usr/bin/ssh-keygen -A
+ExecStartPre=/usr/sbin/sshd -t
+EOF
+chmod 0644 /etc/systemd/system/ssh.service.d/10-gnuchanos-host-keys.conf
+log "configured SSH host-key generation and sshd validation before startup"
+
+# The installer sets a password for the installed account, and the live user
+# has one too. Explicitly permit that credential over SSH; relying on an
+# upstream default can leave clients reporting only "publickey" and makes the
+# port-22 firewall allowance misleading. The 00 prefix ensures this takes
+# precedence over later vendor/cloud-init snippets in sshd_config.d.
+install -d /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/00-gnuchanos-auth.conf <<'EOF'
+UsePAM yes
+PubkeyAuthentication yes
+PasswordAuthentication yes
+KbdInteractiveAuthentication yes
+EOF
+chmod 0644 /etc/ssh/sshd_config.d/00-gnuchanos-auth.conf
+sshd -t
+if ! sshd -T | grep -qx 'passwordauthentication yes'; then
+    log "ERROR: sshd did not enable password authentication"
+    exit 1
+fi
+log "enabled password and public-key SSH authentication"
+
+# Let systemd-logind own the physical lid switch and suspend the whole machine.
+# GnuChanWM's parallel lid suspend is disabled in the session config by the
+# installer hook; having both act on one switch caused racing requests and
+# left the machine awake when the WM request was denied.
+install -d /etc/systemd/logind.conf.d
+cat > /etc/systemd/logind.conf.d/60-gnuchanos-lid.conf <<'EOF'
+[Login]
+HandleLidSwitch=suspend
+HandleLidSwitchExternalPower=suspend
+HandleLidSwitchDocked=ignore
+EOF
+chmod 0644 /etc/systemd/logind.conf.d/60-gnuchanos-lid.conf
+
+install -d /etc/polkit-1/rules.d
+cat > /etc/polkit-1/rules.d/50-gnuchanos-suspend.rules <<'EOF'
+polkit.addRule(function(action, subject) {
+    if (subject.isInGroup("sudo") &&
+        (action.id === "org.freedesktop.login1.suspend" ||
+         action.id === "org.freedesktop.login1.suspend-multiple-sessions")) {
+        return polkit.Result.YES;
+    }
+});
+EOF
+chmod 0644 /etc/polkit-1/rules.d/50-gnuchanos-suspend.rules
+log "allowed sudo-group users to suspend through logind"
+
+# Configure UFW at actual boot, not during live-build: applying firewall rules
+# inside a chroot would alter the build host's network namespace. This one-shot
+# runs before networking, SSH, UFW's own unit and zapret on both live and
+# installed boots. UFW keeps its rules persistently after this initialization.
+install -d /usr/local/sbin /etc/systemd/system
+cat > /usr/local/sbin/gnuchanos-firewall-setup <<'EOF'
+#!/bin/sh
+set -eu
+/usr/sbin/ufw default deny incoming
+/usr/sbin/ufw default allow outgoing
+/usr/sbin/ufw allow 22/tcp
+/usr/sbin/ufw --force enable
+EOF
+chmod 0755 /usr/local/sbin/gnuchanos-firewall-setup
+cat > /etc/systemd/system/gnuchanos-firewall-setup.service <<'EOF'
+[Unit]
+Description=Configure the GnuchanOS firewall policy
+DefaultDependencies=no
+After=local-fs.target
+Wants=network-pre.target
+Before=network-pre.target ufw.service ssh.service zapret.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/gnuchanos-firewall-setup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chmod 0644 /etc/systemd/system/gnuchanos-firewall-setup.service
+systemctl enable gnuchanos-firewall-setup.service
+if ! systemd_unit_exists ufw.service; then
+    log "ERROR: the UFW package did not provide ufw.service"
+    exit 1
+fi
+systemctl enable ufw.service
+log "configured UFW: deny incoming, allow outgoing and SSH on TCP/22"
+
+# TLP supplies battery-aware CPU scaling and power policy. Do not install or
+# enable power-profiles-daemon alongside it; the two compete for the same
+# governor and energy-performance controls.
+if ! systemd_unit_exists tlp.service; then
+    log "ERROR: the TLP package did not provide tlp.service"
+    exit 1
+fi
+systemctl enable tlp.service
+log "enabled TLP battery and CPU power management"
 
 # The script offers to set the timezone to Europe/Istanbul and turns on NTP.
 # Both are written into the image, so the live system comes up on Istanbul time

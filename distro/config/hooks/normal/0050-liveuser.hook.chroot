@@ -36,6 +36,12 @@ LIVE_HOME=/home/$LIVE_USER
 # The groups a desktop session wants the user in, when the image has them.
 WANTED_GROUPS="audio video cdrom floppy dialout plugdev games netdev bluetooth lpadmin"
 
+# DRM render nodes use this system group. Ensure it exists even on a trimmed
+# base image so the live account receives access before the desktop starts.
+if ! getent group render >/dev/null 2>&1; then
+    groupadd --system render
+fi
+
 if id "$LIVE_USER" >/dev/null 2>&1; then
     log "$LIVE_USER already exists"
 else
@@ -47,6 +53,7 @@ else
 fi
 
 mkdir -p "$LIVE_HOME"
+usermod -aG render "$LIVE_USER"
 
 # The extra groups, each only when the image actually has that group.
 for group in $WANTED_GROUPS; do

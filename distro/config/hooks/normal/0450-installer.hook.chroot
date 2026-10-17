@@ -93,6 +93,13 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
+lid_setting = "OnLidCloseSuspend=True"
+if text.count(lid_setting) != 1:
+    raise SystemExit(
+        f"expected exactly one {lid_setting!r} setting in {path}, "
+        f"found {text.count(lid_setting)}"
+    )
+text = text.replace(lid_setting, "OnLidCloseSuspend=False")
 match = re.search(
     r"(?ms)^([ \t]*gcl_autostart\.all\s*=\s*\[)(.*?)(^[ \t]*\])",
     text,
@@ -104,11 +111,12 @@ body = match.group(2)
 if not re.search(r'(?m)^[ \t]*"gnuchanos-installer"\s*,?[ \t]*(?:#.*)?$', body):
     body += '    "gnuchanos-installer",\n'
     text = text[:match.start(2)] + body + text[match.end(2):]
-    path.write_text(text, encoding="utf-8")
+path.write_text(text, encoding="utf-8")
 PY
 LIVE_UID=$(id -u "$LIVE_USER")
 LIVE_GID=$(id -g "$LIVE_USER")
 chown "$LIVE_UID:$LIVE_GID" "$WM_CONFIG"
 log "added the installer launcher to the live session's autostart list"
+log "delegated lid suspend to systemd-logind to avoid competing requests"
 
 log "done"

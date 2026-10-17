@@ -18,6 +18,11 @@ log() { printf '==> cleanup: %s\n' "$1"; }
 
 STAGE=/opt/gnuchanos
 
+# Host keys belong to one machine, not to a reusable live image. ssh.service's
+# pre-start hook creates them on the first boot from this ISO.
+rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
+log "removed build-time SSH host keys; ssh.service will create machine-specific keys"
+
 # --- keep the documentation --------------------------------------------------
 
 if [ -d "$STAGE/book" ]; then

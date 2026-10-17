@@ -234,6 +234,7 @@ dbus-x11
 # invisible bus of its own.
 libpam-systemd
 dbus-user-session
+polkitd
 
 # --- GnuChanBrowser is a Qt program ---
 qt6-base-dev
@@ -338,6 +339,9 @@ sudo
 irqbalance
 ntpsec
 openssh-server
+ufw
+tlp
+tlp-rdw
 
 # --- locale and time ---
 locales

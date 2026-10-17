@@ -65,6 +65,25 @@ the source tree.
     screen both authenticate through PAM, so `/etc/pam.d/gnuchandm` and
     `/etc/pam.d/gnuchansl` are written by the session hook.
 
+  * **Laptop suspend** — systemd-logind owns the physical lid switch and
+    suspends on close on battery and external power (but not while docked).
+    GnuChanWM's duplicate lid-triggered suspend is disabled, so the session
+    and logind cannot race two suspend requests. Polkit still allows members
+    of `sudo` to request suspend through logind.
+
+  * **SSH and firewall** — SSH host keys are generated for each machine and
+    validated before `sshd` starts. Password and public-key authentication are
+    explicitly enabled; the installer sets a password for the installed
+    account. The installer repeats key generation and validation for the
+    installed system. UFW is initialized at actual boot (never while live-build
+    is operating in a chroot) with incoming traffic denied, outgoing traffic
+    allowed, and TCP port 22 allowed for SSH. The same boot configuration is
+    copied into the installed system.
+
+  * **Battery and CPU power** — TLP is the sole power-profile manager and is
+    enabled on both live and installed boots. Do not run it alongside
+    `power-profiles-daemon`; they compete for CPU power controls.
+
 ## The files here
 
     README.md            this note
