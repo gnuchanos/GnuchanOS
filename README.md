@@ -1,11 +1,10 @@
 # GnuchanOS
 
-# distro --> it's not ready
+# The distro is ready for testing, but it's not suitable for everyday use yet.
 
-The surrounding operating-system distribution — shell environment, package set and
-desktop — is **not ready**.
-
-# Language And Platform -> Ready
+[INFO]
+- Username: gnuchanos
+- Password: gnuchanos
 
 The language and its graphics modules live in their own repository:
 **[gcl](https://github.com/gnuchanos/gcl)** — see its
@@ -67,7 +66,4 @@ Tested on a very old computer: a Dell Vostro A860.
 
 --- 
 
-[INFO]
 
-# Username: gnuchanos
-# Password: gnuchanos
